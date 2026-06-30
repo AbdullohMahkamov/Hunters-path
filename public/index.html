@@ -205,7 +205,7 @@
 
 <header>
   <div class="h-top">
-    <div class="h-logo">🏹</div>
+    <div class="h-logo" onclick="switchTab('map')" style="cursor:pointer;">🏹</div>
     <div style="min-width:0;">
       <div class="h-title">Hunter's Path</div>
       <div class="h-sub">Охота за 500 000 000 сум</div>
@@ -487,6 +487,7 @@ function resetHunt(){
 
 /* ===== TABS ===== */
 function switchTab(t){
+  state.tab=t;save();
   ['map','dash','chat'].forEach(x=>{
     document.getElementById('tab-'+x).classList.toggle('active',t===x);
   });
@@ -797,6 +798,7 @@ document.getElementById('chatBox').addEventListener('keydown',e=>{
 
 if(state.lang==='uz')setLang('uz');
 renderHeader();renderStages();
+if(state.tab&&state.tab!=='map')switchTab(state.tab);
 </script>
 </body>
 </html>
