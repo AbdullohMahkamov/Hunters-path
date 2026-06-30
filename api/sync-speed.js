@@ -81,17 +81,16 @@ export default async function handler(req, res) {
       await new Promise(rs => setTimeout(rs, 150));
     }
 
-    // 3) Тянем СОБЫТИЯ месяца пачками: outgoing_call + task_added
-    //    и привязываем к лидам (только entity_type=lead)
-    const evTypes = "outgoing_call,task_added";
+    // 3) Тянем СОБЫТИЯ месяца пачками: только outgoing_call (звонки), привязка к лидам
+    const evTypes2 = "outgoing_call";
     page = 1; guard = 0;
     while (guard < 120) {
       guard++;
-      const url = `${base}/events?filter[type]=${evTypes}` +
+      const url = `${base}/events?filter[type]=${evTypes2}` +
         `&filter[created_at][from]=${monthStart}&limit=250&page=${page}&order[created_at]=asc`;
       const r = await fetch(url, { headers: H });
       if (r.status === 204) break;
-      if (!r.ok) break; // события могут отвалиться — не критично, продолжаем с тем что есть
+      if (!r.ok) break;
       const d = await r.json();
       const events = (d._embedded && d._embedded.events) || [];
       for (const e of events) {
@@ -101,11 +100,31 @@ export default async function handler(req, res) {
         if (e.type === "outgoing_call") {
           li.calls++;
           if (li.firstCall === null || e.created_at < li.firstCall) li.firstCall = e.created_at;
-        } else if (e.type === "task_added") {
-          li.tasks++;
         }
       }
       if (events.length < 250) break;
+      page++;
+      await new Promise(rs => setTimeout(rs, 150));
+    }
+
+    // 3b) ЗАДАЧИ — через отдельный эндпоинт /tasks (привязаны к лиду через entity_id, entity_type=leads)
+    page = 1; guard = 0;
+    while (guard < 120) {
+      guard++;
+      const url = `${base}/tasks?limit=250&page=${page}&filter[created_at][from]=${monthStart}`;
+      const r = await fetch(url, { headers: H });
+      if (r.status === 204) break;
+      if (!r.ok) break;
+      const d = await r.json();
+      const tasks = (d._embedded && d._embedded.tasks) || [];
+      for (const t of tasks) {
+        const et = t.entity_type;
+        if (et !== "leads" && et !== "lead") continue;
+        const li = leadInfo[t.entity_id];
+        if (!li) continue;
+        li.tasks++;
+      }
+      if (tasks.length < 250) break;
       page++;
       await new Promise(rs => setTimeout(rs, 150));
     }
