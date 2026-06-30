@@ -247,16 +247,16 @@
     <div class="goal-card">
       <div style="font-size:12px;color:var(--txt2);margin-bottom:4px;">ГЛАВНАЯ ЦЕЛЬ</div>
       <div class="goal-big" style="color:var(--accent);">500 000 000 <span style="font-size:15px;color:var(--txt2);">сум/мес</span></div>
-      <div style="font-size:12.5px;color:var(--txt2);margin-top:6px;">Сейчас ~158М · нужно <b style="color:var(--txt);">~141 продажа/мес</b> при чеке 3,54М</div>
-      <div class="bar" style="margin-top:9px;"><div class="bar-fill" style="width:32%;"></div></div>
-      <div style="font-size:11px;color:var(--txt3);margin-top:5px;">32% пути к цели (по июню)</div>
+      <div style="font-size:12.5px;color:var(--txt2);margin-top:6px;" id="goalSub">Сейчас ~158М · нужно <b style="color:var(--txt);">~141 продажа/мес</b> при чеке 3,54М</div>
+      <div class="bar" style="margin-top:9px;"><div class="bar-fill" id="goalProgressBar" style="width:32%;"></div></div>
+      <div style="font-size:11px;color:var(--txt3);margin-top:5px;" id="goalProgressTxt">32% пути к цели (по июню)</div>
     </div>
 
     <div class="dash-grid">
-      <div class="dcard"><div class="dl">Конверсия команды</div><div class="dv" style="color:var(--accent);">2,02%</div><div class="dh">контакт→продажа 3,33%</div></div>
-      <div class="dcard"><div class="dl">Средний чек</div><div class="dv">3,54<span style="font-size:14px;">М</span></div><div class="dh">реальные клиенты</div></div>
-      <div class="dcard"><div class="dl">Лиды теряются до контакта</div><div class="dv" style="color:var(--red);">57%</div><div class="dh">медиана дозвона 64ч</div></div>
-      <div class="dcard"><div class="dl">Маржа (июнь)</div><div class="dv" style="color:var(--green);">54%</div><div class="dh">ROAS таргета 18,6x</div></div>
+      <div class="dcard"><div class="dl">Конверсия команды</div><div class="dv" id="kpiConv" style="color:var(--accent);">2,02%</div><div class="dh">за период</div></div>
+      <div class="dcard"><div class="dl">Средний чек</div><div class="dv" id="kpiCheck">3,54М</div><div class="dh">реальные клиенты</div></div>
+      <div class="dcard"><div class="dl">Лиды теряются до контакта</div><div class="dv" id="kpiNoContact" style="color:var(--red);">57%</div><div class="dh">потеря на дозвоне</div></div>
+      <div class="dcard"><div class="dl">Путь к цели</div><div class="dv" id="kpiGoalPct" style="color:var(--green);">32%</div><div class="dh">выручка / 500М</div></div>
     </div>
 
     <div class="dsect">⚔️ Конверсия по МОПам</div>
@@ -266,9 +266,9 @@
     <div id="funnelChart"></div>
 
     <div class="foot" style="margin-top:14px;">
-      <button onclick="quickAsk('Обнови мои цифры в дашборде — я пришлю свежую выгрузку')">📤 Обновить по свежим данным</button>
+      <button id="syncBtn" onclick="syncNow()">🔄 Обновить из amoCRM</button>
     </div>
-    <div style="font-size:11px;color:var(--txt3);margin-top:8px;line-height:1.5;">Цифры из аудита (июнь). Чтобы обновить — пришли свежую выгрузку Крестодателю во вкладке чата, он пересчитает.</div>
+    <div style="font-size:11px;color:var(--txt3);margin-top:8px;line-height:1.5;" id="dashNote">Данные из аудита (июнь). Живые данные обновляются автоматически каждую ночь из amoCRM.</div>
   </div>
 
   <!-- CHAT VIEW -->
@@ -492,31 +492,105 @@ function switchTab(t){
 }
 
 /* ===== DASHBOARD ===== */
-function renderDashboard(){
-  const mops=[
-    {n:'Komiljon',c:2.94,top:true},{n:'Samandar',c:2.99,top:true},
-    {n:'Abdulla-Legenda',c:1.54},{n:'Begoyim',c:1.18},{n:'Abulbositxon',c:1.08}
-  ];
-  const maxC=3.0;
-  document.getElementById('mopChart').innerHTML=mops.map(m=>`
-    <div class="mop-row">
-      <div class="mop-name">${m.n}</div>
-      <div class="mop-bar-wrap"><div class="mop-bar" style="width:${Math.round(m.c/maxC*100)}%;background:${m.top?'var(--green)':(m.c<1.3?'var(--red)':'var(--accent)')};"></div></div>
-      <div class="mop-val" style="color:${m.top?'var(--green)':(m.c<1.3?'var(--red)':'var(--txt)')};">${m.c}%</div>
-    </div>`).join('');
+let dashLoaded=false;
+async function renderDashboard(){
+  // Статичные цифры аудита — показываем сразу, пока грузится живой кэш
+  renderDashStatic();
+  if(dashLoaded)return;
+  // Тянем живой кэш
+  try{
+    const r=await fetch('/api/dashboard');
+    const d=await r.json();
+    if(d&&!d.empty&&!d.error&&d.totals){
+      applyLiveDash(d);
+      dashLoaded=true;
+    }else if(d&&d.empty){
+      const note=document.getElementById('dashNote');
+      if(note)note.textContent='Живые данные ещё не загружены. Нажми «Обновить из amoCRM» ниже.';
+    }
+  }catch(e){}
+}
 
-  const funnel=[
+function renderDashStatic(){
+  const mops=[
+    {name:'Komiljon',conv:2.94,top:true},{name:'Samandar',conv:2.99,top:true},
+    {name:'Abdulla-Legenda',conv:1.54},{name:'Begoyim',conv:1.18},{name:'Abulbositxon',conv:1.08}
+  ];
+  drawMops(mops);
+  drawFunnel([
     {l:'Лиды (оплачено)',v:7542,p:100},
     {l:'Контакт состоялся',v:3243,p:43},
     {l:'Квалифицирован',v:2928,p:39},
     {l:'Продано',v:108,p:1.4},
-  ];
+  ]);
+}
+
+function drawMops(mops){
+  const maxC=Math.max(3,...mops.map(m=>m.conv));
+  document.getElementById('mopChart').innerHTML=mops.map(m=>`
+    <div class="mop-row">
+      <div class="mop-name">${escapeHtml(m.name)}</div>
+      <div class="mop-bar-wrap"><div class="mop-bar" style="width:${Math.round(m.conv/maxC*100)}%;background:${m.conv>=2.5?'var(--green)':(m.conv<1.3?'var(--red)':'var(--accent)')};"></div></div>
+      <div class="mop-val" style="color:${m.conv>=2.5?'var(--green)':(m.conv<1.3?'var(--red)':'var(--txt)')};">${m.conv}%</div>
+    </div>`).join('');
+}
+function drawFunnel(funnel){
   document.getElementById('funnelChart').innerHTML=funnel.map(f=>`
     <div class="funnel-row">
       <div class="funnel-label">${f.l}</div>
       <div class="funnel-bar-wrap"><div class="funnel-bar" style="width:${f.p}%;background:${f.p<5?'var(--green)':(f.p<50&&f.p>40?'var(--red)':'var(--accent)')};"></div></div>
-      <div class="funnel-val">${f.v.toLocaleString('ru')} · ${f.p}%</div>
+      <div class="funnel-val">${(f.v||0).toLocaleString('ru')} · ${f.p}%</div>
     </div>`).join('');
+}
+
+function applyLiveDash(d){
+  const t=d.totals;
+  // KPI карточки
+  const set=(id,val)=>{const e=document.getElementById(id);if(e)e.textContent=val;};
+  set('kpiConv',t.conv+'%');
+  set('kpiCheck',(t.avgCheck/1000000).toFixed(2).replace('.',',')+'М');
+  set('kpiNoContact',t.noContactPct+'%');
+  set('kpiGoalPct',t.goalPct+'%');
+  document.getElementById('goalProgressBar').style.width=Math.min(100,t.goalPct)+'%';
+  document.getElementById('goalProgressTxt').textContent=t.goalPct+'% пути к цели ('+t.period.toLowerCase()+')';
+  document.getElementById('goalSub').innerHTML='Продаж: <b style="color:var(--txt);">'+t.sold+'</b> · выручка '+(t.revenue/1000000).toFixed(0)+'М · нужно ~141/мес';
+  // МОПы
+  if(d.mops&&d.mops.length)drawMops(d.mops.map(m=>({name:m.name,conv:m.conv})));
+  // Воронка (упрощённо: лиды→продано из живых)
+  drawFunnel([
+    {l:'Лиды (за месяц)',v:t.leads,p:100},
+    {l:'Продано',v:t.sold,p:t.conv},
+  ]);
+  // Метка обновления
+  const note=document.getElementById('dashNote');
+  if(note){
+    const dt=new Date(d.updatedAt);
+    note.textContent='🟢 Живые данные из amoCRM · обновлено '+dt.toLocaleString('ru',{day:'2-digit',month:'2-digit',hour:'2-digit',minute:'2-digit'})+' · «свои» исключены ('+t.ownExcluded+')';
+  }
+}
+
+let syncing=false;
+async function syncNow(){
+  if(syncing)return;
+  syncing=true;
+  const btn=document.getElementById('syncBtn');
+  const old=btn.textContent;btn.textContent='⏳ Тяну из amoCRM...';btn.disabled=true;
+  try{
+    const r=await fetch('/api/sync');
+    const d=await r.json();
+    if(d&&d.ok){
+      dashLoaded=false;
+      await renderDashboard();
+      btn.textContent='✅ Обновлено';
+    }else{
+      btn.textContent='⚠️ Ошибка';
+      const note=document.getElementById('dashNote');
+      if(note)note.textContent='Ошибка обновления: '+(d.error||'')+' '+(d.detail||'');
+    }
+  }catch(e){
+    btn.textContent='⚠️ Нет связи';
+  }
+  setTimeout(()=>{btn.textContent=old;btn.disabled=false;syncing=false;},2500);
 }
 
 /* ===== LANGUAGE ===== */
