@@ -94,10 +94,13 @@ export default async function handler(req, res) {
       await new Promise((rs) => setTimeout(rs, 160));
     }
 
-    // 4) Считаем. ПРОДАЖИ — по дате закрытия (closed_at) в этом месяце. ЛИДЫ — по дате создания в этом месяце.
+    // 4) Считаем.
+    // ВЫРУЧКА/КАССА — по ВСЕМ аккаунтам, продажи закрытые (closed_at) в этом месяце.
+    // КОНВЕРСИЯ/ДИСЦИПЛИНА — только по 5 действующим МОПам, лиды созданные в этом месяце.
     let sold = 0, soldSum = 0, ownExcluded = 0, noContact = 0;
-    const lossCount = {};                 // причина -> кол-во (по закрытым в этом месяце)
-    const byMop = {};                     // name -> {leads, sold, revenue, noContact}
+    let soldTeam = 0, soldSumTeam = 0;     // продажи только пятёрки (для среднего чека команды)
+    const lossCount = {};                  // причина -> кол-во (по закрытым в этом месяце, пятёрка)
+    const byMop = {};                      // name -> {leads, sold, revenue, noContact} — только пятёрка
 
     for (const L of all) {
       const stName = statusName[L.status_id] || "";
@@ -106,36 +109,51 @@ export default async function handler(req, res) {
       const isOwn = isSold && price <= OWN_THRESHOLD;
       if (isOwn) { ownExcluded++; continue; }
 
-      const mop = ACTIVE_MOPS[L.responsible_user_id];
-      if (!mop) continue;
-      if (!byMop[mop]) byMop[mop] = { leads: 0, sold: 0, revenue: 0, noContact: 0 };
-
       const createdThisMonth = (L.created_at || 0) >= monthStart;
       const closedThisMonth = (L.closed_at || 0) >= monthStart;
+      const mop = ACTIVE_MOPS[L.responsible_user_id]; // null если не из пятёрки
 
-      // Объём лидов и проблемы дозвона — по лидам, созданным в этом месяце
-      if (createdThisMonth) {
-        byMop[mop].leads++;
-        if (stName === CLOSED_LOST) {
-          let reason = "";
-          const lossId = L.loss_reason_id || (L._embedded && L._embedded.loss_reason && L._embedded.loss_reason[0] && L._embedded.loss_reason[0].id);
-          if (lossId && lossName[lossId]) reason = lossName[lossId];
-          if (reason) lossCount[reason] = (lossCount[reason] || 0) + 1;
-          if (NO_CONTACT_REASONS.has(reason)) { noContact++; byMop[mop].noContact++; }
-        } else if (NO_CONTACT_STAGES.has(stName)) {
-          noContact++; byMop[mop].noContact++;
-        }
-      }
-
-      // Продажи и выручка — по сделкам, ЗАКРЫТЫМ (проданным) в этом месяце, независимо когда создан лид
+      // === ВЫРУЧКА: ВСЕ аккаунты, проданные в этом месяце ===
       if (isSold && closedThisMonth) {
         sold++; soldSum += price;
-        byMop[mop].sold++; byMop[mop].revenue += price;
+      }
+
+      // === ПРОБЛЕМЫ (общие): по всем закрытым-проигранным за всё окно, не только месяц ===
+      if (stName === CLOSED_LOST) {
+        let reason = "";
+        const lossId = L.loss_reason_id || (L._embedded && L._embedded.loss_reason && L._embedded.loss_reason[0] && L._embedded.loss_reason[0].id);
+        if (lossId && lossName[lossId]) reason = lossName[lossId];
+        if (reason) lossCount[reason] = (lossCount[reason] || 0) + 1;
+      }
+
+      // === МЕТРИКИ КОМАНДЫ: только пятёрка ===
+      if (mop) {
+        if (!byMop[mop]) byMop[mop] = { leads: 0, sold: 0, revenue: 0, noContact: 0 };
+
+        // объём лидов и дозвон — по созданным в этом месяце
+        if (createdThisMonth) {
+          byMop[mop].leads++;
+          if (stName === CLOSED_LOST) {
+            let reason = "";
+            const lossId = L.loss_reason_id || (L._embedded && L._embedded.loss_reason && L._embedded.loss_reason[0] && L._embedded.loss_reason[0].id);
+            if (lossId && lossName[lossId]) reason = lossName[lossId];
+            if (NO_CONTACT_REASONS.has(reason)) { noContact++; byMop[mop].noContact++; }
+          } else if (NO_CONTACT_STAGES.has(stName)) {
+            noContact++; byMop[mop].noContact++;
+          }
+        }
+
+        // продажи пятёрки — по закрытым в этом месяце
+        if (isSold && closedThisMonth) {
+          soldTeam++; soldSumTeam += price;
+          byMop[mop].sold++; byMop[mop].revenue += price;
+        }
       }
     }
 
     const totalLeads = Object.values(byMop).reduce((a, m) => a + m.leads, 0);
-    const conv = totalLeads > 0 ? +(sold / totalLeads * 100).toFixed(2) : 0;
+    const conv = totalLeads > 0 ? +(soldTeam / totalLeads * 100).toFixed(2) : 0;
+    // Средний чек — по всей кассе (все аккаунты)
     const avgCheck = sold > 0 ? Math.round(soldSum / sold) : 0;
     const noContactPct = totalLeads > 0 ? +(noContact / totalLeads * 100).toFixed(0) : 0;
 
@@ -161,7 +179,12 @@ export default async function handler(req, res) {
       updatedAt: new Date().toISOString(),
       period: "Текущий месяц",
       totals: {
-        leads: totalLeads, sold, revenue: soldSum, conv, avgCheck,
+        leads: totalLeads,
+        sold,                       // продаж всего (все аккаунты)
+        revenue: soldSum,           // выручка всего (все аккаунты) — касса месяца
+        soldTeam,                   // продаж только пятёрки
+        revenueTeam: soldSumTeam,   // выручка пятёрки
+        conv, avgCheck,
         noContactPct, ownExcluded,
         goal: 500000000,
         goalPct: +(soldSum / 500000000 * 100).toFixed(0),
