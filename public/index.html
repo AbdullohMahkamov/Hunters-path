@@ -365,7 +365,7 @@ function loadState(){
 function save(){try{localStorage.setItem(SKEY,JSON.stringify(state));}catch(e){}}
 
 function stageDone(s){return s.quests.every(q=>state.done[q.id]);}
-function stageUnlocked(idx){return idx===0||stageDone(STAGES[idx-1]);}
+function stageUnlocked(idx){return true;}
 function doneCount(){return ALL_QUESTS.filter(id=>state.done[id]).length;}
 function trophies(){return STAGES.filter(s=>state.bosses[s.id]).length;}
 function rankFor(p){let r='Новобранец';RANKS.forEach(([m,n])=>{if(p>=m)r=n;});return r;}
