@@ -163,6 +163,42 @@
   .cel-btn{margin-top:16px;width:100%;padding:12px;border-radius:10px;background:var(--accent);
     border:none;color:#fff;font-size:14px;font-weight:700;cursor:pointer;}
   .confetti{position:fixed;width:9px;height:9px;z-index:99;pointer-events:none;border-radius:2px;}
+
+  /* language toggle */
+  .lang{display:flex;gap:0;border:1px solid var(--line2);border-radius:8px;overflow:hidden;margin-left:8px;flex:0 0 auto;}
+  .lang button{font-size:11px;font-weight:600;padding:5px 9px;background:transparent;border:none;color:var(--txt3);cursor:pointer;}
+  .lang button.on{background:var(--accent);color:#fff;}
+
+  /* file upload */
+  .attach-btn{width:42px;height:42px;border-radius:11px;background:var(--card);border:1px solid var(--line2);
+    color:var(--txt2);font-size:19px;cursor:pointer;flex:0 0 auto;display:flex;align-items:center;justify-content:center;}
+  .attach-btn:hover{border-color:var(--accent);color:var(--accent);}
+  .file-chips{display:flex;gap:7px;flex-wrap:wrap;padding:0 12px 8px;background:var(--bg2);}
+  .chip{display:flex;align-items:center;gap:6px;font-size:12px;background:var(--accent-bg);color:var(--accent);
+    padding:5px 9px;border-radius:8px;max-width:200px;}
+  .chip span{overflow:hidden;text-overflow:ellipsis;white-space:nowrap;}
+  .chip button{background:none;border:none;color:var(--accent);cursor:pointer;font-size:14px;padding:0;line-height:1;}
+  .m-file{font-size:12px;color:var(--txt2);margin-top:4px;display:flex;align-items:center;gap:5px;}
+
+  /* dashboard */
+  .dash-grid{display:grid;grid-template-columns:repeat(2,1fr);gap:10px;margin-bottom:14px;}
+  .dcard{background:var(--card);border:1px solid var(--line);border-radius:12px;padding:13px 14px;}
+  .dcard .dl{font-size:11.5px;color:var(--txt2);margin-bottom:5px;}
+  .dcard .dv{font-size:23px;font-weight:700;line-height:1;}
+  .dcard .dh{font-size:11px;color:var(--txt3);margin-top:4px;}
+  .dsect{font-size:13px;font-weight:600;color:var(--txt2);margin:16px 0 9px;display:flex;align-items:center;gap:7px;}
+  .mop-row{display:flex;align-items:center;gap:10px;padding:9px 0;border-top:1px solid var(--line);}
+  .mop-name{font-size:13px;font-weight:500;width:120px;flex:0 0 auto;}
+  .mop-bar-wrap{flex:1;height:18px;background:var(--bg);border-radius:6px;overflow:hidden;}
+  .mop-bar{height:100%;border-radius:6px;}
+  .mop-val{font-size:12px;font-weight:600;width:46px;text-align:right;flex:0 0 auto;}
+  .funnel-row{display:flex;align-items:center;gap:10px;padding:7px 0;}
+  .funnel-label{font-size:12.5px;width:130px;flex:0 0 auto;color:var(--txt2);}
+  .funnel-bar-wrap{flex:1;height:22px;background:var(--bg);border-radius:6px;overflow:hidden;position:relative;}
+  .funnel-bar{height:100%;background:var(--accent);border-radius:6px;}
+  .funnel-val{font-size:11.5px;font-weight:600;width:90px;text-align:right;flex:0 0 auto;}
+  .goal-card{background:var(--card);border:1px solid var(--line);border-radius:12px;padding:15px;margin-bottom:14px;}
+  .goal-big{font-size:26px;font-weight:700;}
 </style>
 </head>
 <body>
@@ -175,6 +211,10 @@
       <div class="h-sub">Охота за 500 000 000 сум</div>
     </div>
     <div class="h-rank" id="rank">Новобранец</div>
+    <div class="lang">
+      <button id="lang-ru" class="on" onclick="setLang('ru')">РУ</button>
+      <button id="lang-uz" onclick="setLang('uz')">UZ</button>
+    </div>
   </div>
   <div class="h-progress">
     <div class="h-pct-row">
@@ -186,8 +226,9 @@
 </header>
 
 <div class="tabs">
-  <button class="tab active" id="tab-map" onclick="switchTab('map')">🗺️ Карта охоты</button>
-  <button class="tab" id="tab-chat" onclick="switchTab('chat')">💬 Крестодатель</button>
+  <button class="tab active" id="tab-map" onclick="switchTab('map')">🗺️ <span data-t="tab_map">Карта</span></button>
+  <button class="tab" id="tab-dash" onclick="switchTab('dash')">📊 <span data-t="tab_dash">Дашборд</span></button>
+  <button class="tab" id="tab-chat" onclick="switchTab('chat')">💬 <span data-t="tab_chat">Крестодатель</span></button>
 </div>
 
 <main>
@@ -199,6 +240,35 @@
       <button onclick="askNext()">🧭 Какой квест следующий?</button>
       <button onclick="resetHunt()">↺ Сбросить охоту</button>
     </div>
+  </div>
+
+  <!-- DASHBOARD VIEW -->
+  <div class="view" id="dashView">
+    <div class="goal-card">
+      <div style="font-size:12px;color:var(--txt2);margin-bottom:4px;">ГЛАВНАЯ ЦЕЛЬ</div>
+      <div class="goal-big" style="color:var(--accent);">500 000 000 <span style="font-size:15px;color:var(--txt2);">сум/мес</span></div>
+      <div style="font-size:12.5px;color:var(--txt2);margin-top:6px;">Сейчас ~158М · нужно <b style="color:var(--txt);">~141 продажа/мес</b> при чеке 3,54М</div>
+      <div class="bar" style="margin-top:9px;"><div class="bar-fill" style="width:32%;"></div></div>
+      <div style="font-size:11px;color:var(--txt3);margin-top:5px;">32% пути к цели (по июню)</div>
+    </div>
+
+    <div class="dash-grid">
+      <div class="dcard"><div class="dl">Конверсия команды</div><div class="dv" style="color:var(--accent);">2,02%</div><div class="dh">контакт→продажа 3,33%</div></div>
+      <div class="dcard"><div class="dl">Средний чек</div><div class="dv">3,54<span style="font-size:14px;">М</span></div><div class="dh">реальные клиенты</div></div>
+      <div class="dcard"><div class="dl">Лиды теряются до контакта</div><div class="dv" style="color:var(--red);">57%</div><div class="dh">медиана дозвона 64ч</div></div>
+      <div class="dcard"><div class="dl">Маржа (июнь)</div><div class="dv" style="color:var(--green);">54%</div><div class="dh">ROAS таргета 18,6x</div></div>
+    </div>
+
+    <div class="dsect">⚔️ Конверсия по МОПам</div>
+    <div id="mopChart"></div>
+
+    <div class="dsect">🩸 Сквозная воронка</div>
+    <div id="funnelChart"></div>
+
+    <div class="foot" style="margin-top:14px;">
+      <button onclick="quickAsk('Обнови мои цифры в дашборде — я пришлю свежую выгрузку')">📤 Обновить по свежим данным</button>
+    </div>
+    <div style="font-size:11px;color:var(--txt3);margin-top:8px;line-height:1.5;">Цифры из аудита (июнь). Чтобы обновить — пришли свежую выгрузку Крестодателю во вкладке чата, он пересчитает.</div>
   </div>
 
   <!-- CHAT VIEW -->
@@ -215,7 +285,10 @@
       <button onclick="quickAsk('Покажи мои две главные дыры и сколько денег я на них теряю')">Где теряю деньги?</button>
       <button onclick="quickAsk('Дай план продаж на этот месяц по каждому МОПу')">План на месяц</button>
     </div>
+    <div class="file-chips" id="fileChips"></div>
     <div class="chat-input">
+      <input type="file" id="fileInput" accept=".pdf,.png,.jpg,.jpeg,.csv,.txt,image/*" multiple style="display:none;" onchange="handleFiles(this.files)" />
+      <button class="attach-btn" onclick="document.getElementById('fileInput').click()" aria-label="Прикрепить файл">📎</button>
       <textarea id="chatBox" rows="1" placeholder="Напиши Крестодателю..." oninput="autoGrow(this)"></textarea>
       <button class="send-btn" id="sendBtn" onclick="sendMsg()">➤</button>
     </div>
@@ -287,7 +360,7 @@ const SKEY='hunters_path_app_v1';
 let state = loadState();
 function loadState(){
   try{const s=JSON.parse(localStorage.getItem(SKEY));if(s&&s.done)return s;}catch(e){}
-  return {done:{},bosses:{},open:{},filter:'all',chat:[]};
+  return {done:{},bosses:{},open:{},filter:'all',chat:[],lang:'ru'};
 }
 function save(){try{localStorage.setItem(SKEY,JSON.stringify(state));}catch(e){}}
 
@@ -407,13 +480,85 @@ function resetHunt(){
 
 /* ===== TABS ===== */
 function switchTab(t){
-  document.getElementById('tab-map').classList.toggle('active',t==='map');
-  document.getElementById('tab-chat').classList.toggle('active',t==='chat');
+  ['map','dash','chat'].forEach(x=>{
+    document.getElementById('tab-'+x).classList.toggle('active',t===x);
+  });
   mapView.classList.toggle('active',t==='map');
+  document.getElementById('dashView').classList.toggle('active',t==='dash');
   const cv=document.getElementById('chatView');
   cv.classList.toggle('active',t==='chat');
   if(t==='chat'){renderChat();setTimeout(()=>{chatScroll.scrollTop=chatScroll.scrollHeight;},50);}
+  if(t==='dash'){renderDashboard();}
 }
+
+/* ===== DASHBOARD ===== */
+function renderDashboard(){
+  const mops=[
+    {n:'Komiljon',c:2.94,top:true},{n:'Samandar',c:2.99,top:true},
+    {n:'Abdulla-Legenda',c:1.54},{n:'Begoyim',c:1.18},{n:'Abulbositxon',c:1.08}
+  ];
+  const maxC=3.0;
+  document.getElementById('mopChart').innerHTML=mops.map(m=>`
+    <div class="mop-row">
+      <div class="mop-name">${m.n}</div>
+      <div class="mop-bar-wrap"><div class="mop-bar" style="width:${Math.round(m.c/maxC*100)}%;background:${m.top?'var(--green)':(m.c<1.3?'var(--red)':'var(--accent)')};"></div></div>
+      <div class="mop-val" style="color:${m.top?'var(--green)':(m.c<1.3?'var(--red)':'var(--txt)')};">${m.c}%</div>
+    </div>`).join('');
+
+  const funnel=[
+    {l:'Лиды (оплачено)',v:7542,p:100},
+    {l:'Контакт состоялся',v:3243,p:43},
+    {l:'Квалифицирован',v:2928,p:39},
+    {l:'Продано',v:108,p:1.4},
+  ];
+  document.getElementById('funnelChart').innerHTML=funnel.map(f=>`
+    <div class="funnel-row">
+      <div class="funnel-label">${f.l}</div>
+      <div class="funnel-bar-wrap"><div class="funnel-bar" style="width:${f.p}%;background:${f.p<5?'var(--green)':(f.p<50&&f.p>40?'var(--red)':'var(--accent)')};"></div></div>
+      <div class="funnel-val">${f.v.toLocaleString('ru')} · ${f.p}%</div>
+    </div>`).join('');
+}
+
+/* ===== LANGUAGE ===== */
+const I18N={
+  ru:{tab_map:'Карта',tab_dash:'Дашборд',tab_chat:'Крестодатель',ph:'Напиши Крестодателю...'},
+  uz:{tab_map:'Xarita',tab_dash:'Dashboard',tab_chat:'Ustoz',ph:'Ustozga yozing...'}
+};
+function setLang(l){
+  state.lang=l;save();
+  document.getElementById('lang-ru').classList.toggle('on',l==='ru');
+  document.getElementById('lang-uz').classList.toggle('on',l==='uz');
+  document.querySelectorAll('[data-t]').forEach(el=>{
+    const k=el.getAttribute('data-t'); if(I18N[l][k])el.textContent=I18N[l][k];
+  });
+  const box=document.getElementById('chatBox'); if(box)box.placeholder=I18N[l].ph;
+}
+
+/* ===== FILES ===== */
+let pendingFiles=[];
+function handleFiles(files){
+  for(const f of files){
+    if(f.size>10*1024*1024){alert('Файл '+f.name+' больше 10МБ — слишком большой.');continue;}
+    const reader=new FileReader();
+    reader.onload=()=>{
+      const b64=reader.result.split(',')[1];
+      let kind='other';
+      if(f.type.startsWith('image/'))kind='image';
+      else if(f.type==='application/pdf')kind='pdf';
+      else if(f.name.endsWith('.csv')||f.name.endsWith('.txt')||f.type.startsWith('text/'))kind='text';
+      pendingFiles.push({name:f.name,kind,mime:f.type||'text/plain',b64,
+        text: kind==='text' ? atob(b64) : null});
+      renderChips();
+    };
+    reader.readAsDataURL(f);
+  }
+  document.getElementById('fileInput').value='';
+}
+function renderChips(){
+  const c=document.getElementById('fileChips');
+  c.innerHTML=pendingFiles.map((f,i)=>`<div class="chip"><span>${f.kind==='image'?'🖼️':f.kind==='pdf'?'📄':'📊'} ${escapeHtml(f.name)}</span><button onclick="removeFile(${i})">✕</button></div>`).join('');
+}
+function removeFile(i){pendingFiles.splice(i,1);renderChips();}
 
 /* ===== CHAT ===== */
 function autoGrow(el){el.style.height='auto';el.style.height=Math.min(el.scrollHeight,120)+'px';}
@@ -431,23 +576,32 @@ function renderChat(){
     [...sc.querySelectorAll('.msg')].forEach(m=>m.remove());return;}
   chatEmpty.style.display='none';
   [...sc.querySelectorAll('.msg')].forEach(m=>m.remove());
-  state.chat.forEach(m=>appendMsgDom(m.role,m.text));
+  state.chat.forEach(m=>appendMsgDom(m.role,m.text,m.fileNames));
 }
-function appendMsgDom(role,text){
+function appendMsgDom(role,text,fileNames){
   const d=document.createElement('div');d.className='msg '+(role==='user'?'me':'k');
-  d.innerHTML=`<div class="m-ava ${role==='user'?'me':'k'}">${role==='user'?'🎯':'🏹'}</div><div class="m-bubble">${escapeHtml(text)}</div>`;
+  let filesHtml='';
+  if(fileNames&&fileNames.length){
+    filesHtml=fileNames.map(n=>`<div class="m-file">📎 ${escapeHtml(n)}</div>`).join('');
+  }
+  d.innerHTML=`<div class="m-ava ${role==='user'?'me':'k'}">${role==='user'?'🎯':'🏹'}</div><div class="m-bubble">${escapeHtml(text)}${filesHtml}</div>`;
   chatScroll.appendChild(d);
 }
-function escapeHtml(s){return s.replace(/[&<>]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;'}[c]));}
+function escapeHtml(s){return (s||'').replace(/[&<>]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;'}[c]));}
 
 let busy=false;
 async function sendMsg(){
   const box=document.getElementById('chatBox');
   const text=box.value.trim();
-  if(!text||busy)return;
+  if((!text&&!pendingFiles.length)||busy)return;
+
+  const filesForThis=pendingFiles.slice();
+  pendingFiles=[];renderChips();
   box.value='';box.style.height='auto';
-  state.chat.push({role:'user',text});save();
-  chatEmpty.style.display='none';appendMsgDom('user',text);
+
+  const fileNames=filesForThis.map(f=>f.name);
+  state.chat.push({role:'user',text:text||'(файл прикреплён)',files:filesForThis,fileNames});save();
+  chatEmpty.style.display='none';appendMsgDom('user',text||'(файл прикреплён)',fileNames);
   chatScroll.scrollTop=chatScroll.scrollHeight;
 
   busy=true;sendBtn.disabled=true;
@@ -456,10 +610,29 @@ async function sendMsg(){
   chatScroll.appendChild(typing);chatScroll.scrollTop=chatScroll.scrollHeight;
 
   try{
-    const apiMsgs=state.chat.slice(-14).map(m=>({role:m.role,content:m.text}));
+    // Build API messages. For history, send text only. For the latest, attach files as content blocks.
+    const hist=state.chat.slice(-14);
+    const apiMsgs=hist.map((m,idx)=>{
+      const isLast=idx===hist.length-1;
+      if(m.role==='user'&&isLast&&filesForThis.length){
+        const blocks=[];
+        for(const f of filesForThis){
+          if(f.kind==='image'){
+            blocks.push({type:'image',source:{type:'base64',media_type:f.mime,data:f.b64}});
+          }else if(f.kind==='pdf'){
+            blocks.push({type:'document',source:{type:'base64',media_type:'application/pdf',data:f.b64}});
+          }else if(f.kind==='text'&&f.text){
+            blocks.push({type:'text',text:'Файл «'+f.name+'»:\n\n'+f.text.slice(0,100000)});
+          }
+        }
+        blocks.push({type:'text',text:text||'Проанализируй приложенный файл по нашим правилам (исключи «своих» ≤1,6М, посчитай конверсию/чек/разбивку по МОПам).'});
+        return {role:'user',content:blocks};
+      }
+      return {role:m.role,content:m.text};
+    });
     const progress={doneCount:doneCount(),total:TOTAL,bossesDown:trophies()};
     const r=await fetch('/api/chat',{method:'POST',headers:{'content-type':'application/json'},
-      body:JSON.stringify({messages:apiMsgs,progress})});
+      body:JSON.stringify({messages:apiMsgs,progress,lang:state.lang||'ru'})});
     const data=await r.json();
     typing.remove();
     if(data.text){
@@ -479,6 +652,7 @@ document.getElementById('chatBox').addEventListener('keydown',e=>{
   if(e.key==='Enter'&&!e.shiftKey){e.preventDefault();sendMsg();}
 });
 
+if(state.lang==='uz')setLang('uz');
 renderHeader();renderStages();
 </script>
 </body>
