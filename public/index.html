@@ -268,8 +268,12 @@
     <div class="dsect">🩸 5 главных проблем (причины потерь)</div>
     <div id="problemsChart"></div>
 
+    <div class="dsect">⚡ Дисциплина МОПов (из событий amoCRM)</div>
+    <div id="disciplineChart"><div style="font-size:12px;color:var(--txt3);">Нажми «Обновить дисциплину» — это тяжёлый расчёт по событиям, идёт 20-40 сек.</div></div>
+
     <div class="foot" style="margin-top:14px;">
       <button id="syncBtn" onclick="syncNow()">🔄 Обновить из amoCRM</button>
+      <button id="syncSpeedBtn" onclick="syncSpeed()">⚡ Обновить дисциплину</button>
     </div>
     <div style="font-size:11px;color:var(--txt3);margin-top:8px;line-height:1.5;" id="dashNote">Нажми «Обновить из amoCRM» для первой загрузки живых данных. Дальше обновляется автоматически каждую ночь.</div>
   </div>
@@ -569,12 +573,61 @@ function applyLiveDash(d){
       <div class="mop-val">${p.count}</div>
     </div>`).join('')||'<div style="font-size:12px;color:var(--txt3);">Нет потерь за месяц 🎉</div>';
 
-  // Метка
-  const note=document.getElementById('dashNote');
-  if(note){
-    const dt=new Date(d.updatedAt);
-    note.textContent='🟢 Живые данные из amoCRM (воронка HunterAcademy) · обновлено '+dt.toLocaleString('ru',{day:'2-digit',month:'2-digit',hour:'2-digit',minute:'2-digit'})+' · «свои» исключены: '+t.ownExcluded;
+  // Дисциплина (если уже в кэше)
+  if(d.speed&&d.speed.mops)renderDiscipline(d.speed);
+}
+
+function fmtMin(m){
+  if(m==null)return '—';
+  if(m<60)return m+' мин';
+  if(m<60*24)return (m/60).toFixed(1).replace('.',',')+' ч';
+  return Math.round(m/60/24)+' дн';
+}
+function renderDiscipline(sp){
+  const mops=sp.mops||[];
+  if(!mops.length){document.getElementById('disciplineChart').innerHTML='<div style="font-size:12px;color:var(--txt3);">Нет данных за месяц</div>';return;}
+  document.getElementById('disciplineChart').innerHTML=mops.map(m=>{
+    const speedOk=m.medianFirstCallMin!=null&&m.medianFirstCallMin<=30;
+    const speedBad=m.medianFirstCallMin!=null&&m.medianFirstCallMin>180;
+    const persistOk=m.avgCallsPerLead>=3;
+    const haltBad=m.earlyClosePct>=30;
+    const taskOk=m.taskRate>=60;
+    const c=(ok,bad)=>ok?'var(--green)':(bad?'var(--red)':'var(--txt2)');
+    return `<div style="background:var(--card);border:1px solid var(--line);border-radius:10px;padding:11px 12px;margin-bottom:9px;">
+      <div style="font-size:14px;font-weight:600;margin-bottom:7px;">${escapeHtml(m.name)} <span style="font-size:11px;color:var(--txt3);font-weight:400;">· ${m.leads} лидов</span></div>
+      <div style="display:grid;grid-template-columns:1fr 1fr;gap:6px 12px;font-size:12px;">
+        <div>⚡ 1-й звонок: <b style="color:${c(speedOk,speedBad)}">${fmtMin(m.medianFirstCallMin)}</b></div>
+        <div>📞 Звонков/лид: <b style="color:${c(persistOk,m.avgCallsPerLead<2)}">${m.avgCallsPerLead}</b></div>
+        <div>🚩 Закрыл рано: <b style="color:${c(!haltBad,haltBad)}">${m.earlyClosePct}%</b></div>
+        <div>📋 Ставит задачи: <b style="color:${c(taskOk,m.taskRate<30)}">${m.taskRate}%</b></div>
+      </div>
+      ${haltBad?'<div style="font-size:11px;color:var(--red);margin-top:6px;">⚠️ Часто закрывает «не дозвонился» при &lt;3 звонках — проверь</div>':''}
+    </div>`;
+  }).join('');
+}
+
+let syncingSpeed=false;
+async function syncSpeed(){
+  if(syncingSpeed)return;
+  syncingSpeed=true;
+  const btn=document.getElementById('syncSpeedBtn');
+  const old=btn.textContent;btn.textContent='⏳ Считаю события (20-40 сек)...';btn.disabled=true;
+  document.getElementById('disciplineChart').innerHTML='<div style="font-size:12px;color:var(--txt3);">⏳ Тяну события из amoCRM, это долго...</div>';
+  try{
+    const r=await fetch('/api/sync-speed');
+    const d=await r.json();
+    if(d&&d.ok){
+      renderDiscipline(d);
+      btn.textContent='✅ Готово';
+    }else{
+      btn.textContent='⚠️ Ошибка';
+      document.getElementById('disciplineChart').innerHTML='<div style="font-size:12px;color:var(--red);">Ошибка: '+(d.error||'')+' '+(d.detail||'')+'</div>';
+    }
+  }catch(e){
+    btn.textContent='⚠️ Нет связи';
+    document.getElementById('disciplineChart').innerHTML='<div style="font-size:12px;color:var(--red);">Таймаут или нет связи. События — тяжёлый расчёт, попробуй ещё раз.</div>';
   }
+  setTimeout(()=>{btn.textContent=old;btn.disabled=false;syncingSpeed=false;},2500);
 }
 
 let syncing=false;
