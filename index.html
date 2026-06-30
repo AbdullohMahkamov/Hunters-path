@@ -1,0 +1,485 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no" />
+<meta name="theme-color" content="#0c2340" />
+<meta name="apple-mobile-web-app-capable" content="yes" />
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
+<meta name="apple-mobile-web-app-title" content="Hunter's Path" />
+<link rel="manifest" href="/manifest.json" />
+<link rel="apple-touch-icon" href="/icon-192.png" />
+<title>Hunter's Path — охота за 500М</title>
+<style>
+  :root{
+    --bg:#0b1622; --bg2:#10202f; --card:#14283b; --card2:#1a3147;
+    --line:#21405c; --line2:#2c5378;
+    --txt:#eaf2fb; --txt2:#9fb6cd; --txt3:#6f8aa4;
+    --accent:#3b9eff; --accent-bg:#16314b;
+    --gold:#f2b134; --gold-bg:#332813;
+    --green:#27c08a; --green-bg:#10312a;
+    --red:#ff6b6b; --red-bg:#3a1a1f;
+    --purple:#9b8cff;
+    --radius:12px;
+  }
+  *{box-sizing:border-box; -webkit-tap-highlight-color:transparent;}
+  html,body{margin:0; padding:0; background:var(--bg); color:var(--txt);
+    font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,sans-serif;
+    overscroll-behavior:none;}
+  body{display:flex; flex-direction:column; min-height:100vh; min-height:100dvh;}
+
+  /* HEADER */
+  header{padding:14px 16px 12px; background:var(--bg2); border-bottom:1px solid var(--line);
+    position:sticky; top:0; z-index:20;}
+  .h-top{display:flex; align-items:center; gap:11px;}
+  .h-logo{width:40px;height:40px;border-radius:11px;background:var(--accent-bg);
+    display:flex;align-items:center;justify-content:center;flex:0 0 auto;font-size:21px;}
+  .h-title{font-size:17px;font-weight:600;line-height:1.15;}
+  .h-sub{font-size:11.5px;color:var(--txt2);margin-top:1px;}
+  .h-rank{margin-left:auto;font-size:11px;font-weight:600;padding:4px 11px;border-radius:999px;
+    background:var(--gold-bg);color:var(--gold);white-space:nowrap;}
+  .h-progress{margin-top:11px;}
+  .h-pct-row{display:flex;align-items:baseline;gap:7px;font-size:12px;color:var(--txt2);}
+  .h-pct{font-size:22px;font-weight:700;color:var(--txt);}
+  .bar{height:8px;background:var(--bg);border-radius:999px;margin-top:7px;overflow:hidden;}
+  .bar-fill{height:100%;width:0%;background:linear-gradient(90deg,var(--accent),var(--green));
+    border-radius:999px;transition:width .6s cubic-bezier(.2,.7,.3,1);}
+
+  /* TABS */
+  .tabs{display:flex;gap:6px;padding:10px 16px 0;background:var(--bg2);}
+  .tab{flex:1;padding:9px;border-radius:10px 10px 0 0;text-align:center;font-size:13px;font-weight:600;
+    color:var(--txt2);background:transparent;cursor:pointer;border:none;display:flex;align-items:center;
+    justify-content:center;gap:6px;}
+  .tab.active{color:var(--txt);background:var(--bg);}
+
+  main{flex:1;overflow-y:auto;-webkit-overflow-scrolling:touch;}
+  .view{display:none;padding:14px 16px 90px;}
+  .view.active{display:block;}
+
+  /* FILTERS */
+  .filters{display:flex;gap:7px;flex-wrap:wrap;margin-bottom:12px;}
+  .fbtn{font-size:12px;padding:6px 12px;border-radius:999px;background:var(--card);
+    border:1px solid var(--line);color:var(--txt2);cursor:pointer;}
+  .fbtn.on{background:var(--accent);border-color:var(--accent);color:#fff;}
+
+  /* STAGE CARD */
+  .stage{background:var(--card);border:1px solid var(--line);border-radius:var(--radius);
+    margin-bottom:11px;overflow:hidden;}
+  .stage.done{border-color:var(--green);}
+  .stage.bossready{border-color:var(--accent);box-shadow:0 0 0 1px var(--accent);}
+  .s-head{display:flex;align-items:center;gap:11px;padding:13px 14px;cursor:pointer;}
+  .s-icon{width:38px;height:38px;border-radius:10px;flex:0 0 auto;display:flex;
+    align-items:center;justify-content:center;font-size:19px;background:var(--accent-bg);}
+  .stage.done .s-icon{background:var(--green-bg);}
+  .s-name{font-size:14.5px;font-weight:600;display:flex;align-items:center;gap:7px;flex-wrap:wrap;}
+  .s-sub{font-size:11.5px;color:var(--txt2);margin-top:2px;}
+  .s-chev{margin-left:auto;color:var(--txt3);font-size:15px;transition:transform .2s;flex:0 0 auto;}
+  .stage.open .s-chev{transform:rotate(180deg);}
+  .tag{font-size:10px;font-weight:700;padding:2px 8px;border-radius:999px;text-transform:uppercase;letter-spacing:.3px;}
+  .tag-dyra{background:var(--red-bg);color:var(--red);}
+  .tag-done{background:var(--green-bg);color:var(--green);}
+
+  .s-body{display:none;padding:0 14px 14px;}
+  .stage.open .s-body{display:block;}
+
+  .quest{display:flex;gap:11px;padding:11px 0;border-top:1px solid var(--line);align-items:flex-start;}
+  .qcheck{width:23px;height:23px;border-radius:7px;border:2px solid var(--line2);flex:0 0 auto;
+    display:flex;align-items:center;justify-content:center;cursor:pointer;margin-top:1px;font-size:14px;color:#fff;}
+  .qcheck.on{background:var(--green);border-color:var(--green);}
+  .q-main{flex:1;min-width:0;}
+  .q-t{font-size:14px;font-weight:600;line-height:1.3;}
+  .quest.done .q-t{color:var(--txt3);text-decoration:line-through;}
+  .q-d{font-size:12.5px;color:var(--txt2);line-height:1.5;margin-top:3px;}
+  .q-help{flex:0 0 auto;font-size:11px;padding:5px 10px;border-radius:8px;background:var(--accent-bg);
+    color:var(--accent);border:none;cursor:pointer;font-weight:600;white-space:nowrap;}
+
+  .locked-msg{font-size:12.5px;color:var(--txt3);padding:11px 0;display:flex;align-items:center;gap:7px;}
+
+  .boss{margin-top:13px;padding:13px;border-radius:10px;background:var(--bg);}
+  .boss.ready{background:var(--accent-bg);}
+  .boss.down{background:var(--green-bg);}
+  .boss-h{display:flex;align-items:center;gap:8px;margin-bottom:5px;font-size:13px;font-weight:700;color:var(--txt2);}
+  .boss.ready .boss-h{color:var(--accent);}
+  .boss.down .boss-h{color:var(--green);}
+  .boss-d{font-size:12.5px;color:var(--txt2);line-height:1.5;}
+  .boss-btn{margin-top:11px;width:100%;padding:11px;border-radius:9px;font-size:13.5px;font-weight:700;
+    border:none;cursor:pointer;background:var(--card2);color:var(--txt3);}
+  .boss-btn.ready{background:var(--accent);color:#fff;}
+  .boss-btn.locked{opacity:.5;cursor:not-allowed;}
+
+  /* CHAT */
+  #chatView{display:none;flex-direction:column;padding:0;height:100%;}
+  #chatView.active{display:flex;}
+  .chat-scroll{flex:1;overflow-y:auto;padding:16px 14px 16px;-webkit-overflow-scrolling:touch;}
+  .msg{margin-bottom:14px;display:flex;gap:9px;}
+  .msg.me{flex-direction:row-reverse;}
+  .m-ava{width:30px;height:30px;border-radius:9px;flex:0 0 auto;display:flex;align-items:center;
+    justify-content:center;font-size:15px;}
+  .m-ava.k{background:var(--accent-bg);}
+  .m-ava.me{background:var(--gold-bg);}
+  .m-bubble{max-width:80%;padding:10px 13px;border-radius:13px;font-size:14px;line-height:1.55;
+    white-space:pre-wrap;word-wrap:break-word;}
+  .msg.k .m-bubble{background:var(--card);border:1px solid var(--line);border-top-left-radius:4px;}
+  .msg.me .m-bubble{background:var(--accent);color:#fff;border-top-right-radius:4px;}
+  .typing{display:inline-flex;gap:4px;padding:4px 0;}
+  .typing span{width:7px;height:7px;border-radius:50%;background:var(--txt3);animation:bounce 1.2s infinite;}
+  .typing span:nth-child(2){animation-delay:.2s;}
+  .typing span:nth-child(3){animation-delay:.4s;}
+  @keyframes bounce{0%,60%,100%{transform:translateY(0);opacity:.5;}30%{transform:translateY(-5px);opacity:1;}}
+
+  .chat-input{display:flex;gap:8px;padding:10px 12px;background:var(--bg2);border-top:1px solid var(--line);
+    align-items:flex-end;}
+  .chat-input textarea{flex:1;background:var(--card);border:1px solid var(--line2);border-radius:11px;
+    color:var(--txt);font-size:14px;padding:10px 12px;resize:none;max-height:120px;font-family:inherit;
+    line-height:1.4;}
+  .chat-input textarea:focus{outline:none;border-color:var(--accent);}
+  .send-btn{width:42px;height:42px;border-radius:11px;background:var(--accent);border:none;color:#fff;
+    font-size:18px;cursor:pointer;flex:0 0 auto;display:flex;align-items:center;justify-content:center;}
+  .send-btn:disabled{opacity:.4;}
+
+  .chat-empty{text-align:center;padding:30px 20px;color:var(--txt2);}
+  .chat-empty .ce-icon{font-size:38px;margin-bottom:10px;}
+  .chat-empty h3{font-size:16px;color:var(--txt);margin:0 0 6px;font-weight:600;}
+  .chat-empty p{font-size:13px;line-height:1.6;margin:0;}
+
+  .quick{display:flex;gap:7px;padding:0 12px 10px;flex-wrap:wrap;background:var(--bg2);}
+  .quick button{font-size:11.5px;padding:7px 11px;border-radius:999px;background:var(--card);
+    border:1px solid var(--line);color:var(--txt2);cursor:pointer;}
+
+  /* footer actions */
+  .foot{display:flex;gap:8px;flex-wrap:wrap;margin-top:6px;}
+  .foot button{font-size:12.5px;padding:9px 13px;border-radius:9px;background:var(--card);
+    border:1px solid var(--line);color:var(--txt2);cursor:pointer;}
+
+  /* celebrate overlay */
+  .celebrate{position:fixed;inset:0;z-index:100;display:flex;align-items:center;justify-content:center;
+    background:rgba(4,10,18,.7);padding:24px;}
+  .cel-card{background:var(--card);border:2px solid var(--accent);border-radius:18px;padding:26px 24px;
+    max-width:340px;text-align:center;}
+  .cel-emoji{font-size:46px;margin-bottom:8px;}
+  .cel-title{font-size:19px;font-weight:700;margin-bottom:5px;}
+  .cel-sub{font-size:13px;color:var(--accent);font-weight:600;margin-bottom:9px;}
+  .cel-d{font-size:13px;color:var(--txt2);line-height:1.6;}
+  .cel-btn{margin-top:16px;width:100%;padding:12px;border-radius:10px;background:var(--accent);
+    border:none;color:#fff;font-size:14px;font-weight:700;cursor:pointer;}
+  .confetti{position:fixed;width:9px;height:9px;z-index:99;pointer-events:none;border-radius:2px;}
+</style>
+</head>
+<body>
+
+<header>
+  <div class="h-top">
+    <div class="h-logo">🏹</div>
+    <div style="min-width:0;">
+      <div class="h-title">Hunter's Path</div>
+      <div class="h-sub">Охота за 500 000 000 сум</div>
+    </div>
+    <div class="h-rank" id="rank">Новобранец</div>
+  </div>
+  <div class="h-progress">
+    <div class="h-pct-row">
+      <span class="h-pct" id="pct">0%</span>
+      <span>маршрута · <span id="doneN">0</span>/<span id="totalN">0</span> квестов · <span id="trophN">0</span> 🏆</span>
+    </div>
+    <div class="bar"><div class="bar-fill" id="bar"></div></div>
+  </div>
+</header>
+
+<div class="tabs">
+  <button class="tab active" id="tab-map" onclick="switchTab('map')">🗺️ Карта охоты</button>
+  <button class="tab" id="tab-chat" onclick="switchTab('chat')">💬 Крестодатель</button>
+</div>
+
+<main>
+  <!-- MAP VIEW -->
+  <div class="view active" id="mapView">
+    <div class="filters" id="filters"></div>
+    <div id="stages"></div>
+    <div class="foot">
+      <button onclick="askNext()">🧭 Какой квест следующий?</button>
+      <button onclick="resetHunt()">↺ Сбросить охоту</button>
+    </div>
+  </div>
+
+  <!-- CHAT VIEW -->
+  <div class="view" id="chatView">
+    <div class="chat-scroll" id="chatScroll">
+      <div class="chat-empty" id="chatEmpty">
+        <div class="ce-icon">🎯</div>
+        <h3>Крестодатель на связи</h3>
+        <p>Спрашивай что угодно про охоту за 500М. Я помню все твои цифры,<br>команду и конвейер. Жми «помощь» на любом квесте — попадёшь сюда с готовым разбором.</p>
+      </div>
+    </div>
+    <div class="quick" id="quickRow">
+      <button onclick="quickAsk('С какого квеста начать охоту?')">С чего начать?</button>
+      <button onclick="quickAsk('Покажи мои две главные дыры и сколько денег я на них теряю')">Где теряю деньги?</button>
+      <button onclick="quickAsk('Дай план продаж на этот месяц по каждому МОПу')">План на месяц</button>
+    </div>
+    <div class="chat-input">
+      <textarea id="chatBox" rows="1" placeholder="Напиши Крестодателю..." oninput="autoGrow(this)"></textarea>
+      <button class="send-btn" id="sendBtn" onclick="sendMsg()">➤</button>
+    </div>
+  </div>
+</main>
+
+<script>
+const STAGES = [
+  { id:1, name:'Логово трафика', sub:'Трафик → Лид', icon:'📡',
+    boss:'Босс: Связка-Одиночка', bossDesc:'49% лидов из одной связки. Победи зависимость от одного источника.',
+    reward:'🏹 Бейдж «Ловчий потоков» — связки больше не боятся бана',
+    quests:[
+      {id:'1a',t:'Разбить таргет на 3–4 параллельные связки',d:'Перелить часть бюджета из BOLLA OGANI в KARYERA (конвертит лучше) + тест 2 новых аудиторий.'},
+      {id:'1b',t:'Завести лист учёта связок',d:'Связка / CPL / лиды / продажи / конверсия / статус. Живёт, пока CPL ≤6000 и конверсия ≥1,8%.'},
+      {id:'1c',t:'5 новых селфи-крео в неделю',d:'Телефон, лайв, без студии. Офис, цифры заработка, профессия. Конкретные суммы, без понтов.'},
+      {id:'1d',t:'Запустить органику: 1 Reels в день',d:'Social Proof + Big Brother + Luxe Life. Греет аудиторию ДО звонка.'},
+      {id:'1e',t:'Нанять SMM-специалиста',d:'Критический bottleneck. Без выделенного человека контент-движок не поедет.'},
+    ]},
+  { id:2, name:'Ущелье молчания', sub:'Лид → Контакт', icon:'⚡', main:true,
+    boss:'Босс: Остывший Лид', bossDesc:'57% оплаченных лидов умирают без разговора. Медиана первого касания — 64 часа. Главный враг.',
+    reward:'⚡ Бейдж «Молниеносный» — дозвон взлетает с 43% до 75% (×1,7 контактов)',
+    quests:[
+      {id:'2a',t:'Salesbot: авто-ответ за 30 секунд',d:'Готовый текст (Mutaxassis, 150+ трудоустроены) → подключить к боту. Триггер «Сделка создана».'},
+      {id:'2b',t:'Регламент дозвона «5×48»',d:'1-й звонок ≤5 мин. Не взял — 5 попыток за 48ч в разное время суток, а не 3 подряд.'},
+      {id:'2c',t:'Закрывать «не дозвонились» только после 5 попыток',d:'РОП проверяет выборочно. Статус не ставится раньше.'},
+      {id:'2d',t:'Скорость касания → KPI каждого МОПа',d:'Метрика «время до 1-го касания» в дашборд. Норматив: медиана ≤5 мин.'},
+    ]},
+  { id:3, name:'Застава отбора', sub:'Контакт → Квалификация', icon:'🎯',
+    boss:'Босс: Хаос Карточек', bossDesc:'Поля заполняются как попало. Боль клиента не фиксируется. Наведи порядок.',
+    reward:'🎯 Бейдж «Дознаватель» — каждый разговор даёт чистые данные',
+    quests:[
+      {id:'3a',t:'Скрипт квалификации: 4 обязательных вопроса',d:'Доход сейчас / цель / чем занят / срочность + формат-бюджет. Разрыв доход→цель = сила боли.'},
+      {id:'3b',t:'Перевести поля amoCRM в списки',d:'Доход, цель, срочность, целевой/нет — выпадающие списки вместо свободного текста.'},
+      {id:'3c',t:'Сделать поля обязательными для перехода этапа',d:'Лид не идёт дальше, пока менеджер не заполнил квалификацию.'},
+      {id:'3d',t:'Критерий «нецелевой» + тег причины',d:'Обратная связь уходит в аналитику связок — какая аудитория даёт мусор.'},
+    ]},
+  { id:4, name:'Арена закрытия', sub:'Квалификация → Продажа', icon:'⚔️', main:true,
+    boss:'Босс: Разрыв 2,8х', bossDesc:'Ядро держит ~3%, нижняя тройка 1%. Метод топов не записан. «Дорого» лишь 4% — дело в навыке.',
+    reward:'⚔️ Бейдж «Мастер закрытия» — команда выходит на ~3% (+47% выручки)',
+    quests:[
+      {id:'4a',t:'Оцифровать метод Комильона в скрипт',d:'Прослушать 15–20 его звонков. Как открывает, работает с ценой, закрывает, продаёт допы (чек 4,18М).'},
+      {id:'4b',t:'Комильон — наставник: 2 разбора в неделю',d:'С нижней тройкой. Доплатить за роль — дешевле тренера.'},
+      {id:'4c',t:'Перебалансировать раздачу лидов по конверсии',d:'Abulbositxon (1107 лидов / 1,08%) — снизить поток, отдать ядру.'},
+      {id:'4d',t:'План в продажах каждому МОПу + утренняя планёрка',d:'«25 лидов × 2,5% = 6 продаж/неделю». 15 мин утром: цифры, задачи, разбор 1 сделки.'},
+      {id:'4e',t:'Привязать зарплату к конверсии и чеку',d:'Не только к объёму — чтобы не сливали лиды и не давали лишних скидок.'},
+    ]},
+  { id:5, name:'Сад терпения', sub:'Догрев «отложенных»', icon:'🌱',
+    boss:'Босс: Забытое «Подумаю»', bossDesc:'433 готовых лида в «подумаю позже» испаряются. Системы возврата нет. Верни их.',
+    reward:'🌱 Бейдж «Садовник сделок» — 15% отложенных превращаются в деньги',
+    quests:[
+      {id:'5a',t:'Отдельная воронка «Догрев» в amoCRM',d:'«Keyinroq» не закрывает сделку, а переводит в догрев с задачей «перезвонить через 7 дней».'},
+      {id:'5b',t:'Цепочка касаний по дням',d:'День 1 — видео выпускника · день 3 — кусок обучения · день 7 — звонок · день 14 — дедлайн группы.'},
+      {id:'5c',t:'Ежемесячная реактивация старой базы',d:'Рассылка по закрытым лидам с новым оффером. Бесплатный трафик.'},
+    ]},
+  { id:6, name:'Сокровищница', sub:'Оплата → Маржа', icon:'💎',
+    boss:'Босс: Грязная Отчётность', bossDesc:'21% «продаж» — свои/бартер, они искажают конверсию и мотивацию. Очисти казну.',
+    reward:'💎 Бейдж «Хранитель казны» — чистые цифры и рост среднего чека',
+    quests:[
+      {id:'6a',t:'Тег «свои/бартер» — убрать из отчётности',d:'Внутренние сделки не в конверсию и мотивацию. Дашборды — только по коммерции.'},
+      {id:'6b',t:'Дисциплина скидок через РОПа',d:'Поле «Скидка» + обязательное «Кто одобрил». «Дорого» лишь 4% — скидка это исключение.'},
+      {id:'6c',t:'Рост чека: апсейл Комильона + рассрочка',d:'Его +1млн к чеку разобрать и раздать всем. Halol nasiya закрывает «нет денег сейчас».'},
+    ]},
+];
+const RANKS=[[0,'Новобранец'],[10,'Следопыт'],[25,'Ловчий'],[45,'Охотник'],[65,'Старший Охотник'],[85,'Мастер Охоты'],[100,'Легенда Hunter']];
+const ALL_QUESTS = STAGES.flatMap(s=>s.quests.map(q=>q.id));
+const TOTAL = ALL_QUESTS.length;
+const SKEY='hunters_path_app_v1';
+
+let state = loadState();
+function loadState(){
+  try{const s=JSON.parse(localStorage.getItem(SKEY));if(s&&s.done)return s;}catch(e){}
+  return {done:{},bosses:{},open:{},filter:'all',chat:[]};
+}
+function save(){try{localStorage.setItem(SKEY,JSON.stringify(state));}catch(e){}}
+
+function stageDone(s){return s.quests.every(q=>state.done[q.id]);}
+function stageUnlocked(idx){return idx===0||stageDone(STAGES[idx-1]);}
+function doneCount(){return ALL_QUESTS.filter(id=>state.done[id]).length;}
+function trophies(){return STAGES.filter(s=>state.bosses[s.id]).length;}
+function rankFor(p){let r='Новобранец';RANKS.forEach(([m,n])=>{if(p>=m)r=n;});return r;}
+
+function renderHeader(){
+  const d=doneCount(),p=Math.round(d/TOTAL*100);
+  pct.textContent=p+'%';bar.style.width=p+'%';
+  doneN.textContent=d;totalN.textContent=TOTAL;trophN.textContent=trophies();
+  rank.textContent=rankFor(p);
+}
+
+function renderFilters(){
+  const F=[['all','Все'],['active','В работе'],['locked','Под замком'],['done','Покорённые']];
+  filters.innerHTML='';
+  F.forEach(([id,l])=>{
+    const b=document.createElement('button');b.className='fbtn'+(state.filter===id?' on':'');
+    b.textContent=l;b.onclick=()=>{state.filter=id;save();renderStages();};
+    filters.appendChild(b);
+  });
+}
+
+function renderStages(){
+  renderFilters();
+  const wrap=stages;wrap.innerHTML='';
+  STAGES.forEach((s,idx)=>{
+    const unlocked=stageUnlocked(idx),sdone=stageDone(s),cnt=s.quests.filter(q=>state.done[q.id]).length;
+    const bossReady=sdone&&!state.bosses[s.id];
+    if(state.filter==='active'&&(sdone||!unlocked))return;
+    if(state.filter==='locked'&&unlocked)return;
+    if(state.filter==='done'&&!sdone)return;
+
+    const card=document.createElement('div');
+    card.className='stage'+(sdone?' done':'')+(bossReady?' bossready':'')+(state.open[s.id]?' open':'');
+    const prev=idx>0?STAGES[idx-1]:null;
+
+    let body='';
+    if(!unlocked){
+      body=`<div class="locked-msg">🔒 Закрой этап ${prev.id} «${prev.name}», чтобы открыть эти квесты.</div>`;
+    }else{
+      s.quests.forEach(q=>{
+        const on=!!state.done[q.id];
+        body+=`<div class="quest${on?' done':''}">
+          <div class="qcheck${on?' on':''}" onclick="toggleQuest('${q.id}',event)">${on?'✓':''}</div>
+          <div class="q-main"><div class="q-t">${q.t}</div><div class="q-d">${q.d}</div></div>
+          <button class="q-help" onclick="helpQuest('${q.id}')">помощь</button>
+        </div>`;
+      });
+      const bdown=!!state.bosses[s.id];
+      body+=`<div class="boss${bdown?' down':(sdone?' ready':'')}">
+        <div class="boss-h">${bdown?'🏆':(sdone?'⚔️':'💀')} ${s.boss}</div>
+        <div class="boss-d">${bdown?'ПОВЕРЖЕН! '+s.reward:s.bossDesc}</div>
+        ${bdown?'':`<button class="boss-btn ${sdone?'ready':'locked'}" ${sdone?`onclick="fightBoss(${s.id})"`:'disabled'}>${sdone?'⚔️ Сразить босса':'🔒 Закрой все квесты этапа'}</button>`}
+      </div>`;
+    }
+
+    card.innerHTML=`
+      <div class="s-head" onclick="toggleStage(${s.id})">
+        <div class="s-icon">${unlocked?s.icon:'🔒'}</div>
+        <div style="min-width:0;">
+          <div class="s-name">Этап ${s.id} · ${s.name}
+            ${s.main?'<span class="tag tag-dyra">главная дыра</span>':''}
+            ${sdone?'<span class="tag tag-done">покорён</span>':''}
+          </div>
+          <div class="s-sub">${s.sub} · ${cnt}/${s.quests.length} квестов</div>
+        </div>
+        <div class="s-chev">▾</div>
+      </div>
+      <div class="s-body">${body}</div>`;
+    wrap.appendChild(card);
+  });
+}
+
+function toggleStage(id){state.open[id]=!state.open[id];save();renderStages();}
+function toggleQuest(id,e){e.stopPropagation();state.done[id]=!state.done[id];save();renderHeader();renderStages();}
+function fightBoss(id){
+  state.bosses[id]=true;save();
+  const s=STAGES.find(x=>x.id===id);
+  const all=doneCount()===TOTAL&&trophies()===STAGES.length;
+  celebrate(s,all);renderHeader();renderStages();
+}
+
+function celebrate(s,all){
+  const ov=document.createElement('div');ov.className='celebrate';
+  ov.innerHTML=`<div class="cel-card">
+    <div class="cel-emoji">${all?'👑':'🏆'}</div>
+    <div class="cel-title">${all?'ЛЕГЕНДА HUNTER':'Босс повержен!'}</div>
+    ${all?'':`<div class="cel-sub">${s.name} покорён</div>`}
+    <div class="cel-d">${all?'Ты прошёл весь маршрут. Все 6 боссов повержены, конвейер собран. Машина настроена на 500М. Чистая работа, авантюрист. 🏆':s.reward}</div>
+    <button class="cel-btn" onclick="this.closest('.celebrate').remove()">${all?'Завершить охоту':'Дальше на охоту'}</button>
+  </div>`;
+  document.body.appendChild(ov);
+  confetti();
+}
+function confetti(){
+  const cols=['#3b9eff','#27c08a','#f2b134','#9b8cff','#ff6b6b'];
+  for(let i=0;i<46;i++){
+    const c=document.createElement('div');c.className='confetti';
+    const sz=6+Math.random()*7;c.style.width=sz+'px';c.style.height=sz+'px';
+    c.style.background=cols[i%5];c.style.left=(50)+'%';c.style.top='40%';
+    document.body.appendChild(c);
+    const ang=Math.random()*Math.PI*2,dist=90+Math.random()*220;
+    const dx=Math.cos(ang)*dist,dy=Math.sin(ang)*dist;
+    c.animate([{transform:'translate(0,0) rotate(0)',opacity:1},{transform:`translate(${dx}px,${dy+300}px) rotate(${540*Math.random()}deg)`,opacity:0}],{duration:1200+Math.random()*600,easing:'cubic-bezier(.2,.6,.3,1)'}).onfinish=()=>c.remove();
+  }
+}
+
+function resetHunt(){
+  if(confirm('Сбросить весь прогресс охоты? Это нельзя отменить.')){
+    state={done:{},bosses:{},open:{},filter:'all',chat:state.chat};save();renderHeader();renderStages();
+  }
+}
+
+/* ===== TABS ===== */
+function switchTab(t){
+  document.getElementById('tab-map').classList.toggle('active',t==='map');
+  document.getElementById('tab-chat').classList.toggle('active',t==='chat');
+  mapView.classList.toggle('active',t==='map');
+  const cv=document.getElementById('chatView');
+  cv.classList.toggle('active',t==='chat');
+  if(t==='chat'){renderChat();setTimeout(()=>{chatScroll.scrollTop=chatScroll.scrollHeight;},50);}
+}
+
+/* ===== CHAT ===== */
+function autoGrow(el){el.style.height='auto';el.style.height=Math.min(el.scrollHeight,120)+'px';}
+function quickAsk(t){switchTab('chat');document.getElementById('chatBox').value=t;sendMsg();}
+function askNext(){switchTab('chat');quickAsk('Я прошёл '+doneCount()+' из '+TOTAL+' квестов. Какой квест взять следующим и почему именно он даст максимальный рост к 500М? Дай один конкретный квест на сегодня.');}
+function helpQuest(id){
+  let q,st;STAGES.forEach(s=>s.quests.forEach(x=>{if(x.id===id){q=x;st=s;}}));
+  switchTab('chat');
+  quickAsk('Помоги выполнить квест «'+q.t+'» (этап '+st.id+', '+st.sub+'). Дай конкретные пошаговые действия и готовые материалы, чтобы я закрыл его сегодня.');
+}
+
+function renderChat(){
+  const sc=chatScroll;
+  if(!state.chat.length){chatEmpty.style.display='block';
+    [...sc.querySelectorAll('.msg')].forEach(m=>m.remove());return;}
+  chatEmpty.style.display='none';
+  [...sc.querySelectorAll('.msg')].forEach(m=>m.remove());
+  state.chat.forEach(m=>appendMsgDom(m.role,m.text));
+}
+function appendMsgDom(role,text){
+  const d=document.createElement('div');d.className='msg '+(role==='user'?'me':'k');
+  d.innerHTML=`<div class="m-ava ${role==='user'?'me':'k'}">${role==='user'?'🎯':'🏹'}</div><div class="m-bubble">${escapeHtml(text)}</div>`;
+  chatScroll.appendChild(d);
+}
+function escapeHtml(s){return s.replace(/[&<>]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;'}[c]));}
+
+let busy=false;
+async function sendMsg(){
+  const box=document.getElementById('chatBox');
+  const text=box.value.trim();
+  if(!text||busy)return;
+  box.value='';box.style.height='auto';
+  state.chat.push({role:'user',text});save();
+  chatEmpty.style.display='none';appendMsgDom('user',text);
+  chatScroll.scrollTop=chatScroll.scrollHeight;
+
+  busy=true;sendBtn.disabled=true;
+  const typing=document.createElement('div');typing.className='msg k';
+  typing.innerHTML='<div class="m-ava k">🏹</div><div class="m-bubble"><div class="typing"><span></span><span></span><span></span></div></div>';
+  chatScroll.appendChild(typing);chatScroll.scrollTop=chatScroll.scrollHeight;
+
+  try{
+    const apiMsgs=state.chat.slice(-14).map(m=>({role:m.role,content:m.text}));
+    const progress={doneCount:doneCount(),total:TOTAL,bossesDown:trophies()};
+    const r=await fetch('/api/chat',{method:'POST',headers:{'content-type':'application/json'},
+      body:JSON.stringify({messages:apiMsgs,progress})});
+    const data=await r.json();
+    typing.remove();
+    if(data.text){
+      state.chat.push({role:'assistant',text:data.text});save();
+      appendMsgDom('assistant',data.text);
+    }else{
+      appendMsgDom('assistant','⚠️ Крестодатель не ответил: '+(data.error||'неизвестная ошибка')+(data.detail?('\n'+data.detail):''));
+    }
+  }catch(e){
+    typing.remove();
+    appendMsgDom('assistant','⚠️ Нет связи с сервером. Проверь, что приложение задеплоено и ключ API настроен.');
+  }
+  chatScroll.scrollTop=chatScroll.scrollHeight;
+  busy=false;sendBtn.disabled=false;
+}
+document.getElementById('chatBox').addEventListener('keydown',e=>{
+  if(e.key==='Enter'&&!e.shiftKey){e.preventDefault();sendMsg();}
+});
+
+renderHeader();renderStages();
+</script>
+</body>
+</html>
