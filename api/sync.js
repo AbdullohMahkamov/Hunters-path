@@ -43,6 +43,9 @@ export default async function handler(req, res) {
 
   const now = new Date();
   const monthStart = Math.floor(new Date(now.getFullYear(), now.getMonth(), 1).getTime() / 1000);
+  // Тянем лиды, созданные за последние 120 дней, чтобы поймать старые лиды, закрывшиеся в этом месяце.
+  // Продажи считаем по дате ЗАКРЫТИЯ (closed_at) в этом месяце. Объём лидов — по created_at в этом месяце.
+  const lookbackStart = monthStart - 120 * 24 * 3600;
 
   try {
     // 1) Статусы воронки HunterAcademy: id -> name, + id самой воронки
@@ -73,12 +76,12 @@ export default async function handler(req, res) {
       for (const x of ((ld._embedded && ld._embedded.loss_reasons) || [])) lossName[x.id] = x.name;
     }
 
-    // 3) Тянем сделки воронки HunterAcademy за текущий месяц (постранично)
+    // 3) Тянем сделки воронки HunterAcademy за последние 120 дней (чтобы поймать закрытия этого месяца)
     let all = [], page = 1, guard = 0;
-    while (guard < 80) {
+    while (guard < 120) {
       guard++;
       let url = `https://${SUBDOMAIN}.amocrm.ru/api/v4/leads?limit=250&page=${page}` +
-        `&with=loss_reason&filter[created_at][from]=${monthStart}`;
+        `&with=loss_reason&filter[created_at][from]=${lookbackStart}`;
       if (pipelineId) url += `&filter[pipeline_id]=${pipelineId}`;
       const r = await fetch(url, { headers: { Authorization: `Bearer ${token}` } });
       if (r.status === 204) break;
@@ -88,12 +91,12 @@ export default async function handler(req, res) {
       all = all.concat(leads);
       if (leads.length < 250) break;
       page++;
-      await new Promise((rs) => setTimeout(rs, 180));
+      await new Promise((rs) => setTimeout(rs, 160));
     }
 
-    // 4) Считаем
-    let sold = 0, soldSum = 0, ownExcluded = 0, noContact = 0, contacted = 0;
-    const lossCount = {};                 // причина -> кол-во
+    // 4) Считаем. ПРОДАЖИ — по дате закрытия (closed_at) в этом месяце. ЛИДЫ — по дате создания в этом месяце.
+    let sold = 0, soldSum = 0, ownExcluded = 0, noContact = 0;
+    const lossCount = {};                 // причина -> кол-во (по закрытым в этом месяце)
     const byMop = {};                     // name -> {leads, sold, revenue, noContact}
 
     for (const L of all) {
@@ -103,28 +106,31 @@ export default async function handler(req, res) {
       const isOwn = isSold && price <= OWN_THRESHOLD;
       if (isOwn) { ownExcluded++; continue; }
 
-      // только действующие МОПы
       const mop = ACTIVE_MOPS[L.responsible_user_id];
       if (!mop) continue;
-
       if (!byMop[mop]) byMop[mop] = { leads: 0, sold: 0, revenue: 0, noContact: 0 };
-      byMop[mop].leads++;
 
-      if (isSold) {
-        sold++; soldSum += price; byMop[mop].sold++; byMop[mop].revenue += price;
-        contacted++;
-      } else if (stName === CLOSED_LOST) {
-        // причина отказа
-        let reason = "";
-        const lossId = L.loss_reason_id || (L._embedded && L._embedded.loss_reason && L._embedded.loss_reason[0] && L._embedded.loss_reason[0].id);
-        if (lossId && lossName[lossId]) reason = lossName[lossId];
-        if (reason) { lossCount[reason] = (lossCount[reason] || 0) + 1; }
-        if (NO_CONTACT_REASONS.has(reason)) { noContact++; byMop[mop].noContact++; }
-        else { contacted++; }
-      } else if (NO_CONTACT_STAGES.has(stName)) {
-        noContact++; byMop[mop].noContact++;
-      } else {
-        contacted++; // в работе / квалифицирован — контакт был
+      const createdThisMonth = (L.created_at || 0) >= monthStart;
+      const closedThisMonth = (L.closed_at || 0) >= monthStart;
+
+      // Объём лидов и проблемы дозвона — по лидам, созданным в этом месяце
+      if (createdThisMonth) {
+        byMop[mop].leads++;
+        if (stName === CLOSED_LOST) {
+          let reason = "";
+          const lossId = L.loss_reason_id || (L._embedded && L._embedded.loss_reason && L._embedded.loss_reason[0] && L._embedded.loss_reason[0].id);
+          if (lossId && lossName[lossId]) reason = lossName[lossId];
+          if (reason) lossCount[reason] = (lossCount[reason] || 0) + 1;
+          if (NO_CONTACT_REASONS.has(reason)) { noContact++; byMop[mop].noContact++; }
+        } else if (NO_CONTACT_STAGES.has(stName)) {
+          noContact++; byMop[mop].noContact++;
+        }
+      }
+
+      // Продажи и выручка — по сделкам, ЗАКРЫТЫМ (проданным) в этом месяце, независимо когда создан лид
+      if (isSold && closedThisMonth) {
+        sold++; soldSum += price;
+        byMop[mop].sold++; byMop[mop].revenue += price;
       }
     }
 
