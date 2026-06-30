@@ -490,7 +490,7 @@ function switchTab(t){
   document.getElementById('dashView').classList.toggle('active',t==='dash');
   const cv=document.getElementById('chatView');
   cv.classList.toggle('active',t==='chat');
-  if(t==='chat'){renderChat();setTimeout(()=>{chatScroll.scrollTop=chatScroll.scrollHeight;},50);}
+  if(t==='chat'){renderChat();scrollChatBottom();}
   if(t==='dash'){renderDashboard();}
 }
 
@@ -659,6 +659,14 @@ function renderChat(){
   chatEmpty.style.display='none';
   [...sc.querySelectorAll('.msg')].forEach(m=>m.remove());
   state.chat.forEach(m=>appendMsgDom(m.role,m.text,m.fileNames));
+}
+function scrollChatBottom(){
+  // несколько попыток: сразу, после раскладки кадра, и с запасом — чтобы попасть на последнее сообщение
+  const jump=()=>{chatScroll.scrollTop=chatScroll.scrollHeight;};
+  jump();
+  requestAnimationFrame(()=>{jump();requestAnimationFrame(jump);});
+  setTimeout(jump,120);
+  setTimeout(jump,350);
 }
 function appendMsgDom(role,text,fileNames){
   const d=document.createElement('div');d.className='msg '+(role==='user'?'me':'k');
