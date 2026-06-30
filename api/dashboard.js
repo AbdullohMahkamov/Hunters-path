@@ -1,23 +1,23 @@
-// /api/dashboard.js — отдаёт готовый кэш дашборда из Upstash (быстро, без обращения к amoCRM).
+// /api/dashboard.js — отдаёт кэш дашборда + кэш скорости/дисциплины из Upstash.
 export default async function handler(req, res) {
-  const redisUrl = process.env.UPSTASH_REDIS_REST_URL;
-  const redisToken = process.env.UPSTASH_REDIS_REST_TOKEN;
-  if (!redisUrl || !redisToken) { res.status(500).json({ error: "Upstash env not set" }); return; }
+  const url = process.env.UPSTASH_REDIS_REST_URL;
+  const token = process.env.UPSTASH_REDIS_REST_TOKEN;
+  if (!url || !token) { res.status(500).json({ error: "Upstash env not set" }); return; }
+
+  async function getKey(key){
+    try{
+      const r=await fetch(`${url}/get/${key}`,{headers:{Authorization:`Bearer ${token}`}});
+      const d=await r.json();
+      if(!d||d.result==null) return null;
+      return JSON.parse(d.result);
+    }catch(e){ return null; }
+  }
 
   try {
-    const r = await fetch(`${redisUrl}/get/dashboard`, {
-      headers: { Authorization: `Bearer ${redisToken}` },
-    });
-    const data = await r.json();
-    // Upstash возвращает {result: "<строка JSON>"} или {result: null}
-    if (!data || data.result == null) {
-      res.status(200).json({ empty: true });
-      return;
-    }
-    let parsed;
-    try { parsed = JSON.parse(data.result); } catch (e) { parsed = null; }
-    if (!parsed) { res.status(200).json({ empty: true }); return; }
-    res.status(200).json(parsed);
+    const dash = await getKey("dashboard");
+    const speed = await getKey("speed");
+    if (!dash) { res.status(200).json({ empty: true, speed }); return; }
+    res.status(200).json({ ...dash, speed });
   } catch (err) {
     res.status(500).json({ error: "Dashboard read failed", detail: String(err) });
   }
