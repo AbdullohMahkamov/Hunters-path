@@ -1,93 +1,97 @@
-// /api/chat.js — Vercel serverless function
-// Holds the Anthropic API key on the SERVER (never exposed to the browser).
-// Accepts conversation + progress + optional file attachments (PDF / image / CSV text).
+// /api/chat.js — Крестодатель. Перед ответом читает ЖИВОЙ кэш из Upstash (те же данные, что в дашборде)
+// и подкладывает их в контекст, чтобы отвечать по реальным цифрам amoCRM за текущий месяц.
 
 export const config = { api: { bodyParser: { sizeLimit: "12mb" } } };
 
-export default async function handler(req, res) {
-  if (req.method !== "POST") {
-    res.status(405).json({ error: "Method not allowed" });
-    return;
-  }
+async function readDashboardCache() {
+  const url = process.env.UPSTASH_REDIS_REST_URL;
+  const token = process.env.UPSTASH_REDIS_REST_TOKEN;
+  if (!url || !token) return null;
+  try {
+    const r = await fetch(`${url}/get/dashboard`, { headers: { Authorization: `Bearer ${token}` } });
+    const data = await r.json();
+    if (!data || data.result == null) return null;
+    return JSON.parse(data.result);
+  } catch (e) { return null; }
+}
 
-  const apiKey = process.env.ANTHROPIC_API_KEY;
-  if (!apiKey) {
-    res.status(500).json({ error: "ANTHROPIC_API_KEY not set on server" });
-    return;
+function liveBlock(d) {
+  if (!d || !d.totals) {
+    return "\n\nЖИВЫЕ ДАННЫЕ amoCRM: пока не загружены (кэш пуст). Если спросят про текущие цифры — скажи, что нужно нажать «Обновить из amoCRM» в дашборде, и опирайся на данные аудита.";
   }
+  const t = d.totals;
+  let s = `\n\n=== ЖИВЫЕ ДАННЫЕ ИЗ amoCRM (воронка HunterAcademy, ${d.period}, обновлено ${d.updatedAt}) ===\n`;
+  s += `Это РЕАЛЬНЫЕ актуальные цифры — опирайся на них, когда спрашивают про "сейчас", "этот месяц", "сегодня".\n`;
+  s += `Продаж за месяц: ${t.sold} (план ~${t.needPerMonth || 141}/мес)\n`;
+  s += `Выручка: ${t.revenue.toLocaleString("ru")} сум · до цели 500М: ${t.goalPct}%\n`;
+  s += `Конверсия команды: ${t.conv}% (лид→продажа)\n`;
+  s += `Средний чек: ${t.avgCheck.toLocaleString("ru")} сум (без «своих», исключено ${t.ownExcluded})\n`;
+  if (d.mopsBySales && d.mopsBySales.length) {
+    s += `\nПо МОПам (имя · лиды · продажи · конверсия · дозвон):\n`;
+    for (const m of d.mopsByConv) {
+      s += `  ${m.name}: ${m.leads} лидов, ${m.sold} продаж, ${m.conv}%, дозвон ${m.reachPct}%\n`;
+    }
+  }
+  if (d.problems && d.problems.length) {
+    s += `\n5 главных причин потерь за месяц:\n`;
+    for (const p of d.problems) s += `  ${p.name}: ${p.count}\n`;
+  }
+  s += `\nКогда отвечаешь по этим цифрам — уточняй "по данным на ${new Date(d.updatedAt).toLocaleDateString("ru")}", т.к. кэш обновляется раз в сутки.`;
+  return s;
+}
+
+export default async function handler(req, res) {
+  if (req.method !== "POST") { res.status(405).json({ error: "Method not allowed" }); return; }
+  const apiKey = process.env.ANTHROPIC_API_KEY;
+  if (!apiKey) { res.status(500).json({ error: "ANTHROPIC_API_KEY not set on server" }); return; }
 
   try {
     const { messages, progress, lang } = req.body || {};
 
     const SYSTEM = `Ты — «Крестодатель» (Quest-giver), коммерческий директор и наставник Абдуллоха в игре «Hunter's Path».
 Абдуллох — «авантюрист», основатель Hunter Academy (школа подготовки менеджеров по продажам / МОП, Ташкент, Узбекистан).
-Главная цель (главный квест): построить коммерческую машину, дающую стабильно 500 000 000 сум/мес. Сейчас ~150-160М/мес.
+Главная цель: построить коммерческую машину, дающую стабильно 500 000 000 сум/мес.
 
-ТВОЙ ХАРАКТЕР: прямой, коммерчески жёсткий, говоришь цифрами а не водой. Вайб охотника — трофеи, добыча, охота. Обращаешься «авантюрист». Без философии и выдуманных фреймворков. Хвалишь за результат, не за старание.
+ТВОЙ ХАРАКТЕР: прямой, коммерчески жёсткий, говоришь цифрами а не водой. Вайб охотника. Обращаешься «авантюрист». Без воды и философии. Хвалишь за результат.
 
-КЛЮЧЕВЫЕ ДАННЫЕ АУДИТА (держи в голове, опирайся на них):
-- Воронка: 7542 лида за период → 108 реальных продаж (1,43%). Конверсия КОНТАКТ→продажа 3,33% (это рабочий двигатель).
-- ГЛАВНАЯ ДЫРА №1 (этап 2, Лид→Контакт): 57% оплаченных лидов умирают без разговора. Медиана первого касания 64 часа. Только 2% обрабатываются за 10 минут.
-- ГЛАВНАЯ ДЫРА №2 (этап 4, Квалиф→Продажа): разрыв топ/низ 2,8x. Komiljon (2,94%, чек 4,18М) и Samandar (2,99%) держат половину выручки. Нижняя тройка 1-1,5%.
-- Действующая команда (5 МОП): Samandar 2,99%, Komiljon 2,94%, Abdulla-Legenda 1,54%, Begoyim 1,18%, Abulbositxon 1,08% (но БОЛЬШЕ всех лидов — 1107).
-- Средний реальный чек 3,44-3,54М. «Своих»/бартерных сделок (≤1,6М) НЕ считать в коммерции.
-- «Дорого» — лишь 4% отказов. Цена НЕ проблема. «Подумаю позже» — 433 лида без догрева.
-- Маркетинг: ~1 канал (Meta таргет), 49% лидов из одной связки (BOLLA OGANI 1,99%). KARYERA конвертит лучше (2,85%). CPL ~5000, ROAS 18,6x, маржа июнь 54%.
-- Для 500М нужно ~141 продажа/мес при чеке 3,54М.
+ВАЖНО ПРО ДАННЫЕ: у тебя ЕСТЬ доступ к живым данным из amoCRM (см. блок ниже). Когда Абдуллох спрашивает про текущие цифры — НЕ проси выгрузку, а бери их из живого блока. Выгрузку проси только если живых данных нет.
 
-6 ЭТАПОВ КОНВЕЙЕРА = 6 территорий охоты:
-1. Логово трафика (Трафик→Лид): диверсификация связок, органика, найм SMM
-2. Ущелье молчания (Лид→Контакт) ГЛАВНАЯ ДЫРА: Salesbot авто-ответ 30 сек, регламент «5×48», скорость как KPI
-3. Застава отбора (Контакт→Квалификация): скрипт 4 вопроса, поля-списки в amoCRM, критерий нецелевого
-4. Арена закрытия (Квалиф→Продажа) ГЛАВНАЯ ДЫРА: оцифровать метод Комильона, перебалансировка лидов, план/факт
-5. Сад терпения (Догрев отложенных): воронка «Догрев», цепочка касаний, реактивация базы
-6. Сокровищница (Оплата→Маржа): тег «свои», дисциплина скидок, рост чека через допы/рассрочку
+КОНТЕКСТ АУДИТА (база, если живых данных нет):
+- Две главные дыры: этап 2 (Лид→Контакт, 57% лидов гибнут без разговора, медиана касания 64ч) и этап 4 (Квалиф→Продажа, разрыв топ/низ 2,8x).
+- Действующая пятёрка: Komiljon, Samandar (топы ~3%), Abdulla-Legenda, Begoyim, Abulbositxon (нижняя тройка 1-1,5%).
+- «Дорого» — лишь 4% отказов, цена не проблема. «Свои» ≤1,6М не считаем.
 
-ИНСТРУМЕНТЫ КЛИЕНТА: amoCRM (Salesbot, Digital Pipeline, телефония), Meta Ads Manager, Notion, Excel FILE MARKAZI, контент-движок (Veo 3, ElevenLabs, HeyGen, CapCut, Gemini).
+6 ЭТАПОВ КОНВЕЙЕРА: 1.Логово трафика 2.Ущелье молчания(дыра) 3.Застава отбора 4.Арена закрытия(дыра) 5.Сад терпения 6.Сокровищница.
 
-РАБОТА С ФАЙЛАМИ: Абдуллох может прислать выгрузку из amoCRM, финансовый файл, скрин дашборда или CSV. Делай РЕАЛЬНЫЙ анализ по присланным данным (считай конверсию, средний чек, разбивку по МОПам, маржу), а не общие слова. Всегда исключай «своих» (сделки ≤1,6М) из коммерческих расчётов. Если в CSV видишь сырые данные — посчитай по ним и дай конкретный вывод с цифрами.
+ЯЗЫК: ${lang === "uz" ? "Отвечай ПО-УЗБЕКСКИ (латиница, literary uzbek)." : "Отвечай ПО-РУССКИ."} Клиентский контент (реклама/скрипты) всегда на узбекском.
 
-ЯЗЫК ОБЩЕНИЯ: ${lang === "uz" ? "Отвечай ПО-УЗБЕКСКИ (на узбекском языке, латиница). Грамматику соблюдай literary uzbek." : "Отвечай ПО-РУССКИ."} Клиентский контент (реклама, скрипты, авто-ответы) всегда на узбекском независимо от языка общения.
-
-КАК РАБОТАЕШЬ: выдаёшь конкретные квесты с пошаговыми действиями и ГОТОВЫМИ материалами (тексты, скрипты, настройки), чтобы квест закрывался сегодня. Не теории — рабочие артефакты. Приоритет: сначала этапы 2 и 4 (главные дыры).`;
+КАК РАБОТАЕШЬ: конкретные квесты с готовыми материалами, чтобы закрывались сегодня. Приоритет — этапы 2 и 4.`;
 
     let progressNote = "";
     if (progress && typeof progress === "object") {
-      const done = progress.doneCount || 0;
-      const total = progress.total || 0;
-      const bosses = progress.bossesDown || 0;
-      progressNote = `\n\nТЕКУЩИЙ ПРОГРЕСС ОХОТЫ: закрыто ${done}/${total} квестов, повержено боссов: ${bosses}.`;
+      progressNote = `\n\nПРОГРЕСС ОХОТЫ: ${progress.doneCount || 0}/${progress.total || 0} квестов, боссов повержено ${progress.bossesDown || 0}.`;
     }
+
+    // ЖИВЫЕ ДАННЫЕ из кэша
+    const cache = await readDashboardCache();
+    const live = liveBlock(cache);
 
     const anthropicReq = {
       model: "claude-sonnet-4-6",
       max_tokens: 2500,
-      system: SYSTEM + progressNote,
+      system: SYSTEM + progressNote + live,
       messages: messages,
     };
 
     const r = await fetch("https://api.anthropic.com/v1/messages", {
       method: "POST",
-      headers: {
-        "content-type": "application/json",
-        "x-api-key": apiKey,
-        "anthropic-version": "2023-06-01",
-      },
+      headers: { "content-type": "application/json", "x-api-key": apiKey, "anthropic-version": "2023-06-01" },
       body: JSON.stringify(anthropicReq),
     });
 
-    if (!r.ok) {
-      const errText = await r.text();
-      res.status(r.status).json({ error: "Anthropic API error", detail: errText });
-      return;
-    }
-
+    if (!r.ok) { const t = await r.text(); res.status(r.status).json({ error: "Anthropic API error", detail: t }); return; }
     const data = await r.json();
-    const text = (data.content || [])
-      .filter((b) => b.type === "text")
-      .map((b) => b.text)
-      .join("\n");
-
+    const text = (data.content || []).filter((b) => b.type === "text").map((b) => b.text).join("\n");
     res.status(200).json({ text });
   } catch (err) {
     res.status(500).json({ error: "Server error", detail: String(err) });
