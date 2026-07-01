@@ -224,6 +224,27 @@
   .gen-accept{background:var(--green);color:#fff;}
   .gen-skip{background:var(--card2);color:var(--txt2);border:1px solid var(--line)!important;}
   .gen-loading{text-align:center;padding:30px;color:var(--txt2);font-size:13px;}
+
+  /* multi-chat */
+  .chat-bar{display:flex;align-items:center;gap:8px;padding:9px 12px;background:var(--bg2);border-bottom:1px solid var(--line);}
+  .chat-bar select{flex:1;background:var(--card);border:1px solid var(--line2);color:var(--txt);
+    font-size:13px;padding:8px 10px;border-radius:9px;font-family:inherit;}
+  .chat-new{width:38px;height:38px;border-radius:9px;background:var(--accent);border:none;color:#fff;
+    font-size:20px;cursor:pointer;flex:0 0 auto;display:flex;align-items:center;justify-content:center;}
+  .chat-del{width:38px;height:38px;border-radius:9px;background:var(--card);border:1px solid var(--line2);
+    color:var(--txt2);font-size:15px;cursor:pointer;flex:0 0 auto;}
+
+  /* tooltip "?" */
+  .hint{display:inline-flex;align-items:center;justify-content:center;width:15px;height:15px;border-radius:50%;
+    background:var(--line2);color:var(--txt);font-size:10px;font-weight:700;cursor:pointer;margin-left:5px;
+    vertical-align:middle;flex:0 0 auto;}
+  .hint-pop{position:fixed;inset:0;z-index:200;background:rgba(4,10,18,.75);display:flex;
+    align-items:center;justify-content:center;padding:26px;}
+  .hint-card{background:var(--card);border:1px solid var(--accent);border-radius:16px;padding:20px 18px;max-width:340px;}
+  .hint-card h4{margin:0 0 8px;font-size:15px;font-weight:700;color:var(--accent);}
+  .hint-card p{margin:0;font-size:13.5px;line-height:1.6;color:var(--txt2);}
+  .hint-card button{margin-top:16px;width:100%;padding:11px;border-radius:10px;background:var(--accent);
+    border:none;color:#fff;font-size:14px;font-weight:600;cursor:pointer;}
 </style>
 </head>
 <body>
@@ -251,9 +272,9 @@
 </header>
 
 <div class="tabs">
-  <button class="tab active" id="tab-map" onclick="switchTab('map')">🗺️ <span data-t="tab_map">Задачи</span></button>
+  <button class="tab active" id="tab-chat" onclick="switchTab('chat')">💬 <span data-t="tab_chat">Советник</span></button>
   <button class="tab" id="tab-dash" onclick="switchTab('dash')">📊 <span data-t="tab_dash">Дашборд</span></button>
-  <button class="tab" id="tab-chat" onclick="switchTab('chat')">💬 <span data-t="tab_chat">Советник</span></button>
+  <button class="tab" id="tab-map" onclick="switchTab('map')">🗺️ <span data-t="tab_map">Задачи</span></button>
 </div>
 
 <main>
@@ -299,21 +320,21 @@
     <div class="dash-grid">
       <div class="dcard"><div class="dl">Продаж за месяц</div><div class="dv" id="kpiSold" style="color:var(--accent);">—</div><div class="dh" id="kpiSoldH">из плана 141</div></div>
       <div class="dcard"><div class="dl">Выручка</div><div class="dv" id="kpiRevenue">—</div><div class="dh">этот месяц</div></div>
-      <div class="dcard"><div class="dl">Конверсия команды</div><div class="dv" id="kpiConv" style="color:var(--accent);">—</div><div class="dh">лид → продажа</div></div>
-      <div class="dcard"><div class="dl">Средний чек</div><div class="dv" id="kpiCheck">—</div><div class="dh">без «своих»</div></div>
+      <div class="dcard"><div class="dl">Конверсия команды<span class="hint" onclick="showHint('conv',event)">?</span></div><div class="dv" id="kpiConv" style="color:var(--accent);">—</div><div class="dh">лид → продажа</div></div>
+      <div class="dcard"><div class="dl">Средний чек<span class="hint" onclick="showHint('check',event)">?</span></div><div class="dv" id="kpiCheck">—</div><div class="dh">без «своих»</div></div>
     </div>
 
     <div class="dsect">🏆 Топ по продажам</div>
     <div id="topSalesChart"></div>
 
-    <div class="dsect">⚔️ Конверсия и дозвон по МОПам</div>
+    <div class="dsect">⚔️ Конверсия и дозвон по менеджерам<span class="hint" onclick="showHint('reach',event)">?</span></div>
     <div id="mopChart"></div>
 
-    <div class="dsect">🩸 5 главных проблем (причины потерь)</div>
+    <div class="dsect">🩸 5 главных причин потерь<span class="hint" onclick="showHint('problems',event)">?</span></div>
     <div id="problemsChart"></div>
 
-    <div class="dsect">⚡ Дисциплина МОПов (из событий amoCRM)</div>
-    <div id="disciplineChart"><div style="font-size:12px;color:var(--txt3);">Нажми «Обновить дисциплину» — это тяжёлый расчёт по событиям, идёт 20-40 сек.</div></div>
+    <div class="dsect">⚡ Дисциплина менеджеров<span class="hint" onclick="showHint('early',event)">?</span></div>
+    <div id="disciplineChart"><div style="font-size:12px;color:var(--txt3);">Нажмите «Обновить дисциплину» — это подробный расчёт по звонкам и задачам, идёт 20-40 секунд.</div></div>
 
     <div class="foot" style="margin-top:14px;">
       <button id="syncBtn" onclick="syncNow()">🔄 Обновить из amoCRM</button>
@@ -324,23 +345,28 @@
 
   <!-- CHAT VIEW -->
   <div class="view" id="chatView">
+    <div class="chat-bar">
+      <select id="chatSelect" onchange="switchChat(this.value)"></select>
+      <button class="chat-del" onclick="deleteChat()" title="Удалить чат">🗑</button>
+      <button class="chat-new" onclick="newChat()" title="Новый чат">＋</button>
+    </div>
     <div class="chat-scroll" id="chatScroll">
       <div class="chat-empty" id="chatEmpty">
-        <div class="ce-icon">🎯</div>
+        <div class="ce-icon">💬</div>
         <h3>Ваш ИИ-советник по продажам</h3>
         <p>Задайте любой вопрос про рост продаж. Советник знает ваши реальные цифры из CRM, команду и воронку. Нажмите «помощь» у любой задачи — получите готовый разбор.</p>
       </div>
     </div>
     <div class="quick" id="quickRow">
       <button onclick="quickAsk('С какой задачи начать?')">С чего начать?</button>
-      <button onclick="quickAsk('Покажи мои две главные дыры и сколько денег я на них теряю')">Где теряю деньги?</button>
-      <button onclick="quickAsk('Дай план продаж на этот месяц по каждому МОПу')">План на месяц</button>
+      <button onclick="quickAsk('Где я больше всего теряю денег и почему?')">Где теряю деньги?</button>
+      <button onclick="quickAsk('Дай план продаж на этот месяц по каждому менеджеру')">План на месяц</button>
     </div>
     <div class="file-chips" id="fileChips"></div>
     <div class="chat-input">
       <input type="file" id="fileInput" accept=".pdf,.png,.jpg,.jpeg,.csv,.txt,image/*" multiple style="display:none;" onchange="handleFiles(this.files)" />
       <button class="attach-btn" onclick="document.getElementById('fileInput').click()" aria-label="Прикрепить файл">📎</button>
-      <textarea id="chatBox" rows="1" placeholder="Напиши Крестодателю..." oninput="autoGrow(this)"></textarea>
+      <textarea id="chatBox" rows="1" placeholder="Спросите совета..." oninput="autoGrow(this)"></textarea>
       <button class="send-btn" id="sendBtn" onclick="sendMsg()">➤</button>
     </div>
   </div>
@@ -411,7 +437,7 @@ const SKEY='hunters_path_app_v1';
 let state = loadState();
 function loadState(){
   try{const s=JSON.parse(localStorage.getItem(SKEY));if(s&&s.done)return s;}catch(e){}
-  return {done:{},bosses:{},open:{},filter:'all',chat:[],lang:'ru',dopQuests:[],goal:500000000};
+  return {done:{},bosses:{},open:{},filter:'all',chats:[{id:'c0',title:'Чат 1',messages:[]}],activeChatId:'c0',lang:'ru',dopQuests:[],goal:500000000};
 }
 function save(){try{localStorage.setItem(SKEY,JSON.stringify(state));}catch(e){}}
 
@@ -421,8 +447,7 @@ function doneCount(){return ALL_QUESTS.filter(id=>state.done[id]).length;}
 function trophies(){return STAGES.filter(s=>state.bosses[s.id]).length;}
 function rankFor(p){let r='Старт';RANKS.forEach(([m,n])=>{if(p>=m)r=n;});return r;}
 
-function getGoal(){return (state.goal&&state.goal>0)?state.goal:500000000;}
-function fmtGoalFull(n){return n.toLocaleString('ru');}
+function getGoal(){return (state.goal&&state.goal>0)?state.goal:500000000;}function fmtGoalFull(n){return n.toLocaleString('ru');}
 function updateGoalHeader(){
   const g=getGoal();
   const big=document.getElementById('goalBig');
@@ -545,7 +570,7 @@ function confetti(){
 
 function resetHunt(){
   if(confirm('Сбросить весь прогресс? Это нельзя отменить.')){
-    state={done:{},bosses:{},open:{},filter:'all',chat:state.chat,lang:state.lang,tab:state.tab,dopQuests:state.dopQuests||[]};save();renderHeader();renderStages();renderDopQuests();
+    state={done:{},bosses:{},open:{},filter:'all',chats:state.chats,activeChatId:state.activeChatId,lang:state.lang,tab:state.tab,dopQuests:state.dopQuests||[],goal:state.goal};save();renderHeader();renderStages();renderDopQuests();
   }
 }
 
@@ -753,10 +778,10 @@ function renderDiscipline(sp){
     return `<div style="background:var(--card);border:1px solid var(--line);border-radius:10px;padding:11px 12px;margin-bottom:9px;">
       <div style="font-size:14px;font-weight:600;margin-bottom:7px;">${escapeHtml(m.name)} <span style="font-size:11px;color:var(--txt3);font-weight:400;">· ${m.leads} лидов</span></div>
       <div style="display:grid;grid-template-columns:1fr 1fr;gap:6px 12px;font-size:12px;">
-        <div>⚡ 1-й звонок: <b style="color:${c(speedOk,speedBad)}">${fmtMin(m.medianFirstCallMin)}</b></div>
-        <div>📞 Звонков/лид: <b style="color:${c(persistOk,m.avgCallsPerLead<2)}">${m.avgCallsPerLead}</b></div>
-        <div>🚩 Закрыл рано: <b style="color:${c(!haltBad,haltBad)}">${m.earlyClosePct}%</b></div>
-        <div>📋 Ставит задачи: <b style="color:${c(taskOk,m.taskRate<30)}">${m.taskRate}%</b></div>
+        <div>⚡ 1-й звонок${hintIcon('firstcall')}: <b style="color:${c(speedOk,speedBad)}">${fmtMin(m.medianFirstCallMin)}</b></div>
+        <div>📞 Звонков/лид${hintIcon('persist')}: <b style="color:${c(persistOk,m.avgCallsPerLead<2)}">${m.avgCallsPerLead}</b></div>
+        <div>🚩 Закрыл рано${hintIcon('early')}: <b style="color:${c(!haltBad,haltBad)}">${m.earlyClosePct}%</b></div>
+        <div>📋 Ставит задачи${hintIcon('tasks')}: <b style="color:${c(taskOk,m.taskRate<30)}">${m.taskRate}%</b></div>
       </div>
       ${haltBad?'<div style="font-size:11px;color:var(--red);margin-top:6px;">⚠️ Часто закрывает «не дозвонился» при &lt;3 звонках — проверь</div>':''}
     </div>`;
@@ -862,13 +887,65 @@ function helpQuest(id){
   quickAsk('Помоги выполнить задачу «'+q.t+'» (этап '+st.id+', '+st.sub+'). Дай конкретные пошаговые действия и готовые материалы, чтобы я закрыл её сегодня.');
 }
 
+/* ===== МУЛЬТИ-ЧАТ ===== */
+function ensureChats(){
+  if(!Array.isArray(state.chats)){
+    state.chats=[];
+    // миграция старого одиночного чата
+    const old=Array.isArray(state.chat)?state.chat:[];
+    state.chats.push({id:'c'+Date.now(),title:'Чат 1',messages:old});
+    state.activeChatId=state.chats[0].id;
+    delete state.chat;
+    save();
+  }
+  if(!state.activeChatId||!state.chats.find(c=>c.id===state.activeChatId)){
+    state.activeChatId=state.chats[0]?state.chats[0].id:null;
+  }
+  if(!state.chats.length){
+    state.chats.push({id:'c'+Date.now(),title:'Чат 1',messages:[]});
+    state.activeChatId=state.chats[0].id;
+  }
+}
+function activeChat(){ensureChats();return state.chats.find(c=>c.id===state.activeChatId);}
+function renderChatSelect(){
+  ensureChats();
+  const sel=document.getElementById('chatSelect');
+  if(!sel)return;
+  sel.innerHTML=state.chats.map(c=>`<option value="${c.id}"${c.id===state.activeChatId?' selected':''}>${escapeHtml(c.title)}</option>`).join('');
+}
+function newChat(){
+  ensureChats();
+  const n=state.chats.length+1;
+  const c={id:'c'+Date.now(),title:'Чат '+n,messages:[]};
+  state.chats.push(c);state.activeChatId=c.id;save();
+  renderChatSelect();renderChat();
+  document.getElementById('chatBox').focus();
+}
+function switchChat(id){
+  state.activeChatId=id;save();
+  renderChatSelect();renderChat();scrollChatBottom();
+}
+function deleteChat(){
+  ensureChats();
+  if(state.chats.length<=1){
+    // просто очистить единственный чат
+    activeChat().messages=[];save();renderChat();return;
+  }
+  if(!confirm('Удалить этот чат?'))return;
+  state.chats=state.chats.filter(c=>c.id!==state.activeChatId);
+  state.activeChatId=state.chats[0].id;save();
+  renderChatSelect();renderChat();
+}
+
 function renderChat(){
+  ensureChats();renderChatSelect();
+  const chat=activeChat();
   const sc=chatScroll;
-  if(!state.chat.length){chatEmpty.style.display='block';
+  if(!chat.messages.length){chatEmpty.style.display='block';
     [...sc.querySelectorAll('.msg')].forEach(m=>m.remove());return;}
   chatEmpty.style.display='none';
   [...sc.querySelectorAll('.msg')].forEach(m=>m.remove());
-  state.chat.forEach(m=>appendMsgDom(m.role,m.text,m.fileNames));
+  chat.messages.forEach(m=>appendMsgDom(m.role,m.text,m.fileNames));
 }
 function scrollChatBottom(){
   // несколько попыток: сразу, после раскладки кадра, и с запасом — чтобы попасть на последнее сообщение
@@ -884,10 +961,36 @@ function appendMsgDom(role,text,fileNames){
   if(fileNames&&fileNames.length){
     filesHtml=fileNames.map(n=>`<div class="m-file">📎 ${escapeHtml(n)}</div>`).join('');
   }
-  d.innerHTML=`<div class="m-ava ${role==='user'?'me':'k'}">${role==='user'?'🎯':'🏹'}</div><div class="m-bubble">${escapeHtml(text)}${filesHtml}</div>`;
+  d.innerHTML=`<div class="m-ava ${role==='user'?'me':'k'}">${role==='user'?'🙂':'💬'}</div><div class="m-bubble">${escapeHtml(text)}${filesHtml}</div>`;
   chatScroll.appendChild(d);
 }
 function escapeHtml(s){return (s||'').replace(/[&<>]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;'}[c]));}
+
+/* ===== ПОДСКАЗКИ "?" ===== */
+const HINTS={
+  conv:{t:'Конверсия',d:'Сколько из 100 обращений превращаются в оплату. Например, 2% значит: из 100 клиентов купили 2. Чем выше — тем лучше работает отдел продаж.'},
+  check:{t:'Средний чек',d:'Средняя сумма одной продажи. Считается без «своих» сделок (бартер, друзья, доплаты) — только реальные клиенты.'},
+  reach:{t:'Дозвон',d:'Процент лидов, с которыми менеджер реально поговорил. Дозвон 40% значит: из 100 заявок дозвонились только до 40. Остальные 60 — потеряны без разговора.'},
+  firstcall:{t:'Время до 1-го звонка',d:'Через сколько минут после заявки менеджер впервые позвонил клиенту. Чем быстрее — тем горячее клиент. Норма — до 5-30 минут.'},
+  persist:{t:'Звонков на лид',d:'Сколько раз менеджер звонит одному клиенту, прежде чем сдаться. Хорошо — 3 и больше. Мало — значит бросает клиентов после первого гудка.'},
+  early:{t:'Закрыл рано',d:'Менеджер написал «не дозвонился», хотя реально звонил меньше 3 раз. Это признак халтуры — клиента списали, толком не пытаясь. Высокий % (30+) — повод проверить.'},
+  tasks:{t:'Ставит задачи',d:'Процент клиентов, которым менеджер поставил напоминание «перезвонить». Дисциплинированный менеджер планирует следующий шаг, а не бросает клиента.'},
+  own:{t:'«Свои» сделки',d:'Внутренние продажи — бартер, друзья, доплаты, служебные записи. Их не считаем в конверсии и оценке менеджеров, чтобы цифры были честными. Но в общую выручку они входят.'},
+  goal:{t:'Цель месяца',d:'Сколько денег вы хотите заработать за месяц. Можно нажать и вписать свою сумму. Прогресс-полоса показывает, сколько уже сделано.'},
+  problems:{t:'Причины потерь',d:'Почему клиенты не покупают — по данным из CRM. Топ причин показывает, где главные дыры: не дозвонились, дорого, передумали и т.д.'},
+  dop:{t:'Доп-задачи',d:'Дополнительные задачи, которые советник подобрал под ваши текущие проблемы. Появляются, когда вы нажимаете «Подобрать задачи под мои проблемы».'},
+};
+function hintIcon(key){return `<span class="hint" onclick="showHint('${key}',event)">?</span>`;}
+function showHint(key,e){
+  if(e){e.stopPropagation();}
+  const h=HINTS[key];if(!h)return;
+  const ov=document.createElement('div');ov.className='hint-pop';
+  ov.onclick=()=>ov.remove();
+  ov.innerHTML=`<div class="hint-card" onclick="event.stopPropagation()">
+    <h4>${escapeHtml(h.t)}</h4><p>${escapeHtml(h.d)}</p>
+    <button onclick="this.closest('.hint-pop').remove()">Понятно</button></div>`;
+  document.body.appendChild(ov);
+}
 
 let busy=false;
 async function sendMsg(){
@@ -895,23 +998,29 @@ async function sendMsg(){
   const text=box.value.trim();
   if((!text&&!pendingFiles.length)||busy)return;
 
+  const chat=activeChat();
   const filesForThis=pendingFiles.slice();
   pendingFiles=[];renderChips();
   box.value='';box.style.height='auto';
 
   const fileNames=filesForThis.map(f=>f.name);
-  state.chat.push({role:'user',text:text||'(файл прикреплён)',files:filesForThis,fileNames});save();
+  chat.messages.push({role:'user',text:text||'(файл прикреплён)',files:filesForThis,fileNames});
+  // авто-заголовок чата по первому сообщению
+  if(chat.messages.filter(m=>m.role==='user').length===1&&text){
+    chat.title=text.slice(0,30)+(text.length>30?'…':'');
+    renderChatSelect();
+  }
+  save();
   chatEmpty.style.display='none';appendMsgDom('user',text||'(файл прикреплён)',fileNames);
   chatScroll.scrollTop=chatScroll.scrollHeight;
 
   busy=true;sendBtn.disabled=true;
   const typing=document.createElement('div');typing.className='msg k';
-  typing.innerHTML='<div class="m-ava k">🏹</div><div class="m-bubble"><div class="typing"><span></span><span></span><span></span></div></div>';
+  typing.innerHTML='<div class="m-ava k">💬</div><div class="m-bubble"><div class="typing"><span></span><span></span><span></span></div></div>';
   chatScroll.appendChild(typing);chatScroll.scrollTop=chatScroll.scrollHeight;
 
   try{
-    // Build API messages. For history, send text only. For the latest, attach files as content blocks.
-    const hist=state.chat.slice(-14);
+    const hist=chat.messages.slice(-14);
     const apiMsgs=hist.map((m,idx)=>{
       const isLast=idx===hist.length-1;
       if(m.role==='user'&&isLast&&filesForThis.length){
@@ -925,7 +1034,7 @@ async function sendMsg(){
             blocks.push({type:'text',text:'Файл «'+f.name+'»:\n\n'+f.text.slice(0,100000)});
           }
         }
-        blocks.push({type:'text',text:text||'Проанализируй приложенный файл по нашим правилам (исключи «своих» ≤1,6М, посчитай конверсию/чек/разбивку по МОПам).'});
+        blocks.push({type:'text',text:text||'Проанализируй приложенный файл: посчитай конверсию, средний чек, разбивку по менеджерам (исключи внутренние сделки ≤1,6М).'});
         return {role:'user',content:blocks};
       }
       return {role:m.role,content:m.text};
@@ -936,14 +1045,14 @@ async function sendMsg(){
     const data=await r.json();
     typing.remove();
     if(data.text){
-      state.chat.push({role:'assistant',text:data.text});save();
+      chat.messages.push({role:'assistant',text:data.text});save();
       appendMsgDom('assistant',data.text);
     }else{
       appendMsgDom('assistant','⚠️ Советник не ответил: '+(data.error||'неизвестная ошибка')+(data.detail?('\n'+data.detail):''));
     }
   }catch(e){
     typing.remove();
-    appendMsgDom('assistant','⚠️ Нет связи с сервером. Проверь, что приложение задеплоено и ключ API настроен.');
+    appendMsgDom('assistant','⚠️ Нет связи с сервером. Проверьте, что приложение запущено и ключ настроен.');
   }
   chatScroll.scrollTop=chatScroll.scrollHeight;
   busy=false;sendBtn.disabled=false;
@@ -953,8 +1062,9 @@ document.getElementById('chatBox').addEventListener('keydown',e=>{
 });
 
 if(state.lang==='uz')setLang('uz');
+ensureChats();
 renderHeader();renderStages();renderDopQuests();updateGoalHeader();
-if(state.tab&&state.tab!=='map')switchTab(state.tab);
+switchTab(state.tab&&['chat','dash','map'].includes(state.tab)?state.tab:'chat');
 </script>
 </body>
 </html>
