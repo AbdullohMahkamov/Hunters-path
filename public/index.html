@@ -6,10 +6,10 @@
 <meta name="theme-color" content="#0c2340" />
 <meta name="apple-mobile-web-app-capable" content="yes" />
 <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
-<meta name="apple-mobile-web-app-title" content="Hunter's Path" />
+<meta name="apple-mobile-web-app-title" content="Hunter Academy" />
 <link rel="manifest" href="/manifest.json" />
 <link rel="apple-touch-icon" href="/icon-192.png" />
-<title>Hunter's Path — охота за 500М</title>
+<title>Hunter Academy — план роста</title>
 <style>
   :root{
     --bg:#0b1622; --bg2:#10202f; --card:#14283b; --card2:#1a3147;
@@ -232,10 +232,10 @@
   <div class="h-top">
     <div class="h-logo" onclick="switchTab('map')" style="cursor:pointer;">🏹</div>
     <div style="min-width:0;">
-      <div class="h-title">Hunter's Path</div>
-      <div class="h-sub">Охота за 500 000 000 сум</div>
+      <div class="h-title">Hunter Academy</div>
+      <div class="h-sub" id="hSub" onclick="editGoal()" style="cursor:pointer;">Цель: 500 000 000 сум/мес ✏️</div>
     </div>
-    <div class="h-rank" id="rank">Новобранец</div>
+    <div class="h-rank" id="rank">Старт</div>
     <div class="lang">
       <button id="lang-ru" class="on" onclick="setLang('ru')">РУ</button>
       <button id="lang-uz" onclick="setLang('uz')">UZ</button>
@@ -244,16 +244,16 @@
   <div class="h-progress">
     <div class="h-pct-row">
       <span class="h-pct" id="pct">0%</span>
-      <span>маршрута · <span id="doneN">0</span>/<span id="totalN">0</span> квестов · <span id="trophN">0</span> 🏆</span>
+      <span>плана · <span id="doneN">0</span>/<span id="totalN">0</span> задач · <span id="trophN">0</span> ✅ этапов</span>
     </div>
     <div class="bar"><div class="bar-fill" id="bar"></div></div>
   </div>
 </header>
 
 <div class="tabs">
-  <button class="tab active" id="tab-map" onclick="switchTab('map')">🗺️ <span data-t="tab_map">Карта</span></button>
+  <button class="tab active" id="tab-map" onclick="switchTab('map')">🗺️ <span data-t="tab_map">Задачи</span></button>
   <button class="tab" id="tab-dash" onclick="switchTab('dash')">📊 <span data-t="tab_dash">Дашборд</span></button>
-  <button class="tab" id="tab-chat" onclick="switchTab('chat')">💬 <span data-t="tab_chat">Крестодатель</span></button>
+  <button class="tab" id="tab-chat" onclick="switchTab('chat')">💬 <span data-t="tab_chat">Советник</span></button>
 </div>
 
 <main>
@@ -263,14 +263,14 @@
     <div id="stages"></div>
 
     <div id="dopSection" style="display:none;margin-top:16px;">
-      <div class="dsect" style="color:var(--gold);">🔥 Доп-квесты (по горячим проблемам)</div>
+      <div class="dsect" style="color:var(--gold);">🔥 Доп-задачи (по горячим проблемам)</div>
       <div id="dopQuests"></div>
     </div>
 
     <div class="foot">
-      <button onclick="openGenerator()" style="border-color:var(--gold);color:var(--gold);">🎯 Сгенерировать квесты из проблем</button>
-      <button onclick="askNext()">🧭 Какой квест следующий?</button>
-      <button onclick="resetHunt()">↺ Сбросить охоту</button>
+      <button onclick="openGenerator()" style="border-color:var(--gold);color:var(--gold);">🎯 Подобрать задачи под мои проблемы</button>
+      <button onclick="askNext()">🧭 С какой задачи начать?</button>
+      <button onclick="resetHunt()">↺ Сбросить прогресс</button>
     </div>
   </div>
 
@@ -278,10 +278,10 @@
   <div class="gen-overlay" id="genOverlay" style="display:none;">
     <div class="gen-sheet">
       <div class="gen-h">
-        <div class="gen-title">🎯 Квесты из твоих проблем</div>
+        <div class="gen-title">🎯 Задачи под ваши проблемы</div>
         <button class="gen-close" onclick="closeGenerator()">✕</button>
       </div>
-      <div class="gen-sub">Крестодатель смотрит реальные проблемы из amoCRM и предлагает новые квесты. Принятые попадут в доп-квесты на карте.</div>
+      <div class="gen-sub">Советник смотрит реальные проблемы из вашей CRM и предлагает новые задачи под них. Принятые появятся в списке доп-задач.</div>
       <div id="genBody"></div>
     </div>
   </div>
@@ -290,7 +290,7 @@
   <div class="view" id="dashView">
     <div class="goal-card">
       <div style="font-size:12px;color:var(--txt2);margin-bottom:4px;">ЦЕЛЬ · ЭТОТ МЕСЯЦ</div>
-      <div class="goal-big" style="color:var(--accent);">500 000 000 <span style="font-size:15px;color:var(--txt2);">сум/мес</span></div>
+      <div class="goal-big" style="color:var(--accent);cursor:pointer;" id="goalBig" onclick="editGoal()">500 000 000 <span style="font-size:15px;color:var(--txt2);">сум/мес ✏️</span></div>
       <div style="font-size:12.5px;color:var(--txt2);margin-top:6px;" id="goalSub">Загрузка живых данных...</div>
       <div class="bar" style="margin-top:9px;"><div class="bar-fill" id="goalProgressBar" style="width:0%;"></div></div>
       <div style="font-size:11px;color:var(--txt3);margin-top:5px;" id="goalProgressTxt">—</div>
@@ -327,12 +327,12 @@
     <div class="chat-scroll" id="chatScroll">
       <div class="chat-empty" id="chatEmpty">
         <div class="ce-icon">🎯</div>
-        <h3>Крестодатель на связи</h3>
-        <p>Спрашивай что угодно про охоту за 500М. Я помню все твои цифры,<br>команду и конвейер. Жми «помощь» на любом квесте — попадёшь сюда с готовым разбором.</p>
+        <h3>Ваш ИИ-советник по продажам</h3>
+        <p>Задайте любой вопрос про рост продаж. Советник знает ваши реальные цифры из CRM, команду и воронку. Нажмите «помощь» у любой задачи — получите готовый разбор.</p>
       </div>
     </div>
     <div class="quick" id="quickRow">
-      <button onclick="quickAsk('С какого квеста начать охоту?')">С чего начать?</button>
+      <button onclick="quickAsk('С какой задачи начать?')">С чего начать?</button>
       <button onclick="quickAsk('Покажи мои две главные дыры и сколько денег я на них теряю')">Где теряю деньги?</button>
       <button onclick="quickAsk('Дай план продаж на этот месяц по каждому МОПу')">План на месяц</button>
     </div>
@@ -348,9 +348,9 @@
 
 <script>
 const STAGES = [
-  { id:1, name:'Логово трафика', sub:'Трафик → Лид', icon:'📡',
-    boss:'Босс: Связка-Одиночка', bossDesc:'49% лидов из одной связки. Победи зависимость от одного источника.',
-    reward:'🏹 Бейдж «Ловчий потоков» — связки больше не боятся бана',
+  { id:1, name:'Привлечение лидов', sub:'Трафик → Лид · откуда приходят клиенты', icon:'📡',
+    boss:'Ключевая цель этапа', bossDesc:'49% лидов идут из одной рекламной связки. Задача — не зависеть от одного источника.',
+    reward:'✅ Результат: не зависите от одного источника лидов',
     quests:[
       {id:'1a',t:'Разбить таргет на 3–4 параллельные связки',d:'Перелить часть бюджета из BOLLA OGANI в KARYERA (конвертит лучше) + тест 2 новых аудиторий.'},
       {id:'1b',t:'Завести лист учёта связок',d:'Связка / CPL / лиды / продажи / конверсия / статус. Живёт, пока CPL ≤6000 и конверсия ≥1,8%.'},
@@ -358,27 +358,27 @@ const STAGES = [
       {id:'1d',t:'Запустить органику: 1 Reels в день',d:'Social Proof + Big Brother + Luxe Life. Греет аудиторию ДО звонка.'},
       {id:'1e',t:'Нанять SMM-специалиста',d:'Критический bottleneck. Без выделенного человека контент-движок не поедет.'},
     ]},
-  { id:2, name:'Ущелье молчания', sub:'Лид → Контакт', icon:'⚡', main:true,
-    boss:'Босс: Остывший Лид', bossDesc:'57% оплаченных лидов умирают без разговора. Медиана первого касания — 64 часа. Главный враг.',
-    reward:'⚡ Бейдж «Молниеносный» — дозвон взлетает с 43% до 75% (×1,7 контактов)',
+  { id:2, name:'Первый контакт', sub:'Лид → Дозвон · почему клиенты не отвечают', icon:'⚡', main:true,
+    boss:'Ключевая цель этапа', bossDesc:'57% оплаченных лидов теряются без единого разговора. В среднем до первого звонка проходит 64 часа. Это главная точка потери денег.',
+    reward:'✅ Результат: дозвон растёт с 43% до 75% (в 1,7 раза больше контактов)',
     quests:[
       {id:'2a',t:'Salesbot: авто-ответ за 30 секунд',d:'Готовый текст (Mutaxassis, 150+ трудоустроены) → подключить к боту. Триггер «Сделка создана».'},
       {id:'2b',t:'Регламент дозвона «5×48»',d:'1-й звонок ≤5 мин. Не взял — 5 попыток за 48ч в разное время суток, а не 3 подряд.'},
       {id:'2c',t:'Закрывать «не дозвонились» только после 5 попыток',d:'РОП проверяет выборочно. Статус не ставится раньше.'},
       {id:'2d',t:'Скорость касания → KPI каждого МОПа',d:'Метрика «время до 1-го касания» в дашборд. Норматив: медиана ≤5 мин.'},
     ]},
-  { id:3, name:'Застава отбора', sub:'Контакт → Квалификация', icon:'🎯',
-    boss:'Босс: Хаос Карточек', bossDesc:'Поля заполняются как попало. Боль клиента не фиксируется. Наведи порядок.',
-    reward:'🎯 Бейдж «Дознаватель» — каждый разговор даёт чистые данные',
+  { id:3, name:'Квалификация клиента', sub:'Контакт → Отбор · выявить потребность', icon:'🎯',
+    boss:'Ключевая цель этапа', bossDesc:'Данные о клиенте заполняются как попало, потребность не фиксируется. Задача — навести порядок в карточках.',
+    reward:'✅ Результат: каждый разговор даёт чистые данные о клиенте',
     quests:[
       {id:'3a',t:'Скрипт квалификации: 4 обязательных вопроса',d:'Доход сейчас / цель / чем занят / срочность + формат-бюджет. Разрыв доход→цель = сила боли.'},
       {id:'3b',t:'Перевести поля amoCRM в списки',d:'Доход, цель, срочность, целевой/нет — выпадающие списки вместо свободного текста.'},
       {id:'3c',t:'Сделать поля обязательными для перехода этапа',d:'Лид не идёт дальше, пока менеджер не заполнил квалификацию.'},
       {id:'3d',t:'Критерий «нецелевой» + тег причины',d:'Обратная связь уходит в аналитику связок — какая аудитория даёт мусор.'},
     ]},
-  { id:4, name:'Арена закрытия', sub:'Квалификация → Продажа', icon:'⚔️', main:true,
-    boss:'Босс: Разрыв 2,8х', bossDesc:'Ядро держит ~3%, нижняя тройка 1%. Метод топов не записан. «Дорого» лишь 4% — дело в навыке.',
-    reward:'⚔️ Бейдж «Мастер закрытия» — команда выходит на ~3% (+47% выручки)',
+  { id:4, name:'Закрытие сделки', sub:'Квалификация → Продажа · как доводить до оплаты', icon:'⚔️', main:true,
+    boss:'Ключевая цель этапа', bossDesc:'Разрыв между сильными и слабыми менеджерами — 2,8 раза. Метод лучших не записан. «Дорого» — лишь 4% отказов, значит дело в навыке продаж.',
+    reward:'✅ Результат: команда выходит на ~3% конверсии (+47% выручки)',
     quests:[
       {id:'4a',t:'Оцифровать метод Комильона в скрипт',d:'Прослушать 15–20 его звонков. Как открывает, работает с ценой, закрывает, продаёт допы (чек 4,18М).'},
       {id:'4b',t:'Комильон — наставник: 2 разбора в неделю',d:'С нижней тройкой. Доплатить за роль — дешевле тренера.'},
@@ -386,24 +386,24 @@ const STAGES = [
       {id:'4d',t:'План в продажах каждому МОПу + утренняя планёрка',d:'«25 лидов × 2,5% = 6 продаж/неделю». 15 мин утром: цифры, задачи, разбор 1 сделки.'},
       {id:'4e',t:'Привязать зарплату к конверсии и чеку',d:'Не только к объёму — чтобы не сливали лиды и не давали лишних скидок.'},
     ]},
-  { id:5, name:'Сад терпения', sub:'Догрев «отложенных»', icon:'🌱',
-    boss:'Босс: Забытое «Подумаю»', bossDesc:'433 готовых лида в «подумаю позже» испаряются. Системы возврата нет. Верни их.',
-    reward:'🌱 Бейдж «Садовник сделок» — 15% отложенных превращаются в деньги',
+  { id:5, name:'Работа с отложенными', sub:'Догрев · вернуть тех, кто думает', icon:'🌱',
+    boss:'Ключевая цель этапа', bossDesc:'433 почти готовых клиента застряли в «подумаю позже» и теряются. Системы возврата нет. Задача — вернуть их.',
+    reward:'✅ Результат: 15% отложенных клиентов превращаются в продажи',
     quests:[
       {id:'5a',t:'Отдельная воронка «Догрев» в amoCRM',d:'«Keyinroq» не закрывает сделку, а переводит в догрев с задачей «перезвонить через 7 дней».'},
       {id:'5b',t:'Цепочка касаний по дням',d:'День 1 — видео выпускника · день 3 — кусок обучения · день 7 — звонок · день 14 — дедлайн группы.'},
       {id:'5c',t:'Ежемесячная реактивация старой базы',d:'Рассылка по закрытым лидам с новым оффером. Бесплатный трафик.'},
     ]},
-  { id:6, name:'Сокровищница', sub:'Оплата → Маржа', icon:'💎',
-    boss:'Босс: Грязная Отчётность', bossDesc:'21% «продаж» — свои/бартер, они искажают конверсию и мотивацию. Очисти казну.',
-    reward:'💎 Бейдж «Хранитель казны» — чистые цифры и рост среднего чека',
+  { id:6, name:'Оплата и прибыль', sub:'Маржа · чистые деньги и рост чека', icon:'💎',
+    boss:'Ключевая цель этапа', bossDesc:'21% «продаж» — это свои/бартер, они искажают отчётность и мотивацию. Задача — очистить цифры и растить средний чек.',
+    reward:'✅ Результат: чистая отчётность и рост среднего чека',
     quests:[
       {id:'6a',t:'Тег «свои/бартер» — убрать из отчётности',d:'Внутренние сделки не в конверсию и мотивацию. Дашборды — только по коммерции.'},
       {id:'6b',t:'Дисциплина скидок через РОПа',d:'Поле «Скидка» + обязательное «Кто одобрил». «Дорого» лишь 4% — скидка это исключение.'},
       {id:'6c',t:'Рост чека: апсейл Комильона + рассрочка',d:'Его +1млн к чеку разобрать и раздать всем. Halol nasiya закрывает «нет денег сейчас».'},
     ]},
 ];
-const RANKS=[[0,'Новобранец'],[10,'Следопыт'],[25,'Ловчий'],[45,'Охотник'],[65,'Старший Охотник'],[85,'Мастер Охоты'],[100,'Легенда Hunter']];
+const RANKS=[[0,'Старт'],[10,'Разгон'],[25,'Движение'],[45,'Ускорение'],[65,'Уверенный рост'],[85,'Почти у цели'],[100,'Цель достигнута']];
 const ALL_QUESTS = STAGES.flatMap(s=>s.quests.map(q=>q.id));
 const TOTAL = ALL_QUESTS.length;
 const SKEY='hunters_path_app_v1';
@@ -411,7 +411,7 @@ const SKEY='hunters_path_app_v1';
 let state = loadState();
 function loadState(){
   try{const s=JSON.parse(localStorage.getItem(SKEY));if(s&&s.done)return s;}catch(e){}
-  return {done:{},bosses:{},open:{},filter:'all',chat:[],lang:'ru',dopQuests:[]};
+  return {done:{},bosses:{},open:{},filter:'all',chat:[],lang:'ru',dopQuests:[],goal:500000000};
 }
 function save(){try{localStorage.setItem(SKEY,JSON.stringify(state));}catch(e){}}
 
@@ -419,7 +419,27 @@ function stageDone(s){return s.quests.every(q=>state.done[q.id]);}
 function stageUnlocked(idx){return true;}
 function doneCount(){return ALL_QUESTS.filter(id=>state.done[id]).length;}
 function trophies(){return STAGES.filter(s=>state.bosses[s.id]).length;}
-function rankFor(p){let r='Новобранец';RANKS.forEach(([m,n])=>{if(p>=m)r=n;});return r;}
+function rankFor(p){let r='Старт';RANKS.forEach(([m,n])=>{if(p>=m)r=n;});return r;}
+
+function getGoal(){return (state.goal&&state.goal>0)?state.goal:500000000;}
+function fmtGoalFull(n){return n.toLocaleString('ru');}
+function updateGoalHeader(){
+  const g=getGoal();
+  const big=document.getElementById('goalBig');
+  if(big)big.innerHTML=fmtGoalFull(g)+' <span style="font-size:15px;color:var(--txt2);">сум/мес ✏️</span>';
+  const sub=document.getElementById('hSub');
+  if(sub)sub.textContent='Цель: '+fmtGoalFull(g)+' сум/мес ✏️';
+}
+function editGoal(){
+  const cur=getGoal();
+  const inp=prompt('Введите цель по выручке в месяц (сум):', cur);
+  if(inp===null)return;
+  const cleaned=parseInt(String(inp).replace(/[^0-9]/g,''),10);
+  if(!cleaned||cleaned<=0){alert('Введите число больше нуля, например 500000000');return;}
+  state.goal=cleaned;save();
+  updateGoalHeader();
+  dashLoaded=false;renderDashboard();
+}
 
 function renderHeader(){
   const d=doneCount(),p=Math.round(d/TOTAL*100);
@@ -454,7 +474,7 @@ function renderStages(){
 
     let body='';
     if(!unlocked){
-      body=`<div class="locked-msg">🔒 Закрой этап ${prev.id} «${prev.name}», чтобы открыть эти квесты.</div>`;
+      body=`<div class="locked-msg">🔒 Сначала закройте этап ${prev.id} «${prev.name}».</div>`;
     }else{
       s.quests.forEach(q=>{
         const on=!!state.done[q.id];
@@ -467,8 +487,8 @@ function renderStages(){
       const bdown=!!state.bosses[s.id];
       body+=`<div class="boss${bdown?' down':(sdone?' ready':'')}">
         <div class="boss-h">${bdown?'🏆':(sdone?'⚔️':'💀')} ${s.boss}</div>
-        <div class="boss-d">${bdown?'ПОВЕРЖЕН! '+s.reward:s.bossDesc}</div>
-        ${bdown?'':`<button class="boss-btn ${sdone?'ready':'locked'}" ${sdone?`onclick="fightBoss(${s.id})"`:'disabled'}>${sdone?'⚔️ Сразить босса':'🔒 Закрой все квесты этапа'}</button>`}
+        <div class="boss-d">${bdown?'✅ Этап закрыт! '+s.reward:s.bossDesc}</div>
+        ${bdown?'':`<button class="boss-btn ${sdone?'ready':'locked'}" ${sdone?`onclick="fightBoss(${s.id})"`:'disabled'}>${sdone?'✅ Закрыть этап':'🔒 Сначала выполните все задачи этапа'}</button>`}
       </div>`;
     }
 
@@ -477,10 +497,10 @@ function renderStages(){
         <div class="s-icon">${unlocked?s.icon:'🔒'}</div>
         <div style="min-width:0;">
           <div class="s-name">Этап ${s.id} · ${s.name}
-            ${s.main?'<span class="tag tag-dyra">главная дыра</span>':''}
-            ${sdone?'<span class="tag tag-done">покорён</span>':''}
+            ${s.main?'<span class="tag tag-dyra">ключевая точка потерь</span>':''}
+            ${sdone?'<span class="tag tag-done">закрыт</span>':''}
           </div>
-          <div class="s-sub">${s.sub} · ${cnt}/${s.quests.length} квестов</div>
+          <div class="s-sub">${s.sub} · ${cnt}/${s.quests.length} задач</div>
         </div>
         <div class="s-chev">▾</div>
       </div>
@@ -502,10 +522,10 @@ function celebrate(s,all){
   const ov=document.createElement('div');ov.className='celebrate';
   ov.innerHTML=`<div class="cel-card">
     <div class="cel-emoji">${all?'👑':'🏆'}</div>
-    <div class="cel-title">${all?'ЛЕГЕНДА HUNTER':'Босс повержен!'}</div>
-    ${all?'':`<div class="cel-sub">${s.name} покорён</div>`}
-    <div class="cel-d">${all?'Ты прошёл весь маршрут. Все 6 боссов повержены, конвейер собран. Машина настроена на 500М. Чистая работа, авантюрист. 🏆':s.reward}</div>
-    <button class="cel-btn" onclick="this.closest('.celebrate').remove()">${all?'Завершить охоту':'Дальше на охоту'}</button>
+    <div class="cel-title">${all?'ЦЕЛЬ ДОСТИГНУТА':'Этап закрыт!'}</div>
+    ${all?'':`<div class="cel-sub">Этап «${s.name}» закрыт</div>`}
+    <div class="cel-d">${all?'Вы прошли весь план роста. Все 6 этапов закрыты, система продаж настроена. Отличная работа! 🎯':s.reward}</div>
+    <button class="cel-btn" onclick="this.closest('.celebrate').remove()">${all?'Завершить':'Продолжить'}</button>
   </div>`;
   document.body.appendChild(ov);
   confetti();
@@ -524,7 +544,7 @@ function confetti(){
 }
 
 function resetHunt(){
-  if(confirm('Сбросить весь прогресс охоты? Это нельзя отменить.')){
+  if(confirm('Сбросить весь прогресс? Это нельзя отменить.')){
     state={done:{},bosses:{},open:{},filter:'all',chat:state.chat,lang:state.lang,tab:state.tab,dopQuests:state.dopQuests||[]};save();renderHeader();renderStages();renderDopQuests();
   }
 }
@@ -551,9 +571,9 @@ function renderDopQuests(){
 }
 function toggleDop(i){state.done['dop'+i]=!state.done['dop'+i];save();renderDopQuests();}
 function removeDop(i){
-  if(!confirm('Удалить этот доп-квест?'))return;
+  if(!confirm('Удалить эту доп-задачу?'))return;
   state.dopQuests.splice(i,1);
-  // переиндексируем done-флаги доп-квестов
+  // переиндексируем done-флаги доп-задач
   const newDone={...state.done};
   Object.keys(newDone).forEach(k=>{if(k.startsWith('dop'))delete newDone[k];});
   state.done=newDone;
@@ -564,7 +584,7 @@ function removeDop(i){
 function openGenerator(){
   document.getElementById('genOverlay').style.display='flex';
   const body=document.getElementById('genBody');
-  body.innerHTML='<div class="gen-loading">⏳ Крестодатель анализирует твои проблемы из amoCRM и подбирает квесты...</div>';
+  body.innerHTML='<div class="gen-loading">⏳ Советник анализирует ваши проблемы из CRM и подбирает задачи...</div>';
   generateQuests();
 }
 function closeGenerator(){document.getElementById('genOverlay').style.display='none';}
@@ -580,7 +600,7 @@ async function generateQuests(){
     if(d&&d.ok&&d.quests&&d.quests.length){
       renderGenCards(d.quests);
     }else if(d&&d.ok&&(!d.quests||!d.quests.length)){
-      body.innerHTML='<div class="gen-loading">✅ Все твои текущие проблемы уже закрываются существующими квестами. Новых не нужно — работай по карте!</div>';
+      body.innerHTML='<div class="gen-loading">✅ Все ваши текущие проблемы уже закрываются существующими задачами. Новых пока не нужно.</div>';
     }else{
       body.innerHTML='<div class="gen-loading">⚠️ Не удалось сгенерировать: '+(d.error||'')+'. Проверь, что дашборд синхронизирован (есть проблемы).</div>';
     }
@@ -610,7 +630,7 @@ function acceptGen(i){
   state.dopQuests.push({t:q.t,d:q.d||'',problem:q.problem||''});
   save();
   const el=document.getElementById('genq'+i);
-  if(el)el.innerHTML='<div style="text-align:center;padding:14px;color:var(--green);font-weight:600;">✓ Добавлено в доп-квесты</div>';
+  if(el)el.innerHTML='<div style="text-align:center;padding:14px;color:var(--green);font-weight:600;">✓ Добавлено в доп-задачи</div>';
   renderDopQuests();
 }
 function skipGen(i){
@@ -663,10 +683,13 @@ function applyLiveDash(d){
   const t=d.totals;
   const set=(id,v)=>{const e=document.getElementById(id);if(e)e.textContent=v;};
 
-  // Цель
-  document.getElementById('goalProgressBar').style.width=Math.min(100,t.goalPct)+'%';
-  document.getElementById('goalProgressTxt').textContent=t.goalPct+'% пути к цели · '+((d.period||'текущий месяц').toLowerCase());
-  document.getElementById('goalSub').innerHTML='Сделано <b style="color:var(--txt);">'+fmtSum(t.revenue)+'</b> из 500М · нужно ~141 продажа/мес';
+  // Цель — берём заданную пользователем (или 500М по умолчанию), считаем прогресс от неё
+  const goal=getGoal();
+  const goalPct=goal>0?Math.round(t.revenue/goal*100):0;
+  document.getElementById('goalProgressBar').style.width=Math.min(100,goalPct)+'%';
+  document.getElementById('goalProgressTxt').textContent=goalPct+'% пути к цели · '+((d.period||'текущий месяц').toLowerCase());
+  document.getElementById('goalSub').innerHTML='Сделано <b style="color:var(--txt);">'+fmtSum(t.revenue)+'</b> из '+fmtSum(goal);
+  updateGoalHeader();
 
   // KPI
   set('kpiSold',t.sold);
@@ -790,8 +813,8 @@ async function syncNow(){
 
 /* ===== LANGUAGE ===== */
 const I18N={
-  ru:{tab_map:'Карта',tab_dash:'Дашборд',tab_chat:'Крестодатель',ph:'Напиши Крестодателю...'},
-  uz:{tab_map:'Xarita',tab_dash:'Dashboard',tab_chat:'Ustoz',ph:'Ustozga yozing...'}
+  ru:{tab_map:'Задачи',tab_dash:'Дашборд',tab_chat:'Советник',ph:'Спроси совета...'},
+  uz:{tab_map:'Vazifalar',tab_dash:'Dashboard',tab_chat:'Maslahatchi',ph:'Maslahat so‘rang...'}
 };
 function setLang(l){
   state.lang=l;save();
@@ -832,11 +855,11 @@ function removeFile(i){pendingFiles.splice(i,1);renderChips();}
 /* ===== CHAT ===== */
 function autoGrow(el){el.style.height='auto';el.style.height=Math.min(el.scrollHeight,120)+'px';}
 function quickAsk(t){switchTab('chat');document.getElementById('chatBox').value=t;sendMsg();}
-function askNext(){switchTab('chat');quickAsk('Я прошёл '+doneCount()+' из '+TOTAL+' квестов. Какой квест взять следующим и почему именно он даст максимальный рост к 500М? Дай один конкретный квест на сегодня.');}
+function askNext(){switchTab('chat');quickAsk('Я выполнил '+doneCount()+' из '+TOTAL+' задач. С какой задачи продолжить и почему именно она даст максимальный рост? Дай одну конкретную задачу на сегодня.');}
 function helpQuest(id){
   let q,st;STAGES.forEach(s=>s.quests.forEach(x=>{if(x.id===id){q=x;st=s;}}));
   switchTab('chat');
-  quickAsk('Помоги выполнить квест «'+q.t+'» (этап '+st.id+', '+st.sub+'). Дай конкретные пошаговые действия и готовые материалы, чтобы я закрыл его сегодня.');
+  quickAsk('Помоги выполнить задачу «'+q.t+'» (этап '+st.id+', '+st.sub+'). Дай конкретные пошаговые действия и готовые материалы, чтобы я закрыл её сегодня.');
 }
 
 function renderChat(){
@@ -916,7 +939,7 @@ async function sendMsg(){
       state.chat.push({role:'assistant',text:data.text});save();
       appendMsgDom('assistant',data.text);
     }else{
-      appendMsgDom('assistant','⚠️ Крестодатель не ответил: '+(data.error||'неизвестная ошибка')+(data.detail?('\n'+data.detail):''));
+      appendMsgDom('assistant','⚠️ Советник не ответил: '+(data.error||'неизвестная ошибка')+(data.detail?('\n'+data.detail):''));
     }
   }catch(e){
     typing.remove();
@@ -930,7 +953,7 @@ document.getElementById('chatBox').addEventListener('keydown',e=>{
 });
 
 if(state.lang==='uz')setLang('uz');
-renderHeader();renderStages();renderDopQuests();
+renderHeader();renderStages();renderDopQuests();updateGoalHeader();
 if(state.tab&&state.tab!=='map')switchTab(state.tab);
 </script>
 </body>
