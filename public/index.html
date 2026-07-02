@@ -209,6 +209,7 @@
   .dsect{font-size:13px;font-weight:600;color:var(--txt2);margin:16px 0 9px;display:flex;align-items:center;gap:7px;}
   .task-section{font-size:15px;font-weight:700;color:var(--txt);margin:20px 0 10px;padding-bottom:7px;border-bottom:2px solid var(--accent);}
   .task-section:first-child{margin-top:4px;}
+  .wiz-task{font-size:13.5px;padding:8px 11px;background:var(--card);border:1px solid var(--line);border-radius:9px;margin-bottom:7px;}
   .mop-row{display:flex;align-items:center;gap:10px;padding:9px 0;border-top:1px solid var(--line);}
   .mop-name{font-size:13px;font-weight:500;width:120px;flex:0 0 auto;}
   .mop-bar-wrap{flex:1;height:18px;background:var(--bg);border-radius:6px;overflow:hidden;}
@@ -460,6 +461,17 @@
     </div>
   </div>
 
+  <!-- МАСТЕР АУДИТА -->
+  <div class="gen-overlay" id="wizardOverlay" style="display:none;">
+    <div class="gen-sheet">
+      <div class="gen-h">
+        <div class="gen-title" id="wizTitle">🚀 Запуск</div>
+        <button class="gen-close" onclick="closeWizard()">✕</button>
+      </div>
+      <div id="wizBody"></div>
+    </div>
+  </div>
+
   <!-- DASHBOARD VIEW -->
   <div class="view" id="dashView">
     <div class="goal-card">
@@ -519,6 +531,11 @@
         </div>
         <div class="chat-scroll" id="chatScroll">
           <div class="chat-empty" id="chatEmpty">
+            <div id="wizBanner" style="display:none;background:var(--accent-bg);border:1px solid var(--accent);border-radius:14px;padding:18px;margin-bottom:22px;text-align:left;">
+              <div style="font-size:15px;font-weight:700;margin-bottom:6px;">🚀 Начнём с аудита вашего бизнеса</div>
+              <div style="font-size:13px;color:var(--txt2);line-height:1.55;margin-bottom:13px;">Система проанализирует данные, покажет где теряются деньги, спросит вашу цель и составит персональный план задач.</div>
+              <button onclick="openWizard()" style="width:100%;padding:12px;border-radius:10px;background:var(--accent);border:none;color:#fff;font-size:14px;font-weight:600;cursor:pointer;">Сделать полный аудит →</button>
+            </div>
             <div class="ce-icon">💬</div>
             <h3>Ваш ИИ-советник по продажам</h3>
             <p>Задайте любой вопрос про рост продаж. Советник знает ваши реальные цифры из CRM, команду и воронку.</p>
@@ -708,6 +725,8 @@ function renderStages(){
   renderFilters();
   const uz=state.lang==='uz';
   const wrap=stages;wrap.innerHTML='';
+  // Если есть кастомный план (из мастера аудита) — показываем его, а не 24 базовые задачи
+  if(state.customPlan){renderCustomPlan();return;}
   let lastSection=null;
   STAGES.forEach((s,idx)=>{
     const unlocked=stageUnlocked(idx),sdone=stageDone(s),cnt=s.quests.filter(q=>state.done[q.id]).length;
@@ -765,6 +784,59 @@ function renderStages(){
       <div class="s-body">${body}</div>`;
     wrap.appendChild(card);
   });
+}
+
+// Рендер кастомного плана (из мастера аудита): разделы Маркетинг/Продажи с чекбоксами
+function renderCustomPlan(){
+  const uz=state.lang==='uz';
+  const wrap=stages;wrap.innerHTML='';
+  const cp=state.customPlan;
+  if(!state.done)state.done={};
+
+  // Шапка плана с целью и кнопкой "пересобрать"
+  const head=document.createElement('div');
+  head.style.cssText='background:var(--card);border:1px solid var(--line);border-radius:12px;padding:13px 15px;margin-bottom:14px;';
+  const allTasks=[...(cp.marketing||[]),...(cp.sales||[])];
+  const doneN=allTasks.filter(q=>state.done[q.id]).length;
+  head.innerHTML=`
+    <div style="font-size:13px;color:var(--txt2);">🎯 ${uz?'Sizning maqsadingiz':'Ваша цель'}:</div>
+    <div style="font-size:15px;font-weight:600;margin:3px 0 8px;">${escapeHtml(cp.goal||(uz?'Belgilanmagan':'Не указана'))}</div>
+    <div style="font-size:12.5px;color:var(--txt3);">${uz?'Bajarildi':'Выполнено'}: ${doneN}/${allTasks.length}</div>
+    ${doneN>=allTasks.length&&allTasks.length>0?`<button onclick="wizReaudit()" style="width:100%;margin-top:11px;padding:11px;border-radius:10px;background:var(--green);border:none;color:#fff;font-size:14px;font-weight:600;cursor:pointer;">🎉 ${uz?'Barcha vazifalar bajarildi — yangi audit':'Все задачи выполнены — новый аудит'}</button>`:''}
+    <button onclick="wizRegenerate()" style="width:100%;margin-top:8px;padding:9px;border-radius:9px;background:none;border:1px solid var(--line2);color:var(--txt2);font-size:12.5px;cursor:pointer;">↻ ${uz?'Rejani qayta tuzish':'Пересобрать план'}</button>`;
+  wrap.appendChild(head);
+
+  const sections=[
+    {key:'marketing',label:uz?'📣 Marketing':'📣 Маркетинг',items:cp.marketing||[]},
+    {key:'sales',label:uz?'💼 Sotuvlar':'💼 Продажи',items:cp.sales||[]}
+  ];
+  sections.forEach(sec=>{
+    if(!sec.items.length)return;
+    const h=document.createElement('div');h.className='task-section';h.textContent=sec.label;wrap.appendChild(h);
+    sec.items.forEach(q=>{
+      const on=!!state.done[q.id];
+      const card=document.createElement('div');
+      card.className='stage open';
+      card.innerHTML=`<div class="s-body" style="display:block;padding:12px 14px;">
+        <div class="quest${on?' done':''}">
+          <div class="qcheck${on?' on':''}" onclick="toggleCustomTask('${q.id}')">${on?'✓':''}</div>
+          <div class="q-main"><div class="q-t">${escapeHtml(q.t)}</div><div class="q-d">${escapeHtml(q.d||'')}</div></div>
+        </div>
+      </div>`;
+      wrap.appendChild(card);
+    });
+  });
+}
+function toggleCustomTask(id){state.done[id]=!state.done[id];save();renderStages();renderHeader();}
+function wizRegenerate(){
+  if(!confirm('Пересобрать план заново? Текущие задачи и прогресс по ним сбросятся.'))return;
+  state.customPlan=null;state.done={};save();
+  openWizard();
+}
+function wizReaudit(){
+  if(!confirm('Все задачи выполнены! Сделать новый аудит и получить следующий план? (текущие задачи заменятся новыми)'))return;
+  state.customPlan=null;state.done={};save();
+  openWizard();
 }
 
 function toggleStage(id){state.open[id]=!state.open[id];save();renderStages();}
@@ -1479,7 +1551,7 @@ function renderChat(){
   const chat=activeChat();
   const sc=chatScroll;
   if(!chat.messages.length){chatEmpty.style.display='block';
-    [...sc.querySelectorAll('.msg')].forEach(m=>m.remove());return;}
+    [...sc.querySelectorAll('.msg')].forEach(m=>m.remove());maybeShowWelcome();return;}
   chatEmpty.style.display='none';
   [...sc.querySelectorAll('.msg')].forEach(m=>m.remove());
   chat.messages.forEach(m=>appendMsgDom(m.role,m.text,m.fileNames));
@@ -1607,6 +1679,7 @@ function bootApp(){
   applyTheme();renderHeader();renderStages();renderDopQuests();updateGoalHeader();renderSidebar();
   if(state.lang==='uz')setLang('uz');
   applyRole();
+  maybeShowWelcome();
   const start=(USER_ROLE==='rop')?'dash':(state.tab&&['chat','dash','map'].includes(state.tab)?state.tab:'chat');
   switchTab(start);
   document.getElementById('loginScreen').style.display='none';
@@ -1712,6 +1785,98 @@ async function deleteDemo(id){
     if(d&&d.ok){renderDemos(d.demos,5);}
     else{alert(d.error||'Ошибка');}
   }catch(e){alert('Нет связи');}
+}
+
+// ===== МАСТЕР АУДИТА (аудит → цель → задачи) =====
+function needsWizard(){ return !state.customPlan; }
+function maybeShowWelcome(){
+  const banner=document.getElementById('wizBanner');
+  if(!banner)return;
+  banner.style.display = needsWizard() ? 'block' : 'none';
+}
+function openWizard(){ document.getElementById('wizardOverlay').style.display='flex'; wizStep1(); }
+function closeWizard(){ document.getElementById('wizardOverlay').style.display='none'; }
+
+function wizStep1(){
+  document.getElementById('wizTitle').textContent='🚀 Шаг 1 — Аудит бизнеса';
+  document.getElementById('wizBody').innerHTML=`
+    <div style="font-size:14px;line-height:1.6;color:var(--txt2);margin-bottom:18px;">
+      Сделаем полный аудит вашего бизнеса по данным из CRM: где теряются деньги, какие главные проблемы, что чинить в первую очередь.
+    </div>
+    <button onclick="wizRunAudit()" style="width:100%;padding:14px;border-radius:11px;background:var(--accent);border:none;color:#fff;font-size:15px;font-weight:600;cursor:pointer;">✅ Да, сделать аудит</button>`;
+}
+let wizAuditData=null;
+async function wizRunAudit(){
+  document.getElementById('wizBody').innerHTML=`<div class="gen-loading">⏳ Анализирую ваш бизнес по данным CRM...</div>`;
+  try{
+    const r=await fetch('/api/dashboard');
+    const d=await r.json();
+    wizAuditData=d;
+    wizShowProblems(d);
+  }catch(e){
+    document.getElementById('wizBody').innerHTML=`<div class="gen-loading">⚠️ Не удалось получить данные. Попробуйте ещё раз.</div>`;
+  }
+}
+function wizShowProblems(d){
+  document.getElementById('wizTitle').textContent='📊 Результат аудита';
+  let probs='';
+  if(d&&d.problems&&d.problems.length){
+    probs=d.problems.map(p=>`<div style="display:flex;justify-content:space-between;padding:9px 0;border-top:1px solid var(--line);font-size:13.5px;"><span>${escapeHtml(p.name)}</span><b style="color:var(--red);">${p.count}</b></div>`).join('');
+  }else{
+    probs=`<div style="font-size:13px;color:var(--txt3);padding:10px 0;">Данных о проблемах пока мало. План составим по общей логике роста.</div>`;
+  }
+  let kpi='';
+  if(d&&d.totals){
+    const t=d.totals;
+    kpi=`<div style="font-size:13px;color:var(--txt2);margin-bottom:10px;">Продаж: <b style="color:var(--txt);">${t.sold}</b> · конверсия <b style="color:var(--txt);">${t.conv}%</b> · потеря до контакта <b style="color:var(--red);">${t.noContactPct}%</b></div>`;
+  }
+  document.getElementById('wizBody').innerHTML=`
+    ${kpi}
+    <div style="font-size:13px;font-weight:600;margin:6px 0 2px;">🩸 Где горят деньги:</div>
+    ${probs}
+    <button onclick="wizStep2()" style="width:100%;padding:14px;border-radius:11px;background:var(--accent);border:none;color:#fff;font-size:15px;font-weight:600;cursor:pointer;margin-top:18px;">Дальше → выбрать цель</button>`;
+}
+function wizStep2(){
+  document.getElementById('wizTitle').textContent='🎯 Шаг 2 — Ваша цель';
+  document.getElementById('wizBody').innerHTML=`
+    <div style="font-size:14px;line-height:1.6;color:var(--txt2);margin-bottom:14px;">
+      До какой суммы продаж в месяц вы хотите дойти? Можно указать и текущий уровень, и желаемый.
+    </div>
+    <input id="wizGoalInput" type="text" placeholder="Например: сейчас 150М, хочу 250М в месяц"
+      style="width:100%;padding:13px 15px;border-radius:11px;border:1px solid var(--line2);background:var(--card);color:var(--txt);font-size:14.5px;margin-bottom:14px;" />
+    <button onclick="wizGeneratePlan()" style="width:100%;padding:14px;border-radius:11px;background:var(--accent);border:none;color:#fff;font-size:15px;font-weight:600;cursor:pointer;">✨ Составить план задач</button>`;
+  setTimeout(()=>{const i=document.getElementById('wizGoalInput');if(i)i.focus();},100);
+}
+async function wizGeneratePlan(){
+  const goal=document.getElementById('wizGoalInput').value.trim();
+  document.getElementById('wizTitle').textContent='✨ Составляю план';
+  document.getElementById('wizBody').innerHTML=`<div class="gen-loading">⏳ Составляю персональный план задач под ваш аудит и цель...</div>`;
+  try{
+    const r=await fetch('/api/audit-plan',{method:'POST',headers:{'content-type':'application/json'},
+      body:JSON.stringify({goal,lang:state.lang||'ru'})});
+    const d=await r.json();
+    if(d&&d.ok&&d.plan&&((d.plan.marketing&&d.plan.marketing.length)||(d.plan.sales&&d.plan.sales.length))){
+      wizApplyPlan(d.plan,goal);
+    }else{
+      document.getElementById('wizBody').innerHTML=`<div class="gen-loading">⚠️ Не удалось составить план. Попробуйте ещё раз.</div>`;
+    }
+  }catch(e){
+    document.getElementById('wizBody').innerHTML=`<div class="gen-loading">⚠️ Нет связи. Попробуйте ещё раз.</div>`;
+  }
+}
+function wizApplyPlan(plan,goal){
+  state.customPlan={goal,createdAt:Date.now(),
+    marketing:(plan.marketing||[]).map((q,i)=>({id:'cm'+i,t:q.t,d:q.d||''})),
+    sales:(plan.sales||[]).map((q,i)=>({id:'cs'+i,t:q.t,d:q.d||''}))};
+  save();
+  const mkt=(plan.marketing||[]).map(q=>`<div class="wiz-task">📣 ${escapeHtml(q.t)}</div>`).join('');
+  const sls=(plan.sales||[]).map(q=>`<div class="wiz-task">💼 ${escapeHtml(q.t)}</div>`).join('');
+  document.getElementById('wizTitle').textContent='✅ Ваш план готов';
+  document.getElementById('wizBody').innerHTML=`
+    <div style="font-size:13.5px;color:var(--txt2);margin-bottom:14px;">План зафиксирован. Задачи появились во вкладке «Задачи». Идите по ним — когда всё выполните, сделаем аудит заново.</div>
+    ${mkt}${sls}
+    <button onclick="closeWizard();switchTab('map');" style="width:100%;padding:14px;border-radius:11px;background:var(--green);border:none;color:#fff;font-size:15px;font-weight:600;cursor:pointer;margin-top:16px;">Перейти к задачам →</button>`;
+  renderStages();maybeShowWelcome();
 }
 
 async function ropLogin(){
