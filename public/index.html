@@ -638,7 +638,18 @@ async function loadCloud(){
     const d=await r.json();
     if(d&&d.ok){
       USER_ROLE=d.role||'';USER_ORG=d.org||'';
-      if(d.data&&d.data.done){state=d.data;save();return true;}
+      if(d.data&&d.data.done){
+        // есть облачные данные — используем их
+        state=d.data;save();return true;
+      }else{
+        // НЕТ облачных данных (новый/демо аккаунт) — чистое состояние, НЕ берём из localStorage
+        state=defaultState();
+        if(USER_ROLE==='demo'){
+          // демо начинается совсем пустым: без задач-костяка, чистый чат
+          state.demoFresh=true;
+        }
+        save();return true;
+      }
     }
   }catch(e){}
   return false;
