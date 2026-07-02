@@ -1154,7 +1154,7 @@ function switchTab(t){
   cv.classList.toggle('active',t==='chat');
   document.body.classList.toggle('chat-open',t==='chat');
   if(t==='chat'){renderChat();scrollChatBottom();}
-  if(t==='dash'){renderDashboard();}
+  if(t==='dash'){renderDashboard();if(state.dashTab)dashTab(state.dashTab);}
 }
 
 /* ===== DASHBOARD ===== */
@@ -1162,6 +1162,7 @@ let dashLoaded=false;
 let dashCurrentTab='overview';
 function dashTab(tab){
   dashCurrentTab=tab;
+  state.dashTab=tab;save();
   ['overview','trends','finance','marketing','sales'].forEach(t=>{
     const btn=document.getElementById('dtab-'+t);
     const grp=document.getElementById('dg-'+t);
@@ -2575,6 +2576,9 @@ async function logout(){
 // ===== ПРОВЕРКА СЕССИИ ПРИ ЗАГРУЗКЕ =====
 (async function initAuth(){
   if(SESSION){
+    // Оптимистично прячем логин сразу, чтобы не мелькал при перезагрузке
+    const ls=document.getElementById('loginScreen');
+    if(ls)ls.style.display='none';
     try{
       const r=await fetch('/api/auth',{method:'POST',headers:{'content-type':'application/json'},
         body:JSON.stringify({action:'check',session:SESSION})});
@@ -2586,8 +2590,9 @@ async function logout(){
         return;
       }
     }catch(e){}
-    // сессия невалидна
+    // сессия невалидна — показываем вход обратно
     localStorage.removeItem('hp_session');SESSION='';
+    if(ls)ls.style.display='flex';
   }
   // показываем экран входа (он и так виден по умолчанию)
   document.getElementById('loginScreen').style.display='flex';
