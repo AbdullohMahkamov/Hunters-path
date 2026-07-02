@@ -39,10 +39,15 @@ export default async function handler(req, res) {
       } else {
         auditText += `Продаж в этом месяце: ${t.sold}, выручка ${t.revenue}.\n`;
       }
-      auditText += `Конверсия ${t.conv}%, средний чек ${t.avgCheck}, потеря до контакта ${t.noContactPct}%.\n`;
+      // Для аудита используем метрики ЗА ВЕСЬ ПЕРИОД (~4 мес), чтобы не смешивать с месячными
+      const convA = t.convAll != null ? t.convAll : t.conv;
+      const ncA = t.noContactPctAll != null ? t.noContactPctAll : t.noContactPct;
+      auditText += `За период (3-4 мес): конверсия ${convA}%, средний чек ${t.avgCheck}, потеря до контакта ${ncA}%.\n`;
     }
-    if (dash && dash.problems && dash.problems.length) {
-      auditText += "Главные причины потерь:\n" + dash.problems.map(p => `- ${p.name}: ${p.count}`).join("\n") + "\n";
+    // Причины потерь — за весь период (для аудита)
+    const auditProblems = (dash && dash.problemsAll && dash.problemsAll.length) ? dash.problemsAll : (dash && dash.problems);
+    if (auditProblems && auditProblems.length) {
+      auditText += "Главные причины потерь за период:\n" + auditProblems.map(p => `- ${p.name}: ${p.count}`).join("\n") + "\n";
     }
     if (speed && speed.mops && speed.mops.length) {
       auditText += "Дисциплина менеджеров:\n" + speed.mops.map(m =>
