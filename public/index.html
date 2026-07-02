@@ -242,6 +242,8 @@
   .perbtn{padding:6px 12px;font-size:12.5px;font-weight:500;border-radius:8px;border:1px solid var(--line2);
     background:var(--card);color:var(--txt2);cursor:pointer;}
   .perbtn.on{background:var(--accent);color:#fff;border-color:var(--accent);}
+  .dtab-fin{color:var(--gold);}
+  .dtab-fin.on{border-bottom-color:var(--gold);color:var(--gold);}
   .goal-big{font-size:26px;font-weight:700;}
 
   /* dop-quests + generator modal */
@@ -518,9 +520,10 @@
     <div class="dtabs">
       <button class="dtab on" id="dtab-overview" onclick="dashTab('overview')">Обзор</button>
       <button class="dtab" id="dtab-trends" onclick="dashTab('trends')">Динамика</button>
-      <button class="dtab" id="dtab-finance" onclick="dashTab('finance')">Финансы</button>
       <button class="dtab" id="dtab-marketing" onclick="dashTab('marketing')">Маркетинг</button>
       <button class="dtab" id="dtab-sales" onclick="dashTab('sales')">Продажи</button>
+      <span style="width:1px;background:var(--line2);margin:6px 4px;"></span>
+      <button class="dtab dtab-fin" id="dtab-finance" onclick="dashTab('finance')">Финансы</button>
     </div>
 
     <!-- РАЗДЕЛ: ОБЗОР -->
@@ -542,8 +545,16 @@
         <div class="dcard"><div class="dl">Продаж за месяц</div><div class="dv" id="kpiSold" style="color:var(--accent);">—</div><div class="dh" id="kpiSoldH">из плана 141</div></div>
         <div class="dcard"><div class="dl">Выручка</div><div class="dv" id="kpiRevenue">—</div><div class="dh">этот месяц</div></div>
         <div class="dcard"><div class="dl">Конверсия команды<span class="hint" onclick="showHint('conv',event)">?</span></div><div class="dv" id="kpiConv" style="color:var(--accent);">—</div><div class="dh">лид → продажа</div></div>
-        <div class="dcard"><div class="dl">Средний чек<span class="hint" onclick="showHint('check',event)">?</span></div><div class="dv" id="kpiCheck">—</div><div class="dh">без «своих»</div></div>
+        <div class="dcard"><div class="dl">Потеря до контакта<span class="hint" onclick="showHint('reach',event)">?</span></div><div class="dv" id="kpiNoContact" style="color:var(--red);">—</div><div class="dh">умерли без разговора</div></div>
       </div>
+
+      <!-- мини-динамика -->
+      <div class="dsect" style="margin-top:18px;">Динамика продаж</div>
+      <div id="overviewTrend"><div style="font-size:12px;color:var(--txt3);padding:10px;">Загрузка...</div></div>
+
+      <!-- прибыль (сводка из финансов) -->
+      <div class="dsect" style="margin-top:18px;">Прибыль (текущий месяц)</div>
+      <div id="overviewProfit"><div style="font-size:12px;color:var(--txt3);padding:10px;">Загрузка финансов...</div></div>
     </div>
 
     <!-- РАЗДЕЛ: ДИНАМИКА (тренды во времени) -->
@@ -1238,9 +1249,12 @@ function applyLiveDash(d){
   set('kpiRevenue',fmtSum(t.revenue));
   set('kpiConv',String(convVal).replace('.',',')+'%');
   set('kpiCheck',fmtSum(t.avgCheck));
+  set('kpiNoContact',(noContactVal!=null?noContactVal:0)+'%');
   // Маркетинг KPI
   set('mkLeads',leadsVal!=null?leadsVal:'—');
   set('mkNoContact',(noContactVal!=null?noContactVal:0)+'%');
+  // мини-сводки в обзоре
+  loadOverviewExtras();
 
   // Топ по продажам
   const bySales=d.mopsBySales||[];
@@ -1557,6 +1571,63 @@ function renderPlanFact(d){
 }
 
 // ===== СИГНАЛЫ (система сама находит проблемы) =====
+// ===== СВОДКА В ОБЗОРЕ: мини-динамика + прибыль =====
+let overviewExtrasLoaded=false;
+async function loadOverviewExtras(){
+  if(overviewExtrasLoaded)return;
+  overviewExtrasLoaded=true;
+  const uz=state.lang==='uz';
+  // мини-динамика
+  try{
+    const r=await fetch('/api/trends');const d=await r.json();
+    renderOverviewTrend((d.snaps)||[]);
+  }catch(e){
+    const b=document.getElementById('overviewTrend');if(b)b.innerHTML='';
+  }
+  // прибыль текущего месяца
+  try{
+    const r=await fetch('/api/finance',{method:'POST',headers:{'content-type':'application/json'},body:JSON.stringify({})});
+    const d=await r.json();
+    renderOverviewProfit(d&&d.ok?d:null);
+  }catch(e){
+    const b=document.getElementById('overviewProfit');if(b)b.innerHTML='';
+  }
+}
+function renderOverviewTrend(snaps){
+  const box=document.getElementById('overviewTrend');if(!box)return;
+  const uz=state.lang==='uz';
+  if(!snaps||snaps.length<2){
+    box.innerHTML=`<div style="font-size:12px;color:var(--txt3);padding:8px 0;">${uz?'Dinamika to\'planmoqda (grafik bir necha kundan keyin)':'Динамика копится (график через несколько дней)'}</div>`;
+    return;
+  }
+  const soldSeries=snaps.map(s=>s.soldPeriod!=null?s.soldPeriod:(s.sold||0));
+  const labels=snaps.map(s=>{const p=s.date.split('-');return p[2]+'.'+p[1];});
+  const first=soldSeries[0],last=soldSeries[soldSeries.length-1],diff=last-first;
+  const tc=diff>0?'var(--green)':diff<0?'var(--red)':'var(--txt2)';
+  const tt=diff>0?(uz?`+${diff}`:`+${diff}`):diff<0?`${diff}`:'0';
+  box.innerHTML=`<div style="font-size:12.5px;margin-bottom:6px;">${uz?'Trend':'Тренд'}: <b style="color:${tc};">${tt}</b> ${uz?`(${first}→${last})`:`(было ${first}, стало ${last})`}</div>${lineChart(soldSeries,labels,'var(--accent)',uz?'':'')}`;
+}
+function renderOverviewProfit(d){
+  const box=document.getElementById('overviewProfit');if(!box)return;
+  const uz=state.lang==='uz';
+  if(!d||d.profit==null){
+    box.innerHTML=`<div style="font-size:12px;color:var(--txt3);padding:8px 0;">${uz?'Moliya bo\'limida ko\'ring':'Смотрите в разделе Финансы'}</div>`;
+    return;
+  }
+  const fmt=n=>n==null?'—':new Intl.NumberFormat('ru-RU').format(Math.round(n))+' '+(uz?'so\'m':'сум');
+  const pc=d.profit>=0?'var(--green)':'var(--red)';
+  box.innerHTML=`<div style="background:var(--card);border:1px solid var(--line);border-radius:12px;padding:14px 16px;">
+    <div style="display:flex;justify-content:space-between;align-items:center;gap:12px;flex-wrap:wrap;">
+      <div>
+        <div style="font-size:11px;color:var(--txt3);">${uz?'Sof foyda':'Чистая прибыль'} · ${escapeHtml(d.month||'')}</div>
+        <div style="font-size:20px;font-weight:700;color:${pc};">${fmt(d.profit)}</div>
+      </div>
+      ${d.margin!=null?`<div style="text-align:right;"><div style="font-size:11px;color:var(--txt3);">${uz?'Rentabellik':'Рентабельность'}</div><div style="font-size:16px;font-weight:600;color:${pc};">${d.margin}%</div></div>`:''}
+    </div>
+  </div>`;
+}
+
+// ===== СВОДКА: конец =====
 function renderSignals(d){
   const box=document.getElementById('signalsBox');if(!box)return;
   const t=d.totals||{};
