@@ -30,16 +30,16 @@
     --green:#3f9142; --green-bg:#e6f2e6; --red:#c0392b; --red-bg:#f8e6e3;
   }
   body.theme-light{
-    --bg:#ffffff; --bg2:#f6f8fa; --card:#f2f5f8; --card2:#eaeef2; --sidebar:#f0f3f6;
-    --line:#e2e8ee; --line2:#cdd6df; --txt:#1a2430; --txt2:#5a6b7b; --txt3:#93a1af;
-    --accent:#2563eb; --accent-bg:#e5edfd; --gold:#b5850f; --gold-bg:#faf1d6;
-    --green:#1a8f5a; --green-bg:#e3f4ec; --red:#d64550; --red-bg:#fbe7e9;
+    --bg:#ffffff; --bg2:#fbfbfa; --card:#f6f6f4; --card2:#efeeec; --sidebar:#f7f7f5;
+    --line:#ececea; --line2:#dededa; --txt:#22201c; --txt2:#6b6862; --txt3:#9c988f;
+    --accent:#3a3a38; --accent-bg:#f0f0ee; --gold:#9a7a2e; --gold-bg:#f6f0dc;
+    --green:#3f7d54; --green-bg:#eaf2ec; --red:#b3453e; --red-bg:#f7e9e7;
   }
   body.theme-slate{
-    --bg:#1a1d24; --bg2:#20242d; --card:#272c37; --card2:#2f3542; --sidebar:#16191f;
-    --line:#333a47; --line2:#434c5c; --txt:#e8ecf2; --txt2:#a3adbd; --txt3:#6f7a8a;
-    --accent:#7c9cff; --accent-bg:#2a3350; --gold:#e0b23c; --gold-bg:#38300f;
-    --green:#4bd0a0; --green-bg:#14342a; --red:#ff7a7a; --red-bg:#3a1e1e;
+    --bg:#1f1e1d; --bg2:#262523; --card:#2b2a28; --card2:#33322f; --sidebar:#1a1918;
+    --line:#343330; --line2:#43423e; --txt:#ececea; --txt2:#a8a49d; --txt3:#736f68;
+    --accent:#c8c6c1; --accent-bg:#33322f; --gold:#c9a84e; --gold-bg:#332c15;
+    --green:#5fb07f; --green-bg:#18322380; --red:#d98b84; --red-bg:#3a201e;
   }
   body.theme-forest{
     --bg:#0e1a15; --bg2:#132420; --card:#1a2f28; --card2:#213b32; --sidebar:#0b1712;
@@ -49,8 +49,8 @@
   }
   *{box-sizing:border-box; -webkit-tap-highlight-color:transparent;}
   html,body{margin:0; padding:0; background:var(--bg); color:var(--txt);
-    font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,sans-serif;
-    overscroll-behavior:none;}
+    font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,"Helvetica Neue",Arial,sans-serif;
+    font-size:15px; line-height:1.5; -webkit-font-smoothing:antialiased; overscroll-behavior:none;}
   body{display:flex; flex-direction:column; min-height:100vh; min-height:100dvh;}
 
   /* HEADER */
@@ -655,7 +655,7 @@ let USER_ROLE='', USER_ORG='';
 
 let state = loadStateLocal();
 function defaultState(){
-  return {done:{},bosses:{},open:{},filter:'all',chats:[{id:'c0',title:'Новый чат',messages:[]}],activeChatId:'c0',lang:'ru',dopQuests:[],goal:500000000,theme:'theme-slate',projects:[]};
+  return {done:{},bosses:{},open:{},filter:'all',chats:[{id:'c0',title:'Новый чат',messages:[]}],activeChatId:'c0',lang:'ru',dopQuests:[],goal:500000000,theme:'theme-light',projects:[]};
 }
 function loadStateLocal(){
   try{const s=JSON.parse(localStorage.getItem(SKEY));if(s&&s.done)return s;}catch(e){}
