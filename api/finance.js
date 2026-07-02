@@ -74,14 +74,43 @@ function findByKeys(rows, keys) {
   return null;
 }
 
+// Кэш соответствия «название листа → gid» (числовой ID вкладки)
+let _gidMapCache = null;
+async function getGidMap() {
+  if (_gidMapCache) return _gidMapCache;
+  const map = {};
+  try {
+    const url = `https://docs.google.com/spreadsheets/d/${SHEET_ID}/htmlview`;
+    const r = await fetch(url, { redirect: "follow" });
+    const html = await r.text();
+    // ищем пары: id="sheet-button-<gid>" ... >Название<
+    const re = /id="sheet-button-(\d+)"[^>]*>(?:<[^>]*>)*\s*([^<]+)/g;
+    let m;
+    while ((m = re.exec(html)) !== null) {
+      const gid = m[1];
+      const name = m[2].trim();
+      if (name) map[name] = gid;
+    }
+  } catch (e) { /* пусто */ }
+  _gidMapCache = map;
+  return map;
+}
+
 async function fetchSheetCSV(sheetName) {
-  // экспорт конкретного листа в CSV
-  const base = `https://docs.google.com/spreadsheets/d/${SHEET_ID}/gviz/tq?tqx=out:csv`;
-  const url = sheetName ? `${base}&sheet=${encodeURIComponent(sheetName)}` : base;
+  const gidMap = await getGidMap();
+  let url;
+  if (sheetName && gidMap[sheetName]) {
+    // надёжный путь: экспорт по gid
+    url = `https://docs.google.com/spreadsheets/d/${SHEET_ID}/export?format=csv&gid=${gidMap[sheetName]}`;
+  } else if (sheetName) {
+    // запасной путь: по имени через gviz (может ошибаться)
+    url = `https://docs.google.com/spreadsheets/d/${SHEET_ID}/gviz/tq?tqx=out:csv&sheet=${encodeURIComponent(sheetName)}`;
+  } else {
+    url = `https://docs.google.com/spreadsheets/d/${SHEET_ID}/gviz/tq?tqx=out:csv`;
+  }
   const r = await fetch(url, { redirect: "follow" });
   if (!r.ok) throw new Error("Sheet fetch failed: " + r.status);
   const text = await r.text();
-  // если Google вернул HTML (нет доступа) — это не CSV
   if (text.trim().startsWith("<")) throw new Error("NO_ACCESS");
   return text;
 }
@@ -140,7 +169,7 @@ async function aiReadFinance(csv) {
 - expenses = общие расходы (umumiy xarajatlar, jami xarajat, всего расходов)
 - profit = чистая прибыль (sof foyda, чистая прибыль); если её нет, посчитай revenue - expenses
 - tax = налог (soliq), если есть
-Числа — только цифры, без пробелов и валют. Отрицательные значения сохраняй (убыток). Если чего-то нет — null.`;
+ВАЖНО: бери числа ТОЛЬКО из таблицы. НИКОГДА не выдумывай и не округляй. Если таблица пустая или значения нет — ставь null. Не подставляй примерные числа вроде 200000000. Числа — только цифры, без пробелов и валют. Отрицательные (убыток) сохраняй.`;
   try {
     const r = await fetch("https://api.anthropic.com/v1/messages", {
       method: "POST",
@@ -174,7 +203,7 @@ function numOrNull(v) {
 // читает один лист: сначала кэш, потом ИИ (с кэшированием), парсер по словам — запасной вариант.
 async function readMonth(tab, opts) {
   opts = opts || {};
-  const cacheKey = `fin:${tab}`;
+  const cacheKey = `fin:v2:${tab}`;
   if (!opts.force) {
     const cached = await cacheGet(cacheKey);
     if (cached) return cached;
@@ -212,21 +241,48 @@ export default async function handler(req, res) {
     const action = (req.body && req.body.action) || (req.query && req.query.action) || "";
     const curMonth = new Date().getMonth() + 1;
 
-    // список месяцев (для дропдауна) — известные листы + пометка текущего
+    // ДИАГНОСТИКА: вернуть сырой CSV + карту gid, чтобы понять что реально читается
+    if (action === "diag") {
+      const tab = (req.body && req.body.month) || (MONTHS.find(m => m.m === curMonth) || {}).tab || "";
+      const gidMap = await getGidMap();
+      let csv = "", err = "";
+      try { csv = await fetchSheetCSV(tab); } catch (e) { err = String(e); }
+      res.status(200).json({
+        ok: true, tab, gidMap, error: err,
+        csvHead: csv.slice(0, 3000),
+        rowCount: csv ? csv.split("\n").length : 0,
+      });
+      return;
+    }
+
+    // список месяцев (для дропдауна) — сопоставляем известные месяцы с реальными вкладками
     if (action === "list") {
-      const months = MONTHS.map(mo => ({ tab: mo.tab, label: mo.label, labelUz: mo.labelUz, m: mo.m, current: mo.m === curMonth }));
+      const gidMap = await getGidMap();
+      const realTabs = Object.keys(gidMap);
+      const months = [];
+      for (const mo of MONTHS) {
+        // ищем реальную вкладку, где встречается узбекское название месяца
+        const real = realTabs.find(t => t.toLowerCase().includes(mo.labelUz.toLowerCase()));
+        if (real) months.push({ tab: real, label: mo.label, labelUz: mo.labelUz, m: mo.m, current: mo.m === curMonth });
+      }
+      // если ничего не сопоставилось (нет gid-карты) — отдаём как есть
+      if (!months.length) {
+        MONTHS.forEach(mo => months.push({ tab: mo.tab, label: mo.label, labelUz: mo.labelUz, m: mo.m, current: mo.m === curMonth }));
+      }
       res.status(200).json({ ok: true, months, currentMonth: curMonth });
       return;
     }
 
     // годовая динамика — читаем все месяцы до текущего включительно
     if (action === "year") {
+      const gidMap = await getGidMap();
+      const realTabs = Object.keys(gidMap);
       const list = MONTHS.filter(mo => mo.m <= curMonth);
       const results = [];
       for (const mo of list) {
-        const r = await readMonth(mo.tab, { isCurrent: mo.m === curMonth });
+        const real = realTabs.find(t => t.toLowerCase().includes(mo.labelUz.toLowerCase())) || mo.tab;
+        const r = await readMonth(real, { isCurrent: mo.m === curMonth });
         if (r.error === "no_access") { res.status(200).json({ ok: false, error: "no_access" }); return; }
-        // включаем месяц только если нашли хоть выручку или прибыль
         if (r.revenue != null || r.profit != null) {
           results.push({ month: mo.label, monthUz: mo.labelUz, m: mo.m, revenue: r.revenue, expenses: r.expenses, profit: r.profit, margin: r.margin });
         }
@@ -236,21 +292,24 @@ export default async function handler(req, res) {
     }
 
     // один месяц: указанный tab, или текущий по умолчанию
+    const gidMap2 = await getGidMap();
+    const realTabs2 = Object.keys(gidMap2);
     let tab = (req.body && req.body.month) || (req.query && req.query.month) || "";
     if (!tab) {
       const cur = MONTHS.find(mo => mo.m === curMonth);
-      tab = cur ? cur.tab : (MONTHS[MONTHS.length - 1] ? MONTHS[MONTHS.length - 1].tab : "");
+      const real = cur ? realTabs2.find(t => t.toLowerCase().includes(cur.labelUz.toLowerCase())) : null;
+      tab = real || (cur ? cur.tab : (MONTHS[MONTHS.length - 1] ? MONTHS[MONTHS.length - 1].tab : ""));
     }
-    const moInfo0 = MONTHS.find(mo => mo.tab === tab);
+    // определить месяц по названию вкладки (для isCurrent и подписи)
+    const moInfo0 = MONTHS.find(mo => tab.toLowerCase().includes(mo.labelUz.toLowerCase()));
     const force = !!(req.body && req.body.force);
     const r = await readMonth(tab, { isCurrent: moInfo0 && moInfo0.m === curMonth, force });
     if (r.error === "no_access") { res.status(200).json({ ok: false, error: "no_access" }); return; }
     if (r.error) { res.status(200).json({ ok: false, error: r.error }); return; }
-    const moInfo = MONTHS.find(mo => mo.tab === tab);
     res.status(200).json({
       ok: true,
-      month: moInfo ? moInfo.label : tab,
-      monthUz: moInfo ? moInfo.labelUz : tab,
+      month: moInfo0 ? moInfo0.label : tab,
+      monthUz: moInfo0 ? moInfo0.labelUz : tab,
       tab,
       revenue: r.revenue, expenses: r.expenses, profit: r.profit, tax: r.tax, margin: r.margin,
       found: r.found,
