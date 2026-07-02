@@ -12,7 +12,7 @@
 <title>Hunter Academy — план роста</title>
 <style>
   :root{
-    --bg:#0b1622; --bg2:#10202f; --card:#14283b; --card2:#1a3147;
+    --bg:#0b1622; --bg2:#10202f; --card:#14283b; --card2:#1a3147; --sidebar:#0d1a27;
     --line:#21405c; --line2:#2c5378;
     --txt:#eaf2fb; --txt2:#9fb6cd; --txt3:#6f8aa4;
     --accent:#3b9eff; --accent-bg:#16314b;
@@ -21,6 +21,31 @@
     --red:#ff6b6b; --red-bg:#3a1a1f;
     --purple:#9b8cff;
     --radius:12px;
+  }
+  /* ===== ТЕМЫ ОФОРМЛЕНИЯ ===== */
+  body.theme-cream{
+    --bg:#f7f4ee; --bg2:#f0ece3; --card:#ffffff; --card2:#f3efe7; --sidebar:#efeae1;
+    --line:#e2dcd0; --line2:#d4ccbc; --txt:#2b2620; --txt2:#6b6459; --txt3:#9a9384;
+    --accent:#c8622d; --accent-bg:#f5e6dc; --gold:#c99a2e; --gold-bg:#f7efd8;
+    --green:#3f9142; --green-bg:#e6f2e6; --red:#c0392b; --red-bg:#f8e6e3;
+  }
+  body.theme-light{
+    --bg:#ffffff; --bg2:#f6f8fa; --card:#f2f5f8; --card2:#eaeef2; --sidebar:#f0f3f6;
+    --line:#e2e8ee; --line2:#cdd6df; --txt:#1a2430; --txt2:#5a6b7b; --txt3:#93a1af;
+    --accent:#2563eb; --accent-bg:#e5edfd; --gold:#b5850f; --gold-bg:#faf1d6;
+    --green:#1a8f5a; --green-bg:#e3f4ec; --red:#d64550; --red-bg:#fbe7e9;
+  }
+  body.theme-slate{
+    --bg:#1a1d24; --bg2:#20242d; --card:#272c37; --card2:#2f3542; --sidebar:#16191f;
+    --line:#333a47; --line2:#434c5c; --txt:#e8ecf2; --txt2:#a3adbd; --txt3:#6f7a8a;
+    --accent:#7c9cff; --accent-bg:#2a3350; --gold:#e0b23c; --gold-bg:#38300f;
+    --green:#4bd0a0; --green-bg:#14342a; --red:#ff7a7a; --red-bg:#3a1e1e;
+  }
+  body.theme-forest{
+    --bg:#0e1a15; --bg2:#132420; --card:#1a2f28; --card2:#213b32; --sidebar:#0b1712;
+    --line:#264238; --line2:#33574a; --txt:#e6f2ec; --txt2:#9dbdb0; --txt3:#6a8578;
+    --accent:#2fbf8f; --accent-bg:#173a2e; --gold:#dfa93c; --gold-bg:#33290f;
+    --green:#3fd08a; --green-bg:#123a28; --red:#ff7a7a; --red-bg:#3a1e1e;
   }
   *{box-sizing:border-box; -webkit-tap-highlight-color:transparent;}
   html,body{margin:0; padding:0; background:var(--bg); color:var(--txt);
@@ -225,14 +250,69 @@
   .gen-skip{background:var(--card2);color:var(--txt2);border:1px solid var(--line)!important;}
   .gen-loading{text-align:center;padding:30px;color:var(--txt2);font-size:13px;}
 
-  /* multi-chat */
-  .chat-bar{display:flex;align-items:center;gap:8px;padding:9px 12px;background:var(--bg2);border-bottom:1px solid var(--line);}
-  .chat-bar select{flex:1;background:var(--card);border:1px solid var(--line2);color:var(--txt);
-    font-size:13px;padding:8px 10px;border-radius:9px;font-family:inherit;}
-  .chat-new{width:38px;height:38px;border-radius:9px;background:var(--accent);border:none;color:#fff;
-    font-size:20px;cursor:pointer;flex:0 0 auto;display:flex;align-items:center;justify-content:center;}
-  .chat-del{width:38px;height:38px;border-radius:9px;background:var(--card);border:1px solid var(--line2);
-    color:var(--txt2);font-size:15px;cursor:pointer;flex:0 0 auto;}
+  /* ===== CHAT LAYOUT (Claude-style) ===== */
+  #chatView{display:none;flex-direction:column;padding:0;height:100%;}
+  #chatView.active{display:flex;}
+  .chat-layout{flex:1;display:flex;min-height:0;position:relative;}
+
+  /* Sidebar */
+  .chat-sidebar{width:250px;flex:0 0 auto;background:var(--sidebar);border-right:1px solid var(--line);
+    display:flex;flex-direction:column;padding:12px 10px;overflow:hidden;transition:transform .25s;}
+  .side-new{width:100%;padding:11px;border-radius:10px;background:var(--accent);color:#fff;border:none;
+    font-size:13.5px;font-weight:600;cursor:pointer;margin-bottom:12px;}
+  .side-list{flex:1;overflow-y:auto;display:flex;flex-direction:column;gap:3px;-webkit-overflow-scrolling:touch;}
+  .side-item{display:flex;align-items:center;gap:8px;padding:9px 10px;border-radius:8px;cursor:pointer;
+    font-size:13px;color:var(--txt2);position:relative;}
+  .side-item:hover{background:var(--card);}
+  .side-item.on{background:var(--card);color:var(--txt);font-weight:500;}
+  .side-item .si-t{flex:1;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;}
+  .side-item .si-del{opacity:0;background:none;border:none;color:var(--txt3);cursor:pointer;font-size:13px;flex:0 0 auto;}
+  .side-item:hover .si-del{opacity:1;}
+  .side-foot{border-top:1px solid var(--line);padding-top:11px;margin-top:8px;}
+  .side-label{font-size:11px;color:var(--txt3);margin-bottom:7px;}
+  .theme-row{display:flex;gap:7px;flex-wrap:wrap;}
+  .theme-dot{width:26px;height:26px;border-radius:50%;cursor:pointer;border:2px solid transparent;flex:0 0 auto;}
+  .theme-dot.on{border-color:var(--accent);}
+  .side-backdrop{display:none;position:absolute;inset:0;background:rgba(0,0,0,.45);z-index:14;}
+
+  /* Main chat area */
+  .chat-main{flex:1;display:flex;flex-direction:column;min-width:0;min-height:0;}
+  .chat-topbar{display:flex;align-items:center;gap:10px;padding:11px 14px;border-bottom:1px solid var(--line);background:var(--bg);}
+  .side-toggle{display:none;background:none;border:none;color:var(--txt2);font-size:19px;cursor:pointer;padding:0;}
+  .chat-title-cur{font-size:14px;font-weight:600;color:var(--txt);overflow:hidden;text-overflow:ellipsis;white-space:nowrap;}
+
+  @media(max-width:700px){
+    .chat-sidebar{position:absolute;left:0;top:0;bottom:0;z-index:15;transform:translateX(-100%);box-shadow:2px 0 20px rgba(0,0,0,.4);}
+    .chat-sidebar.open{transform:translateX(0);}
+    .side-backdrop.show{display:block;}
+    .side-toggle{display:block;}
+  }
+
+  /* Messages — Claude style: user in bubble, assistant full-width */
+  .chat-scroll{flex:1;overflow-y:auto;padding:22px 0;-webkit-overflow-scrolling:touch;}
+  .msg{max-width:720px;margin:0 auto 20px;padding:0 20px;}
+  .msg.me{display:flex;justify-content:flex-end;}
+  .msg.me .m-bubble{background:var(--accent);color:#fff;padding:11px 15px;border-radius:15px 15px 4px 15px;
+    max-width:85%;font-size:14.5px;line-height:1.55;white-space:pre-wrap;word-wrap:break-word;}
+  .msg.k .m-bubble{color:var(--txt);font-size:14.5px;line-height:1.65;}
+  /* markdown inside assistant */
+  .m-bubble h1,.m-bubble h2,.m-bubble h3,.m-bubble h4{margin:14px 0 7px;line-height:1.3;font-weight:700;color:var(--txt);}
+  .m-bubble h1{font-size:19px;} .m-bubble h2{font-size:17px;} .m-bubble h3{font-size:15.5px;} .m-bubble h4{font-size:14.5px;}
+  .m-bubble p{margin:8px 0;}
+  .m-bubble ul,.m-bubble ol{margin:8px 0;padding-left:22px;}
+  .m-bubble li{margin:4px 0;}
+  .m-bubble strong{font-weight:700;color:var(--txt);}
+  .m-bubble em{font-style:italic;}
+  .m-bubble hr{border:none;border-top:1px solid var(--line);margin:14px 0;}
+  .m-bubble code{background:var(--card);padding:2px 6px;border-radius:5px;font-size:13px;font-family:ui-monospace,Menlo,monospace;}
+  .m-bubble pre{background:var(--card);border:1px solid var(--line);border-radius:10px;padding:12px;overflow-x:auto;margin:10px 0;}
+  .m-bubble pre code{background:none;padding:0;font-size:13px;line-height:1.5;}
+  .m-bubble table{border-collapse:collapse;width:100%;margin:10px 0;font-size:13px;}
+  .m-bubble th,.m-bubble td{border:1px solid var(--line);padding:7px 9px;text-align:left;}
+  .m-bubble th{background:var(--card);font-weight:600;}
+  .m-bubble a{color:var(--accent);}
+  .m-file{font-size:12px;color:var(--txt2);margin-top:6px;display:flex;align-items:center;gap:5px;}
+  .msg.me .m-file{color:rgba(255,255,255,.85);}
 
   /* tooltip "?" */
   .hint{display:inline-flex;align-items:center;justify-content:center;width:15px;height:15px;border-radius:50%;
@@ -284,14 +364,14 @@
     <div id="stages"></div>
 
     <div id="dopSection" style="display:none;margin-top:16px;">
-      <div class="dsect" style="color:var(--gold);">🔥 Доп-задачи (по горячим проблемам)</div>
+      <div class="dsect" id="dopSecTitle" style="color:var(--gold);">🔥 Доп-задачи (по горячим проблемам)</div>
       <div id="dopQuests"></div>
     </div>
 
     <div class="foot">
-      <button onclick="openGenerator()" style="border-color:var(--gold);color:var(--gold);">🎯 Подобрать задачи под мои проблемы</button>
-      <button onclick="askNext()">🧭 С какой задачи начать?</button>
-      <button onclick="resetHunt()">↺ Сбросить прогресс</button>
+      <button id="genBtn" onclick="openGenerator()" style="border-color:var(--gold);color:var(--gold);">🎯 Подобрать задачи под мои проблемы</button>
+      <button id="nextBtn" onclick="askNext()">🧭 С какой задачи начать?</button>
+      <button id="resetBtn" onclick="resetHunt()">↺ Сбросить прогресс</button>
     </div>
   </div>
 
@@ -310,7 +390,7 @@
   <!-- DASHBOARD VIEW -->
   <div class="view" id="dashView">
     <div class="goal-card">
-      <div style="font-size:12px;color:var(--txt2);margin-bottom:4px;">ЦЕЛЬ · ЭТОТ МЕСЯЦ</div>
+      <div style="font-size:12px;color:var(--txt2);margin-bottom:4px;" id="goalTitle">ЦЕЛЬ · ЭТОТ МЕСЯЦ</div>
       <div class="goal-big" style="color:var(--accent);cursor:pointer;" id="goalBig" onclick="editGoal()">500 000 000 <span style="font-size:15px;color:var(--txt2);">сум/мес ✏️</span></div>
       <div style="font-size:12.5px;color:var(--txt2);margin-top:6px;" id="goalSub">Загрузка живых данных...</div>
       <div class="bar" style="margin-top:9px;"><div class="bar-fill" id="goalProgressBar" style="width:0%;"></div></div>
@@ -324,16 +404,16 @@
       <div class="dcard"><div class="dl">Средний чек<span class="hint" onclick="showHint('check',event)">?</span></div><div class="dv" id="kpiCheck">—</div><div class="dh">без «своих»</div></div>
     </div>
 
-    <div class="dsect">🏆 Топ по продажам</div>
+    <div class="dsect" id="secTop">🏆 Топ по продажам</div>
     <div id="topSalesChart"></div>
 
-    <div class="dsect">⚔️ Конверсия и дозвон по менеджерам<span class="hint" onclick="showHint('reach',event)">?</span></div>
+    <div class="dsect" id="secMop">⚔️ Конверсия и дозвон по менеджерам<span class="hint" onclick="showHint('reach',event)">?</span></div>
     <div id="mopChart"></div>
 
-    <div class="dsect">🩸 5 главных причин потерь<span class="hint" onclick="showHint('problems',event)">?</span></div>
+    <div class="dsect" id="secProb">🩸 5 главных причин потерь<span class="hint" onclick="showHint('problems',event)">?</span></div>
     <div id="problemsChart"></div>
 
-    <div class="dsect">⚡ Дисциплина менеджеров<span class="hint" onclick="showHint('early',event)">?</span></div>
+    <div class="dsect" id="secDisc">⚡ Дисциплина менеджеров<span class="hint" onclick="showHint('early',event)">?</span></div>
     <div id="disciplineChart"><div style="font-size:12px;color:var(--txt3);">Нажмите «Обновить дисциплину» — это подробный расчёт по звонкам и задачам, идёт 20-40 секунд.</div></div>
 
     <div class="foot" style="margin-top:14px;">
@@ -345,88 +425,104 @@
 
   <!-- CHAT VIEW -->
   <div class="view" id="chatView">
-    <div class="chat-bar">
-      <select id="chatSelect" onchange="switchChat(this.value)"></select>
-      <button class="chat-del" onclick="deleteChat()" title="Удалить чат">🗑</button>
-      <button class="chat-new" onclick="newChat()" title="Новый чат">＋</button>
-    </div>
-    <div class="chat-scroll" id="chatScroll">
-      <div class="chat-empty" id="chatEmpty">
-        <div class="ce-icon">💬</div>
-        <h3>Ваш ИИ-советник по продажам</h3>
-        <p>Задайте любой вопрос про рост продаж. Советник знает ваши реальные цифры из CRM, команду и воронку. Нажмите «помощь» у любой задачи — получите готовый разбор.</p>
+    <div class="chat-layout">
+      <!-- Боковая панель чатов -->
+      <div class="chat-sidebar" id="chatSidebar">
+        <button class="side-new" id="newChatBtn" onclick="newChat()">＋ Новый чат</button>
+        <div class="side-list" id="sideList"></div>
+        <div class="side-foot">
+          <div class="side-label" id="themeLabel">Тема оформления</div>
+          <div class="theme-row" id="themeRow"></div>
+        </div>
       </div>
-    </div>
-    <div class="quick" id="quickRow">
-      <button onclick="quickAsk('С какой задачи начать?')">С чего начать?</button>
-      <button onclick="quickAsk('Где я больше всего теряю денег и почему?')">Где теряю деньги?</button>
-      <button onclick="quickAsk('Дай план продаж на этот месяц по каждому менеджеру')">План на месяц</button>
-    </div>
-    <div class="file-chips" id="fileChips"></div>
-    <div class="chat-input">
-      <input type="file" id="fileInput" accept=".pdf,.png,.jpg,.jpeg,.csv,.txt,image/*" multiple style="display:none;" onchange="handleFiles(this.files)" />
-      <button class="attach-btn" onclick="document.getElementById('fileInput').click()" aria-label="Прикрепить файл">📎</button>
-      <textarea id="chatBox" rows="1" placeholder="Спросите совета..." oninput="autoGrow(this)"></textarea>
-      <button class="send-btn" id="sendBtn" onclick="sendMsg()">➤</button>
+      <!-- Затемнение под сайдбар на мобильном -->
+      <div class="side-backdrop" id="sideBackdrop" onclick="toggleSidebar(false)"></div>
+
+      <!-- Основная область чата -->
+      <div class="chat-main">
+        <div class="chat-topbar">
+          <button class="side-toggle" onclick="toggleSidebar(true)" title="Чаты">☰</button>
+          <div class="chat-title-cur" id="chatTitleCur">Новый чат</div>
+        </div>
+        <div class="chat-scroll" id="chatScroll">
+          <div class="chat-empty" id="chatEmpty">
+            <div class="ce-icon">💬</div>
+            <h3>Ваш ИИ-советник по продажам</h3>
+            <p>Задайте любой вопрос про рост продаж. Советник знает ваши реальные цифры из CRM, команду и воронку.</p>
+          </div>
+        </div>
+        <div class="quick" id="quickRow">
+          <button onclick="quickAsk('С какой задачи начать?')">С чего начать?</button>
+          <button onclick="quickAsk('Где я больше всего теряю денег и почему?')">Где теряю деньги?</button>
+          <button onclick="quickAsk('Дай план продаж на этот месяц по каждому менеджеру')">План на месяц</button>
+        </div>
+        <div class="file-chips" id="fileChips"></div>
+        <div class="chat-input">
+          <input type="file" id="fileInput" accept=".pdf,.png,.jpg,.jpeg,.csv,.txt,image/*" multiple style="display:none;" onchange="handleFiles(this.files)" />
+          <button class="attach-btn" onclick="document.getElementById('fileInput').click()" aria-label="Прикрепить файл">📎</button>
+          <textarea id="chatBox" rows="1" placeholder="Спросите совета..." oninput="autoGrow(this)"></textarea>
+          <button class="send-btn" id="sendBtn" onclick="sendMsg()">➤</button>
+        </div>
+      </div>
     </div>
   </div>
 </main>
 
 <script>
 const STAGES = [
-  { id:1, name:'Привлечение лидов', sub:'Трафик → Лид · откуда приходят клиенты', icon:'📡',
-    boss:'Ключевая цель этапа', bossDesc:'49% лидов идут из одной рекламной связки. Задача — не зависеть от одного источника.',
-    reward:'✅ Результат: не зависите от одного источника лидов',
+  { id:1, name:'Привлечение лидов', nameUz:'Mijozlarni jalb qilish', sub:'Трафик → Лид · откуда приходят клиенты', subUz:'Trafik → Lid · mijozlar qayerdan keladi', icon:'📡',
+    boss:'Ключевая цель этапа', bossUz:'Bosqichning asosiy maqsadi', bossDesc:'49% лидов идут из одной рекламной связки. Задача — не зависеть от одного источника.', bossDescUz:'Lidlarning 49% bitta reklama manbaidan keladi. Vazifa — bitta manbaga bog‘liq bo‘lmaslik.',
+    reward:'✅ Результат: не зависите от одного источника лидов', rewardUz:'✅ Natija: bitta lid manbaiga bog‘liq emassiz',
     quests:[
-      {id:'1a',t:'Разбить таргет на 3–4 параллельные связки',d:'Перелить часть бюджета из BOLLA OGANI в KARYERA (конвертит лучше) + тест 2 новых аудиторий.'},
-      {id:'1b',t:'Завести лист учёта связок',d:'Связка / CPL / лиды / продажи / конверсия / статус. Живёт, пока CPL ≤6000 и конверсия ≥1,8%.'},
-      {id:'1c',t:'5 новых селфи-крео в неделю',d:'Телефон, лайв, без студии. Офис, цифры заработка, профессия. Конкретные суммы, без понтов.'},
-      {id:'1d',t:'Запустить органику: 1 Reels в день',d:'Social Proof + Big Brother + Luxe Life. Греет аудиторию ДО звонка.'},
-      {id:'1e',t:'Нанять SMM-специалиста',d:'Критический bottleneck. Без выделенного человека контент-движок не поедет.'},
+      {id:'1a',t:'Разбить таргет на 3–4 параллельные связки',tUz:'Targetni 3–4 parallel manbaga bo‘lish',d:'Перелить часть бюджета из BOLLA OGANI в KARYERA (конвертит лучше) + тест 2 новых аудиторий.',dUz:'Byudjetning bir qismini BOLLA OGANI’dan KARYERA’ga o‘tkazing (u yaxshiroq konversiya beradi) + 2 ta yangi auditoriyani sinang.'},
+      {id:'1b',t:'Завести лист учёта связок',tUz:'Manbalar hisobini yuritish jadvali',d:'Связка / CPL / лиды / продажи / конверсия / статус. Живёт, пока CPL ≤6000 и конверсия ≥1,8%.',dUz:'Manba / CPL / lidlar / sotuvlar / konversiya / holat. CPL ≤6000 va konversiya ≥1,8% bo‘lsa ishlaydi.'},
+      {id:'1c',t:'5 новых селфи-крео в неделю',tUz:'Haftasiga 5 ta yangi selfi-kreativ',d:'Телефон, лайв, без студии. Офис, цифры заработка, профессия. Конкретные суммы, без понтов.',dUz:'Telefon, jonli, studiyasiz. Ofis, daromad raqamlari, kasb. Aniq summalar, maqtanchoqliksiz.'},
+      {id:'1d',t:'Запустить органику: 1 Reels в день',tUz:'Organikani ishga tushirish: kuniga 1 Reels',d:'Social Proof + Big Brother + Luxe Life. Греет аудиторию ДО звонка.',dUz:'Social Proof + Big Brother + Luxe Life. Auditoriyani qo‘ng‘iroqdan OLDIN qizdiradi.'},
+      {id:'1e',t:'Нанять SMM-специалиста',tUz:'SMM-mutaxassis yollash',d:'Критический bottleneck. Без выделенного человека контент-движок не поедет.',dUz:'Asosiy to‘siq. Alohida odamsiz kontent mashinasi yurmaydi.'},
     ]},
-  { id:2, name:'Первый контакт', sub:'Лид → Дозвон · почему клиенты не отвечают', icon:'⚡', main:true,
-    boss:'Ключевая цель этапа', bossDesc:'57% оплаченных лидов теряются без единого разговора. В среднем до первого звонка проходит 64 часа. Это главная точка потери денег.',
-    reward:'✅ Результат: дозвон растёт с 43% до 75% (в 1,7 раза больше контактов)',
+  { id:2, name:'Первый контакт', nameUz:'Birinchi aloqa', sub:'Лид → Дозвон · почему клиенты не отвечают', subUz:'Lid → Qo‘ng‘iroq · mijozlar nega javob bermaydi', icon:'⚡', main:true,
+    boss:'Ключевая цель этапа', bossUz:'Bosqichning asosiy maqsadi', bossDesc:'57% оплаченных лидов теряются без единого разговора. В среднем до первого звонка проходит 64 часа. Это главная точка потери денег.', bossDescUz:'To‘langan lidlarning 57% bironta suhbatsiz yo‘qoladi. Birinchi qo‘ng‘iroqqacha o‘rtacha 64 soat o‘tadi. Bu — pul yo‘qotishning asosiy nuqtasi.',
+    reward:'✅ Результат: дозвон растёт с 43% до 75% (в 1,7 раза больше контактов)', rewardUz:'✅ Natija: aloqa 43%dan 75%gacha oshadi (1,7 barobar ko‘p kontakt)',
     quests:[
-      {id:'2a',t:'Salesbot: авто-ответ за 30 секунд',d:'Готовый текст (Mutaxassis, 150+ трудоустроены) → подключить к боту. Триггер «Сделка создана».'},
-      {id:'2b',t:'Регламент дозвона «5×48»',d:'1-й звонок ≤5 мин. Не взял — 5 попыток за 48ч в разное время суток, а не 3 подряд.'},
-      {id:'2c',t:'Закрывать «не дозвонились» только после 5 попыток',d:'РОП проверяет выборочно. Статус не ставится раньше.'},
-      {id:'2d',t:'Скорость касания → KPI каждого МОПа',d:'Метрика «время до 1-го касания» в дашборд. Норматив: медиана ≤5 мин.'},
+      {id:'2a',t:'Salesbot: авто-ответ за 30 секунд',tUz:'Salesbot: 30 soniyada avto-javob',d:'Готовый текст (Mutaxassis, 150+ трудоустроены) → подключить к боту. Триггер «Сделка создана».',dUz:'Tayyor matn (Mutaxassis, 150+ ishga joylashgan) → botga ulash. Trigger: «Bitim yaratildi».'},
+      {id:'2b',t:'Регламент дозвона «5×48»',tUz:'Qo‘ng‘iroq reglamenti «5×48»',d:'1-й звонок ≤5 мин. Не взял — 5 попыток за 48ч в разное время суток, а не 3 подряд.',dUz:'1-qo‘ng‘iroq ≤5 daqiqa. Javob bermasa — 48 soatda kunning turli vaqtlarida 5 urinish, ketma-ket 3 emas.'},
+      {id:'2c',t:'Закрывать «не дозвонились» только после 5 попыток',tUz:'«Bog‘lanib bo‘lmadi»ni faqat 5 urinishdan keyin yopish',d:'РОП проверяет выборочно. Статус не ставится раньше.',dUz:'ROP tanlab tekshiradi. Status oldinroq qo‘yilmaydi.'},
+      {id:'2d',t:'Скорость касания → KPI каждого МОПа',tUz:'Aloqa tezligi → har bir menejer KPIsi',d:'Метрика «время до 1-го касания» в дашборд. Норматив: медиана ≤5 мин.',dUz:'«Birinchi aloqagacha vaqt» ko‘rsatkichi dashboardga. Norma: mediana ≤5 daqiqa.'},
     ]},
-  { id:3, name:'Квалификация клиента', sub:'Контакт → Отбор · выявить потребность', icon:'🎯',
-    boss:'Ключевая цель этапа', bossDesc:'Данные о клиенте заполняются как попало, потребность не фиксируется. Задача — навести порядок в карточках.',
-    reward:'✅ Результат: каждый разговор даёт чистые данные о клиенте',
+  { id:3, name:'Квалификация клиента', nameUz:'Mijozni saralash', sub:'Контакт → Отбор · выявить потребность', subUz:'Aloqa → Saralash · ehtiyojni aniqlash', icon:'🎯',
+    boss:'Ключевая цель этапа', bossUz:'Bosqichning asosiy maqsadi', bossDesc:'Данные о клиенте заполняются как попало, потребность не фиксируется. Задача — навести порядок в карточках.', bossDescUz:'Mijoz ma’lumotlari tartibsiz to‘ldiriladi, ehtiyoj qayd etilmaydi. Vazifa — kartochkalarda tartib o‘rnatish.',
+    reward:'✅ Результат: каждый разговор даёт чистые данные о клиенте', rewardUz:'✅ Natija: har bir suhbat mijoz haqida toza ma’lumot beradi',
     quests:[
-      {id:'3a',t:'Скрипт квалификации: 4 обязательных вопроса',d:'Доход сейчас / цель / чем занят / срочность + формат-бюджет. Разрыв доход→цель = сила боли.'},
-      {id:'3b',t:'Перевести поля amoCRM в списки',d:'Доход, цель, срочность, целевой/нет — выпадающие списки вместо свободного текста.'},
-      {id:'3c',t:'Сделать поля обязательными для перехода этапа',d:'Лид не идёт дальше, пока менеджер не заполнил квалификацию.'},
-      {id:'3d',t:'Критерий «нецелевой» + тег причины',d:'Обратная связь уходит в аналитику связок — какая аудитория даёт мусор.'},
+      {id:'3a',t:'Скрипт квалификации: 4 обязательных вопроса',tUz:'Saralash skripti: 4 ta majburiy savol',d:'Доход сейчас / цель / чем занят / срочность + формат-бюджет. Разрыв доход→цель = сила боли.',dUz:'Hozirgi daromad / maqsad / nima bilan shug‘ullanadi / shoshilinchlik + format-byudjet. Daromad→maqsad farqi = og‘riq kuchi.'},
+      {id:'3b',t:'Перевести поля amoCRM в списки',tUz:'amoCRM maydonlarini ro‘yxatga aylantirish',d:'Доход, цель, срочность, целевой/нет — выпадающие списки вместо свободного текста.',dUz:'Daromad, maqsad, shoshilinchlik, maqsadli/yo‘q — erkin matn o‘rniga ochiluvchi ro‘yxatlar.'},
+      {id:'3c',t:'Сделать поля обязательными для перехода этапа',tUz:'Maydonlarni bosqich o‘tishi uchun majburiy qilish',d:'Лид не идёт дальше, пока менеджер не заполнил квалификацию.',dUz:'Menejer saralashni to‘ldirmaguncha lid keyingi bosqichga o‘tmaydi.'},
+      {id:'3d',t:'Критерий «нецелевой» + тег причины',tUz:'«Maqsadsiz» mezoni + sabab tegi',d:'Обратная связь уходит в аналитику связок — какая аудитория даёт мусор.',dUz:'Fikr manbalar tahliliga boradi — qaysi auditoriya sifatsiz lid beradi.'},
     ]},
-  { id:4, name:'Закрытие сделки', sub:'Квалификация → Продажа · как доводить до оплаты', icon:'⚔️', main:true,
-    boss:'Ключевая цель этапа', bossDesc:'Разрыв между сильными и слабыми менеджерами — 2,8 раза. Метод лучших не записан. «Дорого» — лишь 4% отказов, значит дело в навыке продаж.',
-    reward:'✅ Результат: команда выходит на ~3% конверсии (+47% выручки)',
+  { id:4, name:'Закрытие сделки', nameUz:'Bitimni yopish', sub:'Квалификация → Продажа · как доводить до оплаты', subUz:'Saralash → Sotuv · to‘lovga qanday yetkazish', icon:'⚔️', main:true,
+    boss:'Ключевая цель этапа', bossUz:'Bosqichning asosiy maqsadi', bossDesc:'Разрыв между сильными и слабыми менеджерами — 2,8 раза. Метод лучших не записан. «Дорого» — лишь 4% отказов, значит дело в навыке продаж.', bossDescUz:'Kuchli va kuchsiz menejerlar orasidagi farq — 2,8 barobar. Eng yaxshilarning usuli yozilmagan. «Qimmat» — atigi 4% rad, demak gap sotuv mahoratida.',
+    reward:'✅ Результат: команда выходит на ~3% конверсии (+47% выручки)', rewardUz:'✅ Natija: jamoa ~3% konversiyaga chiqadi (+47% daromad)',
     quests:[
-      {id:'4a',t:'Оцифровать метод Комильона в скрипт',d:'Прослушать 15–20 его звонков. Как открывает, работает с ценой, закрывает, продаёт допы (чек 4,18М).'},
-      {id:'4b',t:'Комильон — наставник: 2 разбора в неделю',d:'С нижней тройкой. Доплатить за роль — дешевле тренера.'},
-      {id:'4c',t:'Перебалансировать раздачу лидов по конверсии',d:'Abulbositxon (1107 лидов / 1,08%) — снизить поток, отдать ядру.'},
-      {id:'4d',t:'План в продажах каждому МОПу + утренняя планёрка',d:'«25 лидов × 2,5% = 6 продаж/неделю». 15 мин утром: цифры, задачи, разбор 1 сделки.'},
-      {id:'4e',t:'Привязать зарплату к конверсии и чеку',d:'Не только к объёму — чтобы не сливали лиды и не давали лишних скидок.'},
+      {id:'4a',t:'Оцифровать метод Комильона в скрипт',tUz:'Komiljon usulini skriptga aylantirish',d:'Прослушать 15–20 его звонков. Как открывает, работает с ценой, закрывает, продаёт допы (чек 4,18М).',dUz:'Uning 15–20 qo‘ng‘irog‘ini tinglang. Qanday ochadi, narx bilan ishlaydi, yopadi, qo‘shimcha sotadi (chek 4,18M).'},
+      {id:'4b',t:'Комильон — наставник: 2 разбора в неделю',tUz:'Komiljon — murabbiy: haftasiga 2 tahlil',d:'С нижней тройкой. Доплатить за роль — дешевле тренера.',dUz:'Quyi uchlik bilan. Rol uchun ustama to‘lang — bu murabbiydan arzon.'},
+      {id:'4c',t:'Перебалансировать раздачу лидов по конверсии',tUz:'Lid taqsimotini konversiya bo‘yicha qayta muvozanatlash',d:'Abulbositxon (1107 лидов / 1,08%) — снизить поток, отдать ядру.',dUz:'Abulbositxon (1107 lid / 1,08%) — oqimni kamaytiring, kuchli menejerlarga bering.'},
+      {id:'4d',t:'План в продажах каждому МОПу + утренняя планёрка',tUz:'Har bir menejerga sotuv reja + ertalabki yig‘ilish',d:'«25 лидов × 2,5% = 6 продаж/неделю». 15 мин утром: цифры, задачи, разбор 1 сделки.',dUz:'«25 lid × 2,5% = haftasiga 6 sotuv». Ertalab 15 daqiqa: raqamlar, vazifalar, 1 bitim tahlili.'},
+      {id:'4e',t:'Привязать зарплату к конверсии и чеку',tUz:'Maoshni konversiya va chekka bog‘lash',d:'Не только к объёму — чтобы не сливали лиды и не давали лишних скидок.',dUz:'Faqat hajmga emas — lidlarni behuda sarflamasin va ortiqcha chegirma bermasin.'},
     ]},
-  { id:5, name:'Работа с отложенными', sub:'Догрев · вернуть тех, кто думает', icon:'🌱',
-    boss:'Ключевая цель этапа', bossDesc:'433 почти готовых клиента застряли в «подумаю позже» и теряются. Системы возврата нет. Задача — вернуть их.',
-    reward:'✅ Результат: 15% отложенных клиентов превращаются в продажи',
+  { id:5, name:'Работа с отложенными', nameUz:'Kechiktirilganlar bilan ishlash', sub:'Догрев · вернуть тех, кто думает', subUz:'Qizdirish · o‘ylayotganlarni qaytarish', icon:'🌱',
+    boss:'Ключевая цель этапа', bossUz:'Bosqichning asosiy maqsadi', bossDesc:'433 почти готовых клиента застряли в «подумаю позже» и теряются. Системы возврата нет. Задача — вернуть их.', bossDescUz:'433 ta deyarli tayyor mijoz «keyin o‘ylayman»da qolib yo‘qolyapti. Qaytarish tizimi yo‘q. Vazifa — ularni qaytarish.',
+    reward:'✅ Результат: 15% отложенных клиентов превращаются в продажи', rewardUz:'✅ Natija: kechiktirilgan mijozlarning 15% sotuvga aylanadi',
     quests:[
-      {id:'5a',t:'Отдельная воронка «Догрев» в amoCRM',d:'«Keyinroq» не закрывает сделку, а переводит в догрев с задачей «перезвонить через 7 дней».'},
-      {id:'5b',t:'Цепочка касаний по дням',d:'День 1 — видео выпускника · день 3 — кусок обучения · день 7 — звонок · день 14 — дедлайн группы.'},
-      {id:'5c',t:'Ежемесячная реактивация старой базы',d:'Рассылка по закрытым лидам с новым оффером. Бесплатный трафик.'},
+      {id:'5a',t:'Отдельная воронка «Догрев» в amoCRM',tUz:'amoCRMda alohida «Qizdirish» voronkasi',d:'«Keyinroq» не закрывает сделку, а переводит в догрев с задачей «перезвонить через 7 дней».',dUz:'«Keyinroq» bitimni yopmaydi, balki «7 kundan keyin qo‘ng‘iroq qilish» vazifasi bilan qizdirishga o‘tkazadi.'},
+      {id:'5b',t:'Цепочка касаний по дням',tUz:'Kunlar bo‘yicha aloqalar zanjiri',d:'День 1 — видео выпускника · день 3 — кусок обучения · день 7 — звонок · день 14 — дедлайн группы.',dUz:'1-kun — bitiruvchi videosi · 3-kun — o‘quv parchasi · 7-kun — qo‘ng‘iroq · 14-kun — guruh muddati.'},
+      {id:'5c',t:'Ежемесячная реактивация старой базы',tUz:'Eski bazani oylik qayta faollashtirish',d:'Рассылка по закрытым лидам с новым оффером. Бесплатный трафик.',dUz:'Yopilgan lidlarga yangi taklif bilan xabar. Bepul trafik.'},
     ]},
-  { id:6, name:'Оплата и прибыль', sub:'Маржа · чистые деньги и рост чека', icon:'💎',
-    boss:'Ключевая цель этапа', bossDesc:'21% «продаж» — это свои/бартер, они искажают отчётность и мотивацию. Задача — очистить цифры и растить средний чек.',
-    reward:'✅ Результат: чистая отчётность и рост среднего чека',
+  { id:6, name:'Оплата и прибыль', nameUz:'To‘lov va foyda', sub:'Маржа · чистые деньги и рост чека', subUz:'Marja · toza pul va chek o‘sishi', icon:'💎',
+    boss:'Ключевая цель этапа', bossUz:'Bosqichning asosiy maqsadi', bossDesc:'21% «продаж» — это свои/бартер, они искажают отчётность и мотивацию. Задача — очистить цифры и растить средний чек.', bossDescUz:'«Sotuvlar»ning 21% — o‘zimizniki/barter, ular hisobot va motivatsiyani buzadi. Vazifa — raqamlarni tozalash va o‘rtacha chekni oshirish.',
+    reward:'✅ Результат: чистая отчётность и рост среднего чека', rewardUz:'✅ Natija: toza hisobot va o‘rtacha chek o‘sishi',
     quests:[
-      {id:'6a',t:'Тег «свои/бартер» — убрать из отчётности',d:'Внутренние сделки не в конверсию и мотивацию. Дашборды — только по коммерции.'},
-      {id:'6b',t:'Дисциплина скидок через РОПа',d:'Поле «Скидка» + обязательное «Кто одобрил». «Дорого» лишь 4% — скидка это исключение.'},
-      {id:'6c',t:'Рост чека: апсейл Комильона + рассрочка',d:'Его +1млн к чеку разобрать и раздать всем. Halol nasiya закрывает «нет денег сейчас».'},
+      {id:'6a',t:'Тег «свои/бартер» — убрать из отчётности',tUz:'«O‘zimizniki/barter» tegi — hisobotdan chiqarish',d:'Внутренние сделки не в конверсию и мотивацию. Дашборды — только по коммерции.',dUz:'Ichki bitimlar konversiya va motivatsiyaga kirmaydi. Dashboardlar — faqat tijorat bo‘yicha.'},
+      {id:'6b',t:'Дисциплина скидок через РОПа',tUz:'Chegirma intizomi ROP orqali',d:'Поле «Скидка» + обязательное «Кто одобрил». «Дорого» лишь 4% — скидка это исключение.',dUz:'«Chegirma» maydoni + majburiy «Kim tasdiqladi». «Qimmat» atigi 4% — chegirma bu istisno.'},
+      {id:'6c',t:'Рост чека: апсейл Комильона + рассрочка',tUz:'Chek o‘sishi: Komiljon apseli + bo‘lib to‘lash',d:'Его +1млн к чеку разобрать и раздать всем. Halol nasiya закрывает «нет денег сейчас».',dUz:'Uning chekka +1mln qo‘shishini tahlil qilib hammaga tarqating. Halol nasiya «hozir pul yo‘q»ni yopadi.'},
     ]},
 ];
 const RANKS=[[0,'Старт'],[10,'Разгон'],[25,'Движение'],[45,'Ускорение'],[65,'Уверенный рост'],[85,'Почти у цели'],[100,'Цель достигнута']];
@@ -437,7 +533,7 @@ const SKEY='hunters_path_app_v1';
 let state = loadState();
 function loadState(){
   try{const s=JSON.parse(localStorage.getItem(SKEY));if(s&&s.done)return s;}catch(e){}
-  return {done:{},bosses:{},open:{},filter:'all',chats:[{id:'c0',title:'Чат 1',messages:[]}],activeChatId:'c0',lang:'ru',dopQuests:[],goal:500000000};
+  return {done:{},bosses:{},open:{},filter:'all',chats:[{id:'c0',title:'Новый чат',messages:[]}],activeChatId:'c0',lang:'ru',dopQuests:[],goal:500000000,theme:''};
 }
 function save(){try{localStorage.setItem(SKEY,JSON.stringify(state));}catch(e){}}
 
@@ -474,7 +570,7 @@ function renderHeader(){
 }
 
 function renderFilters(){
-  const F=[['all','Все'],['active','В работе'],['locked','Под замком'],['done','Покорённые']];
+  const F=[['all',tr('fAll')],['active',tr('fActive')],['locked',tr('fLocked')],['done',tr('fDone')]];
   filters.innerHTML='';
   F.forEach(([id,l])=>{
     const b=document.createElement('button');b.className='fbtn'+(state.filter===id?' on':'');
@@ -483,8 +579,14 @@ function renderFilters(){
   });
 }
 
+function LX(o,field){
+  // выбирает узбекский вариант поля, если язык uz и он есть
+  if(state.lang==='uz'){const uz=o[field+'Uz'];if(uz)return uz;}
+  return o[field];
+}
 function renderStages(){
   renderFilters();
+  const uz=state.lang==='uz';
   const wrap=stages;wrap.innerHTML='';
   STAGES.forEach((s,idx)=>{
     const unlocked=stageUnlocked(idx),sdone=stageDone(s),cnt=s.quests.filter(q=>state.done[q.id]).length;
@@ -499,21 +601,21 @@ function renderStages(){
 
     let body='';
     if(!unlocked){
-      body=`<div class="locked-msg">🔒 Сначала закройте этап ${prev.id} «${prev.name}».</div>`;
+      body=`<div class="locked-msg">🔒 ${uz?'Avval':'Сначала закройте этап'} ${prev.id} «${LX(prev,'name')}»${uz?' bosqichini yoping.':'.'}</div>`;
     }else{
       s.quests.forEach(q=>{
         const on=!!state.done[q.id];
         body+=`<div class="quest${on?' done':''}">
           <div class="qcheck${on?' on':''}" onclick="toggleQuest('${q.id}',event)">${on?'✓':''}</div>
-          <div class="q-main"><div class="q-t">${q.t}</div><div class="q-d">${q.d}</div></div>
-          <button class="q-help" onclick="helpQuest('${q.id}')">помощь</button>
+          <div class="q-main"><div class="q-t">${LX(q,'t')}</div><div class="q-d">${LX(q,'d')}</div></div>
+          <button class="q-help" onclick="helpQuest('${q.id}')">${uz?'yordam':'помощь'}</button>
         </div>`;
       });
       const bdown=!!state.bosses[s.id];
       body+=`<div class="boss${bdown?' down':(sdone?' ready':'')}">
-        <div class="boss-h">${bdown?'🏆':(sdone?'⚔️':'💀')} ${s.boss}</div>
-        <div class="boss-d">${bdown?'✅ Этап закрыт! '+s.reward:s.bossDesc}</div>
-        ${bdown?'':`<button class="boss-btn ${sdone?'ready':'locked'}" ${sdone?`onclick="fightBoss(${s.id})"`:'disabled'}>${sdone?'✅ Закрыть этап':'🔒 Сначала выполните все задачи этапа'}</button>`}
+        <div class="boss-h">${bdown?'🏆':(sdone?'⚔️':'💀')} ${LX(s,'boss')}</div>
+        <div class="boss-d">${bdown?(uz?'✅ Bosqich yopildi! ':'✅ Этап закрыт! ')+LX(s,'reward'):LX(s,'bossDesc')}</div>
+        ${bdown?'':`<button class="boss-btn ${sdone?'ready':'locked'}" ${sdone?`onclick="fightBoss(${s.id})"`:'disabled'}>${sdone?(uz?'✅ Bosqichni yopish':'✅ Закрыть этап'):(uz?'🔒 Avval barcha vazifalarni bajaring':'🔒 Сначала выполните все задачи этапа')}</button>`}
       </div>`;
     }
 
@@ -521,11 +623,11 @@ function renderStages(){
       <div class="s-head" onclick="toggleStage(${s.id})">
         <div class="s-icon">${unlocked?s.icon:'🔒'}</div>
         <div style="min-width:0;">
-          <div class="s-name">Этап ${s.id} · ${s.name}
-            ${s.main?'<span class="tag tag-dyra">ключевая точка потерь</span>':''}
-            ${sdone?'<span class="tag tag-done">закрыт</span>':''}
+          <div class="s-name">${uz?'Bosqich':'Этап'} ${s.id} · ${LX(s,'name')}
+            ${s.main?`<span class="tag tag-dyra">${uz?'asosiy yo‘qotish nuqtasi':'ключевая точка потерь'}</span>`:''}
+            ${sdone?`<span class="tag tag-done">${uz?'yopildi':'закрыт'}</span>`:''}
           </div>
-          <div class="s-sub">${s.sub} · ${cnt}/${s.quests.length} задач</div>
+          <div class="s-sub">${LX(s,'sub')} · ${cnt}/${s.quests.length} ${uz?'vazifa':'задач'}</div>
         </div>
         <div class="s-chev">▾</div>
       </div>
@@ -838,17 +940,95 @@ async function syncNow(){
 
 /* ===== LANGUAGE ===== */
 const I18N={
-  ru:{tab_map:'Задачи',tab_dash:'Дашборд',tab_chat:'Советник',ph:'Спроси совета...'},
+  ru:{tab_map:'Задачи',tab_dash:'Дашборд',tab_chat:'Советник',ph:'Спросите совета...'},
   uz:{tab_map:'Vazifalar',tab_dash:'Dashboard',tab_chat:'Maslahatchi',ph:'Maslahat so‘rang...'}
 };
+// Полный словарь интерфейса
+const T={
+  hSub:{ru:g=>'Цель: '+g+' сум/мес ✏️',uz:g=>'Maqsad: '+g+' so‘m/oy ✏️'},
+  goalUnit:{ru:'сум/мес ✏️',uz:'so‘m/oy ✏️'},
+  goalTitle:{ru:'ЦЕЛЬ · ЭТОТ МЕСЯЦ',uz:'MAQSAD · SHU OY'},
+  fAll:{ru:'Все',uz:'Barchasi'},fActive:{ru:'В работе',uz:'Jarayonda'},fLocked:{ru:'Под замком',uz:'Qulflangan'},fDone:{ru:'Покорённые',uz:'Yopilgan'},
+  newChat:{ru:'＋ Новый чат',uz:'＋ Yangi chat'},
+  themeLabel:{ru:'Тема оформления',uz:'Dizayn mavzusi'},
+  emptyH:{ru:'Ваш ИИ-советник по продажам',uz:'Sotuv bo‘yicha AI-maslahatchingiz'},
+  emptyP:{ru:'Задайте любой вопрос про рост продаж. Советник знает ваши реальные цифры из CRM, команду и воронку.',uz:'Sotuv o‘sishi haqida istalgan savolni bering. Maslahatchi CRMdagi real raqamlaringizni, jamoangizni va voronkani biladi.'},
+  q1:{ru:'С чего начать?',uz:'Nimadan boshlash?'},q2:{ru:'Где теряю деньги?',uz:'Qayerda pul yo‘qotyapman?'},q3:{ru:'План на месяц',uz:'Oylik reja'},
+  kSold:{ru:'Продаж за месяц',uz:'Oylik sotuvlar'},kSoldH:{ru:'из плана 141',uz:'rejadan 141'},
+  kRev:{ru:'Выручка',uz:'Tushum'},kRevH:{ru:'этот месяц',uz:'shu oy'},
+  kConv:{ru:'Конверсия команды',uz:'Jamoa konversiyasi'},kConvH:{ru:'лид → продажа',uz:'lid → sotuv'},
+  kCheck:{ru:'Средний чек',uz:'O‘rtacha chek'},kCheckH:{ru:'без «своих»',uz:'«o‘ziniki»siz'},
+  secTop:{ru:'🏆 Топ по продажам',uz:'🏆 Sotuv bo‘yicha top'},
+  secMop:{ru:'⚔️ Конверсия и дозвон по менеджерам',uz:'⚔️ Menejerlar konversiyasi va aloqasi'},
+  secProb:{ru:'🩸 5 главных причин потерь',uz:'🩸 5 ta asosiy yo‘qotish sababi'},
+  secDisc:{ru:'⚡ Дисциплина менеджеров',uz:'⚡ Menejerlar intizomi'},
+  discHint:{ru:'Нажмите «Обновить дисциплину» — это подробный расчёт по звонкам и задачам, идёт 20-40 секунд.',uz:'«Intizomni yangilash»ni bosing — bu qo‘ng‘iroq va vazifalar bo‘yicha batafsil hisob, 20-40 soniya davom etadi.'},
+  btnSync:{ru:'🔄 Обновить из amoCRM',uz:'🔄 amoCRMdan yangilash'},
+  btnSyncSpeed:{ru:'⚡ Обновить дисциплину',uz:'⚡ Intizomni yangilash'},
+  dashNote0:{ru:'Нажмите «Обновить из amoCRM» для первой загрузки живых данных. Дальше обновляется автоматически каждую ночь.',uz:'Jonli ma’lumotlarni birinchi yuklash uchun «amoCRMdan yangilash»ni bosing. Keyin har kecha avtomatik yangilanadi.'},
+  genBtn:{ru:'🎯 Подобрать задачи под мои проблемы',uz:'🎯 Muammolarimga vazifa tanlash'},
+  nextBtn:{ru:'🧭 С какой задачи начать?',uz:'🧭 Qaysi vazifadan boshlash?'},
+  resetBtn:{ru:'↺ Сбросить прогресс',uz:'↺ Progressni tozalash'},
+  dopSec:{ru:'🔥 Доп-задачи (по горячим проблемам)',uz:'🔥 Qo‘shimcha vazifalar (dolzarb muammolar)'},
+  chatTitleNew:{ru:'Новый чат',uz:'Yangi chat'},
+  topSold:{ru:'прод.',uz:'sotuv'},leadsW:{ru:'лидов',uz:'lid'},salesW:{ru:'продаж',uz:'sotuv'},reachW:{ru:'дозвон',uz:'aloqa'},
+  needMonth:{ru:'нужно ~141 продажа/мес',uz:'kerak ~141 sotuv/oy'},madeOf:{ru:'Сделано',uz:'Bajarildi'},ofWord:{ru:'из',uz:'/'},goalWay:{ru:'% пути к цели',uz:'% maqsad sari'},
+};
+function tr(key){const o=T[key];if(!o)return key;const v=o[state.lang||'ru'];return v!==undefined?v:o.ru;}
+
+function applyStaticI18n(){
+  const uz=state.lang==='uz';
+  // вкладки
+  document.querySelectorAll('[data-t]').forEach(el=>{
+    const k=el.getAttribute('data-t'); if(I18N[state.lang][k])el.textContent=I18N[state.lang][k];
+  });
+  const box=document.getElementById('chatBox'); if(box)box.placeholder=I18N[state.lang].ph;
+  const setTxt=(id,val)=>{const e=document.getElementById(id);if(e)e.textContent=val;};
+  const setHtml=(id,val)=>{const e=document.getElementById(id);if(e)e.innerHTML=val;};
+  // цель
+  setTxt('goalTitle',tr('goalTitle'));
+  // кнопки/секции дашборда
+  setTxt('secTop',tr('secTop'));setTxt('secMop',tr('secMop'));setTxt('secProb',tr('secProb'));setTxt('secDisc',tr('secDisc'));
+  // подсказки-иконки не трогаем (это "?")
+  const sb=document.getElementById('syncBtn');if(sb)sb.textContent=tr('btnSync');
+  const ssb=document.getElementById('syncSpeedBtn');if(ssb)ssb.textContent=tr('btnSyncSpeed');
+  const gb=document.getElementById('genBtn');if(gb)gb.textContent=tr('genBtn');
+  const nb=document.getElementById('nextBtn');if(nb)nb.textContent=tr('nextBtn');
+  const rb=document.getElementById('resetBtn');if(rb)rb.textContent=tr('resetBtn');
+  setTxt('newChatBtn',tr('newChat'));
+  setTxt('themeLabel',tr('themeLabel'));
+  setTxt('dopSecTitle',tr('dopSec'));
+  // быстрые вопросы
+  const qr=document.getElementById('quickRow');
+  if(qr){const bs=qr.querySelectorAll('button');if(bs[0])bs[0].textContent=tr('q1');if(bs[1])bs[1].textContent=tr('q2');if(bs[2])bs[2].textContent=tr('q3');}
+  // пустой чат
+  const eh=document.querySelector('#chatEmpty h3');if(eh)eh.textContent=tr('emptyH');
+  const ep=document.querySelector('#chatEmpty p');if(ep)ep.textContent=tr('emptyP');
+  // KPI подписи
+  const dcards=document.querySelectorAll('#dashView .dcard');
+  if(dcards.length>=4){
+    dcards[0].querySelector('.dl').innerHTML=tr('kSold');
+    dcards[0].querySelector('.dh').textContent=tr('kSoldH');
+    dcards[1].querySelector('.dl').innerHTML=tr('kRev');
+    dcards[1].querySelector('.dh').textContent=tr('kRevH');
+    dcards[2].querySelector('.dl').innerHTML=tr('kConv')+'<span class="hint" onclick="showHint(\'conv\',event)">?</span>';
+    dcards[2].querySelector('.dh').textContent=tr('kConvH');
+    dcards[3].querySelector('.dl').innerHTML=tr('kCheck')+'<span class="hint" onclick="showHint(\'check\',event)">?</span>';
+    dcards[3].querySelector('.dh').textContent=tr('kCheckH');
+  }
+  // фильтры перерисуются в renderStages
+}
+
 function setLang(l){
   state.lang=l;save();
   document.getElementById('lang-ru').classList.toggle('on',l==='ru');
   document.getElementById('lang-uz').classList.toggle('on',l==='uz');
-  document.querySelectorAll('[data-t]').forEach(el=>{
-    const k=el.getAttribute('data-t'); if(I18N[l][k])el.textContent=I18N[l][k];
-  });
-  const box=document.getElementById('chatBox'); if(box)box.placeholder=I18N[l].ph;
+  applyStaticI18n();
+  updateGoalHeader();
+  renderStages();
+  renderDopQuests();
+  renderSidebar();
+  dashLoaded=false;renderDashboard();
 }
 
 /* ===== FILES ===== */
@@ -907,38 +1087,123 @@ function ensureChats(){
   }
 }
 function activeChat(){ensureChats();return state.chats.find(c=>c.id===state.activeChatId);}
-function renderChatSelect(){
+
+function renderSidebar(){
   ensureChats();
-  const sel=document.getElementById('chatSelect');
-  if(!sel)return;
-  sel.innerHTML=state.chats.map(c=>`<option value="${c.id}"${c.id===state.activeChatId?' selected':''}>${escapeHtml(c.title)}</option>`).join('');
+  const list=document.getElementById('sideList');
+  if(list){
+    list.innerHTML=state.chats.map(c=>`
+      <div class="side-item${c.id===state.activeChatId?' on':''}" onclick="switchChat('${c.id}')">
+        <span class="si-t">💬 ${escapeHtml(c.title)}</span>
+        <button class="si-del" onclick="event.stopPropagation();deleteChatById('${c.id}')" title="Удалить">✕</button>
+      </div>`).join('');
+  }
+  const cur=document.getElementById('chatTitleCur');
+  const ac=activeChat();
+  if(cur&&ac)cur.textContent=ac.title;
+  renderThemeRow();
 }
+function renderThemeRow(){
+  const row=document.getElementById('themeRow');
+  if(!row)return;
+  const themes=[
+    {id:'',c:'#0b1622'},{id:'theme-cream',c:'#f7f4ee'},{id:'theme-light',c:'#ffffff'},
+    {id:'theme-slate',c:'#272c37'},{id:'theme-forest',c:'#1a2f28'}
+  ];
+  const cur=state.theme||'';
+  row.innerHTML=themes.map(t=>`<div class="theme-dot${t.id===cur?' on':''}" style="background:${t.c};" onclick="setTheme('${t.id}')" title="Тема"></div>`).join('');
+}
+function setTheme(id){
+  state.theme=id;save();
+  document.body.className=id?id:'';
+  renderThemeRow();
+}
+function applyTheme(){document.body.className=state.theme?state.theme:'';}
+
+function toggleSidebar(open){
+  const sb=document.getElementById('chatSidebar');
+  const bd=document.getElementById('sideBackdrop');
+  if(!sb)return;
+  sb.classList.toggle('open',open);
+  bd.classList.toggle('show',open);
+}
+
 function newChat(){
   ensureChats();
   const n=state.chats.length+1;
-  const c={id:'c'+Date.now(),title:'Чат '+n,messages:[]};
+  const c={id:'c'+Date.now(),title:'Новый чат',messages:[]};
   state.chats.push(c);state.activeChatId=c.id;save();
-  renderChatSelect();renderChat();
+  renderSidebar();renderChat();toggleSidebar(false);
   document.getElementById('chatBox').focus();
 }
 function switchChat(id){
   state.activeChatId=id;save();
-  renderChatSelect();renderChat();scrollChatBottom();
+  renderSidebar();renderChat();scrollChatBottom();toggleSidebar(false);
 }
-function deleteChat(){
+function deleteChatById(id){
   ensureChats();
   if(state.chats.length<=1){
-    // просто очистить единственный чат
-    activeChat().messages=[];save();renderChat();return;
+    activeChat().messages=[];activeChat().title='Новый чат';save();renderSidebar();renderChat();return;
   }
   if(!confirm('Удалить этот чат?'))return;
-  state.chats=state.chats.filter(c=>c.id!==state.activeChatId);
-  state.activeChatId=state.chats[0].id;save();
-  renderChatSelect();renderChat();
+  state.chats=state.chats.filter(c=>c.id!==id);
+  if(state.activeChatId===id)state.activeChatId=state.chats[0].id;
+  save();renderSidebar();renderChat();
+}
+
+/* ===== MARKDOWN RENDER (лёгкий, безопасный) ===== */
+function mdToHtml(src){
+  let s=escapeHtml(src||'');
+  // код-блоки ```
+  const blocks=[];
+  s=s.replace(/```[\s\S]*?```/g,m=>{
+    const inner=m.replace(/```[a-z]*\n?/i,'').replace(/```$/,'');
+    blocks.push('<pre><code>'+inner+'</code></pre>');
+    return '\u0000BLOCK'+(blocks.length-1)+'\u0000';
+  });
+  // таблицы (простые | a | b |)
+  s=s.replace(/(^\|.+\|\s*\n\|[\s:|-]+\|\s*\n(?:\|.*\|\s*\n?)*)/gm,(tbl)=>{
+    const rows=tbl.trim().split('\n').filter(r=>r.trim());
+    if(rows.length<2)return tbl;
+    const head=rows[0].split('|').slice(1,-1).map(c=>c.trim());
+    const body=rows.slice(2).map(r=>r.split('|').slice(1,-1).map(c=>c.trim()));
+    let h='<table><thead><tr>'+head.map(c=>'<th>'+c+'</th>').join('')+'</tr></thead><tbody>';
+    h+=body.map(r=>'<tr>'+r.map(c=>'<td>'+c+'</td>').join('')+'</tr>').join('');
+    h+='</tbody></table>';
+    return h;
+  });
+  // заголовки
+  s=s.replace(/^#### (.+)$/gm,'<h4>$1</h4>');
+  s=s.replace(/^### (.+)$/gm,'<h3>$1</h3>');
+  s=s.replace(/^## (.+)$/gm,'<h2>$1</h2>');
+  s=s.replace(/^# (.+)$/gm,'<h1>$1</h1>');
+  // разделитель
+  s=s.replace(/^\s*---\s*$/gm,'<hr>');
+  // жирный / курсив / инлайн-код
+  s=s.replace(/\*\*([^*]+)\*\*/g,'<strong>$1</strong>');
+  s=s.replace(/(^|[^*])\*([^*\n]+)\*/g,'$1<em>$2</em>');
+  s=s.replace(/`([^`]+)`/g,'<code>$1</code>');
+  // списки
+  s=s.replace(/(?:^[-*] .+\n?)+/gm,m=>{
+    const items=m.trim().split('\n').map(l=>l.replace(/^[-*]\s+/,''));
+    return '<ul>'+items.map(i=>'<li>'+i+'</li>').join('')+'</ul>';
+  });
+  s=s.replace(/(?:^\d+\. .+\n?)+/gm,m=>{
+    const items=m.trim().split('\n').map(l=>l.replace(/^\d+\.\s+/,''));
+    return '<ol>'+items.map(i=>'<li>'+i+'</li>').join('')+'</ol>';
+  });
+  // абзацы: двойной перенос -> <p>, одиночный -> <br>
+  s=s.split(/\n{2,}/).map(chunk=>{
+    if(/^\s*<(h\d|ul|ol|pre|table|hr)/.test(chunk.trim()))return chunk;
+    return '<p>'+chunk.replace(/\n/g,'<br>')+'</p>';
+  }).join('');
+  // вернуть код-блоки
+  s=s.replace(/\u0000BLOCK(\d+)\u0000/g,(m,i)=>blocks[+i]);
+  return s;
 }
 
 function renderChat(){
-  ensureChats();renderChatSelect();
+  ensureChats();renderSidebar();
   const chat=activeChat();
   const sc=chatScroll;
   if(!chat.messages.length){chatEmpty.style.display='block';
@@ -948,7 +1213,6 @@ function renderChat(){
   chat.messages.forEach(m=>appendMsgDom(m.role,m.text,m.fileNames));
 }
 function scrollChatBottom(){
-  // несколько попыток: сразу, после раскладки кадра, и с запасом — чтобы попасть на последнее сообщение
   const jump=()=>{chatScroll.scrollTop=chatScroll.scrollHeight;};
   jump();
   requestAnimationFrame(()=>{jump();requestAnimationFrame(jump);});
@@ -961,7 +1225,8 @@ function appendMsgDom(role,text,fileNames){
   if(fileNames&&fileNames.length){
     filesHtml=fileNames.map(n=>`<div class="m-file">📎 ${escapeHtml(n)}</div>`).join('');
   }
-  d.innerHTML=`<div class="m-ava ${role==='user'?'me':'k'}">${role==='user'?'🙂':'💬'}</div><div class="m-bubble">${escapeHtml(text)}${filesHtml}</div>`;
+  const body = role==='user' ? (escapeHtml(text)+filesHtml) : (mdToHtml(text)+filesHtml);
+  d.innerHTML=`<div class="m-bubble">${body}</div>`;
   chatScroll.appendChild(d);
 }
 function escapeHtml(s){return (s||'').replace(/[&<>]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;'}[c]));}
@@ -1008,7 +1273,7 @@ async function sendMsg(){
   // авто-заголовок чата по первому сообщению
   if(chat.messages.filter(m=>m.role==='user').length===1&&text){
     chat.title=text.slice(0,30)+(text.length>30?'…':'');
-    renderChatSelect();
+    renderSidebar();
   }
   save();
   chatEmpty.style.display='none';appendMsgDom('user',text||'(файл прикреплён)',fileNames);
@@ -1016,7 +1281,7 @@ async function sendMsg(){
 
   busy=true;sendBtn.disabled=true;
   const typing=document.createElement('div');typing.className='msg k';
-  typing.innerHTML='<div class="m-ava k">💬</div><div class="m-bubble"><div class="typing"><span></span><span></span><span></span></div></div>';
+  typing.innerHTML='<div class="m-bubble"><div class="typing"><span></span><span></span><span></span></div></div>';
   chatScroll.appendChild(typing);chatScroll.scrollTop=chatScroll.scrollHeight;
 
   try{
@@ -1061,9 +1326,9 @@ document.getElementById('chatBox').addEventListener('keydown',e=>{
   if(e.key==='Enter'&&!e.shiftKey){e.preventDefault();sendMsg();}
 });
 
-if(state.lang==='uz')setLang('uz');
 ensureChats();
-renderHeader();renderStages();renderDopQuests();updateGoalHeader();
+applyTheme();renderHeader();renderStages();renderDopQuests();updateGoalHeader();renderSidebar();
+if(state.lang==='uz')setLang('uz');
 switchTab(state.tab&&['chat','dash','map'].includes(state.tab)?state.tab:'chat');
 </script>
 </body>
