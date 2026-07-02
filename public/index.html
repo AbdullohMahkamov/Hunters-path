@@ -359,6 +359,17 @@
       <button onclick="chooseAdmin()" style="width:100%;padding:16px;border-radius:12px;background:var(--accent);border:none;color:#fff;font-size:15px;font-weight:600;cursor:pointer;margin-bottom:12px;">👑 Я администратор</button>
       <button onclick="ropLogin()" style="width:100%;padding:16px;border-radius:12px;background:var(--card);border:1px solid var(--line2);color:var(--txt);font-size:15px;font-weight:600;cursor:pointer;">👥 Я РОП (руководитель отдела)</button>
       <div style="font-size:11.5px;color:var(--txt3);margin-top:14px;text-align:center;line-height:1.5;">Админ — полный доступ (чат, дашборд, задачи).<br>РОП — только дашборд и задачи, без пароля.</div>
+      <div style="text-align:center;margin-top:18px;">
+        <button onclick="showDemoLogin()" style="background:none;border:none;color:var(--accent);font-size:13px;cursor:pointer;text-decoration:underline;">Войти в демо по коду</button>
+      </div>
+    </div>
+
+    <!-- Вход в демо по коду -->
+    <div id="demoLogin" style="display:none;">
+      <input id="demoCodeInput" type="text" inputmode="numeric" placeholder="Код демо-доступа (6 цифр)"
+        style="width:100%;padding:13px 15px;border-radius:11px;border:1px solid var(--line2);background:var(--card);color:var(--txt);font-size:15px;margin-bottom:12px;text-align:center;letter-spacing:2px;" />
+      <button onclick="demoLoginGo()" style="width:100%;padding:14px;border-radius:11px;background:var(--accent);border:none;color:#fff;font-size:15px;font-weight:600;cursor:pointer;">Войти в демо</button>
+      <button onclick="backToRoles()" style="width:100%;padding:11px;border-radius:11px;background:none;border:none;color:var(--txt2);font-size:13px;cursor:pointer;margin-top:8px;">← Назад</button>
     </div>
 
     <!-- Шаг 2: пароль админа -->
@@ -387,6 +398,7 @@
       <button id="lang-uz" onclick="setLang('uz')">UZ</button>
     </div>
     <button onclick="logout()" title="Выйти" style="margin-left:8px;background:var(--card);border:1px solid var(--line2);color:var(--txt2);border-radius:8px;padding:5px 9px;font-size:12px;cursor:pointer;flex:0 0 auto;">Выйти</button>
+    <button id="demoBtn" onclick="openDemoPanel()" title="Демо-аккаунты" style="display:none;margin-left:6px;background:var(--card);border:1px solid var(--line2);color:var(--txt2);border-radius:8px;padding:5px 9px;font-size:12px;cursor:pointer;flex:0 0 auto;">🎭 Демо</button>
   </div>
   <div class="h-progress">
     <div class="h-pct-row">
@@ -430,6 +442,19 @@
       </div>
       <div class="gen-sub">Советник смотрит реальные проблемы из вашей CRM и предлагает новые задачи под них. Принятые появятся в списке доп-задач.</div>
       <div id="genBody"></div>
+    </div>
+  </div>
+
+  <!-- DEMO PANEL -->
+  <div class="gen-overlay" id="demoOverlay" style="display:none;">
+    <div class="gen-sheet">
+      <div class="gen-h">
+        <div class="gen-title">🎭 Демо-аккаунты</div>
+        <button class="gen-close" onclick="closeDemoPanel()">✕</button>
+      </div>
+      <div class="gen-sub">Создавайте до 5 демо-аккаунтов для показа клиентам. Каждый — чистый, с нуля. Заходят по коду. Ваш основной аккаунт не затрагивается.</div>
+      <button id="createDemoBtn" onclick="createDemo()" style="width:100%;padding:12px;border-radius:10px;background:var(--accent);border:none;color:#fff;font-size:14px;font-weight:600;cursor:pointer;margin-bottom:14px;">＋ Создать демо-аккаунт</button>
+      <div id="demoList"></div>
     </div>
   </div>
 
@@ -1566,11 +1591,11 @@ function bootApp(){
 // Роль РОПа: скрыть вкладку Советник (чат)
 function applyRole(){
   const chatTab=document.getElementById('tab-chat');
-  if(USER_ROLE==='rop'){
-    if(chatTab)chatTab.style.display='none';
-  }else{
-    if(chatTab)chatTab.style.display='';
-  }
+  const demoBtn=document.getElementById('demoBtn');
+  // РОП: без чата
+  if(chatTab)chatTab.style.display=(USER_ROLE==='rop')?'none':'';
+  // Демо-панель: только админ
+  if(demoBtn)demoBtn.style.display=(USER_ROLE==='admin')?'':'none';
 }
 
 // Кнопки выбора роли
@@ -1582,8 +1607,87 @@ function chooseAdmin(){
 }
 function backToRoles(){
   document.getElementById('adminLogin').style.display='none';
+  const dl=document.getElementById('demoLogin');if(dl)dl.style.display='none';
   document.getElementById('roleChoice').style.display='block';
   document.getElementById('loginError').textContent='';
+}
+function showDemoLogin(){
+  document.getElementById('roleChoice').style.display='none';
+  document.getElementById('demoLogin').style.display='block';
+  document.getElementById('loginError').textContent='';
+  setTimeout(()=>{const i=document.getElementById('demoCodeInput');if(i)i.focus();},100);
+}
+async function demoLoginGo(){
+  const code=document.getElementById('demoCodeInput').value.trim();
+  const errEl=document.getElementById('loginError');
+  if(!code){errEl.textContent='Введите код';return;}
+  errEl.textContent='';
+  try{
+    const r=await fetch('/api/auth',{method:'POST',headers:{'content-type':'application/json'},
+      body:JSON.stringify({action:'demo',code})});
+    const d=await r.json();
+    if(d&&d.ok){
+      SESSION=d.session;localStorage.setItem('hp_session',SESSION);
+      USER_ROLE=d.role||'demo';USER_ORG=d.org||'';
+      await loadCloud();
+      bootApp();
+    }else{errEl.textContent=(d&&d.error)||'Ошибка входа в демо';}
+  }catch(e){errEl.textContent='Нет связи с сервером';}
+}
+
+// ===== УПРАВЛЕНИЕ ДЕМО-АККАУНТАМИ (админ) =====
+function openDemoPanel(){
+  document.getElementById('demoOverlay').style.display='flex';
+  loadDemos();
+}
+function closeDemoPanel(){document.getElementById('demoOverlay').style.display='none';}
+async function loadDemos(){
+  const box=document.getElementById('demoList');
+  box.innerHTML='<div style="font-size:12px;color:var(--txt3);text-align:center;padding:14px;">Загрузка...</div>';
+  try{
+    const r=await fetch('/api/demo',{method:'POST',headers:{'content-type':'application/json'},
+      body:JSON.stringify({action:'list',session:SESSION})});
+    const d=await r.json();
+    if(d&&d.ok){renderDemos(d.demos,d.max);}
+    else{box.innerHTML='<div style="font-size:12px;color:var(--red);">'+(d.error||'Ошибка')+'</div>';}
+  }catch(e){box.innerHTML='<div style="font-size:12px;color:var(--red);">Нет связи</div>';}
+}
+function renderDemos(demos,max){
+  const box=document.getElementById('demoList');
+  const btn=document.getElementById('createDemoBtn');
+  if(btn)btn.style.display=(demos.length>=max)?'none':'block';
+  if(!demos.length){box.innerHTML='<div style="font-size:12.5px;color:var(--txt3);text-align:center;padding:10px;">Пока нет демо-аккаунтов. Создайте первый.</div>';return;}
+  box.innerHTML=demos.map(dm=>`
+    <div style="background:var(--card);border:1px solid var(--line);border-radius:11px;padding:12px 13px;margin-bottom:10px;">
+      <div style="display:flex;align-items:center;gap:8px;">
+        <div style="flex:1;font-size:14px;font-weight:600;">${escapeHtml(dm.name)}</div>
+        <button onclick="deleteDemo('${dm.id}')" style="background:none;border:none;color:var(--red);cursor:pointer;font-size:13px;">🗑 Удалить</button>
+      </div>
+      <div style="font-size:12.5px;color:var(--txt2);margin-top:6px;">Код доступа: <b style="color:var(--accent);font-size:15px;letter-spacing:1px;">${dm.code}</b></div>
+      <div style="font-size:11px;color:var(--txt3);margin-top:3px;">Дайте этот код для входа в демо (кнопка «Войти в демо по коду» на экране входа).</div>
+    </div>`).join('');
+}
+async function createDemo(){
+  const btn=document.getElementById('createDemoBtn');
+  btn.textContent='Создаю...';btn.disabled=true;
+  try{
+    const r=await fetch('/api/demo',{method:'POST',headers:{'content-type':'application/json'},
+      body:JSON.stringify({action:'create',session:SESSION})});
+    const d=await r.json();
+    if(d&&d.ok){renderDemos(d.demos,5);}
+    else{alert(d.error||'Не удалось создать');}
+  }catch(e){alert('Нет связи');}
+  btn.textContent='＋ Создать демо-аккаунт';btn.disabled=false;
+}
+async function deleteDemo(id){
+  if(!confirm('Удалить этот демо-аккаунт? Все его данные сотрутся.'))return;
+  try{
+    const r=await fetch('/api/demo',{method:'POST',headers:{'content-type':'application/json'},
+      body:JSON.stringify({action:'delete',session:SESSION,demoId:id})});
+    const d=await r.json();
+    if(d&&d.ok){renderDemos(d.demos,5);}
+    else{alert(d.error||'Ошибка');}
+  }catch(e){alert('Нет связи');}
 }
 
 async function ropLogin(){
