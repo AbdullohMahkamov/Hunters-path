@@ -71,24 +71,36 @@ async function fetchSheetCSV(sheetName) {
   return text;
 }
 
-async function fetchSheetList() {
-  // gviz возвращает JSON с названиями листов через отдельный запрос
+async function fetchSheetTabs() {
+  // Пытаемся получить названия листов через публичный экспорт.
+  // Google не даёт список листов через gviz, но даёт через /pubhtml или через ошибку gid.
+  // Надёжный способ: запросить страницу htmlview и вытащить названия вкладок.
   try {
-    const url = `https://docs.google.com/spreadsheets/d/${SHEET_ID}/gviz/tq?tqx=out:json`;
+    const url = `https://docs.google.com/spreadsheets/d/${SHEET_ID}/htmlview`;
     const r = await fetch(url, { redirect: "follow" });
-    const text = await r.text();
-    // ответ обёрнут в google.visualization.Query.setResponse(...)
-    const m = text.match(/setResponse\(([\s\S]*)\)/);
-    if (!m) return [];
-    const json = JSON.parse(m[1]);
-    // список листов тут не приходит напрямую; вернём пусто, листы задаём на фронте
-    return [];
+    const html = await r.text();
+    // названия листов в htmlview лежат в элементах с id="sheet-button-..." — вытащим по тексту вкладок
+    const tabs = [];
+    const re = /<li[^>]*id="sheet-button-\d+"[^>]*>(?:<a[^>]*>)?([^<]+)/g;
+    let m;
+    while ((m = re.exec(html)) !== null) {
+      const name = m[1].trim();
+      if (name && !tabs.includes(name)) tabs.push(name);
+    }
+    return tabs;
   } catch (e) { return []; }
 }
 
 export default async function handler(req, res) {
   if (req.method !== "POST" && req.method !== "GET") { res.status(405).json({ error: "Method not allowed" }); return; }
   try {
+    const action = (req.body && req.body.action) || (req.query && req.query.action) || "";
+    // вернуть список месяцев (листов)
+    if (action === "list") {
+      const tabs = await fetchSheetTabs();
+      res.status(200).json({ ok: true, tabs });
+      return;
+    }
     const sheetName = (req.query && req.query.month) || (req.body && req.body.month) || "";
     let csv;
     try {
