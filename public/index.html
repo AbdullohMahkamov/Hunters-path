@@ -515,6 +515,7 @@
     <div class="dtabs">
       <button class="dtab on" id="dtab-overview" onclick="dashTab('overview')">Обзор</button>
       <button class="dtab" id="dtab-trends" onclick="dashTab('trends')">Динамика</button>
+      <button class="dtab" id="dtab-finance" onclick="dashTab('finance')">Финансы</button>
       <button class="dtab" id="dtab-marketing" onclick="dashTab('marketing')">Маркетинг</button>
       <button class="dtab" id="dtab-sales" onclick="dashTab('sales')">Продажи</button>
     </div>
@@ -541,6 +542,16 @@
     <!-- РАЗДЕЛ: ДИНАМИКА (тренды во времени) -->
     <div class="dgroup" id="dg-trends" style="display:none;">
       <div id="trendsBox"><div style="font-size:12px;color:var(--txt3);padding:14px;">Загрузка динамики...</div></div>
+    </div>
+
+    <!-- РАЗДЕЛ: ФИНАНСЫ (из Google Sheets) -->
+    <div class="dgroup" id="dg-finance" style="display:none;">
+      <div style="display:flex;gap:8px;align-items:center;margin-bottom:14px;flex-wrap:wrap;">
+        <input id="finMonth" type="text" placeholder="Лист месяца (напр. Июнь 2026)"
+          style="flex:1;min-width:180px;padding:9px 12px;border-radius:9px;border:1px solid var(--line2);background:var(--card);color:var(--txt);font-size:13px;" />
+        <button onclick="loadFinance()" style="padding:9px 15px;border-radius:9px;background:var(--accent);border:none;color:#fff;font-size:13px;font-weight:600;cursor:pointer;">Показать</button>
+      </div>
+      <div id="financeBox"><div style="font-size:12px;color:var(--txt3);padding:14px;">Укажите лист месяца и нажмите «Показать», либо оставьте пустым для первого листа.</div></div>
     </div>
 
     <!-- РАЗДЕЛ: МАРКЕТИНГ (верх воронки — привлечение) -->
@@ -1149,13 +1160,14 @@ let dashLoaded=false;
 let dashCurrentTab='overview';
 function dashTab(tab){
   dashCurrentTab=tab;
-  ['overview','trends','marketing','sales'].forEach(t=>{
+  ['overview','trends','finance','marketing','sales'].forEach(t=>{
     const btn=document.getElementById('dtab-'+t);
     const grp=document.getElementById('dg-'+t);
     if(btn)btn.classList.toggle('on',t===tab);
     if(grp)grp.style.display=(t===tab)?'block':'none';
   });
   if(tab==='trends')loadTrends();
+  if(tab==='finance'&&!financeLoaded)loadFinance();
 }
 async function renderDashboard(){
   if(dashLoaded)return;
@@ -1243,6 +1255,57 @@ function applyLiveDash(d){
 
   // Дисциплина (если уже в кэше)
   if(d.speed&&d.speed.mops)renderDiscipline(d.speed);
+}
+
+// ===== ФИНАНСЫ (из Google Sheets) =====
+let financeLoaded=false;
+async function loadFinance(){
+  const box=document.getElementById('financeBox');if(!box)return;
+  const uz=state.lang==='uz';
+  const month=(document.getElementById('finMonth')||{}).value||'';
+  box.innerHTML=`<div style="font-size:12px;color:var(--txt3);padding:14px;">${uz?'Google Sheets o\'qilmoqda...':'Читаю Google Sheets...'}</div>`;
+  try{
+    const r=await fetch('/api/finance',{method:'POST',headers:{'content-type':'application/json'},
+      body:JSON.stringify({month})});
+    const d=await r.json();
+    financeLoaded=true;
+    if(d&&d.ok){renderFinance(d);}
+    else if(d&&d.error==='no_access'){
+      box.innerHTML=`<div style="background:var(--red-bg);border:1px solid var(--red);border-radius:11px;padding:14px;font-size:13px;color:var(--txt);">${uz?'Jadval yopiq. Google Sheets\'da «Havola orqali — ko\'rish» ruxsatini yoqing.':'Таблица закрыта. Откройте в Google Sheets доступ «по ссылке — просмотр».'}</div>`;
+    }else{
+      box.innerHTML=`<div style="font-size:12px;color:var(--red);padding:14px;">${(d&&d.error)||'Ошибка'}</div>`;
+    }
+  }catch(e){
+    box.innerHTML=`<div style="font-size:12px;color:var(--red);padding:14px;">${uz?'Ma\'lumot olinmadi':'Не удалось загрузить'}</div>`;
+  }
+}
+function renderFinance(d){
+  const box=document.getElementById('financeBox');if(!box)return;
+  const uz=state.lang==='uz';
+  const fmt=n=>n==null?'—':new Intl.NumberFormat('ru-RU').format(Math.round(n))+' '+(uz?'so\'m':'сум');
+  const profitColor=d.profit==null?'var(--txt)':(d.profit>=0?'var(--green)':'var(--red)');
+
+  // если ключевые строки не нашли — честно скажем
+  let warn='';
+  if(!d.found.revenue||!d.found.expenses){
+    warn=`<div style="background:var(--gold-bg);border:1px solid var(--gold);border-radius:10px;padding:11px 13px;margin-bottom:14px;font-size:12.5px;color:var(--txt);">
+      ${uz?'Ba\'zi qatorlar topilmadi (TUSHUM/Umumiy xarajatlar/Sof foyda). Sarlavhalar to\'g\'ri yozilganini tekshiring yoki AI o\'qishni ulaymiz.':'Некоторые строки не найдены (TUSHUM / Umumiy xarajatlar / Sof foyda). Проверьте названия в таблице, либо подключим чтение через ИИ.'}
+    </div>`;
+  }
+
+  box.innerHTML=`${warn}
+    <div style="font-size:12px;color:var(--txt3);margin-bottom:10px;">${uz?'Oy':'Месяц'}: ${escapeHtml(d.month)}</div>
+    <div class="dash-grid">
+      <div class="dcard"><div class="dl">${uz?'Tushum (daromad)':'Выручка'}</div><div class="dv" style="color:var(--accent);">${fmt(d.revenue)}</div></div>
+      <div class="dcard"><div class="dl">${uz?'Umumiy xarajatlar':'Расходы'}</div><div class="dv" style="color:var(--red);">${fmt(d.expenses)}</div></div>
+    </div>
+    <div style="background:var(--card);border:1px solid var(--line);border-radius:12px;padding:16px;margin-top:12px;">
+      <div style="font-size:12px;color:var(--txt2);margin-bottom:4px;">${uz?'Sof foyda':'Чистая прибыль'}</div>
+      <div style="font-size:26px;font-weight:700;color:${profitColor};">${fmt(d.profit)}</div>
+      ${d.margin!=null?`<div style="font-size:12.5px;color:var(--txt2);margin-top:6px;">${uz?'Rentabellik':'Рентабельность'}: <b style="color:${profitColor};">${d.margin}%</b></div>`:''}
+      ${d.tax!=null?`<div style="font-size:12px;color:var(--txt3);margin-top:3px;">${uz?'Soliq':'Налог'}: ${fmt(d.tax)}</div>`:''}
+    </div>
+    <div style="font-size:11px;color:var(--txt3);margin-top:12px;line-height:1.5;">${uz?'Ma\'lumot Google Sheets\'dan avtomatik o\'qiladi. Boshqa oyni ko\'rish uchun yuqorida varaq nomini kiriting.':'Данные читаются из Google Sheets автоматически. Чтобы посмотреть другой месяц — впишите название листа вверху.'}</div>`;
 }
 
 // ===== ДИНАМИКА / ТРЕНДЫ =====
@@ -1497,6 +1560,7 @@ const T={
   // дашборд под-вкладки
   dtOverview:{ru:'Обзор',uz:'Umumiy'},dtMarketing:{ru:'Маркетинг',uz:'Marketing'},dtSales:{ru:'Продажи',uz:'Sotuvlar'},
   dtTrends:{ru:'Динамика',uz:'Dinamika'},
+  dtFinance:{ru:'Финансы',uz:'Moliya'},
   mkLeads:{ru:'Лидов за месяц',uz:'Oylik lidlar'},mkLeadsH:{ru:'привлечено',uz:'jalb qilingan'},
   mkNoContact:{ru:'Потеря до контакта',uz:'Aloqagacha yo‘qotish'},mkNoContactH:{ru:'умерли без разговора',uz:'suhbatsiz yo‘qoldi'},
   // мастер аудита
@@ -1550,6 +1614,7 @@ function applyStaticI18n(){
   // дашборд под-вкладки
   setTxt('dtab-overview',tr('dtOverview'));
   setTxt('dtab-trends',tr('dtTrends'));
+  setTxt('dtab-finance',tr('dtFinance'));
   setTxt('dtab-marketing',tr('dtMarketing'));
   setTxt('dtab-sales',tr('dtSales'));
   // маркетинг KPI
