@@ -365,8 +365,10 @@
 <body>
 
 <!-- ЭКРАН ВХОДА -->
-<div id="loginScreen" style="position:fixed;inset:0;z-index:500;background:var(--bg);display:flex;align-items:center;justify-content:center;padding:24px;">
-  <div style="width:100%;max-width:360px;">
+<div id="loginScreen" style="position:fixed;inset:0;z-index:500;background:radial-gradient(1200px 600px at 50% -10%, var(--accent-bg) 0%, transparent 55%), linear-gradient(160deg, var(--bg2) 0%, var(--bg) 60%);display:flex;align-items:center;justify-content:center;padding:24px;overflow:hidden;">
+  <div style="position:absolute;top:-120px;right:-100px;width:340px;height:340px;border-radius:50%;background:var(--accent);opacity:.10;filter:blur(70px);"></div>
+  <div style="position:absolute;bottom:-140px;left:-110px;width:360px;height:360px;border-radius:50%;background:var(--gold);opacity:.08;filter:blur(80px);"></div>
+  <div style="width:100%;max-width:360px;position:relative;z-index:2;">
     <div style="text-align:center;margin-bottom:26px;">
       <div style="width:56px;height:56px;border-radius:15px;background:var(--accent-bg);display:flex;align-items:center;justify-content:center;font-size:28px;margin:0 auto 12px;">🏹</div>
       <div style="font-size:20px;font-weight:700;">Hunter Academy</div>
@@ -464,7 +466,7 @@
   </div>
 
   <!-- GENERATOR MODAL -->
-  <div class="gen-overlay" id="genOverlay" style="display:none;">
+  <div class="gen-overlay" id="genOverlay" style="display:none;" onclick="if(event.target===this)closeGenerator();">
     <div class="gen-sheet">
       <div class="gen-h">
         <div class="gen-title">🎯 Задачи под ваши проблемы</div>
@@ -476,7 +478,7 @@
   </div>
 
   <!-- DEMO PANEL -->
-  <div class="gen-overlay" id="demoOverlay" style="display:none;">
+  <div class="gen-overlay" id="demoOverlay" style="display:none;" onclick="if(event.target===this)closeDemoPanel();">
     <div class="gen-sheet">
       <div class="gen-h">
         <div class="gen-title">🎭 Демо-аккаунты</div>
@@ -489,7 +491,7 @@
   </div>
 
   <!-- МАСТЕР АУДИТА -->
-  <div class="gen-overlay" id="wizardOverlay" style="display:none;">
+  <div class="gen-overlay" id="wizardOverlay" style="display:none;" onclick="if(event.target===this)closeWizard();">
     <div class="gen-sheet">
       <div class="gen-h">
         <div class="gen-title" id="wizTitle">🚀 Запуск</div>
@@ -653,7 +655,7 @@ let USER_ROLE='', USER_ORG='';
 
 let state = loadStateLocal();
 function defaultState(){
-  return {done:{},bosses:{},open:{},filter:'all',chats:[{id:'c0',title:'Новый чат',messages:[]}],activeChatId:'c0',lang:'ru',dopQuests:[],goal:500000000,theme:'',projects:[]};
+  return {done:{},bosses:{},open:{},filter:'all',chats:[{id:'c0',title:'Новый чат',messages:[]}],activeChatId:'c0',lang:'ru',dopQuests:[],goal:500000000,theme:'theme-slate',projects:[]};
 }
 function loadStateLocal(){
   try{const s=JSON.parse(localStorage.getItem(SKEY));if(s&&s.done)return s;}catch(e){}
@@ -754,6 +756,14 @@ function renderStages(){
   const wrap=stages;wrap.innerHTML='';
   // Если есть кастомный план (из мастера аудита) — показываем его, а не 24 базовые задачи
   if(state.customPlan){renderCustomPlan();return;}
+  // Нет плана — предлагаем сделать аудит (баннер сверху задач)
+  const auditBanner=document.createElement('div');
+  auditBanner.style.cssText='background:var(--accent-bg);border:1px solid var(--accent);border-radius:12px;padding:15px 16px;margin-bottom:16px;';
+  auditBanner.innerHTML=`
+    <div style="font-size:15px;font-weight:700;margin-bottom:5px;">🚀 ${uz?'Biznes auditidan boshlang':'Начните с аудита бизнеса'}</div>
+    <div style="font-size:12.5px;color:var(--txt2);line-height:1.5;margin-bottom:11px;">${uz?'Tizim ma\'lumotlarni tahlil qiladi, maqsadingizni so\'raydi va shaxsiy vazifalar rejasini tuzadi.':'Система проанализирует данные, спросит вашу цель и составит персональный план задач под ваш бизнес.'}</div>
+    <button onclick="openWizard()" style="width:100%;padding:12px;border-radius:10px;background:var(--accent);border:none;color:#fff;font-size:14px;font-weight:600;cursor:pointer;">${uz?'To\'liq audit qilish →':'Сделать полный аудит →'}</button>`;
+  wrap.appendChild(auditBanner);
   let lastSection=null;
   STAGES.forEach((s,idx)=>{
     const unlocked=stageUnlocked(idx),sdone=stageDone(s),cnt=s.quests.filter(q=>state.done[q.id]).length;
@@ -1894,6 +1904,7 @@ function wizStep1(){
 }
 let wizAuditData=null;
 let wizCurrentSales='';
+let wizGoalText='';
 async function wizRunAudit(){
   document.getElementById('wizBody').innerHTML=`<div class="gen-loading">⏳ Анализирую ваш бизнес по данным CRM за последние 3-4 месяца...</div>`;
   try{
@@ -1943,10 +1954,16 @@ function wizStepSales(){
     <div style="font-size:14px;line-height:1.6;color:var(--txt2);margin-bottom:14px;">
       Какая у вас сумма продаж сейчас (в месяц)? Это точка отсчёта — откуда мы стартуем.
     </div>
-    <input id="wizSalesInput" type="text" placeholder="Например: 150 млн сум в месяц"
+    <input id="wizSalesInput" type="text" value="${escapeHtml(wizCurrentSales||'')}" placeholder="Например: 150 млн сум в месяц"
       style="width:100%;padding:13px 15px;border-radius:11px;border:1px solid var(--line2);background:var(--card);color:var(--txt);font-size:14.5px;margin-bottom:14px;" />
-    <button onclick="wizStep2()" style="width:100%;padding:14px;border-radius:11px;background:var(--accent);border:none;color:#fff;font-size:15px;font-weight:600;cursor:pointer;">Дальше → цель</button>`;
+    <button onclick="wizSaveSalesNext()" style="width:100%;padding:14px;border-radius:11px;background:var(--accent);border:none;color:#fff;font-size:15px;font-weight:600;cursor:pointer;">Дальше → цель</button>
+    <button onclick="wizShowProblems(wizAuditData)" style="width:100%;padding:11px;border-radius:11px;background:none;border:none;color:var(--txt2);font-size:13px;cursor:pointer;margin-top:8px;">← Назад</button>`;
   setTimeout(()=>{const i=document.getElementById('wizSalesInput');if(i)i.focus();},100);
+}
+function wizSaveSalesNext(){
+  const el=document.getElementById('wizSalesInput');
+  if(el)wizCurrentSales=el.value.trim();
+  wizStep2();
 }
 function wizStep2(){
   document.getElementById('wizTitle').textContent='🎯 Шаг 2 — Ваша цель';
@@ -1954,13 +1971,20 @@ function wizStep2(){
     <div style="font-size:14px;line-height:1.6;color:var(--txt2);margin-bottom:14px;">
       До какой суммы продаж в месяц вы хотите дойти? Можно указать и текущий уровень, и желаемый.
     </div>
-    <input id="wizGoalInput" type="text" placeholder="Например: сейчас 150М, хочу 250М в месяц"
+    <input id="wizGoalInput" type="text" value="${escapeHtml(wizGoalText||'')}" placeholder="Например: сейчас 150М, хочу 250М в месяц"
       style="width:100%;padding:13px 15px;border-radius:11px;border:1px solid var(--line2);background:var(--card);color:var(--txt);font-size:14.5px;margin-bottom:14px;" />
-    <button onclick="wizGeneratePlan()" style="width:100%;padding:14px;border-radius:11px;background:var(--accent);border:none;color:#fff;font-size:15px;font-weight:600;cursor:pointer;">✨ Составить план задач</button>`;
+    <button onclick="wizGeneratePlan()" style="width:100%;padding:14px;border-radius:11px;background:var(--accent);border:none;color:#fff;font-size:15px;font-weight:600;cursor:pointer;">✨ Составить план задач</button>
+    <button onclick="wizSaveGoalBack()" style="width:100%;padding:11px;border-radius:11px;background:none;border:none;color:var(--txt2);font-size:13px;cursor:pointer;margin-top:8px;">← Назад</button>`;
   setTimeout(()=>{const i=document.getElementById('wizGoalInput');if(i)i.focus();},100);
+}
+function wizSaveGoalBack(){
+  const el=document.getElementById('wizGoalInput');
+  if(el)wizGoalText=el.value.trim();
+  wizStepSales();
 }
 async function wizGeneratePlan(){
   const goal=document.getElementById('wizGoalInput').value.trim();
+  wizGoalText=goal;
   const salesEl=document.getElementById('wizSalesInput');
   const currentSales=salesEl?salesEl.value.trim():(wizCurrentSales||'');
   wizCurrentSales=currentSales;
@@ -1983,6 +2007,9 @@ function wizApplyPlan(plan,goal,currentSales){
   state.customPlan={goal,currentSales:currentSales||'',createdAt:Date.now(),
     marketing:(plan.marketing||[]).map((q,i)=>({id:'cm'+i,t:q.t,d:q.d||'',steps:q.steps||[]})),
     sales:(plan.sales||[]).map((q,i)=>({id:'cs'+i,t:q.t,d:q.d||'',steps:q.steps||[]}))};
+  // Обновляем цель шапки из введённой цели (точка Б)
+  const parsedGoal=parseGoalSum(goal);
+  if(parsedGoal>0){state.goal=parsedGoal;updateGoalHeader();}
   save();
   const mkt=(plan.marketing||[]).map(q=>`<div class="wiz-task">📣 ${escapeHtml(q.t)}</div>`).join('');
   const sls=(plan.sales||[]).map(q=>`<div class="wiz-task">💼 ${escapeHtml(q.t)}</div>`).join('');
@@ -1991,7 +2018,28 @@ function wizApplyPlan(plan,goal,currentSales){
     <div style="font-size:13.5px;color:var(--txt2);margin-bottom:14px;">План зафиксирован. Задачи появились во вкладке «Задачи». Идите по ним — когда всё выполните, сделаем аудит заново.</div>
     ${mkt}${sls}
     <button onclick="closeWizard();switchTab('map');" style="width:100%;padding:14px;border-radius:11px;background:var(--green);border:none;color:#fff;font-size:15px;font-weight:600;cursor:pointer;margin-top:16px;">Перейти к задачам →</button>`;
-  renderStages();maybeShowWelcome();
+  renderStages();renderHeader();maybeShowWelcome();
+}
+// Достаёт сумму цели из текста: "хочу 250 млн" → 250000000, "250М" → 250000000
+function parseGoalSum(txt){
+  if(!txt)return 0;
+  const s=String(txt).toLowerCase().replace(/\s/g,'');
+  // ищем последнее число с возможным млн/м/млрд
+  const matches=[...s.matchAll(/(\d+(?:[.,]\d+)?)(млрд|млн|м|k|к|000000|000)?/g)];
+  if(!matches.length)return 0;
+  // берём наибольшее найденное значение (обычно цель больше текущего)
+  let best=0;
+  matches.forEach(m=>{
+    let n=parseFloat(m[1].replace(',','.'));
+    const suf=m[2]||'';
+    if(suf==='млрд')n*=1000000000;
+    else if(suf==='млн'||suf==='м')n*=1000000;
+    else if(suf==='k'||suf==='к')n*=1000;
+    else if(suf==='000000')n*=1000000;
+    else if(suf==='000')n*=1000;
+    if(n>best)best=n;
+  });
+  return Math.round(best);
 }
 
 async function ropLogin(){
