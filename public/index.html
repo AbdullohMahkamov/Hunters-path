@@ -595,6 +595,15 @@
       <div class="dsect" id="secMop"><svg class="ic" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="9"/><circle cx="12" cy="12" r="5"/><circle cx="12" cy="12" r="1"/></svg> Конверсия и дозвон по менеджерам<span class="hint" onclick="showHint('reach',event)">?</span></div>
       <div id="mopChart"></div>
 
+      <div class="dsect">Активность менеджеров<span class="hint" onclick="showHint('activity',event)">?</span></div>
+      <div style="display:flex;gap:6px;align-items:center;margin-bottom:12px;flex-wrap:wrap;">
+        <button class="perbtn on" id="act-month" onclick="setActPeriod('month')">За месяц</button>
+        <button class="perbtn" id="act-today" onclick="setActPeriod('today')">Сегодня</button>
+        <input type="date" id="actDate" onchange="setActPeriod('day')" style="padding:7px 10px;border-radius:8px;border:1px solid var(--line2);background:var(--card);color:var(--txt);font-size:12.5px;" />
+        <button onclick="loadActivity(true)" title="Обновить" style="padding:7px 10px;border-radius:8px;background:var(--card);border:1px solid var(--line2);color:var(--txt2);font-size:12.5px;cursor:pointer;"><svg class="ic" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><path d="M21 12a9 9 0 1 1-3-6.7L21 8M21 3v5h-5"/></svg></button>
+      </div>
+      <div id="activityChart"><div style="font-size:12px;color:var(--txt3);">Загрузка активности...</div></div>
+
       <div class="dsect" id="secDisc"><svg class="ic" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><path d="M13 2L4 14h7l-1 8 9-12h-7z"/></svg> Дисциплина менеджеров<span class="hint" onclick="showHint('early',event)">?</span></div>
       <div id="disciplineChart"><div style="font-size:12px;color:var(--txt3);">Нажмите «Обновить дисциплину» — это подробный расчёт по звонкам и задачам, идёт 20-40 секунд.</div></div>
     </div>
@@ -1189,6 +1198,7 @@ function dashTab(tab){
   });
   if(tab==='trends')loadTrends();
   if(tab==='finance'&&!financeLoaded)loadFinance();
+  if(tab==='sales'&&!activityData)loadActivity();
 }
 function setDashPeriod(per){
   window._dashPeriod=per;
@@ -1541,6 +1551,69 @@ function lineChart(values,labels,color,unit){
     <polyline points="${pts}" fill="none" stroke="${color}" stroke-width="2.5" stroke-linejoin="round" stroke-linecap="round"/>
     ${dots}${xlabels}
   </svg></div>`;
+}
+
+// ===== АКТИВНОСТЬ МОПов =====
+let activityData=null;
+let actPeriod='month';
+function todayStr(){const d=new Date();return new Date(d.getTime()-d.getTimezoneOffset()*60000).toISOString().slice(0,10);}
+async function loadActivity(force){
+  const box=document.getElementById('activityChart');if(!box)return;
+  const uz=state.lang==='uz';
+  if(!activityData||force){
+    box.innerHTML=`<div style="font-size:12px;color:var(--txt3);padding:10px;">${force?(uz?'Yangilanmoqda (20-40s)...':'Обновляю (20-40 сек)...'):(uz?'Yuklanmoqda...':'Загрузка активности...')}</div>`;
+    try{
+      const r=await fetch('/api/activity',{method:'POST',headers:{'content-type':'application/json'},body:JSON.stringify({action:force?'refresh':'get'})});
+      const d=await r.json();
+      if(d&&d.ok){activityData=d;}
+      else{box.innerHTML=`<div style="font-size:12px;color:var(--red);padding:10px;">${(d&&d.error)||'Ошибка'}</div>`;return;}
+    }catch(e){box.innerHTML=`<div style="font-size:12px;color:var(--red);padding:10px;">${uz?'Aloqa yo\'q':'Нет связи'}</div>`;return;}
+  }
+  renderActivity();
+}
+function setActPeriod(p){
+  actPeriod=p;
+  document.getElementById('act-month').classList.toggle('on',p==='month');
+  document.getElementById('act-today').classList.toggle('on',p==='today');
+  if(p==='day'){document.getElementById('act-month').classList.remove('on');document.getElementById('act-today').classList.remove('on');}
+  renderActivity();
+}
+function renderActivity(){
+  const box=document.getElementById('activityChart');if(!box||!activityData)return;
+  const uz=state.lang==='uz';
+  const mops=activityData.mops||{};
+  let dayFilter=null;
+  if(actPeriod==='today')dayFilter=todayStr();
+  else if(actPeriod==='day'){const di=document.getElementById('actDate');dayFilter=di&&di.value?di.value:todayStr();}
+  const sumK=(obj)=>{
+    if(!obj)return 0;
+    if(dayFilter)return obj[dayFilter]||0;
+    return Object.values(obj).reduce((a,b)=>a+b,0);
+  };
+  const rows=Object.entries(mops).map(([name,m])=>{
+    const calls=sumK(m.calls),moves=sumK(m.moves),tasks=sumK(m.tasks),closes=sumK(m.closes),leads=sumK(m.leads);
+    const total=calls+moves+tasks+closes;
+    return {name,calls,moves,tasks,closes,leads,total};
+  }).sort((a,b)=>b.total-a.total);
+  const periodLbl = actPeriod==='today'?(uz?'bugun':'сегодня') : actPeriod==='day'?dayFilter : (uz?'oy':'месяц');
+  box.innerHTML=`<div style="font-size:11px;color:var(--txt3);margin-bottom:8px;">${uz?'Davr':'Период'}: ${periodLbl}</div>`+
+    rows.map(r=>{
+      const dead=r.total===0;
+      return `<div style="padding:10px 0;border-top:1px solid var(--line);">
+        <div style="display:flex;justify-content:space-between;align-items:center;gap:8px;">
+          <div style="font-weight:600;font-size:13.5px;color:${dead?'var(--red)':'var(--txt)'};">${escapeHtml(r.name)}${dead?` · <span style="font-weight:400;font-size:11px;">${uz?'faol emas':'нет активности'}</span>`:''}</div>
+          <div style="font-size:11px;color:var(--txt3);">${uz?'faollik':'активность'}: <b style="color:${dead?'var(--red)':'var(--accent)'};">${r.total}</b></div>
+        </div>
+        <div style="display:flex;gap:12px;flex-wrap:wrap;margin-top:6px;font-size:11.5px;color:var(--txt2);">
+          <span>${svg('bolt',13)} ${r.calls} ${uz?'qo\'ng\'.':'звон.'}</span>
+          <span>↕ ${r.moves} ${uz?'harakat':'движ.'}</span>
+          <span>${svg('check',13)} ${r.tasks} ${uz?'vazifa':'задач'}</span>
+          <span>${svg('target',13)} ${r.closes} ${uz?'yopildi':'закрыто'}</span>
+          <span style="color:var(--txt3);">+${r.leads} ${uz?'yangi lid':'нов. лид'}</span>
+        </div>
+      </div>`;
+    }).join('')+
+    `<div style="font-size:10.5px;color:var(--txt3);margin-top:10px;line-height:1.5;">${uz?'Faollik = qo\'ng\'iroq + voronka + vazifa + yopish. Bazani yopish ham faollik.':'Активность = звонки + движение + задачи + закрытия. Работа со старой базой тоже считается.'}${activityData.ageSec!=null?` · ${uz?'yangilangan':'обновлено'} ${Math.round((activityData.ageSec||0)/60)} ${uz?'daq oldin':'мин назад'}`:''}</div>`;
 }
 
 // ===== ПЛАН / ФАКТ ПО МОПам =====
@@ -2248,6 +2321,7 @@ const HINTS={
   firstcall:{t:'Время до 1-го звонка',d:'Через сколько минут после заявки менеджер впервые позвонил клиенту. Чем быстрее — тем горячее клиент. Норма — до 5-30 минут.'},
   persist:{t:'Звонков на лид',d:'Сколько раз менеджер звонит одному клиенту, прежде чем сдаться. Хорошо — 3 и больше. Мало — значит бросает клиентов после первого гудка.'},
   early:{t:'Закрыл рано',d:'Менеджер написал «не дозвонился», хотя реально звонил меньше 3 раз. Это признак халтуры — клиента списали, толком не пытаясь. Высокий % (30+) — повод проверить.'},
+  activity:{t:'Активность менеджера',d:'Реальная работа за период: звонки + движение сделок по воронке + выполненные задачи + закрытия (включая старую базу). Показывает, работал человек или нет — даже если новых лидов взял мало. «Нет активности» = красный флаг.'},
   tasks:{t:'Ставит задачи',d:'Процент клиентов, которым менеджер поставил напоминание «перезвонить». Дисциплинированный менеджер планирует следующий шаг, а не бросает клиента.'},
   own:{t:'«Свои» сделки',d:'Внутренние продажи — бартер, друзья, доплаты, служебные записи. Их не считаем в конверсии и оценке менеджеров, чтобы цифры были честными. Но в общую выручку они входят.'},
   goal:{t:'Цель месяца',d:'Сколько денег вы хотите заработать за месяц. Можно нажать и вписать свою сумму. Прогресс-полоса показывает, сколько уже сделано.'},
