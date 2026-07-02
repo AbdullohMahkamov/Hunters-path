@@ -98,6 +98,7 @@ export default async function handler(req, res) {
     // ВЫРУЧКА/КАССА — по ВСЕМ аккаунтам, продажи закрытые (closed_at) в этом месяце.
     // КОНВЕРСИЯ/ДИСЦИПЛИНА — только по 5 действующим МОПам, лиды созданные в этом месяце.
     let sold = 0, soldSum = 0, ownExcluded = 0, noContact = 0;
+    let soldPeriod = 0, revenuePeriod = 0;  // продажи за всё окно (~4 месяца) — для аудита
     let soldTeam = 0, soldSumTeam = 0;     // продажи только пятёрки (для среднего чека команды)
     const lossCount = {};                  // причина -> кол-во (по закрытым в этом месяце, пятёрка)
     const byMop = {};                      // name -> {leads, sold, revenue, noContact} — только пятёрка
@@ -116,6 +117,10 @@ export default async function handler(req, res) {
       // === ВЫРУЧКА: ВСЕ аккаунты, проданные в этом месяце ===
       if (isSold && closedThisMonth) {
         sold++; soldSum += price;
+      }
+      // === ПРОДАЖИ ЗА ПЕРИОД (~4 месяца): для аудита ===
+      if (isSold && (L.closed_at || 0) >= lookbackStart) {
+        soldPeriod++; revenuePeriod += price;
       }
 
       // === ПРОБЛЕМЫ (общие): по всем закрытым-проигранным за всё окно, не только месяц ===
@@ -180,8 +185,10 @@ export default async function handler(req, res) {
       period: "Текущий месяц",
       totals: {
         leads: totalLeads,
-        sold,                       // продаж всего (все аккаунты)
+        sold,                       // продаж всего (все аккаунты) — текущий месяц
         revenue: soldSum,           // выручка всего (все аккаунты) — касса месяца
+        soldPeriod,                 // продаж за ~4 месяца (для аудита)
+        revenuePeriod,              // выручка за ~4 месяца (для аудита)
         soldTeam,                   // продаж только пятёрки
         revenueTeam: soldSumTeam,   // выручка пятёрки
         conv, avgCheck,
