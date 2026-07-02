@@ -1401,7 +1401,7 @@ async function runFinanceAnalysis(force){
   const btn=document.getElementById('finAnalyzeBtn');
   const d=window._finLast;
   if(!box||!d)return;
-  const key=(d.month||'')+'_'+state.lang;
+  const key='v2_'+(d.month||'')+'_'+state.lang;
   // клиентский кэш анализа
   if(!window._finAnalysisCache)window._finAnalysisCache={};
   if(!force&&window._finAnalysisCache[key]){
