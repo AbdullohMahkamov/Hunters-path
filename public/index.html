@@ -207,6 +207,8 @@
   .dcard .dv{font-size:23px;font-weight:700;line-height:1;}
   .dcard .dh{font-size:11px;color:var(--txt3);margin-top:4px;}
   .dsect{font-size:13px;font-weight:600;color:var(--txt2);margin:16px 0 9px;display:flex;align-items:center;gap:7px;}
+  .task-section{font-size:15px;font-weight:700;color:var(--txt);margin:20px 0 10px;padding-bottom:7px;border-bottom:2px solid var(--accent);}
+  .task-section:first-child{margin-top:4px;}
   .mop-row{display:flex;align-items:center;gap:10px;padding:9px 0;border-top:1px solid var(--line);}
   .mop-name{font-size:13px;font-weight:500;width:120px;flex:0 0 auto;}
   .mop-bar-wrap{flex:1;height:18px;background:var(--bg);border-radius:6px;overflow:hidden;}
@@ -543,7 +545,7 @@
 
 <script>
 const STAGES = [
-  { id:1, name:'Привлечение лидов', nameUz:'Mijozlarni jalb qilish', sub:'Трафик → Лид · откуда приходят клиенты', subUz:'Trafik → Lid · mijozlar qayerdan keladi', icon:'📡',
+  { id:1, section:'marketing', name:'Привлечение лидов', nameUz:'Mijozlarni jalb qilish', sub:'Трафик → Лид · откуда приходят клиенты', subUz:'Trafik → Lid · mijozlar qayerdan keladi', icon:'📡',
     boss:'Ключевая цель этапа', bossUz:'Bosqichning asosiy maqsadi', bossDesc:'49% лидов идут из одной рекламной связки. Задача — не зависеть от одного источника.', bossDescUz:'Lidlarning 49% bitta reklama manbaidan keladi. Vazifa — bitta manbaga bog‘liq bo‘lmaslik.',
     reward:'✅ Результат: не зависите от одного источника лидов', rewardUz:'✅ Natija: bitta lid manbaiga bog‘liq emassiz',
     quests:[
@@ -553,7 +555,7 @@ const STAGES = [
       {id:'1d',t:'Запустить органику: 1 Reels в день',tUz:'Organikani ishga tushirish: kuniga 1 Reels',d:'Social Proof + Big Brother + Luxe Life. Греет аудиторию ДО звонка.',dUz:'Social Proof + Big Brother + Luxe Life. Auditoriyani qo‘ng‘iroqdan OLDIN qizdiradi.'},
       {id:'1e',t:'Нанять SMM-специалиста',tUz:'SMM-mutaxassis yollash',d:'Критический bottleneck. Без выделенного человека контент-движок не поедет.',dUz:'Asosiy to‘siq. Alohida odamsiz kontent mashinasi yurmaydi.'},
     ]},
-  { id:2, name:'Первый контакт', nameUz:'Birinchi aloqa', sub:'Лид → Дозвон · почему клиенты не отвечают', subUz:'Lid → Qo‘ng‘iroq · mijozlar nega javob bermaydi', icon:'⚡', main:true,
+  { id:2, section:'sales', name:'Первый контакт', nameUz:'Birinchi aloqa', sub:'Лид → Дозвон · почему клиенты не отвечают', subUz:'Lid → Qo‘ng‘iroq · mijozlar nega javob bermaydi', icon:'⚡', main:true,
     boss:'Ключевая цель этапа', bossUz:'Bosqichning asosiy maqsadi', bossDesc:'57% оплаченных лидов теряются без единого разговора. В среднем до первого звонка проходит 64 часа. Это главная точка потери денег.', bossDescUz:'To‘langan lidlarning 57% bironta suhbatsiz yo‘qoladi. Birinchi qo‘ng‘iroqqacha o‘rtacha 64 soat o‘tadi. Bu — pul yo‘qotishning asosiy nuqtasi.',
     reward:'✅ Результат: дозвон растёт с 43% до 75% (в 1,7 раза больше контактов)', rewardUz:'✅ Natija: aloqa 43%dan 75%gacha oshadi (1,7 barobar ko‘p kontakt)',
     quests:[
@@ -562,7 +564,7 @@ const STAGES = [
       {id:'2c',t:'Закрывать «не дозвонились» только после 5 попыток',tUz:'«Bog‘lanib bo‘lmadi»ni faqat 5 urinishdan keyin yopish',d:'РОП проверяет выборочно. Статус не ставится раньше.',dUz:'ROP tanlab tekshiradi. Status oldinroq qo‘yilmaydi.'},
       {id:'2d',t:'Скорость касания → KPI каждого МОПа',tUz:'Aloqa tezligi → har bir menejer KPIsi',d:'Метрика «время до 1-го касания» в дашборд. Норматив: медиана ≤5 мин.',dUz:'«Birinchi aloqagacha vaqt» ko‘rsatkichi dashboardga. Norma: mediana ≤5 daqiqa.'},
     ]},
-  { id:3, name:'Квалификация клиента', nameUz:'Mijozni saralash', sub:'Контакт → Отбор · выявить потребность', subUz:'Aloqa → Saralash · ehtiyojni aniqlash', icon:'🎯',
+  { id:3, section:'sales', name:'Квалификация клиента', nameUz:'Mijozni saralash', sub:'Контакт → Отбор · выявить потребность', subUz:'Aloqa → Saralash · ehtiyojni aniqlash', icon:'🎯',
     boss:'Ключевая цель этапа', bossUz:'Bosqichning asosiy maqsadi', bossDesc:'Данные о клиенте заполняются как попало, потребность не фиксируется. Задача — навести порядок в карточках.', bossDescUz:'Mijoz ma’lumotlari tartibsiz to‘ldiriladi, ehtiyoj qayd etilmaydi. Vazifa — kartochkalarda tartib o‘rnatish.',
     reward:'✅ Результат: каждый разговор даёт чистые данные о клиенте', rewardUz:'✅ Natija: har bir suhbat mijoz haqida toza ma’lumot beradi',
     quests:[
@@ -571,7 +573,7 @@ const STAGES = [
       {id:'3c',t:'Сделать поля обязательными для перехода этапа',tUz:'Maydonlarni bosqich o‘tishi uchun majburiy qilish',d:'Лид не идёт дальше, пока менеджер не заполнил квалификацию.',dUz:'Menejer saralashni to‘ldirmaguncha lid keyingi bosqichga o‘tmaydi.'},
       {id:'3d',t:'Критерий «нецелевой» + тег причины',tUz:'«Maqsadsiz» mezoni + sabab tegi',d:'Обратная связь уходит в аналитику связок — какая аудитория даёт мусор.',dUz:'Fikr manbalar tahliliga boradi — qaysi auditoriya sifatsiz lid beradi.'},
     ]},
-  { id:4, name:'Закрытие сделки', nameUz:'Bitimni yopish', sub:'Квалификация → Продажа · как доводить до оплаты', subUz:'Saralash → Sotuv · to‘lovga qanday yetkazish', icon:'⚔️', main:true,
+  { id:4, section:'sales', name:'Закрытие сделки', nameUz:'Bitimni yopish', sub:'Квалификация → Продажа · как доводить до оплаты', subUz:'Saralash → Sotuv · to‘lovga qanday yetkazish', icon:'⚔️', main:true,
     boss:'Ключевая цель этапа', bossUz:'Bosqichning asosiy maqsadi', bossDesc:'Разрыв между сильными и слабыми менеджерами — 2,8 раза. Метод лучших не записан. «Дорого» — лишь 4% отказов, значит дело в навыке продаж.', bossDescUz:'Kuchli va kuchsiz menejerlar orasidagi farq — 2,8 barobar. Eng yaxshilarning usuli yozilmagan. «Qimmat» — atigi 4% rad, demak gap sotuv mahoratida.',
     reward:'✅ Результат: команда выходит на ~3% конверсии (+47% выручки)', rewardUz:'✅ Natija: jamoa ~3% konversiyaga chiqadi (+47% daromad)',
     quests:[
@@ -581,7 +583,7 @@ const STAGES = [
       {id:'4d',t:'План в продажах каждому МОПу + утренняя планёрка',tUz:'Har bir menejerga sotuv reja + ertalabki yig‘ilish',d:'«25 лидов × 2,5% = 6 продаж/неделю». 15 мин утром: цифры, задачи, разбор 1 сделки.',dUz:'«25 lid × 2,5% = haftasiga 6 sotuv». Ertalab 15 daqiqa: raqamlar, vazifalar, 1 bitim tahlili.'},
       {id:'4e',t:'Привязать зарплату к конверсии и чеку',tUz:'Maoshni konversiya va chekka bog‘lash',d:'Не только к объёму — чтобы не сливали лиды и не давали лишних скидок.',dUz:'Faqat hajmga emas — lidlarni behuda sarflamasin va ortiqcha chegirma bermasin.'},
     ]},
-  { id:5, name:'Работа с отложенными', nameUz:'Kechiktirilganlar bilan ishlash', sub:'Догрев · вернуть тех, кто думает', subUz:'Qizdirish · o‘ylayotganlarni qaytarish', icon:'🌱',
+  { id:5, section:'sales', name:'Работа с отложенными', nameUz:'Kechiktirilganlar bilan ishlash', sub:'Догрев · вернуть тех, кто думает', subUz:'Qizdirish · o‘ylayotganlarni qaytarish', icon:'🌱',
     boss:'Ключевая цель этапа', bossUz:'Bosqichning asosiy maqsadi', bossDesc:'433 почти готовых клиента застряли в «подумаю позже» и теряются. Системы возврата нет. Задача — вернуть их.', bossDescUz:'433 ta deyarli tayyor mijoz «keyin o‘ylayman»da qolib yo‘qolyapti. Qaytarish tizimi yo‘q. Vazifa — ularni qaytarish.',
     reward:'✅ Результат: 15% отложенных клиентов превращаются в продажи', rewardUz:'✅ Natija: kechiktirilgan mijozlarning 15% sotuvga aylanadi',
     quests:[
@@ -589,7 +591,7 @@ const STAGES = [
       {id:'5b',t:'Цепочка касаний по дням',tUz:'Kunlar bo‘yicha aloqalar zanjiri',d:'День 1 — видео выпускника · день 3 — кусок обучения · день 7 — звонок · день 14 — дедлайн группы.',dUz:'1-kun — bitiruvchi videosi · 3-kun — o‘quv parchasi · 7-kun — qo‘ng‘iroq · 14-kun — guruh muddati.'},
       {id:'5c',t:'Ежемесячная реактивация старой базы',tUz:'Eski bazani oylik qayta faollashtirish',d:'Рассылка по закрытым лидам с новым оффером. Бесплатный трафик.',dUz:'Yopilgan lidlarga yangi taklif bilan xabar. Bepul trafik.'},
     ]},
-  { id:6, name:'Оплата и прибыль', nameUz:'To‘lov va foyda', sub:'Маржа · чистые деньги и рост чека', subUz:'Marja · toza pul va chek o‘sishi', icon:'💎',
+  { id:6, section:'sales', name:'Оплата и прибыль', nameUz:'To‘lov va foyda', sub:'Маржа · чистые деньги и рост чека', subUz:'Marja · toza pul va chek o‘sishi', icon:'💎',
     boss:'Ключевая цель этапа', bossUz:'Bosqichning asosiy maqsadi', bossDesc:'21% «продаж» — это свои/бартер, они искажают отчётность и мотивацию. Задача — очистить цифры и растить средний чек.', bossDescUz:'«Sotuvlar»ning 21% — o‘zimizniki/barter, ular hisobot va motivatsiyani buzadi. Vazifa — raqamlarni tozalash va o‘rtacha chekni oshirish.',
     reward:'✅ Результат: чистая отчётность и рост среднего чека', rewardUz:'✅ Natija: toza hisobot va o‘rtacha chek o‘sishi',
     quests:[
@@ -706,12 +708,23 @@ function renderStages(){
   renderFilters();
   const uz=state.lang==='uz';
   const wrap=stages;wrap.innerHTML='';
+  let lastSection=null;
   STAGES.forEach((s,idx)=>{
     const unlocked=stageUnlocked(idx),sdone=stageDone(s),cnt=s.quests.filter(q=>state.done[q.id]).length;
     const bossReady=sdone&&!state.bosses[s.id];
     if(state.filter==='active'&&(sdone||!unlocked))return;
     if(state.filter==='locked'&&unlocked)return;
     if(state.filter==='done'&&!sdone)return;
+
+    // Заголовок раздела (Маркетинг / Продажи)
+    if(s.section&&s.section!==lastSection){
+      lastSection=s.section;
+      const secH=document.createElement('div');
+      secH.className='task-section';
+      const label = s.section==='marketing' ? (uz?'📣 Marketing':'📣 Маркетинг') : (uz?'💼 Sotuvlar':'💼 Продажи');
+      secH.innerHTML=label;
+      wrap.appendChild(secH);
+    }
 
     const card=document.createElement('div');
     card.className='stage'+(sdone?' done':'')+(bossReady?' bossready':'')+(state.open[s.id]?' open':'');
