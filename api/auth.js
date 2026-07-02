@@ -1,0 +1,84 @@
+// /api/auth.js — вход по ролям. Админ: один пароль (дефолт 12345678). РОП: без пароля.
+// Витринная версия для одного клиента. Данные общие (org=hunter).
+import crypto from "crypto";
+
+// Дефолтный пароль админа. Можно переопределить переменной ADMIN_PASSWORD в Vercel.
+function adminPassword() {
+  return process.env.ADMIN_PASSWORD || "12345678";
+}
+
+async function redisSet(url, token, key, value, ttlSec) {
+  const r = await fetch(`${url}/set/${encodeURIComponent(key)}`, {
+    method: "POST",
+    headers: { Authorization: `Bearer ${token}` },
+    body: typeof value === "string" ? value : JSON.stringify(value),
+  });
+  if (ttlSec) {
+    await fetch(`${url}/expire/${encodeURIComponent(key)}/${ttlSec}`, {
+      method: "POST", headers: { Authorization: `Bearer ${token}` },
+    });
+  }
+  return r.ok;
+}
+
+export default async function handler(req, res) {
+  const redisUrl = process.env.UPSTASH_REDIS_REST_URL;
+  const redisToken = process.env.UPSTASH_REDIS_REST_TOKEN;
+
+  if (req.method !== "POST") { res.status(405).json({ error: "Method not allowed" }); return; }
+  if (!redisUrl || !redisToken) { res.status(500).json({ error: "Upstash env not set" }); return; }
+
+  try {
+    const { action, password, session } = req.body || {};
+
+    // Проверка существующей сессии
+    if (action === "check") {
+      if (!session) { res.status(200).json({ ok: false }); return; }
+      const r = await fetch(`${redisUrl}/get/session:${encodeURIComponent(session)}`, {
+        headers: { Authorization: `Bearer ${redisToken}` },
+      });
+      const d = await r.json();
+      if (!d || d.result == null) { res.status(200).json({ ok: false }); return; }
+      const info = JSON.parse(d.result);
+      res.status(200).json({ ok: true, ...info });
+      return;
+    }
+
+    // Вход админа по паролю
+    if (action === "admin") {
+      if ((password || "") !== adminPassword()) {
+        res.status(200).json({ ok: false, error: "Неверный пароль" });
+        return;
+      }
+      const sessToken = crypto.randomBytes(24).toString("hex");
+      const info = { role: "admin", org: "hunter" };
+      await redisSet(redisUrl, redisToken, `session:${sessToken}`, JSON.stringify(info), 30 * 24 * 3600);
+      res.status(200).json({ ok: true, session: sessToken, ...info });
+      return;
+    }
+
+    // Вход РОПа — без пароля
+    if (action === "rop") {
+      const sessToken = crypto.randomBytes(24).toString("hex");
+      const info = { role: "rop", org: "hunter" };
+      await redisSet(redisUrl, redisToken, `session:${sessToken}`, JSON.stringify(info), 30 * 24 * 3600);
+      res.status(200).json({ ok: true, session: sessToken, ...info });
+      return;
+    }
+
+    // Выход
+    if (action === "logout") {
+      if (session) {
+        await fetch(`${redisUrl}/del/session:${encodeURIComponent(session)}`, {
+          method: "POST", headers: { Authorization: `Bearer ${redisToken}` },
+        });
+      }
+      res.status(200).json({ ok: true });
+      return;
+    }
+
+    res.status(400).json({ error: "Unknown action" });
+  } catch (err) {
+    res.status(500).json({ error: "auth failed", detail: String(err) });
+  }
+}
