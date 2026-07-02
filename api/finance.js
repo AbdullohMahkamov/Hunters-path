@@ -4,6 +4,21 @@
 
 const SHEET_ID = process.env.FINANCE_SHEET_ID || "1BaL64eyjfPSE36VY49jP5--Sn4lFQmdx1-zYm_Sarr8";
 
+// Известные листы-месяцы (точные названия из таблицы) + номер месяца для определения текущего.
+// При добавлении нового месяца — добавить строку сюда.
+const MONTHS = [
+  { tab: "Xarajatlar(Mart)",  label: "Март",   labelUz: "Mart",   m: 3 },
+  { tab: "Xarajatlar (Aprel)", label: "Апрель", labelUz: "Aprel",  m: 4 },
+  { tab: "Xarajatlar (May)",   label: "Май",    labelUz: "May",    m: 5 },
+  { tab: "Xarajatlar (Iyun)",  label: "Июнь",   labelUz: "Iyun",   m: 6 },
+  { tab: "Xarajatlar (Iyul)",  label: "Июль",   labelUz: "Iyul",   m: 7 },
+  { tab: "Xarajatlar (Avgust)", label: "Август", labelUz: "Avgust", m: 8 },
+  { tab: "Xarajatlar (Sentabr)", label: "Сентябрь", labelUz: "Sentabr", m: 9 },
+  { tab: "Xarajatlar (Oktabr)", label: "Октябрь", labelUz: "Oktabr", m: 10 },
+  { tab: "Xarajatlar (Noyabr)", label: "Ноябрь", labelUz: "Noyabr", m: 11 },
+  { tab: "Xarajatlar (Dekabr)", label: "Декабрь", labelUz: "Dekabr", m: 12 },
+];
+
 // Ключевые слова для поиска строк (регистронезависимо, разные варианты написания)
 const KEYS = {
   revenue: ["tushum", "выручка", "доход", "revenue"],
@@ -91,45 +106,71 @@ async function fetchSheetTabs() {
   } catch (e) { return []; }
 }
 
+// читает один лист и возвращает {revenue,expenses,profit,tax,margin,found} или {error}
+async function readMonth(tab) {
+  let csv;
+  try {
+    csv = await fetchSheetCSV(tab);
+  } catch (e) {
+    if (String(e).includes("NO_ACCESS")) return { error: "no_access" };
+    return { error: "fetch_failed" };
+  }
+  const rows = parseCSV(csv);
+  const revenue = findByKeys(rows, KEYS.revenue);
+  const expenses = findByKeys(rows, KEYS.expenses);
+  let profit = findByKeys(rows, KEYS.profit);
+  const tax = findByKeys(rows, KEYS.tax);
+  if (profit == null && revenue != null && expenses != null) profit = revenue - expenses;
+  const margin = (revenue && profit != null) ? +(profit / revenue * 100).toFixed(1) : null;
+  return { revenue, expenses, profit, tax, margin, found: { revenue: revenue != null, expenses: expenses != null, profit: profit != null } };
+}
+
 export default async function handler(req, res) {
   if (req.method !== "POST" && req.method !== "GET") { res.status(405).json({ error: "Method not allowed" }); return; }
   try {
     const action = (req.body && req.body.action) || (req.query && req.query.action) || "";
-    // вернуть список месяцев (листов)
+    const curMonth = new Date().getMonth() + 1;
+
+    // список месяцев (для дропдауна) — известные листы + пометка текущего
     if (action === "list") {
-      const tabs = await fetchSheetTabs();
-      res.status(200).json({ ok: true, tabs });
+      const months = MONTHS.map(mo => ({ tab: mo.tab, label: mo.label, labelUz: mo.labelUz, m: mo.m, current: mo.m === curMonth }));
+      res.status(200).json({ ok: true, months, currentMonth: curMonth });
       return;
     }
-    const sheetName = (req.query && req.query.month) || (req.body && req.body.month) || "";
-    let csv;
-    try {
-      csv = await fetchSheetCSV(sheetName);
-    } catch (e) {
-      if (String(e).includes("NO_ACCESS")) {
-        res.status(200).json({ ok: false, error: "no_access", msg: "Таблица закрыта. Откройте доступ «по ссылке — просмотр»." });
-        return;
+
+    // годовая динамика — читаем все месяцы до текущего включительно
+    if (action === "year") {
+      const list = MONTHS.filter(mo => mo.m <= curMonth);
+      const results = [];
+      for (const mo of list) {
+        const r = await readMonth(mo.tab);
+        if (r.error === "no_access") { res.status(200).json({ ok: false, error: "no_access" }); return; }
+        // включаем месяц только если нашли хоть выручку или прибыль
+        if (r.revenue != null || r.profit != null) {
+          results.push({ month: mo.label, monthUz: mo.labelUz, m: mo.m, revenue: r.revenue, expenses: r.expenses, profit: r.profit, margin: r.margin });
+        }
       }
-      throw e;
+      res.status(200).json({ ok: true, year: results });
+      return;
     }
 
-    const rows = parseCSV(csv);
-    const revenue = findByKeys(rows, KEYS.revenue);
-    const expenses = findByKeys(rows, KEYS.expenses);
-    let profit = findByKeys(rows, KEYS.profit);
-    const tax = findByKeys(rows, KEYS.tax);
-
-    // если прибыль не нашли, но есть выручка и расходы — считаем сами
-    if (profit == null && revenue != null && expenses != null) profit = revenue - expenses;
-
-    const margin = (revenue && profit != null) ? +(profit / revenue * 100).toFixed(1) : null;
-
-    // список листов (месяцев) — попробуем вытащить из первого запроса метаданных
+    // один месяц: указанный tab, или текущий по умолчанию
+    let tab = (req.body && req.body.month) || (req.query && req.query.month) || "";
+    if (!tab) {
+      const cur = MONTHS.find(mo => mo.m === curMonth);
+      tab = cur ? cur.tab : (MONTHS[MONTHS.length - 1] ? MONTHS[MONTHS.length - 1].tab : "");
+    }
+    const r = await readMonth(tab);
+    if (r.error === "no_access") { res.status(200).json({ ok: false, error: "no_access" }); return; }
+    if (r.error) { res.status(200).json({ ok: false, error: r.error }); return; }
+    const moInfo = MONTHS.find(mo => mo.tab === tab);
     res.status(200).json({
       ok: true,
-      month: sheetName || "текущий",
-      revenue, expenses, profit, tax, margin,
-      found: { revenue: revenue != null, expenses: expenses != null, profit: profit != null },
+      month: moInfo ? moInfo.label : tab,
+      monthUz: moInfo ? moInfo.labelUz : tab,
+      tab,
+      revenue: r.revenue, expenses: r.expenses, profit: r.profit, tax: r.tax, margin: r.margin,
+      found: r.found,
     });
   } catch (err) {
     res.status(500).json({ error: "finance failed", detail: String(err) });
