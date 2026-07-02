@@ -83,6 +83,7 @@ export default async function handler(req, res) {
       max_tokens: 2500,
       system: SYSTEM + progressNote + live,
       messages: messages,
+      stream: true,
     };
 
     const r = await fetch("https://api.anthropic.com/v1/messages", {
@@ -92,10 +93,36 @@ export default async function handler(req, res) {
     });
 
     if (!r.ok) { const t = await r.text(); res.status(r.status).json({ error: "Anthropic API error", detail: t }); return; }
-    const data = await r.json();
-    const text = (data.content || []).filter((b) => b.type === "text").map((b) => b.text).join("\n");
-    res.status(200).json({ text });
+
+    // Стримим текст клиенту по мере генерации (SSE от Anthropic → plain text chunks клиенту)
+    res.setHeader("Content-Type", "text/plain; charset=utf-8");
+    res.setHeader("Cache-Control", "no-cache");
+    res.setHeader("X-Accel-Buffering", "no");
+
+    const reader = r.body.getReader();
+    const decoder = new TextDecoder();
+    let buffer = "";
+    while (true) {
+      const { done, value } = await reader.read();
+      if (done) break;
+      buffer += decoder.decode(value, { stream: true });
+      const lines = buffer.split("\n");
+      buffer = lines.pop() || "";
+      for (const line of lines) {
+        const t = line.trim();
+        if (!t.startsWith("data:")) continue;
+        const payload = t.slice(5).trim();
+        if (payload === "[DONE]") continue;
+        try {
+          const evt = JSON.parse(payload);
+          if (evt.type === "content_block_delta" && evt.delta && evt.delta.type === "text_delta") {
+            res.write(evt.delta.text);
+          }
+        } catch (e) { /* пропускаем неполные */ }
+      }
+    }
+    res.end();
   } catch (err) {
-    res.status(500).json({ error: "Server error", detail: String(err) });
+    try { res.status(500).json({ error: "Server error", detail: String(err) }); } catch (e) { res.end(); }
   }
 }
