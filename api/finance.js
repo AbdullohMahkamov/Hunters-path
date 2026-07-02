@@ -142,17 +142,27 @@ async function cacheGet(key) {
   try {
     const r = await fetch(`${url}/get/${encodeURIComponent(key)}`, { headers: { Authorization: `Bearer ${token}` } });
     const d = await r.json();
-    return d && d.result != null ? JSON.parse(d.result) : null;
+    if (!d || d.result == null) return null;
+    // result — это строка (наш JSON). Парсим один раз.
+    return typeof d.result === "string" ? JSON.parse(d.result) : d.result;
   } catch (e) { return null; }
 }
 async function cacheSet(key, val, ttlSec) {
   const url = process.env.UPSTASH_REDIS_REST_URL, token = process.env.UPSTASH_REDIS_REST_TOKEN;
   if (!url || !token) return;
   try {
+    // Upstash REST: значение передаём как СЫРОЕ тело запроса (не оборачиваем повторно)
     const body = JSON.stringify(val);
-    const path = ttlSec ? `${url}/set/${encodeURIComponent(key)}?EX=${ttlSec}` : `${url}/set/${encodeURIComponent(key)}`;
-    await fetch(path, { method: "POST", headers: { Authorization: `Bearer ${token}`, "content-type": "application/json" }, body: JSON.stringify(body) });
-  } catch (e) { /* не критично */ }
+    const path = ttlSec
+      ? `${url}/set/${encodeURIComponent(key)}?EX=${ttlSec}`
+      : `${url}/set/${encodeURIComponent(key)}`;
+    const resp = await fetch(path, {
+      method: "POST",
+      headers: { Authorization: `Bearer ${token}` },
+      body: body,
+    });
+    return resp.ok;
+  } catch (e) { return false; }
 }
 
 // ===== ИИ-ЧТЕНИЕ ФИНАНСОВ =====
@@ -162,21 +172,31 @@ async function aiReadFinance(csv) {
   if (!apiKey) return { error: "no_api_key" };
   // ограничим размер, чтобы не гнать лишние токены
   const clipped = csv.slice(0, 8000);
-  const SYSTEM = `Ты финансовый аналитик. На вход — таблица финансов бизнеса за месяц в CSV (может быть на узбекском/русском, любой структуры).
-Найди ключевые итоговые суммы и верни СТРОГО JSON без markdown, без пояснений:
-{"revenue":число_или_null,"expenses":число_или_null,"profit":число_или_null,"tax":число_или_null}
+  const SYSTEM = `Ты финансовый аналитик. На вход — таблица финансов бизнеса за месяц в CSV (узбекский/русский, любая структура).
+Верни СТРОГО JSON без markdown, без пояснений:
+{
+ "revenue": число_или_null,
+ "expenses": число_или_null,
+ "profit": число_или_null,
+ "tax": число_или_null,
+ "profitAfterShares": число_или_null,
+ "breakdown": [{"name":"статья","amount":число}]
+}
+Правила:
 - revenue = общая выручка/доход (tushum, daromad, выручка)
-- expenses = общие расходы (umumiy xarajatlar, jami xarajat, всего расходов)
-- profit = чистая прибыль (sof foyda, чистая прибыль); если её нет, посчитай revenue - expenses
-- tax = налог (soliq), если есть
-ВАЖНО: бери числа ТОЛЬКО из таблицы. НИКОГДА не выдумывай и не округляй. Если таблица пустая или значения нет — ставь null. Не подставляй примерные числа вроде 200000000. Числа — только цифры, без пробелов и валют. Отрицательные (убыток) сохраняй.`;
+- expenses = ОБЩИЕ расходы (umumiy xarajatlar, jami xarajat, всего расходов)
+- profit = чистая прибыль ДО распределения долей (sof foyda, чистая прибыль)
+- profitAfterShares = остаток ПОСЛЕ вычета долей учредителей, если в таблице есть такая строка (например «qoldiq», «остаток», распределение по учредителям). Если такой строки нет — null
+- tax = налог (soliq)
+- breakdown = список ОТДЕЛЬНЫХ статей расходов с суммами (маркетинг, зарплаты, аренда, реклама, таргет, AMOCRM и т.д.) — каждая строка расхода отдельно, БЕЗ итоговой суммы. Максимум 20 статей. Только реальные строки из таблицы.
+ВАЖНО: бери числа ТОЛЬКО из таблицы. НИКОГДА не выдумывай и не округляй. Нет значения — null (или [] для breakdown). Не подставляй примерные числа. Числа — только цифры без пробелов/валют. Отрицательные (убыток) сохраняй.`;
   try {
     const r = await fetch("https://api.anthropic.com/v1/messages", {
       method: "POST",
       headers: { "content-type": "application/json", "x-api-key": apiKey, "anthropic-version": "2023-06-01" },
       body: JSON.stringify({
         model: "claude-sonnet-4-6",
-        max_tokens: 300,
+        max_tokens: 1500,
         system: SYSTEM,
         messages: [{ role: "user", content: "CSV финансов:\n" + clipped }],
       }),
@@ -186,11 +206,20 @@ async function aiReadFinance(csv) {
     let text = (data.content || []).filter(b => b.type === "text").map(b => b.text).join("").trim();
     text = text.replace(/```json/gi, "").replace(/```/g, "").trim();
     const parsed = JSON.parse(text);
+    let breakdown = [];
+    if (Array.isArray(parsed.breakdown)) {
+      breakdown = parsed.breakdown
+        .map(it => ({ name: String(it.name || "").slice(0, 60), amount: numOrNull(it.amount) }))
+        .filter(it => it.name && it.amount != null)
+        .slice(0, 20);
+    }
     return {
       revenue: numOrNull(parsed.revenue),
       expenses: numOrNull(parsed.expenses),
       profit: numOrNull(parsed.profit),
       tax: numOrNull(parsed.tax),
+      profitAfterShares: numOrNull(parsed.profitAfterShares),
+      breakdown,
     };
   } catch (e) { return { error: "ai_parse" }; }
 }
@@ -216,9 +245,12 @@ async function readMonth(tab, opts) {
     return { error: "fetch_failed" };
   }
   let revenue = null, expenses = null, profit = null, tax = null, via = "ai";
+  let profitAfterShares = null, breakdown = [];
   const ai = await aiReadFinance(csv);
   if (!ai.error) {
     revenue = ai.revenue; expenses = ai.expenses; profit = ai.profit; tax = ai.tax;
+    profitAfterShares = ai.profitAfterShares != null ? ai.profitAfterShares : null;
+    breakdown = ai.breakdown || [];
   } else {
     via = "keywords";
     const rows = parseCSV(csv);
@@ -229,7 +261,7 @@ async function readMonth(tab, opts) {
   }
   if (profit == null && revenue != null && expenses != null) profit = revenue - expenses;
   const margin = (revenue && profit != null) ? +(profit / revenue * 100).toFixed(1) : null;
-  const result = { revenue, expenses, profit, tax, margin, via, found: { revenue: revenue != null, expenses: expenses != null, profit: profit != null } };
+  const result = { revenue, expenses, profit, tax, margin, profitAfterShares, breakdown, via, found: { revenue: revenue != null, expenses: expenses != null, profit: profit != null } };
   const ttl = opts.isCurrent ? 86400 : 2592000; // текущий — сутки, прошлые — 30 дней
   await cacheSet(cacheKey, result, ttl);
   return result;
@@ -312,6 +344,7 @@ export default async function handler(req, res) {
       monthUz: moInfo0 ? moInfo0.labelUz : tab,
       tab,
       revenue: r.revenue, expenses: r.expenses, profit: r.profit, tax: r.tax, margin: r.margin,
+      profitAfterShares: r.profitAfterShares, breakdown: r.breakdown || [],
       found: r.found,
     });
   } catch (err) {
