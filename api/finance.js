@@ -300,7 +300,7 @@ export default async function handler(req, res) {
       const force = !!(req.body && req.body.force);
       if (!fin) { res.status(400).json({ error: "no finance data" }); return; }
       const sig = `${fin.month || "?"}_${fin.revenue || 0}_${fin.expenses || 0}_${fin.profit || 0}`;
-      const aiKey = `finai:${lang}:${sig}`;
+      const aiKey = `finai:v2:${lang}:${sig}`;
       if (!force) {
         const cachedRaw = await cacheGetRaw(aiKey);
         if (cachedRaw) { res.status(200).json({ ok: true, analysis: cachedRaw, cached: true }); return; }
@@ -313,13 +313,21 @@ export default async function handler(req, res) {
       if (Array.isArray(fin.breakdown) && fin.breakdown.length) {
         finText += "\nРасходы по статьям:\n" + fin.breakdown.map(b => `- ${b.name}: ${fmt(b.amount)}`).join("\n");
       }
+      // Продажи из CRM подмешиваем ТОЛЬКО для текущего месяца — иначе периоды не совпадают
+      // (финансы за прошлый месяц + CRM за текущий = ложные выводы).
+      const curNameForSales = new Date().toLocaleString("ru-RU", { month: "long" });
+      const isCurrentMonth = (fin.month || "").toLowerCase().includes(curNameForSales.toLowerCase());
       let salesText = "";
-      const dash = await cacheGet("dashboard");
-      if (dash && dash.totals) {
-        const t = dash.totals;
-        salesText = `\n\nДанные продаж из CRM (этот месяц):\n- Продаж: ${t.sold}, выручка ${fmt(t.revenue)}\n- Конверсия: ${t.conv}%, средний чек ${fmt(t.avgCheck)}\n- Потеря лидов до контакта: ${t.noContactPct}%`;
+      if (isCurrentMonth) {
+        const dash = await cacheGet("dashboard");
+        if (dash && dash.totals) {
+          const t = dash.totals;
+          salesText = `\n\nДанные продаж из CRM (текущий месяц, совпадает с финансами):\n- Продаж: ${t.sold}, выручка ${fmt(t.revenue)}\n- Конверсия: ${t.conv}%, средний чек ${fmt(t.avgCheck)}\n- Потеря лидов до контакта: ${t.noContactPct}%`;
+        }
       }
       const SYSTEM = `Ты — финансовый директор школы продаж. Проанализируй финансы месяца и дай ЧЁТКИЙ практичный разбор для владельца.
+
+ВАЖНО про данные: анализируй ТОЛЬКО цифры за указанный месяц. Выручка в финансовой таблице = это и есть продажи месяца в деньгах. Оценивай окупаемость рекламы по выручке ЭТОГО ЖЕ месяца из таблицы (реклама X против выручки месяца). ${isCurrentMonth ? "Данные CRM ниже относятся к тому же (текущему) месяцу — можно использовать." : "Данных CRM по продажам за этот месяц НЕТ — не выдумывай число продаж, конверсию или потерю лидов. Анализируй только по финансовой таблице (выручка, расходы, прибыль)."}
 
 Структура ответа (markdown, коротко и по делу):
 ## Общая оценка
@@ -327,12 +335,12 @@ export default async function handler(req, res) {
 ## Куда уходят деньги
 2-3 самые крупные статьи расходов и их доля. Что раздуто.
 ## Где оптимизировать
-2-3 КОНКРЕТНЫХ действия: что урезать, где неэффективно. С опорой на связь расходов и продаж.
+2-3 КОНКРЕТНЫХ действия: что урезать, где неэффективно. Окупаемость рекламы считай по выручке ЭТОГО месяца из таблицы.
 ## Вывод
 1 главная рекомендация на следующий месяц.
 
-Пиши прямо, цифрами, без воды. ${lang === "uz" ? "Отвечай ПО-УЗБЕКСКИ (латиница)." : "Отвечай ПО-РУССКИ."}`;
-      const USER = `ФИНАНСЫ:\n${finText}${salesText}\n\nСделай разбор и дай рекомендации по оптимизации.`;
+Пиши прямо, цифрами, без воды. Не притягивай данные из других месяцев. ${lang === "uz" ? "Отвечай ПО-УЗБЕКСКИ (латиница)." : "Отвечай ПО-РУССКИ."}`;
+      const USER = `ФИНАНСЫ ЗА МЕСЯЦ «${fin.month || "?"}»:\n${finText}${salesText}\n\nСделай разбор строго по этим данным.`;
       const ar = await fetch("https://api.anthropic.com/v1/messages", {
         method: "POST",
         headers: { "content-type": "application/json", "x-api-key": apiKey, "anthropic-version": "2023-06-01" },
