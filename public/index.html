@@ -379,10 +379,21 @@
 
     <!-- Шаг 2: пароль админа -->
     <div id="adminLogin" style="display:none;">
-      <input id="passInput" type="password" placeholder="Пароль администратора" autocomplete="current-password"
-        style="width:100%;padding:13px 15px;border-radius:11px;border:1px solid var(--line2);background:var(--card);color:var(--txt);font-size:15px;margin-bottom:12px;" />
-      <button onclick="doLogin()" id="loginBtn"
-        style="width:100%;padding:14px;border-radius:11px;background:var(--accent);border:none;color:#fff;font-size:15px;font-weight:600;cursor:pointer;">Войти</button>
+      <form onsubmit="event.preventDefault();doLogin();" autocomplete="on">
+        <input type="text" name="username" value="admin" autocomplete="username" style="display:none;" readonly />
+        <div style="position:relative;">
+          <input id="passInput" type="password" name="password" placeholder="Пароль администратора" autocomplete="current-password"
+            style="width:100%;padding:13px 42px 13px 15px;border-radius:11px;border:1px solid var(--line2);background:var(--card);color:var(--txt);font-size:15px;margin-bottom:12px;" />
+          <button type="button" onclick="togglePass()" id="eyeBtn" title="Показать пароль"
+            style="position:absolute;right:10px;top:11px;background:none;border:none;color:var(--txt3);font-size:17px;cursor:pointer;padding:0;">👁</button>
+        </div>
+        <label style="display:flex;align-items:center;gap:8px;font-size:13px;color:var(--txt2);margin-bottom:14px;cursor:pointer;">
+          <input type="checkbox" id="rememberPass" style="width:16px;height:16px;cursor:pointer;" />
+          Запомнить пароль на этом устройстве
+        </label>
+        <button type="submit" id="loginBtn"
+          style="width:100%;padding:14px;border-radius:11px;background:var(--accent);border:none;color:#fff;font-size:15px;font-weight:600;cursor:pointer;">Войти</button>
+      </form>
       <button onclick="backToRoles()" style="width:100%;padding:11px;border-radius:11px;background:none;border:none;color:var(--txt2);font-size:13px;cursor:pointer;margin-top:8px;">← Назад</button>
     </div>
 
@@ -1717,7 +1728,19 @@ function chooseAdmin(){
   document.getElementById('roleChoice').style.display='none';
   document.getElementById('adminLogin').style.display='block';
   document.getElementById('loginError').textContent='';
-  setTimeout(()=>{const p=document.getElementById('passInput');if(p)p.focus();},100);
+  // подставить запомненный пароль
+  const saved=localStorage.getItem('hp_admin_pass');
+  const p=document.getElementById('passInput');
+  const rem=document.getElementById('rememberPass');
+  if(saved&&p){p.value=saved;if(rem)rem.checked=true;}
+  setTimeout(()=>{if(p)p.focus();},100);
+}
+function togglePass(){
+  const p=document.getElementById('passInput');
+  const eye=document.getElementById('eyeBtn');
+  if(!p)return;
+  if(p.type==='password'){p.type='text';if(eye)eye.textContent='🙈';}
+  else{p.type='password';if(eye)eye.textContent='👁';}
 }
 function backToRoles(){
   document.getElementById('adminLogin').style.display='none';
@@ -1945,6 +1968,10 @@ async function doLogin(){
     if(d&&d.ok){
       SESSION=d.session;localStorage.setItem('hp_session',SESSION);
       USER_ROLE=d.role||'admin';USER_ORG=d.org||'hunter';
+      // запомнить/забыть пароль
+      const rem=document.getElementById('rememberPass');
+      if(rem&&rem.checked){localStorage.setItem('hp_admin_pass',password);}
+      else{localStorage.removeItem('hp_admin_pass');}
       await loadCloud();
       bootApp();
     }else{
