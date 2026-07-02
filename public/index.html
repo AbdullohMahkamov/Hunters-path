@@ -239,6 +239,9 @@
     border-bottom:2px solid transparent;cursor:pointer;margin-bottom:-1px;}
   .dtab.on{color:var(--txt);border-bottom-color:var(--txt);}
   .dtab:hover{color:var(--txt);}
+  .perbtn{padding:6px 12px;font-size:12.5px;font-weight:500;border-radius:8px;border:1px solid var(--line2);
+    background:var(--card);color:var(--txt2);cursor:pointer;}
+  .perbtn.on{background:var(--accent);color:#fff;border-color:var(--accent);}
   .goal-big{font-size:26px;font-weight:700;}
 
   /* dop-quests + generator modal */
@@ -523,6 +526,10 @@
     <!-- РАЗДЕЛ: ОБЗОР -->
     <div class="dgroup" id="dg-overview">
       <div id="signalsBox"></div>
+      <div style="display:flex;gap:6px;margin-bottom:14px;">
+        <button class="perbtn on" id="per-month" onclick="setDashPeriod('month')">Текущий месяц</button>
+        <button class="perbtn" id="per-all" onclick="setDashPeriod('all')">Всё время</button>
+      </div>
       <div class="goal-card">
         <div style="font-size:12px;color:var(--txt2);margin-bottom:4px;" id="goalTitle">ЦЕЛЬ · ЭТОТ МЕСЯЦ</div>
         <div class="goal-big" style="color:var(--accent);cursor:pointer;" id="goalBig" onclick="editGoal()">500 000 000 <span style="font-size:15px;color:var(--txt2);">сум/мес</span></div>
@@ -1172,6 +1179,16 @@ function dashTab(tab){
   if(tab==='trends')loadTrends();
   if(tab==='finance'&&!financeLoaded)loadFinance();
 }
+function setDashPeriod(per){
+  window._dashPeriod=per;
+  document.getElementById('per-month').classList.toggle('on',per==='month');
+  document.getElementById('per-all').classList.toggle('on',per==='all');
+  // обновляем метки под цифрами
+  const lbl=per==='all'?'за всё время (~4 мес)':'этот месяц';
+  const mkH=document.querySelector('#dg-marketing .dcard .dh');
+  // перерисовываем с текущими данными
+  if(window._dashData)applyLiveDash(window._dashData);
+}
 async function renderDashboard(){
   if(dashLoaded)return;
   const note=document.getElementById('dashNote');
@@ -1198,8 +1215,14 @@ function fmtSum(n){
 }
 
 function applyLiveDash(d){
+  window._dashData=d; // сохраняем для переключателя периода
   const t=d.totals;
   const set=(id,v)=>{const e=document.getElementById(id);if(e)e.textContent=v;};
+  const per=window._dashPeriod||'month';
+  // значения, зависящие от периода
+  const convVal = per==='all' && t.convAll!=null ? t.convAll : t.conv;
+  const noContactVal = per==='all' && t.noContactPctAll!=null ? t.noContactPctAll : t.noContactPct;
+  const leadsVal = per==='all' && t.leadsAll!=null ? t.leadsAll : t.leads;
 
   // Цель — берём заданную пользователем (или 500М по умолчанию), считаем прогресс от неё
   const goal=getGoal();
@@ -1213,11 +1236,11 @@ function applyLiveDash(d){
   set('kpiSold',t.sold);
   set('kpiSoldH','из плана '+(t.needPerMonth||141));
   set('kpiRevenue',fmtSum(t.revenue));
-  set('kpiConv',String(t.conv).replace('.',',')+'%');
+  set('kpiConv',String(convVal).replace('.',',')+'%');
   set('kpiCheck',fmtSum(t.avgCheck));
   // Маркетинг KPI
-  set('mkLeads',t.leads!=null?t.leads:'—');
-  set('mkNoContact',(t.noContactPct!=null?t.noContactPct:0)+'%');
+  set('mkLeads',leadsVal!=null?leadsVal:'—');
+  set('mkNoContact',(noContactVal!=null?noContactVal:0)+'%');
 
   // Топ по продажам
   const bySales=d.mopsBySales||[];
@@ -1247,14 +1270,14 @@ function applyLiveDash(d){
     </div>`).join('')||'<div style="font-size:12px;color:var(--txt3);">Нет данных</div>';
 
   // 5 проблем
-  const probs=d.problems||[];
+  const probs=(per==='all' && d.problemsAll ? d.problemsAll : d.problems)||[];
   const maxP=Math.max(1,...probs.map(p=>p.count));
   document.getElementById('problemsChart').innerHTML=probs.map(p=>`
     <div class="mop-row">
       <div class="mop-name" style="width:150px;">${escapeHtml(p.name)}</div>
       <div class="mop-bar-wrap"><div class="mop-bar" style="width:${Math.round(p.count/maxP*100)}%;background:var(--red);"></div></div>
       <div class="mop-val">${p.count}</div>
-    </div>`).join('')||'<div style="font-size:12px;color:var(--txt3);">Нет потерь за месяц 🎉</div>';
+    </div>`).join('')||'<div style="font-size:12px;color:var(--txt3);">Нет потерь за период</div>';
 
   // Дисциплина (если уже в кэше)
   if(d.speed&&d.speed.mops)renderDiscipline(d.speed);
@@ -2442,8 +2465,9 @@ async function wizRunAudit(){
 function wizShowProblems(d){
   document.getElementById('wizTitle').textContent=tr('wizProblT');
   let probs='';
-  if(d&&d.problems&&d.problems.length){
-    probs=d.problems.map(p=>`<div style="display:flex;justify-content:space-between;padding:9px 0;border-top:1px solid var(--line);font-size:13.5px;"><span>${escapeHtml(p.name)}</span><b style="color:var(--red);">${p.count}</b></div>`).join('');
+  const wp=(d&&d.problemsAll&&d.problemsAll.length)?d.problemsAll:(d&&d.problems);
+  if(wp&&wp.length){
+    probs=wp.map(p=>`<div style="display:flex;justify-content:space-between;padding:9px 0;border-top:1px solid var(--line);font-size:13.5px;"><span>${escapeHtml(p.name)}</span><b style="color:var(--red);">${p.count}</b></div>`).join('');
   }else{
     probs=`<div style="font-size:13px;color:var(--txt3);padding:10px 0;">Данных о проблемах пока мало. План составим по общей логике роста.</div>`;
   }
