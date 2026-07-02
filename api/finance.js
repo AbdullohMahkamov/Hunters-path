@@ -164,6 +164,24 @@ async function cacheSet(key, val, ttlSec) {
     return resp.ok;
   } catch (e) { return false; }
 }
+// сырые (строковые) варианты — для текста анализа, без JSON-обёртки
+async function cacheGetRaw(key) {
+  const url = process.env.UPSTASH_REDIS_REST_URL, token = process.env.UPSTASH_REDIS_REST_TOKEN;
+  if (!url || !token) return null;
+  try {
+    const r = await fetch(`${url}/get/${encodeURIComponent(key)}`, { headers: { Authorization: `Bearer ${token}` } });
+    const d = await r.json();
+    return d && typeof d.result === "string" ? d.result : null;
+  } catch (e) { return null; }
+}
+async function cacheSetRaw(key, val, ttlSec) {
+  const url = process.env.UPSTASH_REDIS_REST_URL, token = process.env.UPSTASH_REDIS_REST_TOKEN;
+  if (!url || !token) return;
+  try {
+    const path = ttlSec ? `${url}/set/${encodeURIComponent(key)}?EX=${ttlSec}` : `${url}/set/${encodeURIComponent(key)}`;
+    await fetch(path, { method: "POST", headers: { Authorization: `Bearer ${token}` }, body: val });
+  } catch (e) { /* не критично */ }
+}
 
 // ===== ИИ-ЧТЕНИЕ ФИНАНСОВ =====
 // Claude смотрит на CSV любой структуры и вытаскивает выручку/расходы/прибыль/налог.
@@ -272,6 +290,64 @@ export default async function handler(req, res) {
   try {
     const action = (req.body && req.body.action) || (req.query && req.query.action) || "";
     const curMonth = new Date().getMonth() + 1;
+
+    // ИИ-АНАЛИЗ финансов (перенесён из finance-analyze для экономии функций на Hobby-плане)
+    if (action === "analyze") {
+      const apiKey = process.env.ANTHROPIC_API_KEY;
+      if (!apiKey) { res.status(500).json({ error: "ANTHROPIC_API_KEY not set" }); return; }
+      const fin = (req.body && req.body.fin) || null;
+      const lang = (req.body && req.body.lang) || "ru";
+      const force = !!(req.body && req.body.force);
+      if (!fin) { res.status(400).json({ error: "no finance data" }); return; }
+      const sig = `${fin.month || "?"}_${fin.revenue || 0}_${fin.expenses || 0}_${fin.profit || 0}`;
+      const aiKey = `finai:${lang}:${sig}`;
+      if (!force) {
+        const cachedRaw = await cacheGetRaw(aiKey);
+        if (cachedRaw) { res.status(200).json({ ok: true, analysis: cachedRaw, cached: true }); return; }
+      }
+      const fmt = n => n == null ? "нет данных" : new Intl.NumberFormat("ru-RU").format(Math.round(n));
+      let finText = `Месяц: ${fin.month || "?"}\nВыручка: ${fmt(fin.revenue)}\nОбщие расходы: ${fmt(fin.expenses)}\nЧистая прибыль (до долей): ${fmt(fin.profit)}\n`;
+      if (fin.margin != null) finText += `Рентабельность: ${fin.margin}%\n`;
+      if (fin.tax != null) finText += `Налог: ${fmt(fin.tax)}\n`;
+      if (fin.profitAfterShares != null) finText += `Остаток после долей: ${fmt(fin.profitAfterShares)}\n`;
+      if (Array.isArray(fin.breakdown) && fin.breakdown.length) {
+        finText += "\nРасходы по статьям:\n" + fin.breakdown.map(b => `- ${b.name}: ${fmt(b.amount)}`).join("\n");
+      }
+      let salesText = "";
+      const dash = await cacheGet("dashboard");
+      if (dash && dash.totals) {
+        const t = dash.totals;
+        salesText = `\n\nДанные продаж из CRM (этот месяц):\n- Продаж: ${t.sold}, выручка ${fmt(t.revenue)}\n- Конверсия: ${t.conv}%, средний чек ${fmt(t.avgCheck)}\n- Потеря лидов до контакта: ${t.noContactPct}%`;
+      }
+      const SYSTEM = `Ты — финансовый директор школы продаж. Проанализируй финансы месяца и дай ЧЁТКИЙ практичный разбор для владельца.
+
+Структура ответа (markdown, коротко и по делу):
+## Общая оценка
+1-2 предложения: прибыльный/убыточный месяц, здоровая ли ситуация.
+## Куда уходят деньги
+2-3 самые крупные статьи расходов и их доля. Что раздуто.
+## Где оптимизировать
+2-3 КОНКРЕТНЫХ действия: что урезать, где неэффективно. С опорой на связь расходов и продаж.
+## Вывод
+1 главная рекомендация на следующий месяц.
+
+Пиши прямо, цифрами, без воды. ${lang === "uz" ? "Отвечай ПО-УЗБЕКСКИ (латиница)." : "Отвечай ПО-РУССКИ."}`;
+      const USER = `ФИНАНСЫ:\n${finText}${salesText}\n\nСделай разбор и дай рекомендации по оптимизации.`;
+      const ar = await fetch("https://api.anthropic.com/v1/messages", {
+        method: "POST",
+        headers: { "content-type": "application/json", "x-api-key": apiKey, "anthropic-version": "2023-06-01" },
+        body: JSON.stringify({ model: "claude-sonnet-4-6", max_tokens: 1200, system: SYSTEM, messages: [{ role: "user", content: USER }] }),
+      });
+      if (!ar.ok) { const t = await ar.text(); res.status(ar.status).json({ error: "Anthropic error", detail: t }); return; }
+      const adata = await ar.json();
+      const atext = (adata.content || []).filter(b => b.type === "text").map(b => b.text).join("\n").trim();
+      const curName = new Date().toLocaleString("ru-RU", { month: "long" });
+      const isCur = (fin.month || "").toLowerCase().includes(curName.toLowerCase());
+      await cacheSetRaw(aiKey, atext, isCur ? 86400 : 2592000);
+      res.status(200).json({ ok: true, analysis: atext });
+      return;
+    }
+
 
     // ДИАГНОСТИКА: вернуть сырой CSV + карту gid, чтобы понять что реально читается
     if (action === "diag") {
