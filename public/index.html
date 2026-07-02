@@ -1411,8 +1411,8 @@ async function runFinanceAnalysis(force){
   if(btn){btn.disabled=true;btn.style.opacity='0.6';}
   box.innerHTML=`<div style="background:var(--card);border:1px solid var(--line);border-radius:12px;padding:14px;font-size:13px;color:var(--txt3);">${uz?'AI moliyani tahlil qilyapti...':'ИИ анализирует финансы...'}</div>`;
   try{
-    const r=await fetch('/api/finance-analyze',{method:'POST',headers:{'content-type':'application/json'},
-      body:JSON.stringify({fin:d,lang:state.lang||'ru',force:!!force})});
+    const r=await fetch('/api/finance',{method:'POST',headers:{'content-type':'application/json'},
+      body:JSON.stringify({action:'analyze',fin:d,lang:state.lang||'ru',force:!!force})});
     const j=await r.json();
     if(j&&j.ok&&j.analysis){
       window._finAnalysisCache[key]=j.analysis;
