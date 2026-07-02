@@ -547,9 +547,9 @@
     <!-- РАЗДЕЛ: ФИНАНСЫ (из Google Sheets) -->
     <div class="dgroup" id="dg-finance" style="display:none;">
       <div style="display:flex;gap:8px;align-items:center;margin-bottom:14px;flex-wrap:wrap;">
-        <input id="finMonth" type="text" placeholder="Лист месяца (напр. Июнь 2026)"
-          style="flex:1;min-width:180px;padding:9px 12px;border-radius:9px;border:1px solid var(--line2);background:var(--card);color:var(--txt);font-size:13px;" />
-        <button onclick="loadFinance()" style="padding:9px 15px;border-radius:9px;background:var(--accent);border:none;color:#fff;font-size:13px;font-weight:600;cursor:pointer;">Показать</button>
+        <select id="finMonth" onchange="loadFinance()"
+          style="flex:1;min-width:180px;padding:9px 12px;border-radius:9px;border:1px solid var(--line2);background:var(--card);color:var(--txt);font-size:13px;">
+        </select>
       </div>
       <div id="financeBox"><div style="font-size:12px;color:var(--txt3);padding:14px;">Укажите лист месяца и нажмите «Показать», либо оставьте пустым для первого листа.</div></div>
     </div>
@@ -1259,10 +1259,30 @@ function applyLiveDash(d){
 
 // ===== ФИНАНСЫ (из Google Sheets) =====
 let financeLoaded=false;
+let financeTabs=null;
 async function loadFinance(){
   const box=document.getElementById('financeBox');if(!box)return;
   const uz=state.lang==='uz';
-  const month=(document.getElementById('finMonth')||{}).value||'';
+  const sel=document.getElementById('finMonth');
+  // первый заход — тянем список месяцев
+  if(financeTabs===null){
+    box.innerHTML=`<div style="font-size:12px;color:var(--txt3);padding:14px;">${uz?'Oylar ro\'yxati yuklanmoqda...':'Загружаю список месяцев...'}</div>`;
+    try{
+      const lr=await fetch('/api/finance',{method:'POST',headers:{'content-type':'application/json'},body:JSON.stringify({action:'list'})});
+      const ld=await lr.json();
+      financeTabs=(ld&&ld.tabs)||[];
+    }catch(e){financeTabs=[];}
+    if(sel){
+      if(financeTabs.length){
+        sel.innerHTML=financeTabs.map(t=>`<option value="${escapeHtml(t)}">${escapeHtml(t)}</option>`).join('');
+        // выбрать последний месяц по умолчанию (обычно свежий)
+        sel.selectedIndex=financeTabs.length-1;
+      }else{
+        sel.innerHTML=`<option value="">${uz?'Birinchi varaq':'Первый лист'}</option>`;
+      }
+    }
+  }
+  const month=sel?sel.value:'';
   box.innerHTML=`<div style="font-size:12px;color:var(--txt3);padding:14px;">${uz?'Google Sheets o\'qilmoqda...':'Читаю Google Sheets...'}</div>`;
   try{
     const r=await fetch('/api/finance',{method:'POST',headers:{'content-type':'application/json'},
@@ -1329,41 +1349,57 @@ function renderTrends(snaps){
   if(!snaps.length){
     box.innerHTML=`<div style="background:var(--card);border:1px solid var(--line);border-radius:12px;padding:18px;text-align:center;">
       <div style="font-size:14px;font-weight:600;margin-bottom:6px;">${uz?'Dinamika hali to\'planmoqda':'Динамика ещё копится'}</div>
-      <div style="font-size:12.5px;color:var(--txt2);line-height:1.5;">${uz?'Tizim har kuni ma\'lumotlar suratini saqlaydi. Grafik 1-2 hafta ichida to\'ladi. Hozircha «amoCRMdan yangilash»ni bosing — birinchi nuqta paydo bo\'ladi.':'Система сохраняет снимок данных каждый день. График наполнится за 1-2 недели. Пока нажмите «Обновить из amoCRM» — появится первая точка.'}</div>
+      <div style="font-size:12.5px;color:var(--txt2);line-height:1.5;">${uz?'Har kuni tizim ma\'lumotni saqlaydi. 1-2 hafta ichida grafik to\'ladi.':'Каждый день система сохраняет данные. График наполнится за 1-2 недели.'}</div>
     </div>`;
     return;
   }
   const soldSeries=snaps.map(s=>s.soldPeriod!=null?s.soldPeriod:(s.sold||0));
   const convSeries=snaps.map(s=>s.conv||0);
-  const labels=snaps.map(s=>s.date.slice(5));
+  const dfmt=iso=>{const p=iso.split('-');return p[2]+'.'+p[1];}; // DD.MM
+  const labels=snaps.map(s=>dfmt(s.date));
+
+  // Мало точек (1-2) — показываем понятную сводку, а не бессмысленный график
+  if(snaps.length<3){
+    const last=snaps[snaps.length-1];
+    box.innerHTML=`
+      <div style="background:var(--card);border:1px solid var(--line);border-radius:12px;padding:16px;margin-bottom:12px;">
+        <div style="font-size:13px;color:var(--txt2);margin-bottom:10px;">${uz?'Bugungi holat':'Текущие показатели'} (${labels[labels.length-1]})</div>
+        <div style="display:flex;gap:20px;flex-wrap:wrap;">
+          <div><div style="font-size:11px;color:var(--txt3);">${uz?'Sotuvlar (davr)':'Продаж (за период)'}</div><div style="font-size:22px;font-weight:700;color:var(--accent);">${soldSeries[soldSeries.length-1]}</div></div>
+          <div><div style="font-size:11px;color:var(--txt3);">${uz?'Konversiya':'Конверсия'}</div><div style="font-size:22px;font-weight:700;">${convSeries[convSeries.length-1]}%</div></div>
+        </div>
+      </div>
+      <div style="font-size:12.5px;color:var(--txt3);line-height:1.5;">${uz?`Hozircha ${snaps.length} ta nuqta. Grafik ${snaps.length===1?'ertaga ikkinchi nuqta bilan':'bir necha kundan keyin'} paydo bo\'ladi — o\'sish yoki pasayishni ko\'rsatadi.`:`Пока ${snaps.length} ${snaps.length===1?'точка':'точки'}. График появится ${snaps.length===1?'завтра со второй точкой':'через несколько дней'} — покажет рост или падение.`}</div>`;
+    return;
+  }
+
+  // 3+ точек — нормальный график с трендом
   const first=soldSeries[0], last=soldSeries[soldSeries.length-1];
   const diff=last-first;
-  const trendTxt = diff>0 ? (uz?`o'sish +${diff}`:`рост +${diff}`) : diff<0 ? (uz?`pasayish ${diff}`:`падение ${diff}`) : (uz?'o\'zgarishsiz':'без изменений');
+  const trendTxt = diff>0 ? (uz?`o'sdi +${diff}`:`выросли на +${diff}`) : diff<0 ? (uz?`pasaydi ${diff}`:`упали на ${diff}`) : (uz?'o\'zgarishsiz':'без изменений');
   const trendColor = diff>0?'var(--green)':diff<0?'var(--red)':'var(--txt2)';
   box.innerHTML=`
-    <div class="dsect">${uz?'Sotuvlar dinamikasi (davr uchun)':'Динамика продаж (за период)'}</div>
-    <div style="font-size:12.5px;color:${trendColor};margin-bottom:10px;">${uz?'Trend':'Тренд'}: ${trendTxt}</div>
-    ${lineChart(soldSeries,labels,'var(--accent)')}
-    <div class="dsect" style="margin-top:20px;">${uz?'Konversiya dinamikasi':'Динамика конверсии'} (%)</div>
-    ${lineChart(convSeries,labels,'var(--green)')}
-    <div style="font-size:11px;color:var(--txt3);margin-top:12px;">${uz?`${snaps.length} kunlik ma'lumot. Har kuni yangi nuqta qo'shiladi.`:`Данные за ${snaps.length} дней. Каждый день добавляется новая точка.`}</div>`;
+    <div class="dsect">${uz?'Sotuvlar (davr uchun)':'Продажи (за период)'}</div>
+    <div style="font-size:13px;margin-bottom:10px;">${uz?'So\'nggi kunlarda':'За последние дни'}: <b style="color:${trendColor};">${trendTxt}</b> ${uz?`(${first} → ${last})`:`(было ${first}, стало ${last})`}</div>
+    ${lineChart(soldSeries,labels,'var(--accent)',uz?'sotuv':'продаж')}
+    <div class="dsect" style="margin-top:22px;">${uz?'Konversiya':'Конверсия'} (%)</div>
+    ${lineChart(convSeries,labels,'var(--green)','%')}
+    <div style="font-size:11px;color:var(--txt3);margin-top:12px;">${uz?`${snaps.length} kunlik ma'lumot`:`Данные за ${snaps.length} дней`}</div>`;
 }
-function lineChart(values,labels,color){
-  const W=640,H=180,pad=30;
+function lineChart(values,labels,color,unit){
+  const W=640,H=170,padL=42,padR=14,padT=14,padB=26;
   if(!values.length)return '';
   const max=Math.max(...values,1),min=Math.min(...values,0);
   const range=max-min||1;
   const n=values.length;
-  const x=i=> n===1 ? W/2 : pad+(i*(W-pad*2)/(n-1));
-  const y=v=> H-pad-((v-min)/range)*(H-pad*2);
+  const x=i=> n===1 ? W/2 : padL+(i*(W-padL-padR)/(n-1));
+  const y=v=> H-padB-((v-min)/range)*(H-padT-padB);
   const pts=values.map((v,i)=>`${x(i)},${y(v)}`).join(' ');
-  const dots=values.map((v,i)=>`<circle cx="${x(i)}" cy="${y(v)}" r="3" fill="${color}"/>`).join('');
-  const step=Math.ceil(n/6);
-  const xlabels=labels.map((l,i)=> i%step===0||i===n-1 ? `<text x="${x(i)}" y="${H-8}" font-size="9" fill="var(--txt3)" text-anchor="middle">${l}</text>`:'').join('');
-  return `<div style="overflow-x:auto;"><svg viewBox="0 0 ${W} ${H}" style="width:100%;min-width:320px;height:auto;background:var(--card);border:1px solid var(--line);border-radius:11px;">
-    <text x="${pad-4}" y="${y(max)+3}" font-size="9" fill="var(--txt3)" text-anchor="end">${max}</text>
-    <text x="${pad-4}" y="${y(min)+3}" font-size="9" fill="var(--txt3)" text-anchor="end">${min}</text>
-    <polyline points="${pts}" fill="none" stroke="${color}" stroke-width="2" stroke-linejoin="round" stroke-linecap="round"/>
+  const dots=values.map((v,i)=>`<circle cx="${x(i)}" cy="${y(v)}" r="3.5" fill="${color}"/><text x="${x(i)}" y="${y(v)-8}" font-size="10" fill="var(--txt2)" text-anchor="middle">${v}${unit==='%'?'%':''}</text>`).join('');
+  const step=Math.ceil(n/7);
+  const xlabels=labels.map((l,i)=> i%step===0||i===n-1 ? `<text x="${x(i)}" y="${H-8}" font-size="9.5" fill="var(--txt3)" text-anchor="middle">${l}</text>`:'').join('');
+  return `<div style="overflow-x:auto;"><svg viewBox="0 0 ${W} ${H}" style="width:100%;min-width:300px;height:auto;background:var(--card);border:1px solid var(--line);border-radius:11px;">
+    <polyline points="${pts}" fill="none" stroke="${color}" stroke-width="2.5" stroke-linejoin="round" stroke-linecap="round"/>
     ${dots}${xlabels}
   </svg></div>`;
 }
@@ -2004,6 +2040,7 @@ function appendMsgDom(role,text,fileNames){
   const body = role==='user' ? (escapeHtml(text)+filesHtml) : (mdToHtml(text)+filesHtml);
   d.innerHTML=`<div class="m-bubble">${body}</div>`;
   chatScroll.appendChild(d);
+  return d;
 }
 function escapeHtml(s){return (s||'').replace(/[&<>]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;'}[c]));}
 
@@ -2083,17 +2120,38 @@ async function sendMsg(){
     const progress={doneCount:doneCount(),total:TOTAL,bossesDown:trophies()};
     const r=await fetch('/api/chat',{method:'POST',headers:{'content-type':'application/json'},
       body:JSON.stringify({messages:apiMsgs,progress,lang:state.lang||'ru'})});
-    const data=await r.json();
-    typing.remove();
-    if(data.text){
-      chat.messages.push({role:'assistant',text:data.text});save();
-      appendMsgDom('assistant',data.text);
-    }else{
-      appendMsgDom('assistant','⚠️ Советник не ответил: '+(data.error||'неизвестная ошибка')+(data.detail?('\n'+data.detail):''));
+
+    // если сервер вернул ошибку в JSON (не стрим)
+    const ctype=r.headers.get('content-type')||'';
+    if(!r.ok||ctype.includes('application/json')){
+      typing.remove();
+      let err='неизвестная ошибка';
+      try{const j=await r.json();err=j.error||err;if(j.detail)err+='\n'+j.detail;}catch(e){}
+      appendMsgDom('assistant','Советник не ответил: '+err);
+      chatScroll.scrollTop=chatScroll.scrollHeight;busy=false;sendBtn.disabled=false;return;
     }
+
+    // СТРИМ: читаем текст по кусочкам и дорисовываем
+    typing.remove();
+    const msgObj={role:'assistant',text:''};
+    chat.messages.push(msgObj);
+    const dom=appendMsgDom('assistant','');
+    const bubble=dom&&dom.querySelector?dom.querySelector('.m-bubble'):null;
+    const reader=r.body.getReader();
+    const dec=new TextDecoder();
+    let acc='';
+    while(true){
+      const {done,value}=await reader.read();
+      if(done)break;
+      acc+=dec.decode(value,{stream:true});
+      msgObj.text=acc;
+      if(bubble){bubble.innerHTML=mdToHtml(acc);}
+      chatScroll.scrollTop=chatScroll.scrollHeight;
+    }
+    save();
   }catch(e){
     typing.remove();
-    appendMsgDom('assistant','⚠️ Нет связи с сервером. Проверьте, что приложение запущено и ключ настроен.');
+    appendMsgDom('assistant','Нет связи с сервером. Проверьте, что приложение запущено и ключ настроен.');
   }
   chatScroll.scrollTop=chatScroll.scrollHeight;
   busy=false;sendBtn.disabled=false;
