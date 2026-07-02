@@ -44,6 +44,26 @@ export default async function handler(req, res) {
       return;
     }
 
+    // Вход в демо-аккаунт по коду (6 цифр). Роль demo, своя org.
+    if (action === "demo") {
+      const code = String((req.body && req.body.code) || "").trim();
+      const demos = (await (async () => {
+        try {
+          const r = await fetch(`${redisUrl}/get/demos:list`, { headers: { Authorization: `Bearer ${redisToken}` } });
+          const d = await r.json();
+          if (!d || d.result == null) return [];
+          return JSON.parse(d.result);
+        } catch (e) { return []; }
+      })());
+      const demo = demos.find(x => x.code === code);
+      if (!demo) { res.status(200).json({ ok: false, error: "Неверный код демо-доступа" }); return; }
+      const sessToken = crypto.randomBytes(24).toString("hex");
+      const info = { role: "demo", org: demo.org, demoName: demo.name };
+      await redisSet(redisUrl, redisToken, `session:${sessToken}`, JSON.stringify(info), 30 * 24 * 3600);
+      res.status(200).json({ ok: true, session: sessToken, ...info });
+      return;
+    }
+
     // Вход админа по паролю
     if (action === "admin") {
       if ((password || "") !== adminPassword()) {
