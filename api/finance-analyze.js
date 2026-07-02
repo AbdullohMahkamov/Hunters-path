@@ -12,14 +12,44 @@ async function readDashboardCache() {
   } catch (e) { return null; }
 }
 
+// ===== КЭШ (Upstash) =====
+async function cacheGet(key) {
+  const url = process.env.UPSTASH_REDIS_REST_URL, token = process.env.UPSTASH_REDIS_REST_TOKEN;
+  if (!url || !token) return null;
+  try {
+    const r = await fetch(`${url}/get/${encodeURIComponent(key)}`, { headers: { Authorization: `Bearer ${token}` } });
+    const d = await r.json();
+    if (!d || d.result == null) return null;
+    return typeof d.result === "string" ? d.result : null;
+  } catch (e) { return null; }
+}
+async function cacheSet(key, val, ttlSec) {
+  const url = process.env.UPSTASH_REDIS_REST_URL, token = process.env.UPSTASH_REDIS_REST_TOKEN;
+  if (!url || !token) return;
+  try {
+    const path = ttlSec
+      ? `${url}/set/${encodeURIComponent(key)}?EX=${ttlSec}`
+      : `${url}/set/${encodeURIComponent(key)}`;
+    await fetch(path, { method: "POST", headers: { Authorization: `Bearer ${token}` }, body: val });
+  } catch (e) { /* не критично */ }
+}
+
 export default async function handler(req, res) {
   if (req.method !== "POST") { res.status(405).json({ error: "Method not allowed" }); return; }
   const apiKey = process.env.ANTHROPIC_API_KEY;
   if (!apiKey) { res.status(500).json({ error: "ANTHROPIC_API_KEY not set" }); return; }
 
   try {
-    const { fin, lang } = req.body || {};
+    const { fin, lang, force } = req.body || {};
     if (!fin) { res.status(400).json({ error: "no finance data" }); return; }
+
+    // КЭШ: ключ по месяцу + языку + сигнатуре прибыли (если цифры изменились — кэш промахнётся)
+    const sig = `${fin.month || "?"}_${fin.revenue || 0}_${fin.expenses || 0}_${fin.profit || 0}`;
+    const cacheKey = `finai:${lang || "ru"}:${sig}`;
+    if (!force) {
+      const cached = await cacheGet(cacheKey);
+      if (cached) { res.status(200).json({ ok: true, analysis: cached, cached: true }); return; }
+    }
 
     // финансовый блок
     const fmt = n => n == null ? "нет данных" : new Intl.NumberFormat("ru-RU").format(Math.round(n));
@@ -74,6 +104,12 @@ export default async function handler(req, res) {
     if (!r.ok) { const t = await r.text(); res.status(r.status).json({ error: "Anthropic error", detail: t }); return; }
     const data = await r.json();
     const text = (data.content || []).filter(b => b.type === "text").map(b => b.text).join("\n").trim();
+
+    // кэшируем результат: текущий месяц на сутки, прошлые — на 30 дней
+    const curMonthName = new Date().toLocaleString("ru-RU", { month: "long" });
+    const isCurrent = (fin.month || "").toLowerCase().includes(curMonthName.toLowerCase());
+    await cacheSet(cacheKey, text, isCurrent ? 86400 : 2592000);
+
     res.status(200).json({ ok: true, analysis: text });
   } catch (err) {
     res.status(500).json({ error: "analyze failed", detail: String(err) });
