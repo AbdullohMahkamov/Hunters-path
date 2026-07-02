@@ -514,6 +514,7 @@
     <!-- под-вкладки дашборда -->
     <div class="dtabs">
       <button class="dtab on" id="dtab-overview" onclick="dashTab('overview')">Обзор</button>
+      <button class="dtab" id="dtab-trends" onclick="dashTab('trends')">Динамика</button>
       <button class="dtab" id="dtab-marketing" onclick="dashTab('marketing')">Маркетинг</button>
       <button class="dtab" id="dtab-sales" onclick="dashTab('sales')">Продажи</button>
     </div>
@@ -535,6 +536,11 @@
         <div class="dcard"><div class="dl">Конверсия команды<span class="hint" onclick="showHint('conv',event)">?</span></div><div class="dv" id="kpiConv" style="color:var(--accent);">—</div><div class="dh">лид → продажа</div></div>
         <div class="dcard"><div class="dl">Средний чек<span class="hint" onclick="showHint('check',event)">?</span></div><div class="dv" id="kpiCheck">—</div><div class="dh">без «своих»</div></div>
       </div>
+    </div>
+
+    <!-- РАЗДЕЛ: ДИНАМИКА (тренды во времени) -->
+    <div class="dgroup" id="dg-trends" style="display:none;">
+      <div id="trendsBox"><div style="font-size:12px;color:var(--txt3);padding:14px;">Загрузка динамики...</div></div>
     </div>
 
     <!-- РАЗДЕЛ: МАРКЕТИНГ (верх воронки — привлечение) -->
@@ -1143,12 +1149,13 @@ let dashLoaded=false;
 let dashCurrentTab='overview';
 function dashTab(tab){
   dashCurrentTab=tab;
-  ['overview','marketing','sales'].forEach(t=>{
+  ['overview','trends','marketing','sales'].forEach(t=>{
     const btn=document.getElementById('dtab-'+t);
     const grp=document.getElementById('dg-'+t);
     if(btn)btn.classList.toggle('on',t===tab);
     if(grp)grp.style.display=(t===tab)?'block':'none';
   });
+  if(tab==='trends')loadTrends();
 }
 async function renderDashboard(){
   if(dashLoaded)return;
@@ -1236,6 +1243,66 @@ function applyLiveDash(d){
 
   // Дисциплина (если уже в кэше)
   if(d.speed&&d.speed.mops)renderDiscipline(d.speed);
+}
+
+// ===== ДИНАМИКА / ТРЕНДЫ =====
+let trendsLoaded=false;
+async function loadTrends(){
+  const box=document.getElementById('trendsBox');if(!box)return;
+  const uz=state.lang==='uz';
+  if(!trendsLoaded)box.innerHTML=`<div style="font-size:12px;color:var(--txt3);padding:14px;">${uz?'Yuklanmoqda...':'Загрузка динамики...'}</div>`;
+  try{
+    const r=await fetch('/api/trends');
+    const d=await r.json();
+    trendsLoaded=true;
+    renderTrends(d.snaps||[]);
+  }catch(e){
+    box.innerHTML=`<div style="font-size:12px;color:var(--red);padding:14px;">${uz?'Ma\'lumot olinmadi':'Не удалось загрузить'}</div>`;
+  }
+}
+function renderTrends(snaps){
+  const box=document.getElementById('trendsBox');if(!box)return;
+  const uz=state.lang==='uz';
+  if(!snaps.length){
+    box.innerHTML=`<div style="background:var(--card);border:1px solid var(--line);border-radius:12px;padding:18px;text-align:center;">
+      <div style="font-size:14px;font-weight:600;margin-bottom:6px;">${uz?'Dinamika hali to\'planmoqda':'Динамика ещё копится'}</div>
+      <div style="font-size:12.5px;color:var(--txt2);line-height:1.5;">${uz?'Tizim har kuni ma\'lumotlar suratini saqlaydi. Grafik 1-2 hafta ichida to\'ladi. Hozircha «amoCRMdan yangilash»ni bosing — birinchi nuqta paydo bo\'ladi.':'Система сохраняет снимок данных каждый день. График наполнится за 1-2 недели. Пока нажмите «Обновить из amoCRM» — появится первая точка.'}</div>
+    </div>`;
+    return;
+  }
+  const soldSeries=snaps.map(s=>s.soldPeriod!=null?s.soldPeriod:(s.sold||0));
+  const convSeries=snaps.map(s=>s.conv||0);
+  const labels=snaps.map(s=>s.date.slice(5));
+  const first=soldSeries[0], last=soldSeries[soldSeries.length-1];
+  const diff=last-first;
+  const trendTxt = diff>0 ? (uz?`o'sish +${diff}`:`рост +${diff}`) : diff<0 ? (uz?`pasayish ${diff}`:`падение ${diff}`) : (uz?'o\'zgarishsiz':'без изменений');
+  const trendColor = diff>0?'var(--green)':diff<0?'var(--red)':'var(--txt2)';
+  box.innerHTML=`
+    <div class="dsect">${uz?'Sotuvlar dinamikasi (davr uchun)':'Динамика продаж (за период)'}</div>
+    <div style="font-size:12.5px;color:${trendColor};margin-bottom:10px;">${uz?'Trend':'Тренд'}: ${trendTxt}</div>
+    ${lineChart(soldSeries,labels,'var(--accent)')}
+    <div class="dsect" style="margin-top:20px;">${uz?'Konversiya dinamikasi':'Динамика конверсии'} (%)</div>
+    ${lineChart(convSeries,labels,'var(--green)')}
+    <div style="font-size:11px;color:var(--txt3);margin-top:12px;">${uz?`${snaps.length} kunlik ma'lumot. Har kuni yangi nuqta qo'shiladi.`:`Данные за ${snaps.length} дней. Каждый день добавляется новая точка.`}</div>`;
+}
+function lineChart(values,labels,color){
+  const W=640,H=180,pad=30;
+  if(!values.length)return '';
+  const max=Math.max(...values,1),min=Math.min(...values,0);
+  const range=max-min||1;
+  const n=values.length;
+  const x=i=> n===1 ? W/2 : pad+(i*(W-pad*2)/(n-1));
+  const y=v=> H-pad-((v-min)/range)*(H-pad*2);
+  const pts=values.map((v,i)=>`${x(i)},${y(v)}`).join(' ');
+  const dots=values.map((v,i)=>`<circle cx="${x(i)}" cy="${y(v)}" r="3" fill="${color}"/>`).join('');
+  const step=Math.ceil(n/6);
+  const xlabels=labels.map((l,i)=> i%step===0||i===n-1 ? `<text x="${x(i)}" y="${H-8}" font-size="9" fill="var(--txt3)" text-anchor="middle">${l}</text>`:'').join('');
+  return `<div style="overflow-x:auto;"><svg viewBox="0 0 ${W} ${H}" style="width:100%;min-width:320px;height:auto;background:var(--card);border:1px solid var(--line);border-radius:11px;">
+    <text x="${pad-4}" y="${y(max)+3}" font-size="9" fill="var(--txt3)" text-anchor="end">${max}</text>
+    <text x="${pad-4}" y="${y(min)+3}" font-size="9" fill="var(--txt3)" text-anchor="end">${min}</text>
+    <polyline points="${pts}" fill="none" stroke="${color}" stroke-width="2" stroke-linejoin="round" stroke-linecap="round"/>
+    ${dots}${xlabels}
+  </svg></div>`;
 }
 
 // ===== ПЛАН / ФАКТ ПО МОПам =====
@@ -1429,6 +1496,7 @@ const T={
   needMonth:{ru:'нужно ~141 продажа/мес',uz:'kerak ~141 sotuv/oy'},madeOf:{ru:'Сделано',uz:'Bajarildi'},ofWord:{ru:'из',uz:'/'},goalWay:{ru:'% пути к цели',uz:'% maqsad sari'},
   // дашборд под-вкладки
   dtOverview:{ru:'Обзор',uz:'Umumiy'},dtMarketing:{ru:'Маркетинг',uz:'Marketing'},dtSales:{ru:'Продажи',uz:'Sotuvlar'},
+  dtTrends:{ru:'Динамика',uz:'Dinamika'},
   mkLeads:{ru:'Лидов за месяц',uz:'Oylik lidlar'},mkLeadsH:{ru:'привлечено',uz:'jalb qilingan'},
   mkNoContact:{ru:'Потеря до контакта',uz:'Aloqagacha yo‘qotish'},mkNoContactH:{ru:'умерли без разговора',uz:'suhbatsiz yo‘qoldi'},
   // мастер аудита
@@ -1481,6 +1549,7 @@ function applyStaticI18n(){
   setSecLabel('secDisc',tr('secDisc'),'early');
   // дашборд под-вкладки
   setTxt('dtab-overview',tr('dtOverview'));
+  setTxt('dtab-trends',tr('dtTrends'));
   setTxt('dtab-marketing',tr('dtMarketing'));
   setTxt('dtab-sales',tr('dtSales'));
   // маркетинг KPI
