@@ -1390,7 +1390,32 @@ function renderFinance(d){
     </div>
     ${afterHtml}
     ${breakdownHtml}
+    <button onclick="runFinanceAnalysis()" id="finAnalyzeBtn" style="width:100%;margin-top:16px;padding:13px;border-radius:11px;background:var(--accent);border:none;color:#fff;font-size:14px;font-weight:600;cursor:pointer;display:flex;align-items:center;justify-content:center;gap:8px;">${svg('sparkle',16)} ${uz?'AI tahlili':'Анализ ИИ'}</button>
+    <div id="finAnalysis" style="margin-top:14px;"></div>
     <div style="font-size:11px;color:var(--txt3);margin-top:12px;line-height:1.5;">${uz?'Ma\'lumot Google Sheets\'dan AI orqali o\'qiladi va keshlanadi.':'Данные читаются из Google Sheets через ИИ и кэшируются.'}</div>`;
+  window._finLast=d;
+}
+async function runFinanceAnalysis(){
+  const uz=state.lang==='uz';
+  const box=document.getElementById('finAnalysis');
+  const btn=document.getElementById('finAnalyzeBtn');
+  const d=window._finLast;
+  if(!box||!d)return;
+  if(btn){btn.disabled=true;btn.style.opacity='0.6';}
+  box.innerHTML=`<div style="background:var(--card);border:1px solid var(--line);border-radius:12px;padding:14px;font-size:13px;color:var(--txt3);">${uz?'AI moliyani tahlil qilyapti...':'ИИ анализирует финансы...'}</div>`;
+  try{
+    const r=await fetch('/api/finance-analyze',{method:'POST',headers:{'content-type':'application/json'},
+      body:JSON.stringify({fin:d,lang:state.lang||'ru'})});
+    const j=await r.json();
+    if(j&&j.ok&&j.analysis){
+      box.innerHTML=`<div style="background:var(--card);border:1px solid var(--accent);border-radius:12px;padding:16px;font-size:13.5px;line-height:1.6;">${mdToHtml(j.analysis)}</div>`;
+    }else{
+      box.innerHTML=`<div style="font-size:12px;color:var(--red);padding:10px;">${(j&&j.error)||(uz?'Tahlil qilinmadi':'Не удалось проанализировать')}</div>`;
+    }
+  }catch(e){
+    box.innerHTML=`<div style="font-size:12px;color:var(--red);padding:10px;">${uz?'Aloqa yo\'q':'Нет связи'}</div>`;
+  }
+  if(btn){btn.disabled=false;btn.style.opacity='1';}
 }
 
 // ===== ДИНАМИКА / ТРЕНДЫ =====
