@@ -270,6 +270,27 @@
   .theme-dot.on{border-color:var(--accent);}
   .side-backdrop{display:none;position:absolute;inset:0;background:rgba(0,0,0,.45);z-index:14;}
 
+  /* Sidebar sections, projects, menu */
+  .side-row-btn{display:flex;align-items:center;justify-content:space-between;padding:9px 10px;border-radius:8px;
+    cursor:pointer;font-size:13px;color:var(--txt2);font-weight:500;}
+  .side-row-btn:hover{background:var(--card);}
+  .side-plus{font-size:16px;color:var(--txt3);}
+  .side-sec{font-size:11px;color:var(--txt3);text-transform:uppercase;letter-spacing:.4px;padding:12px 10px 5px;}
+  .si-menu{opacity:0;background:none;border:none;color:var(--txt3);cursor:pointer;font-size:15px;flex:0 0 auto;padding:0 3px;line-height:1;}
+  .side-item:hover .si-menu,.proj-head:hover .si-menu{opacity:1;}
+  .proj{margin-bottom:1px;}
+  .proj-head{display:flex;align-items:center;gap:6px;padding:8px 10px;border-radius:8px;cursor:pointer;font-size:13px;color:var(--txt);}
+  .proj-head:hover{background:var(--card);}
+  .proj-chev{font-size:10px;color:var(--txt3);width:12px;flex:0 0 auto;}
+  .proj-name{flex:1;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;font-weight:500;}
+  .proj-empty{font-size:11.5px;color:var(--txt3);padding:6px 10px 6px 28px;font-style:italic;}
+  .side-item.in-proj{padding-left:26px;}
+  .ctx-menu{position:fixed;z-index:400;background:var(--card);border:1px solid var(--line2);border-radius:10px;
+    padding:5px;min-width:180px;box-shadow:0 10px 34px rgba(0,0,0,.45);}
+  .ctx-item{padding:9px 11px;border-radius:7px;font-size:13.5px;color:var(--txt);cursor:pointer;white-space:nowrap;}
+  .ctx-item:hover{background:var(--card2);}
+  .ctx-item.danger{color:var(--red);}
+
   /* Main chat area */
   .chat-main{flex:1;display:flex;flex-direction:column;min-width:0;min-height:0;}
   .chat-topbar{display:flex;align-items:center;gap:10px;padding:11px 14px;border-bottom:1px solid var(--line);background:var(--bg);}
@@ -561,7 +582,7 @@ let USER_ROLE='', USER_ORG='';
 
 let state = loadStateLocal();
 function defaultState(){
-  return {done:{},bosses:{},open:{},filter:'all',chats:[{id:'c0',title:'Новый чат',messages:[]}],activeChatId:'c0',lang:'ru',dopQuests:[],goal:500000000,theme:''};
+  return {done:{},bosses:{},open:{},filter:'all',chats:[{id:'c0',title:'Новый чат',messages:[]}],activeChatId:'c0',lang:'ru',dopQuests:[],goal:500000000,theme:'',projects:[]};
 }
 function loadStateLocal(){
   try{const s=JSON.parse(localStorage.getItem(SKEY));if(s&&s.done)return s;}catch(e){}
@@ -1150,21 +1171,156 @@ function ensureChats(){
 }
 function activeChat(){ensureChats();return state.chats.find(c=>c.id===state.activeChatId);}
 
+function ensureProjects(){
+  if(!Array.isArray(state.projects))state.projects=[];
+}
+
 function renderSidebar(){
-  ensureChats();
+  ensureChats();ensureProjects();
   const list=document.getElementById('sideList');
   if(list){
-    list.innerHTML=state.chats.map(c=>`
-      <div class="side-item${c.id===state.activeChatId?' on':''}" onclick="switchChat('${c.id}')">
-        <span class="si-t">💬 ${escapeHtml(c.title)}</span>
-        <button class="si-del" onclick="event.stopPropagation();deleteChatById('${c.id}')" title="Удалить">✕</button>
-      </div>`).join('');
+    let h='';
+    // --- ПРОЕКТЫ ---
+    h+=`<div class="side-row-btn" onclick="newProject()"><span>📁 Проекты</span><span class="side-plus">＋</span></div>`;
+    if(state.projects.length){
+      state.projects.forEach(p=>{
+        const open=!!p.open;
+        const chatsIn=state.chats.filter(c=>c.projectId===p.id);
+        h+=`<div class="proj">
+          <div class="proj-head" onclick="toggleProject('${p.id}')">
+            <span class="proj-chev">${open?'▾':'▸'}</span>
+            <span class="proj-name">${escapeHtml(p.name)}</span>
+            <button class="si-menu" onclick="event.stopPropagation();projectMenu('${p.id}',event)">⋯</button>
+          </div>`;
+        if(open){
+          if(chatsIn.length){
+            chatsIn.forEach(c=>{h+=chatItem(c,true);});
+          }else{
+            h+=`<div class="proj-empty">Пусто — перенесите сюда чат</div>`;
+          }
+        }
+        h+=`</div>`;
+      });
+    }
+    // --- ЗАКРЕПЛЁННЫЕ ---
+    const pinned=state.chats.filter(c=>c.pinned&&!c.projectId);
+    if(pinned.length){
+      h+=`<div class="side-sec">📌 Закреплённые</div>`;
+      pinned.forEach(c=>{h+=chatItem(c,false);});
+    }
+    // --- ОБЫЧНЫЕ (не в проектах, не закреплённые) ---
+    const recents=state.chats.filter(c=>!c.pinned&&!c.projectId);
+    h+=`<div class="side-sec">Недавние</div>`;
+    if(recents.length){
+      recents.forEach(c=>{h+=chatItem(c,false);});
+    }else{
+      h+=`<div class="proj-empty">Нет чатов</div>`;
+    }
+    list.innerHTML=h;
   }
   const cur=document.getElementById('chatTitleCur');
   const ac=activeChat();
   if(cur&&ac)cur.textContent=ac.title;
   renderThemeRow();
 }
+
+function chatItem(c,inProject){
+  return `<div class="side-item${c.id===state.activeChatId?' on':''}${inProject?' in-proj':''}" onclick="switchChat('${c.id}')">
+    <span class="si-t">${c.pinned?'📌 ':'💬 '}${escapeHtml(c.title)}</span>
+    <button class="si-menu" onclick="event.stopPropagation();chatMenu('${c.id}',event)">⋯</button>
+  </div>`;
+}
+
+// ===== МЕНЮ ДЕЙСТВИЙ ЧАТА =====
+function chatMenu(id,e){
+  e.stopPropagation();
+  closeAnyMenu();
+  const c=state.chats.find(x=>x.id===id);if(!c)return;
+  const menu=document.createElement('div');
+  menu.className='ctx-menu';menu.id='ctxMenu';
+  ensureProjects();
+  let projItems='';
+  if(state.projects.length){
+    projItems=state.projects.map(p=>`<div class="ctx-item" onclick="moveToProject('${id}','${p.id}')">📁 В «${escapeHtml(p.name)}»</div>`).join('');
+  }
+  menu.innerHTML=`
+    <div class="ctx-item" onclick="renameChat('${id}')">✏️ Переименовать</div>
+    <div class="ctx-item" onclick="togglePin('${id}')">${c.pinned?'📌 Открепить':'📌 Закрепить'}</div>
+    ${projItems}
+    ${c.projectId?`<div class="ctx-item" onclick="moveToProject('${id}','')">📤 Убрать из проекта</div>`:''}
+    <div class="ctx-item danger" onclick="deleteChatById('${id}')">🗑 Удалить</div>
+  `;
+  document.body.appendChild(menu);
+  positionMenu(menu,e);
+}
+function projectMenu(id,e){
+  e.stopPropagation();
+  closeAnyMenu();
+  const menu=document.createElement('div');
+  menu.className='ctx-menu';menu.id='ctxMenu';
+  menu.innerHTML=`
+    <div class="ctx-item" onclick="renameProject('${id}')">✏️ Переименовать проект</div>
+    <div class="ctx-item danger" onclick="deleteProject('${id}')">🗑 Удалить проект</div>
+  `;
+  document.body.appendChild(menu);
+  positionMenu(menu,e);
+}
+function positionMenu(menu,e){
+  const x=e.clientX,y=e.clientY;
+  menu.style.left=Math.min(x,window.innerWidth-190)+'px';
+  menu.style.top=Math.min(y,window.innerHeight-160)+'px';
+  setTimeout(()=>{document.addEventListener('click',closeAnyMenu,{once:true});},10);
+}
+function closeAnyMenu(){const m=document.getElementById('ctxMenu');if(m)m.remove();}
+
+function renameChat(id){
+  closeAnyMenu();
+  const c=state.chats.find(x=>x.id===id);if(!c)return;
+  const name=prompt('Название чата:',c.title);
+  if(name===null)return;
+  c.title=name.trim()||c.title;save();renderSidebar();
+  const cur=document.getElementById('chatTitleCur');if(cur&&id===state.activeChatId)cur.textContent=c.title;
+}
+function togglePin(id){
+  closeAnyMenu();
+  const c=state.chats.find(x=>x.id===id);if(!c)return;
+  c.pinned=!c.pinned;if(c.pinned)c.projectId='';save();renderSidebar();
+}
+function moveToProject(id,projId){
+  closeAnyMenu();
+  const c=state.chats.find(x=>x.id===id);if(!c)return;
+  c.projectId=projId;if(projId)c.pinned=false;
+  if(projId){const p=state.projects.find(x=>x.id===projId);if(p)p.open=true;}
+  save();renderSidebar();
+}
+
+// ===== ПРОЕКТЫ =====
+function newProject(){
+  ensureProjects();
+  const name=prompt('Название проекта:','Новый проект');
+  if(name===null)return;
+  state.projects.push({id:'p'+Date.now(),name:name.trim()||'Проект',open:true});
+  save();renderSidebar();
+}
+function toggleProject(id){
+  const p=state.projects.find(x=>x.id===id);if(!p)return;
+  p.open=!p.open;save();renderSidebar();
+}
+function renameProject(id){
+  closeAnyMenu();
+  const p=state.projects.find(x=>x.id===id);if(!p)return;
+  const name=prompt('Название проекта:',p.name);
+  if(name===null)return;
+  p.name=name.trim()||p.name;save();renderSidebar();
+}
+function deleteProject(id){
+  closeAnyMenu();
+  if(!confirm('Удалить проект? Чаты внутри вернутся в «Недавние».'))return;
+  state.chats.forEach(c=>{if(c.projectId===id)c.projectId='';});
+  state.projects=state.projects.filter(x=>x.id!==id);
+  save();renderSidebar();
+}
+
 function renderThemeRow(){
   const row=document.getElementById('themeRow');
   if(!row)return;
@@ -1175,12 +1331,17 @@ function renderThemeRow(){
   const cur=state.theme||'';
   row.innerHTML=themes.map(t=>`<div class="theme-dot${t.id===cur?' on':''}" style="background:${t.c};" onclick="setTheme('${t.id}')" title="Тема"></div>`).join('');
 }
+function applyThemeClass(){
+  const themes=['theme-cream','theme-light','theme-slate','theme-forest'];
+  themes.forEach(t=>document.body.classList.remove(t));
+  if(state.theme)document.body.classList.add(state.theme);
+}
 function setTheme(id){
   state.theme=id;save();
-  document.body.className=id?id:'';
+  applyThemeClass();
   renderThemeRow();
 }
-function applyTheme(){document.body.className=state.theme?state.theme:'';}
+function applyTheme(){applyThemeClass();}
 
 function toggleSidebar(open){
   const sb=document.getElementById('chatSidebar');
@@ -1192,9 +1353,8 @@ function toggleSidebar(open){
 
 function newChat(){
   ensureChats();
-  const n=state.chats.length+1;
-  const c={id:'c'+Date.now(),title:'Новый чат',messages:[]};
-  state.chats.push(c);state.activeChatId=c.id;save();
+  const c={id:'c'+Date.now(),title:'Новый чат',messages:[],pinned:false,projectId:''};
+  state.chats.unshift(c);state.activeChatId=c.id;save();
   renderSidebar();renderChat();toggleSidebar(false);
   document.getElementById('chatBox').focus();
 }
@@ -1203,6 +1363,7 @@ function switchChat(id){
   renderSidebar();renderChat();scrollChatBottom();toggleSidebar(false);
 }
 function deleteChatById(id){
+  closeAnyMenu();
   ensureChats();
   if(state.chats.length<=1){
     activeChat().messages=[];activeChat().title='Новый чат';save();renderSidebar();renderChat();return;
