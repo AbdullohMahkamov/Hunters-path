@@ -106,8 +106,79 @@ async function fetchSheetTabs() {
   } catch (e) { return []; }
 }
 
-// читает один лист и возвращает {revenue,expenses,profit,tax,margin,found} или {error}
-async function readMonth(tab) {
+// ===== КЭШ (Upstash) =====
+async function cacheGet(key) {
+  const url = process.env.UPSTASH_REDIS_REST_URL, token = process.env.UPSTASH_REDIS_REST_TOKEN;
+  if (!url || !token) return null;
+  try {
+    const r = await fetch(`${url}/get/${encodeURIComponent(key)}`, { headers: { Authorization: `Bearer ${token}` } });
+    const d = await r.json();
+    return d && d.result != null ? JSON.parse(d.result) : null;
+  } catch (e) { return null; }
+}
+async function cacheSet(key, val, ttlSec) {
+  const url = process.env.UPSTASH_REDIS_REST_URL, token = process.env.UPSTASH_REDIS_REST_TOKEN;
+  if (!url || !token) return;
+  try {
+    const body = JSON.stringify(val);
+    const path = ttlSec ? `${url}/set/${encodeURIComponent(key)}?EX=${ttlSec}` : `${url}/set/${encodeURIComponent(key)}`;
+    await fetch(path, { method: "POST", headers: { Authorization: `Bearer ${token}`, "content-type": "application/json" }, body: JSON.stringify(body) });
+  } catch (e) { /* не критично */ }
+}
+
+// ===== ИИ-ЧТЕНИЕ ФИНАНСОВ =====
+// Claude смотрит на CSV любой структуры и вытаскивает выручку/расходы/прибыль/налог.
+async function aiReadFinance(csv) {
+  const apiKey = process.env.ANTHROPIC_API_KEY;
+  if (!apiKey) return { error: "no_api_key" };
+  // ограничим размер, чтобы не гнать лишние токены
+  const clipped = csv.slice(0, 8000);
+  const SYSTEM = `Ты финансовый аналитик. На вход — таблица финансов бизнеса за месяц в CSV (может быть на узбекском/русском, любой структуры).
+Найди ключевые итоговые суммы и верни СТРОГО JSON без markdown, без пояснений:
+{"revenue":число_или_null,"expenses":число_или_null,"profit":число_или_null,"tax":число_или_null}
+- revenue = общая выручка/доход (tushum, daromad, выручка)
+- expenses = общие расходы (umumiy xarajatlar, jami xarajat, всего расходов)
+- profit = чистая прибыль (sof foyda, чистая прибыль); если её нет, посчитай revenue - expenses
+- tax = налог (soliq), если есть
+Числа — только цифры, без пробелов и валют. Отрицательные значения сохраняй (убыток). Если чего-то нет — null.`;
+  try {
+    const r = await fetch("https://api.anthropic.com/v1/messages", {
+      method: "POST",
+      headers: { "content-type": "application/json", "x-api-key": apiKey, "anthropic-version": "2023-06-01" },
+      body: JSON.stringify({
+        model: "claude-sonnet-4-6",
+        max_tokens: 300,
+        system: SYSTEM,
+        messages: [{ role: "user", content: "CSV финансов:\n" + clipped }],
+      }),
+    });
+    if (!r.ok) return { error: "ai_error" };
+    const data = await r.json();
+    let text = (data.content || []).filter(b => b.type === "text").map(b => b.text).join("").trim();
+    text = text.replace(/```json/gi, "").replace(/```/g, "").trim();
+    const parsed = JSON.parse(text);
+    return {
+      revenue: numOrNull(parsed.revenue),
+      expenses: numOrNull(parsed.expenses),
+      profit: numOrNull(parsed.profit),
+      tax: numOrNull(parsed.tax),
+    };
+  } catch (e) { return { error: "ai_parse" }; }
+}
+function numOrNull(v) {
+  if (v == null) return null;
+  const n = typeof v === "number" ? v : parseFloat(String(v).replace(/[^\d.\-]/g, ""));
+  return isNaN(n) ? null : n;
+}
+
+// читает один лист: сначала кэш, потом ИИ (с кэшированием), парсер по словам — запасной вариант.
+async function readMonth(tab, opts) {
+  opts = opts || {};
+  const cacheKey = `fin:${tab}`;
+  if (!opts.force) {
+    const cached = await cacheGet(cacheKey);
+    if (cached) return cached;
+  }
   let csv;
   try {
     csv = await fetchSheetCSV(tab);
@@ -115,14 +186,24 @@ async function readMonth(tab) {
     if (String(e).includes("NO_ACCESS")) return { error: "no_access" };
     return { error: "fetch_failed" };
   }
-  const rows = parseCSV(csv);
-  const revenue = findByKeys(rows, KEYS.revenue);
-  const expenses = findByKeys(rows, KEYS.expenses);
-  let profit = findByKeys(rows, KEYS.profit);
-  const tax = findByKeys(rows, KEYS.tax);
+  let revenue = null, expenses = null, profit = null, tax = null, via = "ai";
+  const ai = await aiReadFinance(csv);
+  if (!ai.error) {
+    revenue = ai.revenue; expenses = ai.expenses; profit = ai.profit; tax = ai.tax;
+  } else {
+    via = "keywords";
+    const rows = parseCSV(csv);
+    revenue = findByKeys(rows, KEYS.revenue);
+    expenses = findByKeys(rows, KEYS.expenses);
+    profit = findByKeys(rows, KEYS.profit);
+    tax = findByKeys(rows, KEYS.tax);
+  }
   if (profit == null && revenue != null && expenses != null) profit = revenue - expenses;
   const margin = (revenue && profit != null) ? +(profit / revenue * 100).toFixed(1) : null;
-  return { revenue, expenses, profit, tax, margin, found: { revenue: revenue != null, expenses: expenses != null, profit: profit != null } };
+  const result = { revenue, expenses, profit, tax, margin, via, found: { revenue: revenue != null, expenses: expenses != null, profit: profit != null } };
+  const ttl = opts.isCurrent ? 86400 : 2592000; // текущий — сутки, прошлые — 30 дней
+  await cacheSet(cacheKey, result, ttl);
+  return result;
 }
 
 export default async function handler(req, res) {
@@ -143,7 +224,7 @@ export default async function handler(req, res) {
       const list = MONTHS.filter(mo => mo.m <= curMonth);
       const results = [];
       for (const mo of list) {
-        const r = await readMonth(mo.tab);
+        const r = await readMonth(mo.tab, { isCurrent: mo.m === curMonth });
         if (r.error === "no_access") { res.status(200).json({ ok: false, error: "no_access" }); return; }
         // включаем месяц только если нашли хоть выручку или прибыль
         if (r.revenue != null || r.profit != null) {
@@ -160,7 +241,9 @@ export default async function handler(req, res) {
       const cur = MONTHS.find(mo => mo.m === curMonth);
       tab = cur ? cur.tab : (MONTHS[MONTHS.length - 1] ? MONTHS[MONTHS.length - 1].tab : "");
     }
-    const r = await readMonth(tab);
+    const moInfo0 = MONTHS.find(mo => mo.tab === tab);
+    const force = !!(req.body && req.body.force);
+    const r = await readMonth(tab, { isCurrent: moInfo0 && moInfo0.m === curMonth, force });
     if (r.error === "no_access") { res.status(200).json({ ok: false, error: "no_access" }); return; }
     if (r.error) { res.status(200).json({ ok: false, error: r.error }); return; }
     const moInfo = MONTHS.find(mo => mo.tab === tab);
