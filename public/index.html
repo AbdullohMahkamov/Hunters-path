@@ -210,6 +210,8 @@
   .task-section{font-size:15px;font-weight:700;color:var(--txt);margin:20px 0 10px;padding-bottom:7px;border-bottom:2px solid var(--accent);}
   .task-section:first-child{margin-top:4px;}
   .wiz-task{font-size:13.5px;padding:8px 11px;background:var(--card);border:1px solid var(--line);border-radius:9px;margin-bottom:7px;}
+  .cp-steps{margin-top:7px;padding-top:6px;border-top:1px dashed var(--line);}
+  .cp-step{font-size:12.5px;color:var(--txt2);line-height:1.5;padding:2px 0;}
   .mop-row{display:flex;align-items:center;gap:10px;padding:9px 0;border-top:1px solid var(--line);}
   .mop-name{font-size:13px;font-weight:500;width:120px;flex:0 0 auto;}
   .mop-bar-wrap{flex:1;height:18px;background:var(--bg);border-radius:6px;overflow:hidden;}
@@ -815,17 +817,32 @@ function renderCustomPlan(){
     const h=document.createElement('div');h.className='task-section';h.textContent=sec.label;wrap.appendChild(h);
     sec.items.forEach(q=>{
       const on=!!state.done[q.id];
+      const steps=(q.steps||[]);
+      const stepsHtml=steps.length?`<div class="cp-steps">${steps.map(st=>`<div class="cp-step">• ${escapeHtml(st)}</div>`).join('')}</div>`:'';
       const card=document.createElement('div');
       card.className='stage open';
       card.innerHTML=`<div class="s-body" style="display:block;padding:12px 14px;">
         <div class="quest${on?' done':''}">
           <div class="qcheck${on?' on':''}" onclick="toggleCustomTask('${q.id}')">${on?'✓':''}</div>
-          <div class="q-main"><div class="q-t">${escapeHtml(q.t)}</div><div class="q-d">${escapeHtml(q.d||'')}</div></div>
+          <div class="q-main">
+            <div class="q-t">${escapeHtml(q.t)}</div>
+            <div class="q-d">${escapeHtml(q.d||'')}</div>
+            ${stepsHtml}
+          </div>
+          <button class="q-help" onclick="helpCustomTask('${q.id}')">${uz?'yordam':'помощь'}</button>
         </div>
       </div>`;
       wrap.appendChild(card);
     });
   });
+}
+function helpCustomTask(id){
+  const cp=state.customPlan;if(!cp)return;
+  const q=[...(cp.marketing||[]),...(cp.sales||[])].find(x=>x.id===id);
+  if(!q)return;
+  switchTab('chat');
+  const stepsTxt=(q.steps&&q.steps.length)?(' Под-шаги: '+q.steps.join('; ')+'.'):'';
+  quickAsk('Помоги выполнить задачу «'+q.t+'». '+(q.d||'')+stepsTxt+' Дай конкретные пошаговые действия и готовые материалы, чтобы я закрыл её.');
 }
 function toggleCustomTask(id){state.done[id]=!state.done[id];save();renderStages();renderHeader();}
 function wizRegenerate(){
@@ -1806,6 +1823,7 @@ function wizStep1(){
     <button onclick="wizRunAudit()" style="width:100%;padding:14px;border-radius:11px;background:var(--accent);border:none;color:#fff;font-size:15px;font-weight:600;cursor:pointer;">✅ Да, сделать аудит</button>`;
 }
 let wizAuditData=null;
+let wizCurrentSales='';
 async function wizRunAudit(){
   document.getElementById('wizBody').innerHTML=`<div class="gen-loading">⏳ Анализирую ваш бизнес по данным CRM...</div>`;
   try{
@@ -1831,10 +1849,23 @@ function wizShowProblems(d){
     kpi=`<div style="font-size:13px;color:var(--txt2);margin-bottom:10px;">Продаж: <b style="color:var(--txt);">${t.sold}</b> · конверсия <b style="color:var(--txt);">${t.conv}%</b> · потеря до контакта <b style="color:var(--red);">${t.noContactPct}%</b></div>`;
   }
   document.getElementById('wizBody').innerHTML=`
+    <div style="font-size:12px;color:var(--txt3);margin-bottom:8px;">📅 За последние 3-4 месяца</div>
     ${kpi}
     <div style="font-size:13px;font-weight:600;margin:6px 0 2px;">🩸 Где горят деньги:</div>
     ${probs}
-    <button onclick="wizStep2()" style="width:100%;padding:14px;border-radius:11px;background:var(--accent);border:none;color:#fff;font-size:15px;font-weight:600;cursor:pointer;margin-top:18px;">Дальше → выбрать цель</button>`;
+    <button onclick="wizStepSales()" style="width:100%;padding:14px;border-radius:11px;background:var(--accent);border:none;color:#fff;font-size:15px;font-weight:600;cursor:pointer;margin-top:18px;">Дальше →</button>`;
+}
+
+function wizStepSales(){
+  document.getElementById('wizTitle').textContent='💰 Ваши текущие продажи';
+  document.getElementById('wizBody').innerHTML=`
+    <div style="font-size:14px;line-height:1.6;color:var(--txt2);margin-bottom:14px;">
+      Какая у вас сумма продаж сейчас (в месяц)? Это точка отсчёта — откуда мы стартуем.
+    </div>
+    <input id="wizSalesInput" type="text" placeholder="Например: 150 млн сум в месяц"
+      style="width:100%;padding:13px 15px;border-radius:11px;border:1px solid var(--line2);background:var(--card);color:var(--txt);font-size:14.5px;margin-bottom:14px;" />
+    <button onclick="wizStep2()" style="width:100%;padding:14px;border-radius:11px;background:var(--accent);border:none;color:#fff;font-size:15px;font-weight:600;cursor:pointer;">Дальше → цель</button>`;
+  setTimeout(()=>{const i=document.getElementById('wizSalesInput');if(i)i.focus();},100);
 }
 function wizStep2(){
   document.getElementById('wizTitle').textContent='🎯 Шаг 2 — Ваша цель';
@@ -1849,14 +1880,17 @@ function wizStep2(){
 }
 async function wizGeneratePlan(){
   const goal=document.getElementById('wizGoalInput').value.trim();
+  const salesEl=document.getElementById('wizSalesInput');
+  const currentSales=salesEl?salesEl.value.trim():(wizCurrentSales||'');
+  wizCurrentSales=currentSales;
   document.getElementById('wizTitle').textContent='✨ Составляю план';
   document.getElementById('wizBody').innerHTML=`<div class="gen-loading">⏳ Составляю персональный план задач под ваш аудит и цель...</div>`;
   try{
     const r=await fetch('/api/audit-plan',{method:'POST',headers:{'content-type':'application/json'},
-      body:JSON.stringify({goal,lang:state.lang||'ru'})});
+      body:JSON.stringify({goal,currentSales,lang:state.lang||'ru'})});
     const d=await r.json();
     if(d&&d.ok&&d.plan&&((d.plan.marketing&&d.plan.marketing.length)||(d.plan.sales&&d.plan.sales.length))){
-      wizApplyPlan(d.plan,goal);
+      wizApplyPlan(d.plan,goal,currentSales);
     }else{
       document.getElementById('wizBody').innerHTML=`<div class="gen-loading">⚠️ Не удалось составить план. Попробуйте ещё раз.</div>`;
     }
@@ -1864,10 +1898,10 @@ async function wizGeneratePlan(){
     document.getElementById('wizBody').innerHTML=`<div class="gen-loading">⚠️ Нет связи. Попробуйте ещё раз.</div>`;
   }
 }
-function wizApplyPlan(plan,goal){
-  state.customPlan={goal,createdAt:Date.now(),
-    marketing:(plan.marketing||[]).map((q,i)=>({id:'cm'+i,t:q.t,d:q.d||''})),
-    sales:(plan.sales||[]).map((q,i)=>({id:'cs'+i,t:q.t,d:q.d||''}))};
+function wizApplyPlan(plan,goal,currentSales){
+  state.customPlan={goal,currentSales:currentSales||'',createdAt:Date.now(),
+    marketing:(plan.marketing||[]).map((q,i)=>({id:'cm'+i,t:q.t,d:q.d||'',steps:q.steps||[]})),
+    sales:(plan.sales||[]).map((q,i)=>({id:'cs'+i,t:q.t,d:q.d||'',steps:q.steps||[]}))};
   save();
   const mkt=(plan.marketing||[]).map(q=>`<div class="wiz-task">📣 ${escapeHtml(q.t)}</div>`).join('');
   const sls=(plan.sales||[]).map(q=>`<div class="wiz-task">💼 ${escapeHtml(q.t)}</div>`).join('');
