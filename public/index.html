@@ -547,9 +547,10 @@
     <!-- РАЗДЕЛ: ФИНАНСЫ (из Google Sheets) -->
     <div class="dgroup" id="dg-finance" style="display:none;">
       <div style="display:flex;gap:8px;align-items:center;margin-bottom:14px;flex-wrap:wrap;">
-        <select id="finMonth" onchange="loadFinance()"
-          style="flex:1;min-width:180px;padding:9px 12px;border-radius:9px;border:1px solid var(--line2);background:var(--card);color:var(--txt);font-size:13px;">
+        <select id="finMonth" onchange="finView='month';loadFinance()"
+          style="flex:1;min-width:150px;padding:9px 12px;border-radius:9px;border:1px solid var(--line2);background:var(--card);color:var(--txt);font-size:13px;">
         </select>
+        <button id="finYearBtn" onclick="finView='year';loadFinance()" style="padding:9px 15px;border-radius:9px;background:var(--card);border:1px solid var(--line2);color:var(--txt2);font-size:13px;font-weight:600;cursor:pointer;">Год</button>
       </div>
       <div id="financeBox"><div style="font-size:12px;color:var(--txt3);padding:14px;">Укажите лист месяца и нажмите «Показать», либо оставьте пустым для первого листа.</div></div>
     </div>
@@ -1259,45 +1260,78 @@ function applyLiveDash(d){
 
 // ===== ФИНАНСЫ (из Google Sheets) =====
 let financeLoaded=false;
-let financeTabs=null;
+let financeMonths=null;
+let finView='month';
 async function loadFinance(){
   const box=document.getElementById('financeBox');if(!box)return;
   const uz=state.lang==='uz';
   const sel=document.getElementById('finMonth');
-  // первый заход — тянем список месяцев
-  if(financeTabs===null){
-    box.innerHTML=`<div style="font-size:12px;color:var(--txt3);padding:14px;">${uz?'Oylar ro\'yxati yuklanmoqda...':'Загружаю список месяцев...'}</div>`;
+  // первый заход — тянем список месяцев и ставим текущий по умолчанию
+  if(financeMonths===null){
     try{
       const lr=await fetch('/api/finance',{method:'POST',headers:{'content-type':'application/json'},body:JSON.stringify({action:'list'})});
       const ld=await lr.json();
-      financeTabs=(ld&&ld.tabs)||[];
-    }catch(e){financeTabs=[];}
-    if(sel){
-      if(financeTabs.length){
-        sel.innerHTML=financeTabs.map(t=>`<option value="${escapeHtml(t)}">${escapeHtml(t)}</option>`).join('');
-        // выбрать последний месяц по умолчанию (обычно свежий)
-        sel.selectedIndex=financeTabs.length-1;
-      }else{
-        sel.innerHTML=`<option value="">${uz?'Birinchi varaq':'Первый лист'}</option>`;
-      }
+      financeMonths=(ld&&ld.months)||[];
+    }catch(e){financeMonths=[];}
+    if(sel&&financeMonths.length){
+      sel.innerHTML=financeMonths.map(mo=>`<option value="${escapeHtml(mo.tab)}"${mo.current?' selected':''}>${escapeHtml(uz?mo.labelUz:mo.label)}</option>`).join('');
     }
   }
-  const month=sel?sel.value:'';
-  box.innerHTML=`<div style="font-size:12px;color:var(--txt3);padding:14px;">${uz?'Google Sheets o\'qilmoqda...':'Читаю Google Sheets...'}</div>`;
+  // подсветка кнопки "Год"
+  const yb=document.getElementById('finYearBtn');
+  if(yb){yb.style.background=finView==='year'?'var(--accent)':'var(--card)';yb.style.color=finView==='year'?'#fff':'var(--txt2)';yb.style.borderColor=finView==='year'?'var(--accent)':'var(--line2)';}
+
+  box.innerHTML=`<div style="font-size:12px;color:var(--txt3);padding:14px;">${uz?'O\'qilmoqda...':'Читаю...'}</div>`;
   try{
-    const r=await fetch('/api/finance',{method:'POST',headers:{'content-type':'application/json'},
-      body:JSON.stringify({month})});
-    const d=await r.json();
-    financeLoaded=true;
-    if(d&&d.ok){renderFinance(d);}
-    else if(d&&d.error==='no_access'){
-      box.innerHTML=`<div style="background:var(--red-bg);border:1px solid var(--red);border-radius:11px;padding:14px;font-size:13px;color:var(--txt);">${uz?'Jadval yopiq. Google Sheets\'da «Havola orqali — ko\'rish» ruxsatini yoqing.':'Таблица закрыта. Откройте в Google Sheets доступ «по ссылке — просмотр».'}</div>`;
+    if(finView==='year'){
+      const r=await fetch('/api/finance',{method:'POST',headers:{'content-type':'application/json'},body:JSON.stringify({action:'year'})});
+      const d=await r.json();financeLoaded=true;
+      if(d&&d.ok){renderFinanceYear(d.year||[]);}
+      else if(d&&d.error==='no_access'){box.innerHTML=noAccessMsg(uz);}
+      else{box.innerHTML=`<div style="font-size:12px;color:var(--red);padding:14px;">${(d&&d.error)||'Ошибка'}</div>`;}
     }else{
-      box.innerHTML=`<div style="font-size:12px;color:var(--red);padding:14px;">${(d&&d.error)||'Ошибка'}</div>`;
+      const month=sel?sel.value:'';
+      const r=await fetch('/api/finance',{method:'POST',headers:{'content-type':'application/json'},body:JSON.stringify({month})});
+      const d=await r.json();financeLoaded=true;
+      if(d&&d.ok){renderFinance(d);}
+      else if(d&&d.error==='no_access'){box.innerHTML=noAccessMsg(uz);}
+      else{box.innerHTML=`<div style="font-size:12px;color:var(--red);padding:14px;">${(d&&d.error)||'Ошибка'}</div>`;}
     }
   }catch(e){
     box.innerHTML=`<div style="font-size:12px;color:var(--red);padding:14px;">${uz?'Ma\'lumot olinmadi':'Не удалось загрузить'}</div>`;
   }
+}
+function noAccessMsg(uz){
+  return `<div style="background:var(--red-bg);border:1px solid var(--red);border-radius:11px;padding:14px;font-size:13px;color:var(--txt);">${uz?'Jadval yopiq. Google Sheets\'da «Havola orqali — ko\'rish» ruxsatini yoqing.':'Таблица закрыта. Откройте в Google Sheets доступ «по ссылке — просмотр».'}</div>`;
+}
+function renderFinanceYear(year){
+  const box=document.getElementById('financeBox');if(!box)return;
+  const uz=state.lang==='uz';
+  if(!year.length){box.innerHTML=`<div style="font-size:12px;color:var(--txt3);padding:14px;">${uz?'Ma\'lumot yo\'q':'Нет данных'}</div>`;return;}
+  const fmtShort=n=>n==null?'—':(Math.abs(n)>=1000000?(n/1000000).toFixed(1)+'M':new Intl.NumberFormat('ru-RU').format(Math.round(n)));
+  const profits=year.map(y=>y.profit||0);
+  const labels=year.map(y=>(uz?y.monthUz:y.month).slice(0,3));
+  // сумма за год
+  const totalProfit=profits.reduce((a,b)=>a+b,0);
+  const totalRev=year.reduce((a,y)=>a+(y.revenue||0),0);
+  const rows=year.map(y=>{
+    const pc=y.profit==null?'var(--txt)':(y.profit>=0?'var(--green)':'var(--red)');
+    return `<div style="display:flex;align-items:center;gap:10px;padding:9px 0;border-top:1px solid var(--line);">
+      <div style="width:75px;font-size:13px;">${escapeHtml(uz?y.monthUz:y.month)}</div>
+      <div style="flex:1;font-size:12px;color:var(--txt3);">${uz?'tushum':'выручка'} ${fmtShort(y.revenue)}</div>
+      <div style="font-weight:600;font-size:13px;color:${pc};white-space:nowrap;">${fmtShort(y.profit)}</div>
+    </div>`;
+  }).join('');
+  const totalColor=totalProfit>=0?'var(--green)':'var(--red)';
+  box.innerHTML=`
+    <div style="background:var(--card);border:1px solid var(--line);border-radius:12px;padding:16px;margin-bottom:14px;">
+      <div style="font-size:12px;color:var(--txt2);margin-bottom:4px;">${uz?'Yil boshidan sof foyda':'Чистая прибыль с начала года'}</div>
+      <div style="font-size:24px;font-weight:700;color:${totalColor};">${new Intl.NumberFormat('ru-RU').format(Math.round(totalProfit))} ${uz?'so\'m':'сум'}</div>
+      <div style="font-size:12px;color:var(--txt3);margin-top:4px;">${uz?'jami tushum':'всего выручка'}: ${new Intl.NumberFormat('ru-RU').format(Math.round(totalRev))} ${uz?'so\'m':'сум'}</div>
+    </div>
+    <div class="dsect">${uz?'Oylar bo\'yicha foyda':'Прибыль по месяцам'}</div>
+    ${lineChart(profits.map(p=>Math.round(p/1000000)),labels,'var(--accent)',uz?'M':'M')}
+    <div style="margin-top:14px;">${rows}</div>`;
 }
 function renderFinance(d){
   const box=document.getElementById('financeBox');if(!box)return;
