@@ -548,9 +548,10 @@
     <div class="dgroup" id="dg-finance" style="display:none;">
       <div style="display:flex;gap:8px;align-items:center;margin-bottom:14px;flex-wrap:wrap;">
         <select id="finMonth" onchange="finView='month';loadFinance()"
-          style="flex:1;min-width:150px;padding:9px 12px;border-radius:9px;border:1px solid var(--line2);background:var(--card);color:var(--txt);font-size:13px;">
+          style="flex:1;min-width:130px;padding:9px 12px;border-radius:9px;border:1px solid var(--line2);background:var(--card);color:var(--txt);font-size:13px;">
         </select>
         <button id="finYearBtn" onclick="finView='year';loadFinance()" style="padding:9px 15px;border-radius:9px;background:var(--card);border:1px solid var(--line2);color:var(--txt2);font-size:13px;font-weight:600;cursor:pointer;">Год</button>
+        <button onclick="loadFinance(true)" title="Обновить" style="padding:9px 12px;border-radius:9px;background:var(--card);border:1px solid var(--line2);color:var(--txt2);font-size:13px;cursor:pointer;"><svg class="ic" width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><path d="M21 12a9 9 0 1 1-3-6.7L21 8M21 3v5h-5"/></svg></button>
       </div>
       <div id="financeBox"><div style="font-size:12px;color:var(--txt3);padding:14px;">Укажите лист месяца и нажмите «Показать», либо оставьте пустым для первого листа.</div></div>
     </div>
@@ -1262,7 +1263,7 @@ function applyLiveDash(d){
 let financeLoaded=false;
 let financeMonths=null;
 let finView='month';
-async function loadFinance(){
+async function loadFinance(force){
   const box=document.getElementById('financeBox');if(!box)return;
   const uz=state.lang==='uz';
   const sel=document.getElementById('finMonth');
@@ -1291,7 +1292,7 @@ async function loadFinance(){
       else{box.innerHTML=`<div style="font-size:12px;color:var(--red);padding:14px;">${(d&&d.error)||'Ошибка'}</div>`;}
     }else{
       const month=sel?sel.value:'';
-      const r=await fetch('/api/finance',{method:'POST',headers:{'content-type':'application/json'},body:JSON.stringify({month})});
+      const r=await fetch('/api/finance',{method:'POST',headers:{'content-type':'application/json'},body:JSON.stringify({month,force:!!force})});
       const d=await r.json();financeLoaded=true;
       if(d&&d.ok){renderFinance(d);}
       else if(d&&d.error==='no_access'){box.innerHTML=noAccessMsg(uz);}
