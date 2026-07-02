@@ -520,6 +520,7 @@
 
     <!-- РАЗДЕЛ: ОБЗОР -->
     <div class="dgroup" id="dg-overview">
+      <div id="signalsBox"></div>
       <div class="goal-card">
         <div style="font-size:12px;color:var(--txt2);margin-bottom:4px;" id="goalTitle">ЦЕЛЬ · ЭТОТ МЕСЯЦ</div>
         <div class="goal-big" style="color:var(--accent);cursor:pointer;" id="goalBig" onclick="editGoal()">500 000 000 <span style="font-size:15px;color:var(--txt2);">сум/мес</span></div>
@@ -548,6 +549,9 @@
 
     <!-- РАЗДЕЛ: ПРОДАЖИ (низ воронки — обработка) -->
     <div class="dgroup" id="dg-sales" style="display:none;">
+      <div class="dsect" id="secPlanFact"><svg class="ic" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><path d="M9 6h11M9 12h11M9 18h11"/><path d="M4 6l1 1 2-2M4 12l1 1 2-2M4 18l1 1 2-2"/></svg> План / Факт по менеджерам</div>
+      <div id="planFactChart"></div>
+
       <div class="dsect" id="secTop"><svg class="ic" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><path d="M8 4h8v5a4 4 0 0 1-8 0zM8 6H5v1a3 3 0 0 0 3 3M16 6h3v1a3 3 0 0 1-3 3M9 20h6M12 13v4"/></svg> Топ по продажам</div>
       <div id="topSalesChart"></div>
 
@@ -1203,6 +1207,11 @@ function applyLiveDash(d){
       <div class="mop-val">${m.sold} прод.</div>
     </div>`).join('')||'<div style="font-size:12px;color:var(--txt3);">Нет данных за месяц</div>';
 
+  // ===== ПЛАН / ФАКТ ПО МОПам =====
+  renderPlanFact(d);
+  // ===== СИГНАЛЫ =====
+  renderSignals(d);
+
   // Конверсия + дозвон по МОПам
   const byConv=d.mopsByConv||[];
   document.getElementById('mopChart').innerHTML=byConv.map(m=>`
@@ -1227,6 +1236,83 @@ function applyLiveDash(d){
 
   // Дисциплина (если уже в кэше)
   if(d.speed&&d.speed.mops)renderDiscipline(d.speed);
+}
+
+// ===== ПЛАН / ФАКТ ПО МОПам =====
+function renderPlanFact(d){
+  const box=document.getElementById('planFactChart');if(!box)return;
+  const t=d.totals||{};
+  const mops=d.mopsBySales||[];
+  if(!mops.length){box.innerHTML='<div style="font-size:12px;color:var(--txt3);">Нет данных. Обновите из amoCRM.</div>';return;}
+  // План на месяц в продажах = цель / средний чек
+  const goal=state.goal||500000000;
+  const avgCheck=t.avgCheck||1800000;
+  const planTotal=Math.max(1,Math.round(goal/avgCheck)); // сколько продаж нужно всего
+  const planPerMop=Math.ceil(planTotal/mops.length);     // поровну на каждого (базовый вариант)
+  const uz=state.lang==='uz';
+  box.innerHTML=mops.map(m=>{
+    const fact=m.sold||0;
+    const pct=Math.round(fact/planPerMop*100);
+    const color=pct>=100?'var(--green)':(pct>=50?'var(--accent)':'var(--red)');
+    return `<div style="padding:10px 0;border-top:1px solid var(--line);">
+      <div style="display:flex;align-items:center;gap:10px;">
+        <div class="mop-name" style="width:120px;">${escapeHtml(m.name)}</div>
+        <div class="mop-bar-wrap"><div class="mop-bar" style="width:${Math.min(100,pct)}%;background:${color};"></div></div>
+        <div class="mop-val" style="color:${color};white-space:nowrap;">${fact} / ${planPerMop}</div>
+      </div>
+      <div style="font-size:11px;color:var(--txt3);margin-top:3px;margin-left:130px;">${uz?'reja bajarilishi':'выполнение плана'}: ${pct}%</div>
+    </div>`;
+  }).join('')+`<div style="font-size:11px;color:var(--txt3);margin-top:9px;">${uz?'Umumiy reja':'Общий план'}: ${planTotal} ${uz?'sotuv/oy':'продаж/мес'} · ${uz?'har MOPga':'на каждого МОПа'} ~${planPerMop}</div>`;
+}
+
+// ===== СИГНАЛЫ (система сама находит проблемы) =====
+function renderSignals(d){
+  const box=document.getElementById('signalsBox');if(!box)return;
+  const t=d.totals||{};
+  const uz=state.lang==='uz';
+  const sig=[];
+
+  // 1. Потеря до контакта высокая
+  if(t.noContactPct>=30){
+    sig.push({lvl:'red',txt:uz?`Aloqagacha yo‘qotish ${t.noContactPct}% — lidlar suhbatsiz yo‘qolyapti`:`Потеря до контакта ${t.noContactPct}% — лиды гибнут без разговора`});
+  }
+  // 2. Низкая конверсия команды
+  if(t.conv>0&&t.conv<2){
+    sig.push({lvl:'red',txt:uz?`Jamoa konversiyasi ${t.conv}% — juda past`:`Конверсия команды ${t.conv}% — очень низкая`});
+  }
+  // 3. МОПы с нулём продаж
+  const zero=(d.mopsBySales||[]).filter(m=>m.sold===0&&m.leads>3);
+  if(zero.length){
+    sig.push({lvl:'red',txt:uz?`${zero.map(m=>m.name).join(', ')} — 0 sotuv, lidlar bor`:`${zero.map(m=>m.name).join(', ')} — 0 продаж при наличии лидов`});
+  }
+  // 4. Отставание от плана по цели
+  if(t.goalPct!=null&&t.goalPct<40){
+    const day=new Date().getDate();
+    if(day>10){
+      sig.push({lvl:'orange',txt:uz?`Oy o‘rtasi, maqsadning ${t.goalPct}%i bajarildi — sur'atni oshiring`:`Середина месяца, цель выполнена на ${t.goalPct}% — нужно ускоряться`});
+    }
+  }
+  // 5. Большие потери по причине
+  const topProb=(d.problems||[])[0];
+  if(topProb&&topProb.count>1000){
+    sig.push({lvl:'orange',txt:uz?`«${topProb.name}» — ${topProb.count} lid yo‘qoldi, alohida ishlash kerak`:`«${topProb.name}» — ${topProb.count} потерянных лидов, нужна отдельная работа`});
+  }
+
+  if(!sig.length){
+    box.innerHTML=`<div style="background:var(--green-bg);border:1px solid var(--green);border-radius:11px;padding:12px 14px;margin-bottom:14px;font-size:13px;color:var(--green);">${uz?'✓ Kritik signallar yo‘q — hammasi joyida':'✓ Критичных сигналов нет — всё под контролем'}</div>`;
+    return;
+  }
+  box.innerHTML=`<div style="margin-bottom:14px;">
+    <div style="font-size:12px;color:var(--txt3);text-transform:uppercase;letter-spacing:.4px;margin-bottom:8px;">${uz?'Signallar':'Сигналы'} (${sig.length})</div>
+    ${sig.map(s=>{
+      const c=s.lvl==='red'?'var(--red)':'var(--gold)';
+      const bg=s.lvl==='red'?'var(--red-bg)':'var(--gold-bg)';
+      return `<div style="display:flex;gap:9px;align-items:flex-start;background:${bg};border:1px solid ${c};border-radius:10px;padding:10px 12px;margin-bottom:7px;">
+        <div style="width:7px;height:7px;border-radius:50%;background:${c};margin-top:5px;flex:0 0 auto;"></div>
+        <div style="font-size:13px;color:var(--txt);line-height:1.45;">${escapeHtml(s.txt)}</div>
+      </div>`;
+    }).join('')}
+  </div>`;
 }
 
 function fmtMin(m){
