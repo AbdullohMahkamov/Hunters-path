@@ -824,8 +824,8 @@ function renderStages(){
   const wrap=stages;wrap.innerHTML='';
   // Если есть кастомный план (из мастера аудита) — показываем его, а не 24 базовые задачи
   if(state.customPlan){renderCustomPlan();return;}
-  // Нет плана — предлагаем сделать аудит (баннер сверху задач). Не для РОПа (аудит — функция владельца).
-  if(USER_ROLE!=='rop'){
+  // Нет плана — предлагаем сделать аудит. ТОЛЬКО на демо-аккаунтах (основной аккаунт не трогаем).
+  if(USER_ROLE==='demo'){
     const auditBanner=document.createElement('div');
     auditBanner.style.cssText='background:var(--accent-bg);border:1px solid var(--accent);border-radius:12px;padding:15px 16px;margin-bottom:16px;';
     auditBanner.innerHTML=`
@@ -2104,7 +2104,7 @@ async function deleteDemo(id){
 }
 
 // ===== МАСТЕР АУДИТА (аудит → цель → задачи) =====
-function needsWizard(){ return !state.customPlan; }
+function needsWizard(){ return USER_ROLE==='demo' && !state.customPlan; }
 function maybeShowWelcome(){
   const banner=document.getElementById('wizBanner');
   if(!banner)return;
