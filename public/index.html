@@ -319,6 +319,35 @@
 </head>
 <body>
 
+<!-- ЭКРАН ВХОДА -->
+<div id="loginScreen" style="position:fixed;inset:0;z-index:500;background:var(--bg);display:flex;align-items:center;justify-content:center;padding:24px;">
+  <div style="width:100%;max-width:360px;">
+    <div style="text-align:center;margin-bottom:26px;">
+      <div style="width:56px;height:56px;border-radius:15px;background:var(--accent-bg);display:flex;align-items:center;justify-content:center;font-size:28px;margin:0 auto 12px;">🏹</div>
+      <div style="font-size:20px;font-weight:700;">Hunter Academy</div>
+      <div style="font-size:13px;color:var(--txt2);margin-top:3px;">Выберите вход</div>
+    </div>
+
+    <!-- Шаг 1: выбор роли -->
+    <div id="roleChoice">
+      <button onclick="chooseAdmin()" style="width:100%;padding:16px;border-radius:12px;background:var(--accent);border:none;color:#fff;font-size:15px;font-weight:600;cursor:pointer;margin-bottom:12px;">👑 Я администратор</button>
+      <button onclick="ropLogin()" style="width:100%;padding:16px;border-radius:12px;background:var(--card);border:1px solid var(--line2);color:var(--txt);font-size:15px;font-weight:600;cursor:pointer;">👥 Я РОП (руководитель отдела)</button>
+      <div style="font-size:11.5px;color:var(--txt3);margin-top:14px;text-align:center;line-height:1.5;">Админ — полный доступ (чат, дашборд, задачи).<br>РОП — только дашборд и задачи, без пароля.</div>
+    </div>
+
+    <!-- Шаг 2: пароль админа -->
+    <div id="adminLogin" style="display:none;">
+      <input id="passInput" type="password" placeholder="Пароль администратора" autocomplete="current-password"
+        style="width:100%;padding:13px 15px;border-radius:11px;border:1px solid var(--line2);background:var(--card);color:var(--txt);font-size:15px;margin-bottom:12px;" />
+      <button onclick="doLogin()" id="loginBtn"
+        style="width:100%;padding:14px;border-radius:11px;background:var(--accent);border:none;color:#fff;font-size:15px;font-weight:600;cursor:pointer;">Войти</button>
+      <button onclick="backToRoles()" style="width:100%;padding:11px;border-radius:11px;background:none;border:none;color:var(--txt2);font-size:13px;cursor:pointer;margin-top:8px;">← Назад</button>
+    </div>
+
+    <div id="loginError" style="font-size:13px;color:var(--red);margin-top:14px;text-align:center;min-height:18px;"></div>
+  </div>
+</div>
+
 <header>
   <div class="h-top">
     <div class="h-logo" onclick="switchTab('map')" style="cursor:pointer;">🏹</div>
@@ -331,6 +360,7 @@
       <button id="lang-ru" class="on" onclick="setLang('ru')">РУ</button>
       <button id="lang-uz" onclick="setLang('uz')">UZ</button>
     </div>
+    <button onclick="logout()" title="Выйти" style="margin-left:8px;background:var(--card);border:1px solid var(--line2);color:var(--txt2);border-radius:8px;padding:5px 9px;font-size:12px;cursor:pointer;flex:0 0 auto;">Выйти</button>
   </div>
   <div class="h-progress">
     <div class="h-pct-row">
@@ -521,13 +551,47 @@ const RANKS=[[0,'Старт'],[10,'Разгон'],[25,'Движение'],[45,'�
 const ALL_QUESTS = STAGES.flatMap(s=>s.quests.map(q=>q.id));
 const TOTAL = ALL_QUESTS.length;
 const SKEY='hunters_path_app_v1';
+let SESSION=localStorage.getItem('hp_session')||'';
+let USER_ROLE='', USER_ORG='';
 
-let state = loadState();
-function loadState(){
-  try{const s=JSON.parse(localStorage.getItem(SKEY));if(s&&s.done)return s;}catch(e){}
+let state = loadStateLocal();
+function defaultState(){
   return {done:{},bosses:{},open:{},filter:'all',chats:[{id:'c0',title:'Новый чат',messages:[]}],activeChatId:'c0',lang:'ru',dopQuests:[],goal:500000000,theme:''};
 }
-function save(){try{localStorage.setItem(SKEY,JSON.stringify(state));}catch(e){}}
+function loadStateLocal(){
+  try{const s=JSON.parse(localStorage.getItem(SKEY));if(s&&s.done)return s;}catch(e){}
+  return defaultState();
+}
+
+// сохранение: локально сразу + в облако с задержкой (чтобы не спамить)
+let saveTimer=null;
+function save(){
+  try{localStorage.setItem(SKEY,JSON.stringify(state));}catch(e){}
+  if(SESSION){
+    clearTimeout(saveTimer);
+    saveTimer=setTimeout(saveCloud,800);
+  }
+}
+async function saveCloud(){
+  if(!SESSION)return;
+  try{
+    await fetch('/api/user-data',{method:'POST',headers:{'content-type':'application/json'},
+      body:JSON.stringify({action:'save',session:SESSION,data:state})});
+  }catch(e){}
+}
+async function loadCloud(){
+  if(!SESSION)return false;
+  try{
+    const r=await fetch('/api/user-data',{method:'POST',headers:{'content-type':'application/json'},
+      body:JSON.stringify({action:'load',session:SESSION})});
+    const d=await r.json();
+    if(d&&d.ok){
+      USER_ROLE=d.role||'';USER_ORG=d.org||'';
+      if(d.data&&d.data.done){state=d.data;save();return true;}
+    }
+  }catch(e){}
+  return false;
+}
 
 function stageDone(s){return s.quests.every(q=>state.done[q.id]);}
 function stageUnlocked(idx){return true;}
@@ -1317,11 +1381,115 @@ async function sendMsg(){
 document.getElementById('chatBox').addEventListener('keydown',e=>{
   if(e.key==='Enter'&&!e.shiftKey){e.preventDefault();sendMsg();}
 });
+document.getElementById('passInput').addEventListener('keydown',e=>{
+  if(e.key==='Enter'){e.preventDefault();doLogin();}
+});
 
-ensureChats();
-applyTheme();renderHeader();renderStages();renderDopQuests();updateGoalHeader();renderSidebar();
-if(state.lang==='uz')setLang('uz');
-switchTab(state.tab&&['chat','dash','map'].includes(state.tab)?state.tab:'chat');
+// ===== ЗАПУСК ПРИЛОЖЕНИЯ (после входа) =====
+function bootApp(){
+  ensureChats();
+  applyTheme();renderHeader();renderStages();renderDopQuests();updateGoalHeader();renderSidebar();
+  if(state.lang==='uz')setLang('uz');
+  applyRole();
+  const start=(USER_ROLE==='rop')?'dash':(state.tab&&['chat','dash','map'].includes(state.tab)?state.tab:'chat');
+  switchTab(start);
+  document.getElementById('loginScreen').style.display='none';
+}
+
+// Роль РОПа: скрыть вкладку Советник (чат)
+function applyRole(){
+  const chatTab=document.getElementById('tab-chat');
+  if(USER_ROLE==='rop'){
+    if(chatTab)chatTab.style.display='none';
+  }else{
+    if(chatTab)chatTab.style.display='';
+  }
+}
+
+// Кнопки выбора роли
+function chooseAdmin(){
+  document.getElementById('roleChoice').style.display='none';
+  document.getElementById('adminLogin').style.display='block';
+  document.getElementById('loginError').textContent='';
+  setTimeout(()=>{const p=document.getElementById('passInput');if(p)p.focus();},100);
+}
+function backToRoles(){
+  document.getElementById('adminLogin').style.display='none';
+  document.getElementById('roleChoice').style.display='block';
+  document.getElementById('loginError').textContent='';
+}
+
+async function ropLogin(){
+  const errEl=document.getElementById('loginError');
+  errEl.textContent='';
+  try{
+    const r=await fetch('/api/auth',{method:'POST',headers:{'content-type':'application/json'},
+      body:JSON.stringify({action:'rop'})});
+    const d=await r.json();
+    if(d&&d.ok){
+      SESSION=d.session;localStorage.setItem('hp_session',SESSION);
+      USER_ROLE=d.role||'rop';USER_ORG=d.org||'hunter';
+      await loadCloud();
+      bootApp();
+    }else{
+      errEl.textContent=(d&&d.error)||'Ошибка входа';
+    }
+  }catch(e){errEl.textContent='Нет связи с сервером';}
+}
+
+// ===== ВХОД =====
+async function doLogin(){
+  const password=document.getElementById('passInput').value;
+  const errEl=document.getElementById('loginError');
+  const btn=document.getElementById('loginBtn');
+  if(!password){errEl.textContent='Введите пароль';return;}
+  btn.textContent='Вход...';btn.disabled=true;errEl.textContent='';
+  try{
+    const r=await fetch('/api/auth',{method:'POST',headers:{'content-type':'application/json'},
+      body:JSON.stringify({action:'admin',password})});
+    const d=await r.json();
+    if(d&&d.ok){
+      SESSION=d.session;localStorage.setItem('hp_session',SESSION);
+      USER_ROLE=d.role||'admin';USER_ORG=d.org||'hunter';
+      await loadCloud();
+      bootApp();
+    }else{
+      errEl.textContent=(d&&d.error)||'Ошибка входа';
+      btn.textContent='Войти';btn.disabled=false;
+    }
+  }catch(e){
+    errEl.textContent='Нет связи с сервером';
+    btn.textContent='Войти';btn.disabled=false;
+  }
+}
+
+async function logout(){
+  try{await fetch('/api/auth',{method:'POST',headers:{'content-type':'application/json'},
+    body:JSON.stringify({action:'logout',session:SESSION})});}catch(e){}
+  localStorage.removeItem('hp_session');SESSION='';
+  location.reload();
+}
+
+// ===== ПРОВЕРКА СЕССИИ ПРИ ЗАГРУЗКЕ =====
+(async function initAuth(){
+  if(SESSION){
+    try{
+      const r=await fetch('/api/auth',{method:'POST',headers:{'content-type':'application/json'},
+        body:JSON.stringify({action:'check',session:SESSION})});
+      const d=await r.json();
+      if(d&&d.ok){
+        USER_ROLE=d.role||'';USER_ORG=d.org||'';
+        await loadCloud();
+        bootApp();
+        return;
+      }
+    }catch(e){}
+    // сессия невалидна
+    localStorage.removeItem('hp_session');SESSION='';
+  }
+  // показываем экран входа (он и так виден по умолчанию)
+  document.getElementById('loginScreen').style.display='flex';
+})();
 </script>
 </body>
 </html>
