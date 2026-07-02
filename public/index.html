@@ -52,6 +52,8 @@
     font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,"Helvetica Neue",Arial,sans-serif;
     font-size:15px; line-height:1.5; -webkit-font-smoothing:antialiased; overscroll-behavior:none;}
   body{display:flex; flex-direction:column; min-height:100vh; min-height:100dvh;}
+  .ic{display:inline-block;vertical-align:-3px;flex:0 0 auto;}
+  .ic-btn{display:inline-flex;align-items:center;justify-content:center;gap:7px;}
 
   /* HEADER */
   header{padding:14px 16px 12px; background:var(--bg2); border-bottom:1px solid var(--line);
@@ -72,10 +74,10 @@
 
   /* TABS */
   .tabs{display:flex;gap:6px;padding:10px 16px 0;background:var(--bg2);}
-  .tab{flex:1;padding:9px;border-radius:10px 10px 0 0;text-align:center;font-size:13px;font-weight:600;
-    color:var(--txt2);background:transparent;cursor:pointer;border:none;display:flex;align-items:center;
-    justify-content:center;gap:6px;}
-  .tab.active{color:var(--txt);background:var(--bg);}
+  .tab{flex:1;padding:11px;text-align:center;font-size:13.5px;font-weight:500;
+    color:var(--txt2);background:transparent;cursor:pointer;border:none;border-bottom:2px solid transparent;display:flex;align-items:center;
+    justify-content:center;gap:7px;}
+  .tab.active{color:var(--txt);background:transparent;border-bottom-color:var(--txt);}
 
   main{flex:1;overflow-y:auto;-webkit-overflow-scrolling:touch;min-height:0;}
   .view{display:none;padding:14px 16px 90px;}
@@ -272,8 +274,9 @@
   /* Sidebar */
   .chat-sidebar{width:250px;flex:0 0 auto;background:var(--sidebar);border-right:1px solid var(--line);
     display:flex;flex-direction:column;padding:12px 10px;overflow:hidden;transition:transform .25s;}
-  .side-new{width:100%;padding:11px;border-radius:10px;background:var(--accent);color:#fff;border:none;
-    font-size:13.5px;font-weight:600;cursor:pointer;margin-bottom:12px;}
+  .side-new{width:100%;padding:10px;border-radius:9px;background:transparent;color:var(--txt);border:1px solid var(--line2);
+    font-size:13.5px;font-weight:500;cursor:pointer;margin-bottom:14px;}
+  .side-new:hover{background:var(--card);}
   .side-list{flex:1;overflow-y:auto;display:flex;flex-direction:column;gap:3px;-webkit-overflow-scrolling:touch;}
   .side-item{display:flex;align-items:center;gap:8px;padding:9px 10px;border-radius:8px;cursor:pointer;
     font-size:13px;color:var(--txt2);position:relative;}
@@ -370,15 +373,15 @@
   <div style="position:absolute;bottom:-140px;left:-110px;width:360px;height:360px;border-radius:50%;background:var(--gold);opacity:.08;filter:blur(80px);"></div>
   <div style="width:100%;max-width:360px;position:relative;z-index:2;">
     <div style="text-align:center;margin-bottom:26px;">
-      <div style="width:56px;height:56px;border-radius:15px;background:var(--accent-bg);display:flex;align-items:center;justify-content:center;font-size:28px;margin:0 auto 12px;">🏹</div>
+      <div style="width:56px;height:56px;border-radius:15px;background:var(--accent-bg);display:flex;align-items:center;justify-content:center;margin:0 auto 12px;"><svg class="ic" width="26" height="26" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><path d="M4 20L20 4M7 4H4v3M17 20h3v-3M12 12l4-1-1 4z"/></svg></div>
       <div style="font-size:20px;font-weight:700;">Hunter Academy</div>
       <div style="font-size:13px;color:var(--txt2);margin-top:3px;">Выберите вход</div>
     </div>
 
     <!-- Шаг 1: выбор роли -->
     <div id="roleChoice">
-      <button onclick="chooseAdmin()" style="width:100%;padding:16px;border-radius:12px;background:var(--accent);border:none;color:#fff;font-size:15px;font-weight:600;cursor:pointer;margin-bottom:12px;">👑 Я администратор</button>
-      <button onclick="ropLogin()" style="width:100%;padding:16px;border-radius:12px;background:var(--card);border:1px solid var(--line2);color:var(--txt);font-size:15px;font-weight:600;cursor:pointer;">👥 Я РОП (руководитель отдела)</button>
+      <button onclick="chooseAdmin()" style="width:100%;padding:16px;border-radius:12px;background:var(--accent);border:none;color:#fff;font-size:15px;font-weight:600;cursor:pointer;margin-bottom:12px;" class="ic-btn"><svg class="ic" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><path d="M4 8l3 3 5-6 5 6 3-3-2 11H6z"/></svg>Я администратор</button>
+      <button onclick="ropLogin()" style="width:100%;padding:16px;border-radius:12px;background:var(--card);border:1px solid var(--line2);color:var(--txt);font-size:15px;font-weight:600;cursor:pointer;" class="ic-btn"><svg class="ic" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><circle cx="9" cy="8" r="3"/><path d="M3 20a6 6 0 0 1 12 0M16 6a3 3 0 0 1 0 6M21 20a6 6 0 0 0-4-5.6"/></svg>Я РОП (руководитель отдела)</button>
       <div style="font-size:11.5px;color:var(--txt3);margin-top:14px;text-align:center;line-height:1.5;">Админ — полный доступ (чат, дашборд, задачи).<br>РОП — только дашборд и задачи, без пароля.</div>
       <div style="text-align:center;margin-top:18px;">
         <button onclick="showDemoLogin()" style="background:none;border:none;color:var(--accent);font-size:13px;cursor:pointer;text-decoration:underline;">Войти в демо по коду</button>
@@ -419,7 +422,7 @@
 
 <header>
   <div class="h-top">
-    <div class="h-logo" onclick="switchTab('map')" style="cursor:pointer;">🏹</div>
+    <div class="h-logo" onclick="switchTab('map')" style="cursor:pointer;"><svg class="ic" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><path d="M4 20L20 4M7 4H4v3M17 20h3v-3M12 12l4-1-1 4z"/></svg></div>
     <div style="min-width:0;">
       <div class="h-title">Hunter Academy</div>
       <div class="h-sub" id="hSub" onclick="editGoal()" style="cursor:pointer;">Цель: 500 000 000 сум/мес ✏️</div>
@@ -429,22 +432,22 @@
       <button id="lang-ru" class="on" onclick="setLang('ru')">РУ</button>
       <button id="lang-uz" onclick="setLang('uz')">UZ</button>
     </div>
-    <button onclick="logout()" title="Выйти" style="margin-left:8px;background:var(--card);border:1px solid var(--line2);color:var(--txt2);border-radius:8px;padding:5px 9px;font-size:12px;cursor:pointer;flex:0 0 auto;">Выйти</button>
-    <button id="demoBtn" onclick="openDemoPanel()" title="Демо-аккаунты" style="display:none;margin-left:6px;background:var(--card);border:1px solid var(--line2);color:var(--txt2);border-radius:8px;padding:5px 9px;font-size:12px;cursor:pointer;flex:0 0 auto;">🎭 Демо</button>
+    <button onclick="logout()" title="Выйти" style="margin-left:8px;background:var(--card);border:1px solid var(--line2);color:var(--txt2);border-radius:8px;padding:5px 10px;font-size:12.5px;cursor:pointer;flex:0 0 auto;" class="ic-btn"><svg class="ic" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><path d="M9 4H5v16h4M16 12H9M13 8l4 4-4 4"/></svg>Выйти</button>
+    <button id="demoBtn" onclick="openDemoPanel()" title="Демо-аккаунты" style="display:none;margin-left:6px;background:var(--card);border:1px solid var(--line2);color:var(--txt2);border-radius:8px;padding:5px 9px;font-size:12px;cursor:pointer;flex:0 0 auto;" class="ic-btn"><svg class="ic" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><path d="M4 6h16v6a8 8 0 0 1-16 0zM9 11h.01M15 11h.01"/></svg>Демо</button>
   </div>
   <div class="h-progress">
     <div class="h-pct-row">
       <span class="h-pct" id="pct">0%</span>
-      <span>плана · <span id="doneN">0</span>/<span id="totalN">0</span> задач · <span id="trophN">0</span> ✅ этапов</span>
+      <span>плана · <span id="doneN">0</span>/<span id="totalN">0</span> задач · <span id="trophN">0</span> этапов</span>
     </div>
     <div class="bar"><div class="bar-fill" id="bar"></div></div>
   </div>
 </header>
 
 <div class="tabs">
-  <button class="tab active" id="tab-chat" onclick="switchTab('chat')">💬 <span data-t="tab_chat">Советник</span></button>
-  <button class="tab" id="tab-map" onclick="switchTab('map')">🗺️ <span data-t="tab_map">Задачи</span></button>
-  <button class="tab" id="tab-dash" onclick="switchTab('dash')">📊 <span data-t="tab_dash">Дашборд</span></button>
+  <button class="tab active" id="tab-chat" onclick="switchTab('chat')"><span class="ic-btn"><svg class="ic" width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><path d="M8 10h8M8 14h5"/><path d="M21 12a9 9 0 0 1-9 9 8.7 8.7 0 0 1-4-1l-4 1 1-4a8.7 8.7 0 0 1-1-4 9 9 0 0 1 18 0z"/></svg> <span data-t="tab_chat">Советник</span></span></button>
+  <button class="tab" id="tab-map" onclick="switchTab('map')"><span class="ic-btn"><svg class="ic" width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><path d="M9 6h11M9 12h11M9 18h11"/><path d="M4 6l1 1 2-2M4 12l1 1 2-2M4 18l1 1 2-2"/></svg> <span data-t="tab_map">Задачи</span></span></button>
+  <button class="tab" id="tab-dash" onclick="switchTab('dash')"><span class="ic-btn"><svg class="ic" width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><path d="M3 3v18h18"/><rect x="7" y="10" width="3" height="8"/><rect x="12" y="6" width="3" height="12"/><rect x="17" y="13" width="3" height="5"/></svg> <span data-t="tab_dash">Дашборд</span></span></button>
 </div>
 
 <main>
@@ -454,14 +457,14 @@
     <div id="stages"></div>
 
     <div id="dopSection" style="display:none;margin-top:16px;">
-      <div class="dsect" id="dopSecTitle" style="color:var(--gold);">🔥 Доп-задачи (по горячим проблемам)</div>
+      <div class="dsect" id="dopSecTitle" style="color:var(--gold);">Доп-задачи (по горячим проблемам)</div>
       <div id="dopQuests"></div>
     </div>
 
     <div class="foot">
-      <button id="genBtn" onclick="openGenerator()" style="border-color:var(--gold);color:var(--gold);">🎯 Подобрать задачи под мои проблемы</button>
-      <button id="nextBtn" onclick="askNext()">🧭 С какой задачи начать?</button>
-      <button id="resetBtn" onclick="resetHunt()">↺ Сбросить прогресс</button>
+      <button id="genBtn" onclick="openGenerator()" style="border-color:var(--gold);color:var(--gold);">Подобрать задачи под мои проблемы</button>
+      <button id="nextBtn" onclick="askNext()">С какой задачи начать?</button>
+      <button id="resetBtn" onclick="resetHunt()">Сбросить прогресс</button>
     </div>
   </div>
 
@@ -481,11 +484,11 @@
   <div class="gen-overlay" id="demoOverlay" style="display:none;" onclick="if(event.target===this)closeDemoPanel();">
     <div class="gen-sheet">
       <div class="gen-h">
-        <div class="gen-title">🎭 Демо-аккаунты</div>
+        <div class="gen-title ic-btn"><svg class="ic" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><path d="M4 6h16v6a8 8 0 0 1-16 0zM9 11h.01M15 11h.01"/></svg>Демо-аккаунты</div>
         <button class="gen-close" onclick="closeDemoPanel()">✕</button>
       </div>
       <div class="gen-sub">Создавайте до 5 демо-аккаунтов для показа клиентам. Каждый — чистый, с нуля. Заходят по коду. Ваш основной аккаунт не затрагивается.</div>
-      <button id="createDemoBtn" onclick="createDemo()" style="width:100%;padding:12px;border-radius:10px;background:var(--accent);border:none;color:#fff;font-size:14px;font-weight:600;cursor:pointer;margin-bottom:14px;">＋ Создать демо-аккаунт</button>
+      <button id="createDemoBtn" onclick="createDemo()" style="width:100%;padding:12px;border-radius:10px;background:var(--accent);border:none;color:#fff;font-size:14px;font-weight:600;cursor:pointer;margin-bottom:14px;">Создать демо-аккаунт</button>
       <div id="demoList"></div>
     </div>
   </div>
@@ -518,21 +521,21 @@
       <div class="dcard"><div class="dl">Средний чек<span class="hint" onclick="showHint('check',event)">?</span></div><div class="dv" id="kpiCheck">—</div><div class="dh">без «своих»</div></div>
     </div>
 
-    <div class="dsect" id="secTop">🏆 Топ по продажам</div>
+    <div class="dsect" id="secTop"><svg class="ic" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><path d="M8 4h8v5a4 4 0 0 1-8 0zM8 6H5v1a3 3 0 0 0 3 3M16 6h3v1a3 3 0 0 1-3 3M9 20h6M12 13v4"/></svg> Топ по продажам</div>
     <div id="topSalesChart"></div>
 
-    <div class="dsect" id="secMop">⚔️ Конверсия и дозвон по менеджерам<span class="hint" onclick="showHint('reach',event)">?</span></div>
+    <div class="dsect" id="secMop"><svg class="ic" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="9"/><circle cx="12" cy="12" r="5"/><circle cx="12" cy="12" r="1"/></svg> Конверсия и дозвон по менеджерам<span class="hint" onclick="showHint('reach',event)">?</span></div>
     <div id="mopChart"></div>
 
-    <div class="dsect" id="secProb">🩸 5 главных причин потерь<span class="hint" onclick="showHint('problems',event)">?</span></div>
+    <div class="dsect" id="secProb"><svg class="ic" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><path d="M12 3s6 7 6 11a6 6 0 0 1-12 0c0-4 6-11 6-11z"/></svg> 5 главных причин потерь<span class="hint" onclick="showHint('problems',event)">?</span></div>
     <div id="problemsChart"></div>
 
-    <div class="dsect" id="secDisc">⚡ Дисциплина менеджеров<span class="hint" onclick="showHint('early',event)">?</span></div>
+    <div class="dsect" id="secDisc"><svg class="ic" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><path d="M13 2L4 14h7l-1 8 9-12h-7z"/></svg> Дисциплина менеджеров<span class="hint" onclick="showHint('early',event)">?</span></div>
     <div id="disciplineChart"><div style="font-size:12px;color:var(--txt3);">Нажмите «Обновить дисциплину» — это подробный расчёт по звонкам и задачам, идёт 20-40 секунд.</div></div>
 
     <div class="foot" style="margin-top:14px;">
-      <button id="syncBtn" onclick="syncNow()">🔄 Обновить из amoCRM</button>
-      <button id="syncSpeedBtn" onclick="syncSpeed()">⚡ Обновить дисциплину</button>
+      <button id="syncBtn" onclick="syncNow()">Обновить из amoCRM</button>
+      <button id="syncSpeedBtn" onclick="syncSpeed()">Обновить дисциплину</button>
     </div>
     <div style="font-size:11px;color:var(--txt3);margin-top:8px;line-height:1.5;" id="dashNote">Нажми «Обновить из amoCRM» для первой загрузки живых данных. Дальше обновляется автоматически каждую ночь.</div>
   </div>
@@ -542,7 +545,7 @@
     <div class="chat-layout">
       <!-- Боковая панель чатов -->
       <div class="chat-sidebar" id="chatSidebar">
-        <button class="side-new" id="newChatBtn" onclick="newChat()">＋ Новый чат</button>
+        <button class="side-new ic-btn" id="newChatBtn" onclick="newChat()"><svg class="ic" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><path d="M12 5v14M5 12h14"/></svg>Новый чат</button>
         <div class="side-list" id="sideList"></div>
         <div class="side-foot">
           <div class="side-label" id="themeLabel">Тема оформления</div>
@@ -561,9 +564,9 @@
         <div class="chat-scroll" id="chatScroll">
           <div class="chat-empty" id="chatEmpty">
             <div id="wizBanner" style="display:none;background:var(--accent-bg);border:1px solid var(--accent);border-radius:14px;padding:18px;margin-bottom:22px;text-align:left;">
-              <div style="font-size:15px;font-weight:700;margin-bottom:6px;">🚀 Начнём с аудита вашего бизнеса</div>
+              <div style="font-size:15px;font-weight:700;margin-bottom:6px;">Начнём с аудита вашего бизнеса</div>
               <div style="font-size:13px;color:var(--txt2);line-height:1.55;margin-bottom:13px;">Система проанализирует данные, покажет где теряются деньги, спросит вашу цель и составит персональный план задач.</div>
-              <button onclick="openWizard()" style="width:100%;padding:12px;border-radius:10px;background:var(--accent);border:none;color:#fff;font-size:14px;font-weight:600;cursor:pointer;">Сделать полный аудит →</button>
+              <button onclick="openWizard()" style="width:100%;padding:12px;border-radius:10px;background:var(--accent);border:none;color:#fff;font-size:14px;font-weight:600;cursor:pointer;">Сделать полный аудит</button>
             </div>
             <div class="ce-icon">💬</div>
             <h3>Ваш ИИ-советник по продажам</h3>
@@ -579,9 +582,9 @@
         <div class="chat-input">
           <div class="inner">
           <input type="file" id="fileInput" accept=".pdf,.png,.jpg,.jpeg,.csv,.txt,image/*" multiple style="display:none;" onchange="handleFiles(this.files)" />
-          <button class="attach-btn" onclick="document.getElementById('fileInput').click()" aria-label="Прикрепить файл">📎</button>
+          <button class="attach-btn" onclick="document.getElementById('fileInput').click()" aria-label="Прикрепить файл"><svg class="ic" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><path d="M21 12l-8.5 8.5a4 4 0 0 1-6-6L14 6a2.7 2.7 0 0 1 4 4l-8 8a1.3 1.3 0 0 1-2-2l7.5-7.5"/></svg></button>
           <textarea id="chatBox" rows="1" placeholder="Спросите совета..." oninput="autoGrow(this)"></textarea>
-          <button class="send-btn" id="sendBtn" onclick="sendMsg()">➤</button>
+          <button class="send-btn" id="sendBtn" onclick="sendMsg()"><svg class="ic" width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><path d="M4 12l16-8-6 16-2-6z"/></svg></button>
           </div>
         </div>
       </div>
@@ -590,8 +593,44 @@
 </main>
 
 <script>
+// ===== МИНИМАЛИСТИЧНЫЕ SVG-ИКОНКИ (тонкие контуры, как у Claude) =====
+const ICONS={
+  chat:'<path d="M8 10h8M8 14h5"/><path d="M21 12a9 9 0 0 1-9 9 8.7 8.7 0 0 1-4-1l-4 1 1-4a8.7 8.7 0 0 1-1-4 9 9 0 0 1 18 0z"/>',
+  tasks:'<path d="M9 6h11M9 12h11M9 18h11"/><path d="M4 6l1 1 2-2M4 12l1 1 2-2M4 18l1 1 2-2"/>',
+  dash:'<path d="M3 3v18h18"/><rect x="7" y="10" width="3" height="8"/><rect x="12" y="6" width="3" height="12"/><rect x="17" y="13" width="3" height="5"/>',
+  plus:'<path d="M12 5v14M5 12h14"/>',
+  folder:'<path d="M3 7a2 2 0 0 1 2-2h4l2 2h8a2 2 0 0 1 2 2v8a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z"/>',
+  pin:'<path d="M9 4h6l-1 6 3 3H7l3-3-1-6zM12 16v4"/>',
+  dots:'<circle cx="5" cy="12" r="1.3"/><circle cx="12" cy="12" r="1.3"/><circle cx="19" cy="12" r="1.3"/>',
+  check:'<path d="M20 6L9 17l-5-5"/>',
+  edit:'<path d="M12 20h9"/><path d="M16.5 3.5a2.1 2.1 0 0 1 3 3L7 19l-4 1 1-4z"/>',
+  trash:'<path d="M3 6h18M8 6V4h8v2M6 6l1 14h10l1-14"/>',
+  arrow:'<path d="M5 12h14M13 6l6 6-6 6"/>',
+  back:'<path d="M19 12H5M11 6l-6 6 6 6"/>',
+  refresh:'<path d="M21 12a9 9 0 1 1-3-6.7L21 8M21 3v5h-5"/>',
+  bolt:'<path d="M13 2L4 14h7l-1 8 9-12h-7z"/>',
+  target:'<circle cx="12" cy="12" r="9"/><circle cx="12" cy="12" r="5"/><circle cx="12" cy="12" r="1"/>',
+  rocket:'<path d="M5 15c-1 1-2 4-2 4s3-1 4-2M9 12a11 11 0 0 1 8-8c1 4-1 8-4 10M9 12l3 3M9 12l-3-1M15 15l1 3"/>',
+  drop:'<path d="M12 3s6 7 6 11a6 6 0 0 1-12 0c0-4 6-11 6-11z"/>',
+  trophy:'<path d="M8 4h8v5a4 4 0 0 1-8 0zM8 6H5v1a3 3 0 0 0 3 3M16 6h3v1a3 3 0 0 1-3 3M9 20h6M12 13v4"/>',
+  bag:'<path d="M6 8h12l1 12H5zM9 8V6a3 3 0 0 1 6 0v2"/>',
+  mega:'<path d="M4 10v4h3l7 4V6l-7 4zM18 9a3 3 0 0 1 0 6"/>',
+  crown:'<path d="M4 8l3 3 5-6 5 6 3-3-2 11H6z"/>',
+  users:'<circle cx="9" cy="8" r="3"/><path d="M3 20a6 6 0 0 1 12 0M16 6a3 3 0 0 1 0 6M21 20a6 6 0 0 0-4-5.6"/>',
+  mask:'<path d="M4 6h16v6a8 8 0 0 1-16 0zM9 11h.01M15 11h.01"/>',
+  clip:'<path d="M21 12l-8.5 8.5a4 4 0 0 1-6-6L14 6a2.7 2.7 0 0 1 4 4l-8 8a1.3 1.3 0 0 1-2-2l7.5-7.5"/>',
+  logout:'<path d="M9 4H5v16h4M16 12H9M13 8l4 4-4 4"/>',
+  eye:'<path d="M2 12s4-7 10-7 10 7 10 7-4 7-10 7S2 12 2 12z"/><circle cx="12" cy="12" r="3"/>',
+  help:'<circle cx="12" cy="12" r="9"/><path d="M9.5 9a2.5 2.5 0 0 1 4.5 1.5c0 1.5-2 2-2 3.5M12 17h.01"/>',
+  bow:'<path d="M4 20L20 4M7 4H4v3M17 20h3v-3M12 12l4-1-1 4z"/>',
+  sparkle:'<path d="M12 3l1.5 5.5L19 10l-5.5 1.5L12 17l-1.5-5.5L5 10l5.5-1.5z"/>',
+  lock:'<rect x="5" y="11" width="14" height="10" rx="2"/><path d="M8 11V7a4 4 0 0 1 8 0v4"/>',
+  send:'<path d="M4 12l16-8-6 16-2-6z"/>',
+};
+function svg(name,size){const s=size||18;return `<svg class="ic" width="${s}" height="${s}" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round">${ICONS[name]||''}</svg>`;}
+
 const STAGES = [
-  { id:1, section:'marketing', name:'Привлечение лидов', nameUz:'Mijozlarni jalb qilish', sub:'Трафик → Лид · откуда приходят клиенты', subUz:'Trafik → Lid · mijozlar qayerdan keladi', icon:'📡',
+  { id:1, section:'marketing', name:'Привлечение лидов', nameUz:'Mijozlarni jalb qilish', sub:'Трафик → Лид · откуда приходят клиенты', subUz:'Trafik → Lid · mijozlar qayerdan keladi', iconName:'mega',
     boss:'Ключевая цель этапа', bossUz:'Bosqichning asosiy maqsadi', bossDesc:'49% лидов идут из одной рекламной связки. Задача — не зависеть от одного источника.', bossDescUz:'Lidlarning 49% bitta reklama manbaidan keladi. Vazifa — bitta manbaga bog‘liq bo‘lmaslik.',
     reward:'✅ Результат: не зависите от одного источника лидов', rewardUz:'✅ Natija: bitta lid manbaiga bog‘liq emassiz',
     quests:[
@@ -601,7 +640,7 @@ const STAGES = [
       {id:'1d',t:'Запустить органику: 1 Reels в день',tUz:'Organikani ishga tushirish: kuniga 1 Reels',d:'Social Proof + Big Brother + Luxe Life. Греет аудиторию ДО звонка.',dUz:'Social Proof + Big Brother + Luxe Life. Auditoriyani qo‘ng‘iroqdan OLDIN qizdiradi.'},
       {id:'1e',t:'Нанять SMM-специалиста',tUz:'SMM-mutaxassis yollash',d:'Критический bottleneck. Без выделенного человека контент-движок не поедет.',dUz:'Asosiy to‘siq. Alohida odamsiz kontent mashinasi yurmaydi.'},
     ]},
-  { id:2, section:'sales', name:'Первый контакт', nameUz:'Birinchi aloqa', sub:'Лид → Дозвон · почему клиенты не отвечают', subUz:'Lid → Qo‘ng‘iroq · mijozlar nega javob bermaydi', icon:'⚡', main:true,
+  { id:2, section:'sales', name:'Первый контакт', nameUz:'Birinchi aloqa', sub:'Лид → Дозвон · почему клиенты не отвечают', subUz:'Lid → Qo‘ng‘iroq · mijozlar nega javob bermaydi', iconName:'bolt', main:true,
     boss:'Ключевая цель этапа', bossUz:'Bosqichning asosiy maqsadi', bossDesc:'57% оплаченных лидов теряются без единого разговора. В среднем до первого звонка проходит 64 часа. Это главная точка потери денег.', bossDescUz:'To‘langan lidlarning 57% bironta suhbatsiz yo‘qoladi. Birinchi qo‘ng‘iroqqacha o‘rtacha 64 soat o‘tadi. Bu — pul yo‘qotishning asosiy nuqtasi.',
     reward:'✅ Результат: дозвон растёт с 43% до 75% (в 1,7 раза больше контактов)', rewardUz:'✅ Natija: aloqa 43%dan 75%gacha oshadi (1,7 barobar ko‘p kontakt)',
     quests:[
@@ -610,7 +649,7 @@ const STAGES = [
       {id:'2c',t:'Закрывать «не дозвонились» только после 5 попыток',tUz:'«Bog‘lanib bo‘lmadi»ni faqat 5 urinishdan keyin yopish',d:'РОП проверяет выборочно. Статус не ставится раньше.',dUz:'ROP tanlab tekshiradi. Status oldinroq qo‘yilmaydi.'},
       {id:'2d',t:'Скорость касания → KPI каждого МОПа',tUz:'Aloqa tezligi → har bir menejer KPIsi',d:'Метрика «время до 1-го касания» в дашборд. Норматив: медиана ≤5 мин.',dUz:'«Birinchi aloqagacha vaqt» ko‘rsatkichi dashboardga. Norma: mediana ≤5 daqiqa.'},
     ]},
-  { id:3, section:'sales', name:'Квалификация клиента', nameUz:'Mijozni saralash', sub:'Контакт → Отбор · выявить потребность', subUz:'Aloqa → Saralash · ehtiyojni aniqlash', icon:'🎯',
+  { id:3, section:'sales', name:'Квалификация клиента', nameUz:'Mijozni saralash', sub:'Контакт → Отбор · выявить потребность', subUz:'Aloqa → Saralash · ehtiyojni aniqlash', iconName:'target',
     boss:'Ключевая цель этапа', bossUz:'Bosqichning asosiy maqsadi', bossDesc:'Данные о клиенте заполняются как попало, потребность не фиксируется. Задача — навести порядок в карточках.', bossDescUz:'Mijoz ma’lumotlari tartibsiz to‘ldiriladi, ehtiyoj qayd etilmaydi. Vazifa — kartochkalarda tartib o‘rnatish.',
     reward:'✅ Результат: каждый разговор даёт чистые данные о клиенте', rewardUz:'✅ Natija: har bir suhbat mijoz haqida toza ma’lumot beradi',
     quests:[
@@ -619,7 +658,7 @@ const STAGES = [
       {id:'3c',t:'Сделать поля обязательными для перехода этапа',tUz:'Maydonlarni bosqich o‘tishi uchun majburiy qilish',d:'Лид не идёт дальше, пока менеджер не заполнил квалификацию.',dUz:'Menejer saralashni to‘ldirmaguncha lid keyingi bosqichga o‘tmaydi.'},
       {id:'3d',t:'Критерий «нецелевой» + тег причины',tUz:'«Maqsadsiz» mezoni + sabab tegi',d:'Обратная связь уходит в аналитику связок — какая аудитория даёт мусор.',dUz:'Fikr manbalar tahliliga boradi — qaysi auditoriya sifatsiz lid beradi.'},
     ]},
-  { id:4, section:'sales', name:'Закрытие сделки', nameUz:'Bitimni yopish', sub:'Квалификация → Продажа · как доводить до оплаты', subUz:'Saralash → Sotuv · to‘lovga qanday yetkazish', icon:'⚔️', main:true,
+  { id:4, section:'sales', name:'Закрытие сделки', nameUz:'Bitimni yopish', sub:'Квалификация → Продажа · как доводить до оплаты', subUz:'Saralash → Sotuv · to‘lovga qanday yetkazish', iconName:'bag', main:true,
     boss:'Ключевая цель этапа', bossUz:'Bosqichning asosiy maqsadi', bossDesc:'Разрыв между сильными и слабыми менеджерами — 2,8 раза. Метод лучших не записан. «Дорого» — лишь 4% отказов, значит дело в навыке продаж.', bossDescUz:'Kuchli va kuchsiz menejerlar orasidagi farq — 2,8 barobar. Eng yaxshilarning usuli yozilmagan. «Qimmat» — atigi 4% rad, demak gap sotuv mahoratida.',
     reward:'✅ Результат: команда выходит на ~3% конверсии (+47% выручки)', rewardUz:'✅ Natija: jamoa ~3% konversiyaga chiqadi (+47% daromad)',
     quests:[
@@ -629,7 +668,7 @@ const STAGES = [
       {id:'4d',t:'План в продажах каждому МОПу + утренняя планёрка',tUz:'Har bir menejerga sotuv reja + ertalabki yig‘ilish',d:'«25 лидов × 2,5% = 6 продаж/неделю». 15 мин утром: цифры, задачи, разбор 1 сделки.',dUz:'«25 lid × 2,5% = haftasiga 6 sotuv». Ertalab 15 daqiqa: raqamlar, vazifalar, 1 bitim tahlili.'},
       {id:'4e',t:'Привязать зарплату к конверсии и чеку',tUz:'Maoshni konversiya va chekka bog‘lash',d:'Не только к объёму — чтобы не сливали лиды и не давали лишних скидок.',dUz:'Faqat hajmga emas — lidlarni behuda sarflamasin va ortiqcha chegirma bermasin.'},
     ]},
-  { id:5, section:'sales', name:'Работа с отложенными', nameUz:'Kechiktirilganlar bilan ishlash', sub:'Догрев · вернуть тех, кто думает', subUz:'Qizdirish · o‘ylayotganlarni qaytarish', icon:'🌱',
+  { id:5, section:'sales', name:'Работа с отложенными', nameUz:'Kechiktirilganlar bilan ishlash', sub:'Догрев · вернуть тех, кто думает', subUz:'Qizdirish · o‘ylayotganlarni qaytarish', iconName:'drop',
     boss:'Ключевая цель этапа', bossUz:'Bosqichning asosiy maqsadi', bossDesc:'433 почти готовых клиента застряли в «подумаю позже» и теряются. Системы возврата нет. Задача — вернуть их.', bossDescUz:'433 ta deyarli tayyor mijoz «keyin o‘ylayman»da qolib yo‘qolyapti. Qaytarish tizimi yo‘q. Vazifa — ularni qaytarish.',
     reward:'✅ Результат: 15% отложенных клиентов превращаются в продажи', rewardUz:'✅ Natija: kechiktirilgan mijozlarning 15% sotuvga aylanadi',
     quests:[
@@ -637,7 +676,7 @@ const STAGES = [
       {id:'5b',t:'Цепочка касаний по дням',tUz:'Kunlar bo‘yicha aloqalar zanjiri',d:'День 1 — видео выпускника · день 3 — кусок обучения · день 7 — звонок · день 14 — дедлайн группы.',dUz:'1-kun — bitiruvchi videosi · 3-kun — o‘quv parchasi · 7-kun — qo‘ng‘iroq · 14-kun — guruh muddati.'},
       {id:'5c',t:'Ежемесячная реактивация старой базы',tUz:'Eski bazani oylik qayta faollashtirish',d:'Рассылка по закрытым лидам с новым оффером. Бесплатный трафик.',dUz:'Yopilgan lidlarga yangi taklif bilan xabar. Bepul trafik.'},
     ]},
-  { id:6, section:'sales', name:'Оплата и прибыль', nameUz:'To‘lov va foyda', sub:'Маржа · чистые деньги и рост чека', subUz:'Marja · toza pul va chek o‘sishi', icon:'💎',
+  { id:6, section:'sales', name:'Оплата и прибыль', nameUz:'To‘lov va foyda', sub:'Маржа · чистые деньги и рост чека', subUz:'Marja · toza pul va chek o‘sishi', iconName:'trophy',
     boss:'Ключевая цель этапа', bossUz:'Bosqichning asosiy maqsadi', bossDesc:'21% «продаж» — это свои/бартер, они искажают отчётность и мотивацию. Задача — очистить цифры и растить средний чек.', bossDescUz:'«Sotuvlar»ning 21% — o‘zimizniki/barter, ular hisobot va motivatsiyani buzadi. Vazifa — raqamlarni tozalash va o‘rtacha chekni oshirish.',
     reward:'✅ Результат: чистая отчётность и рост среднего чека', rewardUz:'✅ Natija: toza hisobot va o‘rtacha chek o‘sishi',
     quests:[
@@ -760,9 +799,9 @@ function renderStages(){
   const auditBanner=document.createElement('div');
   auditBanner.style.cssText='background:var(--accent-bg);border:1px solid var(--accent);border-radius:12px;padding:15px 16px;margin-bottom:16px;';
   auditBanner.innerHTML=`
-    <div style="font-size:15px;font-weight:700;margin-bottom:5px;">🚀 ${uz?'Biznes auditidan boshlang':'Начните с аудита бизнеса'}</div>
+    <div style="font-size:15px;font-weight:700;margin-bottom:5px;">${svg('rocket',17)} ${uz?'Biznes auditidan boshlang':'Начните с аудита бизнеса'}</div>
     <div style="font-size:12.5px;color:var(--txt2);line-height:1.5;margin-bottom:11px;">${uz?'Tizim ma\'lumotlarni tahlil qiladi, maqsadingizni so\'raydi va shaxsiy vazifalar rejasini tuzadi.':'Система проанализирует данные, спросит вашу цель и составит персональный план задач под ваш бизнес.'}</div>
-    <button onclick="openWizard()" style="width:100%;padding:12px;border-radius:10px;background:var(--accent);border:none;color:#fff;font-size:14px;font-weight:600;cursor:pointer;">${uz?'To\'liq audit qilish →':'Сделать полный аудит →'}</button>`;
+    <button onclick="openWizard()" style="width:100%;padding:12px;border-radius:10px;background:var(--accent);border:none;color:#fff;font-size:14px;font-weight:600;cursor:pointer;">${uz?'To\'liq audit qilish':'Сделать полный аудит'} ${svg('arrow',15)}</button>`;
   wrap.appendChild(auditBanner);
   let lastSection=null;
   STAGES.forEach((s,idx)=>{
@@ -777,7 +816,7 @@ function renderStages(){
       lastSection=s.section;
       const secH=document.createElement('div');
       secH.className='task-section';
-      const label = s.section==='marketing' ? (uz?'📣 Marketing':'📣 Маркетинг') : (uz?'💼 Sotuvlar':'💼 Продажи');
+      const label = (s.section==='marketing' ? svg('mega',16) : svg('bag',16)) + ' ' + (s.section==='marketing' ? (uz?'Marketing':'Маркетинг') : (uz?'Sotuvlar':'Продажи'));
       secH.innerHTML=label;
       wrap.appendChild(secH);
     }
@@ -800,7 +839,7 @@ function renderStages(){
       });
       const bdown=!!state.bosses[s.id];
       body+=`<div class="boss${bdown?' down':(sdone?' ready':'')}">
-        <div class="boss-h">${bdown?'🏆':(sdone?'⚔️':'💀')} ${LX(s,'boss')}</div>
+        <div class="boss-h">${LX(s,'boss')}</div>
         <div class="boss-d">${bdown?(uz?'✅ Bosqich yopildi! ':'✅ Этап закрыт! ')+LX(s,'reward'):LX(s,'bossDesc')}</div>
         ${bdown?'':`<button class="boss-btn ${sdone?'ready':'locked'}" ${sdone?`onclick="fightBoss(${s.id})"`:'disabled'}>${sdone?(uz?'✅ Bosqichni yopish':'✅ Закрыть этап'):(uz?'🔒 Avval barcha vazifalarni bajaring':'🔒 Сначала выполните все задачи этапа')}</button>`}
       </div>`;
@@ -808,7 +847,7 @@ function renderStages(){
 
     card.innerHTML=`
       <div class="s-head" onclick="toggleStage(${s.id})">
-        <div class="s-icon">${unlocked?s.icon:'🔒'}</div>
+        <div class="s-icon">${unlocked?svg(s.iconName,18):svg('lock',18)}</div>
         <div style="min-width:0;">
           <div class="s-name">${uz?'Bosqich':'Этап'} ${s.id} · ${LX(s,'name')}
             ${s.main?`<span class="tag tag-dyra">${uz?'asosiy yo‘qotish nuqtasi':'ключевая точка потерь'}</span>`:''}
@@ -837,21 +876,21 @@ function renderCustomPlan(){
   const taskDone=(q)=>{const steps=(q.steps||[]);return steps.length>0?steps.every((_,si)=>!!state.done[q.id+'_s'+si]):!!state.done[q.id];};
   const doneN=allTasks.filter(taskDone).length;
   head.innerHTML=`
-    <div style="font-size:13px;color:var(--txt2);">🎯 ${uz?'Sizning maqsadingiz':'Ваша цель'}:</div>
+    <div style="font-size:13px;color:var(--txt2);">${svg('target',15)} ${uz?'Sizning maqsadingiz':'Ваша цель'}:</div>
     <div style="font-size:15px;font-weight:600;margin:3px 0 8px;">${escapeHtml(cp.goal||(uz?'Belgilanmagan':'Не указана'))}</div>
     <div style="font-size:12.5px;color:var(--txt3);">${uz?'Bajarildi':'Выполнено'}: ${doneN}/${allTasks.length}</div>
-    ${doneN>=allTasks.length&&allTasks.length>0?`<button onclick="wizReaudit()" style="width:100%;margin-top:11px;padding:11px;border-radius:10px;background:var(--green);border:none;color:#fff;font-size:14px;font-weight:600;cursor:pointer;">🎉 ${uz?'Barcha vazifalar bajarildi — yangi audit':'Все задачи выполнены — новый аудит'}</button>`:''}
-    <button onclick="wizRegenerate()" style="width:100%;margin-top:8px;padding:9px;border-radius:9px;background:none;border:1px solid var(--line2);color:var(--txt2);font-size:12.5px;cursor:pointer;">↻ ${uz?'Rejani qayta tuzish':'Пересобрать план'}</button>`;
+    ${doneN>=allTasks.length&&allTasks.length>0?`<button onclick="wizReaudit()" style="width:100%;margin-top:11px;padding:11px;border-radius:10px;background:var(--green);border:none;color:#fff;font-size:14px;font-weight:600;cursor:pointer;">${uz?'Barcha vazifalar bajarildi — yangi audit':'Все задачи выполнены — новый аудит'}</button>`:''}
+    <button onclick="wizRegenerate()" style="width:100%;margin-top:8px;padding:9px;border-radius:9px;background:none;border:1px solid var(--line2);color:var(--txt2);font-size:12.5px;cursor:pointer;">${svg('refresh',14)} ${uz?'Rejani qayta tuzish':'Пересобрать план'}</button>`;
   wrap.appendChild(head);
 
   const sections=[
-    {key:'marketing',icon:'📣',label:uz?'📣 Marketing':'📣 Маркетинг',items:cp.marketing||[]},
-    {key:'sales',icon:'💼',label:uz?'💼 Sotuvlar':'💼 Продажи',items:cp.sales||[]}
+    {key:'marketing',iconName:'mega',label:(uz?'Marketing':'Маркетинг'),items:cp.marketing||[]},
+    {key:'sales',iconName:'bag',label:(uz?'Sotuvlar':'Продажи'),items:cp.sales||[]}
   ];
   if(!state.cpOpen)state.cpOpen={};
   sections.forEach(sec=>{
     if(!sec.items.length)return;
-    const h=document.createElement('div');h.className='task-section';h.textContent=sec.label;wrap.appendChild(h);
+    const h=document.createElement('div');h.className='task-section ic-btn';h.innerHTML=svg(sec.iconName,16)+' '+sec.label;wrap.appendChild(h);
     sec.items.forEach((q,i)=>{
       const steps=(q.steps||[]);
       // задача считается выполненной, если все под-шаги отмечены (или нет шагов и отмечена сама)
@@ -872,7 +911,7 @@ function renderCustomPlan(){
       card.className='stage'+(on?' done':'')+(isOpen?' open':'');
       card.innerHTML=`
         <div class="s-head" onclick="toggleCpCard('${q.id}')">
-          <div class="s-icon">${on?'✅':sec.icon}</div>
+          <div class="s-icon">${on?svg('check',18):svg(sec.iconName,18)}</div>
           <div style="min-width:0;flex:1;">
             <div class="s-name">${escapeHtml(q.t)}
               ${on?`<span class="tag tag-done">${uz?'bajarildi':'готово'}</span>`:''}
@@ -885,7 +924,7 @@ function renderCustomPlan(){
           <div style="padding:10px 14px 14px;">
             ${allSteps?`<div style="font-size:12px;color:var(--txt3);margin-bottom:8px;">${uz?'Bosqichlar (belgilang):':'Под-задачи (отмечайте по мере выполнения):'}</div>${stepsHtml}`:`
             <button onclick="event.stopPropagation();toggleCustomTask('${q.id}')" style="width:100%;padding:11px;border-radius:9px;background:${on?'var(--card2)':'var(--green)'};border:none;color:${on?'var(--txt2)':'#fff'};font-size:13.5px;font-weight:600;cursor:pointer;">${on?(uz?'↩ Bajarilmagan':'↩ Не выполнено'):(uz?'✓ Bajarildi':'✓ Выполнено')}</button>`}
-            <button onclick="event.stopPropagation();helpCustomTask('${q.id}')" style="width:100%;margin-top:9px;padding:10px;border-radius:9px;background:var(--accent-bg);border:1px solid var(--accent);color:var(--accent);font-size:13px;font-weight:600;cursor:pointer;">💬 ${uz?'Butun vazifa bo‘yicha yordam':'Помощь по всей задаче'}</button>
+            <button onclick="event.stopPropagation();helpCustomTask('${q.id}')" style="width:100%;margin-top:9px;padding:10px;border-radius:9px;background:var(--accent-bg);border:1px solid var(--accent);color:var(--accent);font-size:13px;font-weight:600;cursor:pointer;">${svg('help',14)} ${uz?'Butun vazifa bo‘yicha yordam':'Помощь по всей задаче'}</button>
           </div>
         </div>`;
       wrap.appendChild(card);
@@ -1255,10 +1294,10 @@ const T={
   btnSync:{ru:'🔄 Обновить из amoCRM',uz:'🔄 amoCRMdan yangilash'},
   btnSyncSpeed:{ru:'⚡ Обновить дисциплину',uz:'⚡ Intizomni yangilash'},
   dashNote0:{ru:'Нажмите «Обновить из amoCRM» для первой загрузки живых данных. Дальше обновляется автоматически каждую ночь.',uz:'Jonli ma’lumotlarni birinchi yuklash uchun «amoCRMdan yangilash»ni bosing. Keyin har kecha avtomatik yangilanadi.'},
-  genBtn:{ru:'🎯 Подобрать задачи под мои проблемы',uz:'🎯 Muammolarimga vazifa tanlash'},
-  nextBtn:{ru:'🧭 С какой задачи начать?',uz:'🧭 Qaysi vazifadan boshlash?'},
-  resetBtn:{ru:'↺ Сбросить прогресс',uz:'↺ Progressni tozalash'},
-  dopSec:{ru:'🔥 Доп-задачи (по горячим проблемам)',uz:'🔥 Qo‘shimcha vazifalar (dolzarb muammolar)'},
+  genBtn:{ru:'Подобрать задачи под мои проблемы',uz:'Muammolarimga vazifa tanlash'},
+  nextBtn:{ru:'С какой задачи начать?',uz:'Qaysi vazifadan boshlash?'},
+  resetBtn:{ru:'Сбросить прогресс',uz:'Progressni tozalash'},
+  dopSec:{ru:'Доп-задачи (по горячим проблемам)',uz:'Qo‘shimcha vazifalar (dolzarb muammolar)'},
   chatTitleNew:{ru:'Новый чат',uz:'Yangi chat'},
   topSold:{ru:'прод.',uz:'sotuv'},leadsW:{ru:'лидов',uz:'lid'},salesW:{ru:'продаж',uz:'sotuv'},reachW:{ru:'дозвон',uz:'aloqa'},
   needMonth:{ru:'нужно ~141 продажа/мес',uz:'kerak ~141 sotuv/oy'},madeOf:{ru:'Сделано',uz:'Bajarildi'},ofWord:{ru:'из',uz:'/'},goalWay:{ru:'% пути к цели',uz:'% maqsad sari'},
@@ -1387,7 +1426,7 @@ function renderSidebar(){
   if(list){
     let h='';
     // --- ПРОЕКТЫ ---
-    h+=`<div class="side-row-btn" onclick="newProject()"><span>📁 Проекты</span><span class="side-plus">＋</span></div>`;
+    h+=`<div class="side-row-btn" onclick="newProject()"><span class="ic-btn">${svg('folder',15)} Проекты</span><span class="side-plus">${svg('plus',15)}</span></div>`;
     if(state.projects.length){
       state.projects.forEach(p=>{
         const open=!!p.open;
@@ -1396,7 +1435,7 @@ function renderSidebar(){
           <div class="proj-head" onclick="toggleProject('${p.id}')">
             <span class="proj-chev">${open?'▾':'▸'}</span>
             <span class="proj-name">${escapeHtml(p.name)}</span>
-            <button class="si-menu" onclick="event.stopPropagation();projectMenu('${p.id}',event)">⋯</button>
+            <button class="si-menu" onclick="event.stopPropagation();projectMenu('${p.id}',event)">${svg('dots',16)}</button>
           </div>`;
         if(open){
           if(chatsIn.length){
@@ -1411,7 +1450,7 @@ function renderSidebar(){
     // --- ЗАКРЕПЛЁННЫЕ ---
     const pinned=state.chats.filter(c=>c.pinned&&!c.projectId);
     if(pinned.length){
-      h+=`<div class="side-sec">📌 Закреплённые</div>`;
+      h+=`<div class="side-sec ic-btn" style="justify-content:flex-start;">${svg('pin',13)} Закреплённые</div>`;
       pinned.forEach(c=>{h+=chatItem(c,false);});
     }
     // --- ОБЫЧНЫЕ (не в проектах, не закреплённые) ---
@@ -1432,8 +1471,8 @@ function renderSidebar(){
 
 function chatItem(c,inProject){
   return `<div class="side-item${c.id===state.activeChatId?' on':''}${inProject?' in-proj':''}" onclick="switchChat('${c.id}')">
-    <span class="si-t">${c.pinned?'📌 ':'💬 '}${escapeHtml(c.title)}</span>
-    <button class="si-menu" onclick="event.stopPropagation();chatMenu('${c.id}',event)">⋯</button>
+    <span class="si-t ic-btn" style="justify-content:flex-start;">${c.pinned?svg('pin',14):svg('chat',14)} ${escapeHtml(c.title)}</span>
+    <button class="si-menu" onclick="event.stopPropagation();chatMenu('${c.id}',event)">${svg('dots',16)}</button>
   </div>`;
 }
 
@@ -1447,14 +1486,14 @@ function chatMenu(id,e){
   ensureProjects();
   let projItems='';
   if(state.projects.length){
-    projItems=state.projects.map(p=>`<div class="ctx-item" onclick="moveToProject('${id}','${p.id}')">📁 В «${escapeHtml(p.name)}»</div>`).join('');
+    projItems=state.projects.map(p=>`<div class="ctx-item ic-btn" style="justify-content:flex-start;" onclick="moveToProject('${id}','${p.id}')">${svg('folder',15)} В «${escapeHtml(p.name)}»</div>`).join('');
   }
   menu.innerHTML=`
-    <div class="ctx-item" onclick="renameChat('${id}')">✏️ Переименовать</div>
-    <div class="ctx-item" onclick="togglePin('${id}')">${c.pinned?'📌 Открепить':'📌 Закрепить'}</div>
+    <div class="ctx-item ic-btn" style="justify-content:flex-start;" onclick="renameChat('${id}')">${svg('edit',15)} Переименовать</div>
+    <div class="ctx-item ic-btn" style="justify-content:flex-start;" onclick="togglePin('${id}')">${svg('pin',15)} ${c.pinned?'Открепить':'Закрепить'}</div>
     ${projItems}
-    ${c.projectId?`<div class="ctx-item" onclick="moveToProject('${id}','')">📤 Убрать из проекта</div>`:''}
-    <div class="ctx-item danger" onclick="deleteChatById('${id}')">🗑 Удалить</div>
+    ${c.projectId?`<div class="ctx-item" onclick="moveToProject('${id}','')">${svg('back',15)} Убрать из проекта</div>`:''}
+    <div class="ctx-item danger ic-btn" style="justify-content:flex-start;" onclick="deleteChatById('${id}')">${svg('trash',15)} Удалить</div>
   `;
   document.body.appendChild(menu);
   positionMenu(menu,e);
@@ -1465,8 +1504,8 @@ function projectMenu(id,e){
   const menu=document.createElement('div');
   menu.className='ctx-menu';menu.id='ctxMenu';
   menu.innerHTML=`
-    <div class="ctx-item" onclick="renameProject('${id}')">✏️ Переименовать проект</div>
-    <div class="ctx-item danger" onclick="deleteProject('${id}')">🗑 Удалить проект</div>
+    <div class="ctx-item ic-btn" style="justify-content:flex-start;" onclick="renameProject('${id}')">${svg('edit',15)} Переименовать проект</div>
+    <div class="ctx-item danger ic-btn" style="justify-content:flex-start;" onclick="deleteProject('${id}')">${svg('trash',15)} Удалить проект</div>
   `;
   document.body.appendChild(menu);
   positionMenu(menu,e);
@@ -1652,7 +1691,7 @@ function appendMsgDom(role,text,fileNames){
   const d=document.createElement('div');d.className='msg '+(role==='user'?'me':'k');
   let filesHtml='';
   if(fileNames&&fileNames.length){
-    filesHtml=fileNames.map(n=>`<div class="m-file">📎 ${escapeHtml(n)}</div>`).join('');
+    filesHtml=fileNames.map(n=>`<div class="m-file"><svg class="ic" width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><path d="M21 12l-8.5 8.5a4 4 0 0 1-6-6L14 6a2.7 2.7 0 0 1 4 4l-8 8a1.3 1.3 0 0 1-2-2l7.5-7.5"/></svg> ${escapeHtml(n)}</div>`).join('');
   }
   const body = role==='user' ? (escapeHtml(text)+filesHtml) : (mdToHtml(text)+filesHtml);
   d.innerHTML=`<div class="m-bubble">${body}</div>`;
@@ -1855,7 +1894,7 @@ function renderDemos(demos,max){
     <div style="background:var(--card);border:1px solid var(--line);border-radius:11px;padding:12px 13px;margin-bottom:10px;">
       <div style="display:flex;align-items:center;gap:8px;">
         <div style="flex:1;font-size:14px;font-weight:600;">${escapeHtml(dm.name)}</div>
-        <button onclick="deleteDemo('${dm.id}')" style="background:none;border:none;color:var(--red);cursor:pointer;font-size:13px;">🗑 Удалить</button>
+        <button onclick="deleteDemo('${dm.id}')" style="background:none;border:none;color:var(--red);cursor:pointer;font-size:13px;">Удалить</button>
       </div>
       <div style="font-size:12.5px;color:var(--txt2);margin-top:6px;">Код доступа: <b style="color:var(--accent);font-size:15px;letter-spacing:1px;">${dm.code}</b></div>
       <div style="font-size:11px;color:var(--txt3);margin-top:3px;">Дайте этот код для входа в демо (кнопка «Войти в демо по коду» на экране входа).</div>
@@ -1871,7 +1910,7 @@ async function createDemo(){
     if(d&&d.ok){renderDemos(d.demos,5);}
     else{alert(d.error||'Не удалось создать');}
   }catch(e){alert('Нет связи');}
-  btn.textContent='＋ Создать демо-аккаунт';btn.disabled=false;
+  btn.textContent='Создать демо-аккаунт';btn.disabled=false;
 }
 async function deleteDemo(id){
   if(!confirm('Удалить этот демо-аккаунт? Все его данные сотрутся.'))return;
@@ -1895,12 +1934,12 @@ function openWizard(){ document.getElementById('wizardOverlay').style.display='f
 function closeWizard(){ document.getElementById('wizardOverlay').style.display='none'; }
 
 function wizStep1(){
-  document.getElementById('wizTitle').textContent='🚀 Шаг 1 — Аудит бизнеса';
+  document.getElementById('wizTitle').textContent='Шаг 1 — Аудит бизнеса';
   document.getElementById('wizBody').innerHTML=`
     <div style="font-size:14px;line-height:1.6;color:var(--txt2);margin-bottom:18px;">
       Сделаем полный аудит вашего бизнеса по данным из CRM: где теряются деньги, какие главные проблемы, что чинить в первую очередь.
     </div>
-    <button onclick="wizRunAudit()" style="width:100%;padding:14px;border-radius:11px;background:var(--accent);border:none;color:#fff;font-size:15px;font-weight:600;cursor:pointer;">✅ Да, сделать аудит</button>`;
+    <button onclick="wizRunAudit()" style="width:100%;padding:14px;border-radius:11px;background:var(--accent);border:none;color:#fff;font-size:15px;font-weight:600;cursor:pointer;">Да, сделать аудит</button>`;
 }
 let wizAuditData=null;
 let wizCurrentSales='';
@@ -1927,7 +1966,7 @@ async function wizRunAudit(){
   }
 }
 function wizShowProblems(d){
-  document.getElementById('wizTitle').textContent='📊 Результат аудита';
+  document.getElementById('wizTitle').textContent='Результат аудита';
   let probs='';
   if(d&&d.problems&&d.problems.length){
     probs=d.problems.map(p=>`<div style="display:flex;justify-content:space-between;padding:9px 0;border-top:1px solid var(--line);font-size:13.5px;"><span>${escapeHtml(p.name)}</span><b style="color:var(--red);">${p.count}</b></div>`).join('');
@@ -1943,13 +1982,13 @@ function wizShowProblems(d){
   document.getElementById('wizBody').innerHTML=`
     <div style="font-size:12px;color:var(--txt3);margin-bottom:8px;">📅 За последние 3-4 месяца</div>
     ${kpi}
-    <div style="font-size:13px;font-weight:600;margin:6px 0 2px;">🩸 Где горят деньги:</div>
+    <div style="font-size:13px;font-weight:600;margin:6px 0 2px;">Где горят деньги:</div>
     ${probs}
     <button onclick="wizStepSales()" style="width:100%;padding:14px;border-radius:11px;background:var(--accent);border:none;color:#fff;font-size:15px;font-weight:600;cursor:pointer;margin-top:18px;">Дальше →</button>`;
 }
 
 function wizStepSales(){
-  document.getElementById('wizTitle').textContent='💰 Ваши текущие продажи';
+  document.getElementById('wizTitle').textContent='Ваши текущие продажи';
   document.getElementById('wizBody').innerHTML=`
     <div style="font-size:14px;line-height:1.6;color:var(--txt2);margin-bottom:14px;">
       Какая у вас сумма продаж сейчас (в месяц)? Это точка отсчёта — откуда мы стартуем.
@@ -1966,14 +2005,14 @@ function wizSaveSalesNext(){
   wizStep2();
 }
 function wizStep2(){
-  document.getElementById('wizTitle').textContent='🎯 Шаг 2 — Ваша цель';
+  document.getElementById('wizTitle').textContent='Шаг 2 — Ваша цель';
   document.getElementById('wizBody').innerHTML=`
     <div style="font-size:14px;line-height:1.6;color:var(--txt2);margin-bottom:14px;">
       До какой суммы продаж в месяц вы хотите дойти? Можно указать и текущий уровень, и желаемый.
     </div>
     <input id="wizGoalInput" type="text" value="${escapeHtml(wizGoalText||'')}" placeholder="Например: сейчас 150М, хочу 250М в месяц"
       style="width:100%;padding:13px 15px;border-radius:11px;border:1px solid var(--line2);background:var(--card);color:var(--txt);font-size:14.5px;margin-bottom:14px;" />
-    <button onclick="wizGeneratePlan()" style="width:100%;padding:14px;border-radius:11px;background:var(--accent);border:none;color:#fff;font-size:15px;font-weight:600;cursor:pointer;">✨ Составить план задач</button>
+    <button onclick="wizGeneratePlan()" style="width:100%;padding:14px;border-radius:11px;background:var(--accent);border:none;color:#fff;font-size:15px;font-weight:600;cursor:pointer;">Составить план задач</button>
     <button onclick="wizSaveGoalBack()" style="width:100%;padding:11px;border-radius:11px;background:none;border:none;color:var(--txt2);font-size:13px;cursor:pointer;margin-top:8px;">← Назад</button>`;
   setTimeout(()=>{const i=document.getElementById('wizGoalInput');if(i)i.focus();},100);
 }
@@ -1988,7 +2027,7 @@ async function wizGeneratePlan(){
   const salesEl=document.getElementById('wizSalesInput');
   const currentSales=salesEl?salesEl.value.trim():(wizCurrentSales||'');
   wizCurrentSales=currentSales;
-  document.getElementById('wizTitle').textContent='✨ Составляю план';
+  document.getElementById('wizTitle').textContent='Составляю план';
   document.getElementById('wizBody').innerHTML=`<div class="gen-loading">⏳ Составляю персональный план задач под ваш аудит и цель...</div>`;
   try{
     const r=await fetch('/api/audit-plan',{method:'POST',headers:{'content-type':'application/json'},
@@ -2013,7 +2052,7 @@ function wizApplyPlan(plan,goal,currentSales){
   save();
   const mkt=(plan.marketing||[]).map(q=>`<div class="wiz-task">📣 ${escapeHtml(q.t)}</div>`).join('');
   const sls=(plan.sales||[]).map(q=>`<div class="wiz-task">💼 ${escapeHtml(q.t)}</div>`).join('');
-  document.getElementById('wizTitle').textContent='✅ Ваш план готов';
+  document.getElementById('wizTitle').textContent='Ваш план готов';
   document.getElementById('wizBody').innerHTML=`
     <div style="font-size:13.5px;color:var(--txt2);margin-bottom:14px;">План зафиксирован. Задачи появились во вкладке «Задачи». Идите по ним — когда всё выполните, сделаем аудит заново.</div>
     ${mkt}${sls}
