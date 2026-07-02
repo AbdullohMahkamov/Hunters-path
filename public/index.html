@@ -212,6 +212,15 @@
   .wiz-task{font-size:13.5px;padding:8px 11px;background:var(--card);border:1px solid var(--line);border-radius:9px;margin-bottom:7px;}
   .cp-steps{margin-top:7px;padding-top:6px;border-top:1px dashed var(--line);}
   .cp-step{font-size:12.5px;color:var(--txt2);line-height:1.5;padding:2px 0;}
+  .cp-substep{display:flex;align-items:flex-start;gap:9px;padding:9px 0;border-top:1px solid var(--line);}
+  .cp-substep:first-child{border-top:none;}
+  .cp-check{width:20px;height:20px;flex:0 0 auto;border:2px solid var(--line2);border-radius:6px;cursor:pointer;
+    display:flex;align-items:center;justify-content:center;font-size:12px;color:#fff;margin-top:1px;}
+  .cp-check.on{background:var(--green);border-color:var(--green);}
+  .cp-sub-t{flex:1;font-size:13px;line-height:1.45;color:var(--txt);}
+  .cp-substep.done .cp-sub-t{text-decoration:line-through;color:var(--txt3);}
+  .cp-sub-help{flex:0 0 auto;background:var(--accent-bg);border:1px solid var(--accent);border-radius:7px;
+    color:var(--accent);font-size:13px;cursor:pointer;padding:3px 8px;}
   .mop-row{display:flex;align-items:center;gap:10px;padding:9px 0;border-top:1px solid var(--line);}
   .mop-name{font-size:13px;font-weight:500;width:120px;flex:0 0 auto;}
   .mop-bar-wrap{flex:1;height:18px;background:var(--bg);border-radius:6px;overflow:hidden;}
@@ -432,8 +441,8 @@
 
 <div class="tabs">
   <button class="tab active" id="tab-chat" onclick="switchTab('chat')">💬 <span data-t="tab_chat">Советник</span></button>
-  <button class="tab" id="tab-dash" onclick="switchTab('dash')">📊 <span data-t="tab_dash">Дашборд</span></button>
   <button class="tab" id="tab-map" onclick="switchTab('map')">🗺️ <span data-t="tab_map">Задачи</span></button>
+  <button class="tab" id="tab-dash" onclick="switchTab('dash')">📊 <span data-t="tab_dash">Дашборд</span></button>
 </div>
 
 <main>
@@ -815,7 +824,8 @@ function renderCustomPlan(){
   const head=document.createElement('div');
   head.style.cssText='background:var(--card);border:1px solid var(--line);border-radius:12px;padding:13px 15px;margin-bottom:14px;';
   const allTasks=[...(cp.marketing||[]),...(cp.sales||[])];
-  const doneN=allTasks.filter(q=>state.done[q.id]).length;
+  const taskDone=(q)=>{const steps=(q.steps||[]);return steps.length>0?steps.every((_,si)=>!!state.done[q.id+'_s'+si]):!!state.done[q.id];};
+  const doneN=allTasks.filter(taskDone).length;
   head.innerHTML=`
     <div style="font-size:13px;color:var(--txt2);">🎯 ${uz?'Sizning maqsadingiz':'Ваша цель'}:</div>
     <div style="font-size:15px;font-weight:600;margin:3px 0 8px;">${escapeHtml(cp.goal||(uz?'Belgilanmagan':'Не указана'))}</div>
@@ -833,10 +843,21 @@ function renderCustomPlan(){
     if(!sec.items.length)return;
     const h=document.createElement('div');h.className='task-section';h.textContent=sec.label;wrap.appendChild(h);
     sec.items.forEach((q,i)=>{
-      const on=!!state.done[q.id];
-      const isOpen=!!state.cpOpen[q.id];
       const steps=(q.steps||[]);
-      const stepsHtml=steps.length?steps.map(st=>`<div class="cp-step">• ${escapeHtml(st)}</div>`).join(''):'';
+      // задача считается выполненной, если все под-шаги отмечены (или нет шагов и отмечена сама)
+      const stepDone=(si)=>!!state.done[q.id+'_s'+si];
+      const allSteps=steps.length>0;
+      const on = allSteps ? steps.every((_,si)=>stepDone(si)) : !!state.done[q.id];
+      const doneSteps=steps.filter((_,si)=>stepDone(si)).length;
+      const isOpen=!!state.cpOpen[q.id];
+      const stepsHtml=steps.map((st,si)=>{
+        const sd=stepDone(si);
+        return `<div class="cp-substep${sd?' done':''}">
+          <div class="cp-check${sd?' on':''}" onclick="event.stopPropagation();toggleCpStep('${q.id}',${si})">${sd?'✓':''}</div>
+          <div class="cp-sub-t">${escapeHtml(st)}</div>
+          <button class="cp-sub-help" onclick="event.stopPropagation();helpCustomStep('${q.id}',${si})" title="Помощь">💬</button>
+        </div>`;
+      }).join('');
       const card=document.createElement('div');
       card.className='stage'+(on?' done':'')+(isOpen?' open':'');
       card.innerHTML=`
@@ -846,17 +867,15 @@ function renderCustomPlan(){
             <div class="s-name">${escapeHtml(q.t)}
               ${on?`<span class="tag tag-done">${uz?'bajarildi':'готово'}</span>`:''}
             </div>
-            <div class="s-sub">${escapeHtml(q.d||'')}</div>
+            <div class="s-sub">${escapeHtml(q.d||'')}${allSteps?` · ${doneSteps}/${steps.length} ${uz?'qadam':'шагов'}`:''}</div>
           </div>
           <div class="s-chev">▾</div>
         </div>
         <div class="s-body">
-          <div style="padding:12px 14px;">
-            ${steps.length?`<div style="font-size:12px;color:var(--txt3);margin-bottom:7px;">${uz?'Bosqichlar':'Шаги'}:</div>${stepsHtml}`:''}
-            <div style="display:flex;gap:8px;margin-top:14px;">
-              <button onclick="event.stopPropagation();toggleCustomTask('${q.id}')" style="flex:1;padding:11px;border-radius:9px;background:${on?'var(--card2)':'var(--green)'};border:none;color:${on?'var(--txt2)':'#fff'};font-size:13.5px;font-weight:600;cursor:pointer;">${on?(uz?'↩ Bajarilmagan':'↩ Не выполнено'):(uz?'✓ Bajarildi':'✓ Выполнено')}</button>
-              <button onclick="event.stopPropagation();helpCustomTask('${q.id}')" style="flex:0 0 auto;padding:11px 15px;border-radius:9px;background:var(--accent-bg);border:1px solid var(--accent);color:var(--accent);font-size:13.5px;font-weight:600;cursor:pointer;">💬 ${uz?'yordam':'помощь'}</button>
-            </div>
+          <div style="padding:10px 14px 14px;">
+            ${allSteps?`<div style="font-size:12px;color:var(--txt3);margin-bottom:8px;">${uz?'Bosqichlar (belgilang):':'Под-задачи (отмечайте по мере выполнения):'}</div>${stepsHtml}`:`
+            <button onclick="event.stopPropagation();toggleCustomTask('${q.id}')" style="width:100%;padding:11px;border-radius:9px;background:${on?'var(--card2)':'var(--green)'};border:none;color:${on?'var(--txt2)':'#fff'};font-size:13.5px;font-weight:600;cursor:pointer;">${on?(uz?'↩ Bajarilmagan':'↩ Не выполнено'):(uz?'✓ Bajarildi':'✓ Выполнено')}</button>`}
+            <button onclick="event.stopPropagation();helpCustomTask('${q.id}')" style="width:100%;margin-top:9px;padding:10px;border-radius:9px;background:var(--accent-bg);border:1px solid var(--accent);color:var(--accent);font-size:13px;font-weight:600;cursor:pointer;">💬 ${uz?'Butun vazifa bo‘yicha yordam':'Помощь по всей задаче'}</button>
           </div>
         </div>`;
       wrap.appendChild(card);
@@ -864,12 +883,23 @@ function renderCustomPlan(){
   });
 }
 function toggleCpCard(id){if(!state.cpOpen)state.cpOpen={};state.cpOpen[id]=!state.cpOpen[id];save();renderStages();}
+function toggleCpStep(qid,si){
+  const key=qid+'_s'+si;
+  state.done[key]=!state.done[key];save();renderStages();renderHeader();
+}
+function helpCustomStep(qid,si){
+  const cp=state.customPlan;if(!cp)return;
+  const q=[...(cp.marketing||[]),...(cp.sales||[])].find(x=>x.id===qid);
+  if(!q||!q.steps||!q.steps[si])return;
+  switchTab('chat');
+  quickAsk('Помоги выполнить этот шаг из задачи «'+q.t+'»: «'+q.steps[si]+'». Дай конкретные пошаговые действия и готовые материалы (скрипты, тексты, настройки), чтобы я закрыл этот шаг сегодня.');
+}
 function helpCustomTask(id){
   const cp=state.customPlan;if(!cp)return;
   const q=[...(cp.marketing||[]),...(cp.sales||[])].find(x=>x.id===id);
   if(!q)return;
   switchTab('chat');
-  const stepsTxt=(q.steps&&q.steps.length)?(' Под-шаги: '+q.steps.join('; ')+'.'):'';
+  const stepsTxt=(q.steps&&q.steps.length)?(' Под-задачи: '+q.steps.join('; ')+'.'):'';
   quickAsk('Помоги выполнить задачу «'+q.t+'». '+(q.d||'')+stepsTxt+' Дай конкретные пошаговые действия и готовые материалы, чтобы я закрыл её.');
 }
 function toggleCustomTask(id){state.done[id]=!state.done[id];save();renderStages();renderHeader();}
@@ -1865,10 +1895,20 @@ function wizStep1(){
 let wizAuditData=null;
 let wizCurrentSales='';
 async function wizRunAudit(){
-  document.getElementById('wizBody').innerHTML=`<div class="gen-loading">⏳ Анализирую ваш бизнес по данным CRM...</div>`;
+  document.getElementById('wizBody').innerHTML=`<div class="gen-loading">⏳ Анализирую ваш бизнес по данным CRM за последние 3-4 месяца...</div>`;
   try{
-    const r=await fetch('/api/dashboard');
-    const d=await r.json();
+    let d=await (await fetch('/api/dashboard')).json();
+    // Если кэш старый (нет данных за период) или пустой — тихо пересобираем из amoCRM
+    const stale = !d || !d.totals || d.totals.soldPeriod==null || !(d.problems&&d.problems.length);
+    if(stale){
+      document.getElementById('wizBody').innerHTML=`<div class="gen-loading">⏳ Собираю свежие данные из CRM за 3-4 месяца... (10-20 сек)</div>`;
+      try{
+        const sr=await fetch('/api/sync');
+        const sd=await sr.json();
+        if(sd&&sd.totals){d=sd;}
+        else{d=await (await fetch('/api/dashboard')).json();}
+      }catch(e){/* если sync не удался — работаем с тем что есть */}
+    }
     wizAuditData=d;
     wizShowProblems(d);
   }catch(e){
