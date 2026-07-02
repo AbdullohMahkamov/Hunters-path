@@ -96,12 +96,15 @@ export default async function handler(req, res) {
 
     // 4) Считаем.
     // ВЫРУЧКА/КАССА — по ВСЕМ аккаунтам, продажи закрытые (closed_at) в этом месяце.
-    // КОНВЕРСИЯ/ДИСЦИПЛИНА — только по 5 действующим МОПам, лиды созданные в этом месяце.
+    // КОНВЕРСИЯ/ДИСЦИПЛИНА — по 5 действующим МОПам. Считаем ДВА периода: месяц и всё окно (~4 мес).
     let sold = 0, soldSum = 0, ownExcluded = 0, noContact = 0;
-    let soldPeriod = 0, revenuePeriod = 0;  // продажи за всё окно (~4 месяца) — для аудита
+    let soldPeriod = 0, revenuePeriod = 0;  // продажи за всё окно (~4 месяца)
     let soldTeam = 0, soldSumTeam = 0;     // продажи только пятёрки (для среднего чека команды)
-    const lossCount = {};                  // причина -> кол-во (по закрытым в этом месяце, пятёрка)
-    const byMop = {};                      // name -> {leads, sold, revenue, noContact} — только пятёрка
+    const lossCount = {};                  // причина -> кол-во ЗА МЕСЯЦ (пятёрка)
+    const lossCountAll = {};               // причина -> кол-во ЗА ВСЁ ОКНО
+    const byMop = {};                      // name -> {...} метрики за МЕСЯЦ
+    // всё-время агрегаты
+    let leadsAll = 0, noContactAll = 0, soldTeamAll = 0;
 
     for (const L of all) {
       const stName = statusName[L.status_id] || "";
@@ -123,19 +126,22 @@ export default async function handler(req, res) {
         soldPeriod++; revenuePeriod += price;
       }
 
-      // === ПРОБЛЕМЫ (общие): по всем закрытым-проигранным за всё окно, не только месяц ===
+      // === ПРОБЛЕМЫ: за месяц и за всё окно отдельно ===
       if (stName === CLOSED_LOST) {
         let reason = "";
         const lossId = L.loss_reason_id || (L._embedded && L._embedded.loss_reason && L._embedded.loss_reason[0] && L._embedded.loss_reason[0].id);
         if (lossId && lossName[lossId]) reason = lossName[lossId];
-        if (reason) lossCount[reason] = (lossCount[reason] || 0) + 1;
+        if (reason) {
+          lossCountAll[reason] = (lossCountAll[reason] || 0) + 1;
+          if (closedThisMonth) lossCount[reason] = (lossCount[reason] || 0) + 1;
+        }
       }
 
       // === МЕТРИКИ КОМАНДЫ: только пятёрка ===
       if (mop) {
         if (!byMop[mop]) byMop[mop] = { leads: 0, sold: 0, revenue: 0, noContact: 0 };
 
-        // объём лидов и дозвон — по созданным в этом месяце
+        // ЗА МЕСЯЦ: объём лидов и дозвон — по созданным в этом месяце
         if (createdThisMonth) {
           byMop[mop].leads++;
           if (stName === CLOSED_LOST) {
@@ -147,12 +153,24 @@ export default async function handler(req, res) {
             noContact++; byMop[mop].noContact++;
           }
         }
+        // ЗА ВСЁ ОКНО: лиды и недозвон
+        leadsAll++;
+        if (stName === CLOSED_LOST) {
+          let reason2 = "";
+          const lossId2 = L.loss_reason_id || (L._embedded && L._embedded.loss_reason && L._embedded.loss_reason[0] && L._embedded.loss_reason[0].id);
+          if (lossId2 && lossName[lossId2]) reason2 = lossName[lossId2];
+          if (NO_CONTACT_REASONS.has(reason2)) noContactAll++;
+        } else if (NO_CONTACT_STAGES.has(stName)) {
+          noContactAll++;
+        }
 
-        // продажи пятёрки — по закрытым в этом месяце
+        // продажи пятёрки — по закрытым в этом месяце (для среднего чека)
         if (isSold && closedThisMonth) {
           soldTeam++; soldSumTeam += price;
           byMop[mop].sold++; byMop[mop].revenue += price;
         }
+        // продажи пятёрки за всё окно
+        if (isSold && (L.closed_at || 0) >= lookbackStart) soldTeamAll++;
       }
     }
 
@@ -161,6 +179,10 @@ export default async function handler(req, res) {
     // Средний чек — по всей кассе (все аккаунты)
     const avgCheck = sold > 0 ? Math.round(soldSum / sold) : 0;
     const noContactPct = totalLeads > 0 ? +(noContact / totalLeads * 100).toFixed(0) : 0;
+
+    // === ВСЁ ВРЕМЯ (~4 месяца) ===
+    const convAll = leadsAll > 0 ? +(soldTeamAll / leadsAll * 100).toFixed(2) : 0;
+    const noContactPctAll = leadsAll > 0 ? +(noContactAll / leadsAll * 100).toFixed(0) : 0;
 
     // МОПы: конверсия + дозвон + топ по продажам
     const mops = Object.entries(byMop).map(([name, v]) => ({
@@ -174,8 +196,13 @@ export default async function handler(req, res) {
     const mopsByConv = [...mops].sort((a, b) => b.conv - a.conv);
     const mopsBySales = [...mops].sort((a, b) => b.sold - a.sold);
 
-    // Топ-5 проблем (причины отказа)
+    // Топ-5 проблем ЗА МЕСЯЦ
     const problems = Object.entries(lossCount)
+      .map(([name, count]) => ({ name, count }))
+      .sort((a, b) => b.count - a.count)
+      .slice(0, 5);
+    // Топ-5 проблем ЗА ВСЁ ОКНО
+    const problemsAll = Object.entries(lossCountAll)
       .map(([name, count]) => ({ name, count }))
       .sort((a, b) => b.count - a.count)
       .slice(0, 5);
@@ -196,8 +223,10 @@ export default async function handler(req, res) {
         goal: 500000000,
         goalPct: +(soldSum / 500000000 * 100).toFixed(0),
         needPerMonth: 141,
+        // === ВСЁ ВРЕМЯ (~4 месяца) ===
+        leadsAll, soldTeamAll, convAll, noContactPctAll,
       },
-      mopsByConv, mopsBySales, problems,
+      mopsByConv, mopsBySales, problems, problemsAll,
     };
 
     await redisSet(redisUrl, redisToken, "dashboard", JSON.stringify(result));
