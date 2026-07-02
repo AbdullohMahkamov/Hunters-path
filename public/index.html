@@ -1263,6 +1263,7 @@ function applyLiveDash(d){
 let financeLoaded=false;
 let financeMonths=null;
 let finView='month';
+let finCache={}; // клиентский кэш прочитанных месяцев
 async function loadFinance(force){
   const box=document.getElementById('financeBox');if(!box)return;
   const uz=state.lang==='uz';
@@ -1292,9 +1293,12 @@ async function loadFinance(force){
       else{box.innerHTML=`<div style="font-size:12px;color:var(--red);padding:14px;">${(d&&d.error)||'Ошибка'}</div>`;}
     }else{
       const month=sel?sel.value:'';
+      // клиентский кэш: если месяц уже читали и не форсим — показываем мгновенно
+      if(force&&month)delete finCache[month];
+      if(!force&&finCache[month]){renderFinance(finCache[month]);return;}
       const r=await fetch('/api/finance',{method:'POST',headers:{'content-type':'application/json'},body:JSON.stringify({month,force:!!force})});
       const d=await r.json();financeLoaded=true;
-      if(d&&d.ok){renderFinance(d);}
+      if(d&&d.ok){finCache[month]=d;renderFinance(d);}
       else if(d&&d.error==='no_access'){box.innerHTML=noAccessMsg(uz);}
       else{box.innerHTML=`<div style="font-size:12px;color:var(--red);padding:14px;">${(d&&d.error)||'Ошибка'}</div>`;}
     }
@@ -1340,27 +1344,52 @@ function renderFinance(d){
   const fmt=n=>n==null?'—':new Intl.NumberFormat('ru-RU').format(Math.round(n))+' '+(uz?'so\'m':'сум');
   const profitColor=d.profit==null?'var(--txt)':(d.profit>=0?'var(--green)':'var(--red)');
 
-  // если ключевые строки не нашли — честно скажем
-  let warn='';
-  if(!d.found.revenue||!d.found.expenses){
-    warn=`<div style="background:var(--gold-bg);border:1px solid var(--gold);border-radius:10px;padding:11px 13px;margin-bottom:14px;font-size:12.5px;color:var(--txt);">
-      ${uz?'Ba\'zi qatorlar topilmadi (TUSHUM/Umumiy xarajatlar/Sof foyda). Sarlavhalar to\'g\'ri yozilganini tekshiring yoki AI o\'qishni ulaymiz.':'Некоторые строки не найдены (TUSHUM / Umumiy xarajatlar / Sof foyda). Проверьте названия в таблице, либо подключим чтение через ИИ.'}
+  // детальный отчёт по расходам
+  let breakdownHtml='';
+  const bd=(d.breakdown||[]).filter(x=>x&&x.amount!=null).sort((a,b)=>Math.abs(b.amount)-Math.abs(a.amount));
+  if(bd.length){
+    const totalBd=bd.reduce((a,x)=>a+Math.abs(x.amount),0)||1;
+    breakdownHtml=`
+      <div class="dsect" style="margin-top:20px;">${uz?'Xarajatlar taqsimoti':'На что ушли деньги'}</div>
+      <div style="background:var(--card);border:1px solid var(--line);border-radius:12px;padding:6px 14px;">
+        ${bd.map(x=>{
+          const pct=Math.round(Math.abs(x.amount)/totalBd*100);
+          return `<div style="padding:9px 0;border-top:1px solid var(--line);">
+            <div style="display:flex;justify-content:space-between;gap:10px;font-size:13px;">
+              <span style="color:var(--txt);">${escapeHtml(x.name)}</span>
+              <b style="white-space:nowrap;">${fmt(x.amount)}</b>
+            </div>
+            <div style="height:5px;background:var(--card2);border-radius:3px;margin-top:5px;overflow:hidden;"><div style="height:100%;width:${pct}%;background:var(--accent);"></div></div>
+          </div>`;
+        }).join('')}
+      </div>`;
+  }
+
+  // прибыль после долей учредителей
+  let afterHtml='';
+  if(d.profitAfterShares!=null){
+    const ac=d.profitAfterShares>=0?'var(--green)':'var(--red)';
+    afterHtml=`<div style="background:var(--card);border:1px solid var(--line);border-radius:12px;padding:14px 16px;margin-top:12px;">
+      <div style="font-size:12px;color:var(--txt2);margin-bottom:3px;">${uz?'Ulushlardan keyin qoldiq':'Остаток после долей учредителей'}</div>
+      <div style="font-size:20px;font-weight:700;color:${ac};">${fmt(d.profitAfterShares)}</div>
     </div>`;
   }
 
-  box.innerHTML=`${warn}
+  box.innerHTML=`
     <div style="font-size:12px;color:var(--txt3);margin-bottom:10px;">${uz?'Oy':'Месяц'}: ${escapeHtml(d.month)}</div>
     <div class="dash-grid">
       <div class="dcard"><div class="dl">${uz?'Tushum (daromad)':'Выручка'}</div><div class="dv" style="color:var(--accent);">${fmt(d.revenue)}</div></div>
       <div class="dcard"><div class="dl">${uz?'Umumiy xarajatlar':'Расходы'}</div><div class="dv" style="color:var(--red);">${fmt(d.expenses)}</div></div>
     </div>
     <div style="background:var(--card);border:1px solid var(--line);border-radius:12px;padding:16px;margin-top:12px;">
-      <div style="font-size:12px;color:var(--txt2);margin-bottom:4px;">${uz?'Sof foyda':'Чистая прибыль'}</div>
+      <div style="font-size:12px;color:var(--txt2);margin-bottom:4px;">${uz?'Sof foyda (ulushlardan oldin)':'Чистая прибыль (до долей)'}</div>
       <div style="font-size:26px;font-weight:700;color:${profitColor};">${fmt(d.profit)}</div>
       ${d.margin!=null?`<div style="font-size:12.5px;color:var(--txt2);margin-top:6px;">${uz?'Rentabellik':'Рентабельность'}: <b style="color:${profitColor};">${d.margin}%</b></div>`:''}
       ${d.tax!=null?`<div style="font-size:12px;color:var(--txt3);margin-top:3px;">${uz?'Soliq':'Налог'}: ${fmt(d.tax)}</div>`:''}
     </div>
-    <div style="font-size:11px;color:var(--txt3);margin-top:12px;line-height:1.5;">${uz?'Ma\'lumot Google Sheets\'dan avtomatik o\'qiladi. Boshqa oyni ko\'rish uchun yuqorida varaq nomini kiriting.':'Данные читаются из Google Sheets автоматически. Чтобы посмотреть другой месяц — впишите название листа вверху.'}</div>`;
+    ${afterHtml}
+    ${breakdownHtml}
+    <div style="font-size:11px;color:var(--txt3);margin-top:12px;line-height:1.5;">${uz?'Ma\'lumot Google Sheets\'dan AI orqali o\'qiladi va keshlanadi.':'Данные читаются из Google Sheets через ИИ и кэшируются.'}</div>`;
 }
 
 // ===== ДИНАМИКА / ТРЕНДЫ =====
