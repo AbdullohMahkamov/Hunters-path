@@ -34,7 +34,12 @@ export default async function handler(req, res) {
     }
     if (dash && dash.totals) {
       const t = dash.totals;
-      auditText += `Продаж в этом месяце по CRM: ${t.sold}, выручка ${t.revenue}, конверсия ${t.conv}%, средний чек ${t.avgCheck}, потеря до контакта ${t.noContactPct}%.\n`;
+      if (t.soldPeriod != null) {
+        auditText += `Продаж за 3-4 месяца: ${t.soldPeriod}, выручка за период ${t.revenuePeriod}. В этом месяце: ${t.sold} продаж.\n`;
+      } else {
+        auditText += `Продаж в этом месяце: ${t.sold}, выручка ${t.revenue}.\n`;
+      }
+      auditText += `Конверсия ${t.conv}%, средний чек ${t.avgCheck}, потеря до контакта ${t.noContactPct}%.\n`;
     }
     if (dash && dash.problems && dash.problems.length) {
       auditText += "Главные причины потерь:\n" + dash.problems.map(p => `- ${p.name}: ${p.count}`).join("\n") + "\n";
