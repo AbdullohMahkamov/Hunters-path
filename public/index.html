@@ -489,7 +489,7 @@
   <div class="gen-overlay" id="demoOverlay" style="display:none;" onclick="if(event.target===this)closeDemoPanel();">
     <div class="gen-sheet">
       <div class="gen-h">
-        <div class="gen-title ic-btn"><svg class="ic" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><path d="M4 6h16v6a8 8 0 0 1-16 0zM9 11h.01M15 11h.01"/></svg>Демо-аккаунты</div>
+        <div class="gen-title ic-btn"><svg class="ic" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><path d="M4 6h16v6a8 8 0 0 1-16 0zM9 11h.01M15 11h.01"/></svg>${'' }Демо-аккаунты</div>
         <button class="gen-close" onclick="closeDemoPanel()">✕</button>
       </div>
       <div class="gen-sub">Создавайте до 5 демо-аккаунтов для показа клиентам. Каждый — чистый, с нуля. Заходят по коду. Ваш основной аккаунт не затрагивается.</div>
@@ -589,7 +589,7 @@
         <div class="chat-scroll" id="chatScroll">
           <div class="chat-empty" id="chatEmpty">
             <div id="wizBanner" style="display:none;background:var(--accent-bg);border:1px solid var(--accent);border-radius:14px;padding:18px;margin-bottom:22px;text-align:left;">
-              <div style="font-size:15px;font-weight:700;margin-bottom:6px;">Начнём с аудита вашего бизнеса</div>
+              <div style="font-size:15px;font-weight:700;margin-bottom:6px;" data-t="auditBannerT">Начнём с аудита вашего бизнеса</div>
               <div style="font-size:13px;color:var(--txt2);line-height:1.55;margin-bottom:13px;">Система проанализирует данные, покажет где теряются деньги, спросит вашу цель и составит персональный план задач.</div>
               <button onclick="openWizard()" style="width:100%;padding:12px;border-radius:10px;background:var(--accent);border:none;color:#fff;font-size:14px;font-weight:600;cursor:pointer;">Сделать полный аудит</button>
             </div>
@@ -825,9 +825,9 @@ function renderStages(){
     const auditBanner=document.createElement('div');
     auditBanner.style.cssText='background:var(--accent-bg);border:1px solid var(--accent);border-radius:12px;padding:15px 16px;margin-bottom:16px;';
     auditBanner.innerHTML=`
-      <div style="font-size:15px;font-weight:700;margin-bottom:5px;">${svg('rocket',17)} ${uz?'Biznes auditidan boshlang':'Начните с аудита бизнеса'}</div>
-      <div style="font-size:12.5px;color:var(--txt2);line-height:1.5;margin-bottom:11px;">${uz?'Tizim ma\'lumotlarni tahlil qiladi, maqsadingizni so\'raydi va shaxsiy vazifalar rejasini tuzadi.':'Система проанализирует данные, спросит вашу цель и составит персональный план задач под ваш бизнес.'}</div>
-      <button onclick="openWizard()" style="width:100%;padding:12px;border-radius:10px;background:var(--accent);border:none;color:#fff;font-size:14px;font-weight:600;cursor:pointer;">${uz?'To\'liq audit qilish':'Сделать полный аудит'} ${svg('arrow',15)}</button>`;
+      <div style="font-size:15px;font-weight:700;margin-bottom:5px;">${svg('rocket',17)} ${tr('auditBannerT')}</div>
+      <div style="font-size:12.5px;color:var(--txt2);line-height:1.5;margin-bottom:11px;">${tr('auditBannerB')}</div>
+      <button onclick="openWizard()" style="width:100%;padding:12px;border-radius:10px;background:var(--accent);border:none;color:#fff;font-size:14px;font-weight:600;cursor:pointer;">${tr('auditBannerBtn')} ${svg('arrow',15)}</button>`;
     wrap.appendChild(auditBanner);
   }
   let lastSection=null;
@@ -1326,13 +1326,13 @@ const T={
   kRev:{ru:'Выручка',uz:'Tushum'},kRevH:{ru:'этот месяц',uz:'shu oy'},
   kConv:{ru:'Конверсия команды',uz:'Jamoa konversiyasi'},kConvH:{ru:'лид → продажа',uz:'lid → sotuv'},
   kCheck:{ru:'Средний чек',uz:'O‘rtacha chek'},kCheckH:{ru:'без «своих»',uz:'«o‘ziniki»siz'},
-  secTop:{ru:'🏆 Топ по продажам',uz:'🏆 Sotuv bo‘yicha top'},
-  secMop:{ru:'⚔️ Конверсия и дозвон по менеджерам',uz:'⚔️ Menejerlar konversiyasi va aloqasi'},
-  secProb:{ru:'🩸 5 главных причин потерь',uz:'🩸 5 ta asosiy yo‘qotish sababi'},
-  secDisc:{ru:'⚡ Дисциплина менеджеров',uz:'⚡ Menejerlar intizomi'},
+  secTop:{ru:'Топ по продажам',uz:'Sotuv bo‘yicha top'},
+  secMop:{ru:'Конверсия и дозвон по менеджерам',uz:'Menejerlar konversiyasi va aloqasi'},
+  secProb:{ru:'Куда утекают лиды',uz:'Lidlar qayerga oqib ketadi'},
+  secDisc:{ru:'Дисциплина менеджеров',uz:'Menejerlar intizomi'},
   discHint:{ru:'Нажмите «Обновить дисциплину» — это подробный расчёт по звонкам и задачам, идёт 20-40 секунд.',uz:'«Intizomni yangilash»ni bosing — bu qo‘ng‘iroq va vazifalar bo‘yicha batafsil hisob, 20-40 soniya davom etadi.'},
-  btnSync:{ru:'🔄 Обновить из amoCRM',uz:'🔄 amoCRMdan yangilash'},
-  btnSyncSpeed:{ru:'⚡ Обновить дисциплину',uz:'⚡ Intizomni yangilash'},
+  btnSync:{ru:'Обновить из amoCRM',uz:'amoCRMdan yangilash'},
+  btnSyncSpeed:{ru:'Обновить дисциплину',uz:'Intizomni yangilash'},
   dashNote0:{ru:'Нажмите «Обновить из amoCRM» для первой загрузки живых данных. Дальше обновляется автоматически каждую ночь.',uz:'Jonli ma’lumotlarni birinchi yuklash uchun «amoCRMdan yangilash»ni bosing. Keyin har kecha avtomatik yangilanadi.'},
   genBtn:{ru:'Подобрать задачи под мои проблемы',uz:'Muammolarimga vazifa tanlash'},
   nextBtn:{ru:'С какой задачи начать?',uz:'Qaysi vazifadan boshlash?'},
@@ -1341,6 +1341,32 @@ const T={
   chatTitleNew:{ru:'Новый чат',uz:'Yangi chat'},
   topSold:{ru:'прод.',uz:'sotuv'},leadsW:{ru:'лидов',uz:'lid'},salesW:{ru:'продаж',uz:'sotuv'},reachW:{ru:'дозвон',uz:'aloqa'},
   needMonth:{ru:'нужно ~141 продажа/мес',uz:'kerak ~141 sotuv/oy'},madeOf:{ru:'Сделано',uz:'Bajarildi'},ofWord:{ru:'из',uz:'/'},goalWay:{ru:'% пути к цели',uz:'% maqsad sari'},
+  // дашборд под-вкладки
+  dtOverview:{ru:'Обзор',uz:'Umumiy'},dtMarketing:{ru:'Маркетинг',uz:'Marketing'},dtSales:{ru:'Продажи',uz:'Sotuvlar'},
+  mkLeads:{ru:'Лидов за месяц',uz:'Oylik lidlar'},mkLeadsH:{ru:'привлечено',uz:'jalb qilingan'},
+  mkNoContact:{ru:'Потеря до контакта',uz:'Aloqagacha yo‘qotish'},mkNoContactH:{ru:'умерли без разговора',uz:'suhbatsiz yo‘qoldi'},
+  // мастер аудита
+  wizStep1T:{ru:'Шаг 1 — Аудит бизнеса',uz:'1-qadam — Biznes auditi'},
+  wizProblT:{ru:'Результат аудита',uz:'Audit natijasi'},
+  wizSalesT:{ru:'Ваши текущие продажи',uz:'Joriy sotuvlaringiz'},
+  wizGoalT:{ru:'Шаг 2 — Ваша цель',uz:'2-qadam — Maqsadingiz'},
+  wizGenT:{ru:'Составляю план',uz:'Reja tuzyapman'},
+  wizDoneT:{ru:'Ваш план готов',uz:'Rejangiz tayyor'},
+  wizStep1Body:{ru:'Сделаем полный аудит вашего бизнеса по данным из CRM: где теряются деньги, какие главные проблемы, что чинить в первую очередь.',uz:'CRM ma’lumotlari asosida biznesingizni to‘liq audit qilamiz: qayerda pul yo‘qoladi, asosiy muammolar nimada, birinchi navbatda nimani tuzatish kerak.'},
+  wizStep1Btn:{ru:'Да, сделать аудит',uz:'Ha, audit qilaylik'},
+  wizSalesBody:{ru:'Какая у вас сумма продаж сейчас (в месяц)? Это точка отсчёта — откуда мы стартуем.',uz:'Hozir sotuvlaringiz summasi qancha (oyiga)? Bu boshlang‘ich nuqta.'},
+  wizGoalBody:{ru:'До какой суммы продаж в месяц вы хотите дойти?',uz:'Oyiga qancha sotuv summasiga yetmoqchisiz?'},
+  wizGenBtn:{ru:'Составить план задач',uz:'Vazifalar rejasini tuzish'},
+  wizNext:{ru:'Дальше',uz:'Keyingi'},wizBack:{ru:'← Назад',uz:'← Orqaga'},
+  wizWhereBurn:{ru:'Где горят деньги:',uz:'Pul qayerda yonadi:'},
+  wizPeriod:{ru:'За последние 3-4 месяца',uz:'So‘nggi 3-4 oy uchun'},
+  auditBannerT:{ru:'Начните с аудита бизнеса',uz:'Biznes auditidan boshlang'},
+  auditBannerB:{ru:'Система проанализирует данные, спросит вашу цель и составит персональный план задач под ваш бизнес.',uz:'Tizim ma’lumotlarni tahlil qiladi, maqsadingizni so‘raydi va shaxsiy vazifalar rejasini tuzadi.'},
+  auditBannerBtn:{ru:'Сделать полный аудит',uz:'To‘liq audit qilish'},
+  // демо
+  demoTitle:{ru:'Демо-аккаунты',uz:'Demo hisoblar'},
+  demoSub:{ru:'Создавайте до 5 демо-аккаунтов для показа клиентам. Каждый — чистый, с нуля. Заходят по коду.',uz:'Mijozlarga ko‘rsatish uchun 5 tagacha demo hisob yarating. Har biri toza. Kod orqali kiradilar.'},
+  demoCreate:{ru:'Создать демо-аккаунт',uz:'Demo hisob yaratish'},
 };
 function tr(key){const o=T[key];if(!o)return key;const v=o[state.lang||'ru'];return v!==undefined?v:o.ru;}
 
@@ -1353,10 +1379,32 @@ function applyStaticI18n(){
   const box=document.getElementById('chatBox'); if(box)box.placeholder=I18N[state.lang].ph;
   const setTxt=(id,val)=>{const e=document.getElementById(id);if(e)e.textContent=val;};
   const setHtml=(id,val)=>{const e=document.getElementById(id);if(e)e.innerHTML=val;};
+  // сохраняет иконку в секции, меняет только текст после SVG
+  const setSecLabel=(id,val,hintKey)=>{
+    const e=document.getElementById(id);if(!e)return;
+    const icon=e.querySelector('svg');const iconHtml=icon?icon.outerHTML:'';
+    const hint=hintKey?` <span class="hint" onclick="showHint('${hintKey}',event)">?</span>`:'';
+    e.innerHTML=iconHtml+' '+val+hint;
+  };
   // цель
   setTxt('goalTitle',tr('goalTitle'));
-  // кнопки/секции дашборда
-  setTxt('secTop',tr('secTop'));setTxt('secMop',tr('secMop'));setTxt('secProb',tr('secProb'));setTxt('secDisc',tr('secDisc'));
+  // секции дашборда (с сохранением иконок)
+  setSecLabel('secTop',tr('secTop'));
+  setSecLabel('secMop',tr('secMop'),'reach');
+  setSecLabel('secProb',tr('secProb'),'problems');
+  setSecLabel('secDisc',tr('secDisc'),'early');
+  // дашборд под-вкладки
+  setTxt('dtab-overview',tr('dtOverview'));
+  setTxt('dtab-marketing',tr('dtMarketing'));
+  setTxt('dtab-sales',tr('dtSales'));
+  // маркетинг KPI
+  const mkCards=document.querySelectorAll('#dg-marketing .dcard');
+  if(mkCards.length>=2){
+    mkCards[0].querySelector('.dl').innerHTML=tr('mkLeads');
+    mkCards[0].querySelector('.dh').textContent=tr('mkLeadsH');
+    mkCards[1].querySelector('.dl').innerHTML=tr('mkNoContact')+' <span class="hint" onclick="showHint(\'reach\',event)">?</span>';
+    mkCards[1].querySelector('.dh').textContent=tr('mkNoContactH');
+  }
   // подсказки-иконки не трогаем (это "?")
   const sb=document.getElementById('syncBtn');if(sb)sb.textContent=tr('btnSync');
   const ssb=document.getElementById('syncSpeedBtn');if(ssb)ssb.textContent=tr('btnSyncSpeed');
@@ -1980,12 +2028,12 @@ function openWizard(){ document.getElementById('wizardOverlay').style.display='f
 function closeWizard(){ document.getElementById('wizardOverlay').style.display='none'; }
 
 function wizStep1(){
-  document.getElementById('wizTitle').textContent='Шаг 1 — Аудит бизнеса';
+  document.getElementById('wizTitle').textContent=tr('wizStep1T');
   document.getElementById('wizBody').innerHTML=`
     <div style="font-size:14px;line-height:1.6;color:var(--txt2);margin-bottom:18px;">
-      Сделаем полный аудит вашего бизнеса по данным из CRM: где теряются деньги, какие главные проблемы, что чинить в первую очередь.
+      ${tr('wizStep1Body')}
     </div>
-    <button onclick="wizRunAudit()" style="width:100%;padding:14px;border-radius:11px;background:var(--accent);border:none;color:#fff;font-size:15px;font-weight:600;cursor:pointer;">Да, сделать аудит</button>`;
+    <button onclick="wizRunAudit()" style="width:100%;padding:14px;border-radius:11px;background:var(--accent);border:none;color:#fff;font-size:15px;font-weight:600;cursor:pointer;">${tr('wizStep1Btn')}</button>`;
 }
 let wizAuditData=null;
 let wizCurrentSales='';
@@ -2012,7 +2060,7 @@ async function wizRunAudit(){
   }
 }
 function wizShowProblems(d){
-  document.getElementById('wizTitle').textContent='Результат аудита';
+  document.getElementById('wizTitle').textContent=tr('wizProblT');
   let probs='';
   if(d&&d.problems&&d.problems.length){
     probs=d.problems.map(p=>`<div style="display:flex;justify-content:space-between;padding:9px 0;border-top:1px solid var(--line);font-size:13.5px;"><span>${escapeHtml(p.name)}</span><b style="color:var(--red);">${p.count}</b></div>`).join('');
@@ -2026,23 +2074,23 @@ function wizShowProblems(d){
     kpi=`<div style="font-size:13px;color:var(--txt2);margin-bottom:10px;">Продаж за период: <b style="color:var(--txt);">${soldShow}</b> · конверсия <b style="color:var(--txt);">${t.conv}%</b> · потеря до контакта <b style="color:var(--red);">${t.noContactPct}%</b></div>`;
   }
   document.getElementById('wizBody').innerHTML=`
-    <div style="font-size:12px;color:var(--txt3);margin-bottom:8px;">📅 За последние 3-4 месяца</div>
+    <div style="font-size:12px;color:var(--txt3);margin-bottom:8px;">${tr('wizPeriod')}</div>
     ${kpi}
-    <div style="font-size:13px;font-weight:600;margin:6px 0 2px;">Где горят деньги:</div>
+    <div style="font-size:13px;font-weight:600;margin:6px 0 2px;">${tr('wizWhereBurn')}</div>
     ${probs}
     <button onclick="wizStepSales()" style="width:100%;padding:14px;border-radius:11px;background:var(--accent);border:none;color:#fff;font-size:15px;font-weight:600;cursor:pointer;margin-top:18px;">Дальше →</button>`;
 }
 
 function wizStepSales(){
-  document.getElementById('wizTitle').textContent='Ваши текущие продажи';
+  document.getElementById('wizTitle').textContent=tr('wizSalesT');
   document.getElementById('wizBody').innerHTML=`
     <div style="font-size:14px;line-height:1.6;color:var(--txt2);margin-bottom:14px;">
-      Какая у вас сумма продаж сейчас (в месяц)? Это точка отсчёта — откуда мы стартуем.
+      ${tr('wizSalesBody')}
     </div>
     <input id="wizSalesInput" type="text" value="${escapeHtml(wizCurrentSales||'')}" placeholder="Например: 150 млн сум в месяц"
       style="width:100%;padding:13px 15px;border-radius:11px;border:1px solid var(--line2);background:var(--card);color:var(--txt);font-size:14.5px;margin-bottom:14px;" />
     <button onclick="wizSaveSalesNext()" style="width:100%;padding:14px;border-radius:11px;background:var(--accent);border:none;color:#fff;font-size:15px;font-weight:600;cursor:pointer;">Дальше → цель</button>
-    <button onclick="wizShowProblems(wizAuditData)" style="width:100%;padding:11px;border-radius:11px;background:none;border:none;color:var(--txt2);font-size:13px;cursor:pointer;margin-top:8px;">← Назад</button>`;
+    <button onclick="wizShowProblems(wizAuditData)" style="width:100%;padding:11px;border-radius:11px;background:none;border:none;color:var(--txt2);font-size:13px;cursor:pointer;margin-top:8px;">${tr('wizBack')}</button>`;
   setTimeout(()=>{const i=document.getElementById('wizSalesInput');if(i)i.focus();},100);
 }
 function wizSaveSalesNext(){
@@ -2051,15 +2099,15 @@ function wizSaveSalesNext(){
   wizStep2();
 }
 function wizStep2(){
-  document.getElementById('wizTitle').textContent='Шаг 2 — Ваша цель';
+  document.getElementById('wizTitle').textContent=tr('wizGoalT');
   document.getElementById('wizBody').innerHTML=`
     <div style="font-size:14px;line-height:1.6;color:var(--txt2);margin-bottom:14px;">
-      До какой суммы продаж в месяц вы хотите дойти? Можно указать и текущий уровень, и желаемый.
+      ${tr('wizGoalBody')}
     </div>
     <input id="wizGoalInput" type="text" value="${escapeHtml(wizGoalText||'')}" placeholder="Например: сейчас 150М, хочу 250М в месяц"
       style="width:100%;padding:13px 15px;border-radius:11px;border:1px solid var(--line2);background:var(--card);color:var(--txt);font-size:14.5px;margin-bottom:14px;" />
     <button onclick="wizGeneratePlan()" style="width:100%;padding:14px;border-radius:11px;background:var(--accent);border:none;color:#fff;font-size:15px;font-weight:600;cursor:pointer;">Составить план задач</button>
-    <button onclick="wizSaveGoalBack()" style="width:100%;padding:11px;border-radius:11px;background:none;border:none;color:var(--txt2);font-size:13px;cursor:pointer;margin-top:8px;">← Назад</button>`;
+    <button onclick="wizSaveGoalBack()" style="width:100%;padding:11px;border-radius:11px;background:none;border:none;color:var(--txt2);font-size:13px;cursor:pointer;margin-top:8px;">${tr('wizBack')}</button>`;
   setTimeout(()=>{const i=document.getElementById('wizGoalInput');if(i)i.focus();},100);
 }
 function wizSaveGoalBack(){
@@ -2073,7 +2121,7 @@ async function wizGeneratePlan(){
   const salesEl=document.getElementById('wizSalesInput');
   const currentSales=salesEl?salesEl.value.trim():(wizCurrentSales||'');
   wizCurrentSales=currentSales;
-  document.getElementById('wizTitle').textContent='Составляю план';
+  document.getElementById('wizTitle').textContent=tr('wizGenT');
   document.getElementById('wizBody').innerHTML=`<div class="gen-loading">⏳ Составляю персональный план задач под ваш аудит и цель...</div>`;
   try{
     const r=await fetch('/api/audit-plan',{method:'POST',headers:{'content-type':'application/json'},
@@ -2098,7 +2146,7 @@ function wizApplyPlan(plan,goal,currentSales){
   save();
   const mkt=(plan.marketing||[]).map(q=>`<div class="wiz-task">📣 ${escapeHtml(q.t)}</div>`).join('');
   const sls=(plan.sales||[]).map(q=>`<div class="wiz-task">💼 ${escapeHtml(q.t)}</div>`).join('');
-  document.getElementById('wizTitle').textContent='Ваш план готов';
+  document.getElementById('wizTitle').textContent=tr('wizDoneT');
   document.getElementById('wizBody').innerHTML=`
     <div style="font-size:13.5px;color:var(--txt2);margin-bottom:14px;">План зафиксирован. Задачи появились во вкладке «Задачи». Идите по ним — когда всё выполните, сделаем аудит заново.</div>
     ${mkt}${sls}
