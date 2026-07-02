@@ -201,6 +201,34 @@ export default async function handler(req, res) {
     };
 
     await redisSet(redisUrl, redisToken, "dashboard", JSON.stringify(result));
+
+    // === СНИМОК ДНЯ ДЛЯ ДИНАМИКИ ===
+    // Ключ по дате (YYYY-MM-DD). Перезапись за тот же день — норм (последнее значение дня).
+    try {
+      const today = new Date().toISOString().slice(0, 10);
+      const snap = {
+        date: today,
+        sold: result.totals.sold,
+        revenue: result.totals.revenue,
+        soldPeriod: result.totals.soldPeriod,
+        conv: result.totals.conv,
+        leads: result.totals.leads,
+        noContactPct: result.totals.noContactPct,
+      };
+      await redisSet(redisUrl, redisToken, `snap:${today}`, JSON.stringify(snap));
+      // ведём список дат снимков (последние 90)
+      let dates = (await (async () => {
+        try {
+          const r = await fetch(`${redisUrl}/get/snap:list`, { headers: { Authorization: `Bearer ${redisToken}` } });
+          const d = await r.json();
+          return d && d.result ? JSON.parse(d.result) : [];
+        } catch (e) { return []; }
+      })());
+      if (!dates.includes(today)) dates.push(today);
+      dates = dates.slice(-90); // храним максимум 90 дней
+      await redisSet(redisUrl, redisToken, "snap:list", JSON.stringify(dates));
+    } catch (e) { /* снимок не критичен, не роняем sync */ }
+
     res.status(200).json({ ok: true, ...result });
   } catch (err) {
     res.status(500).json({ error: "Sync failed", detail: String(err) });
