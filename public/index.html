@@ -543,6 +543,15 @@
         <button class="perbtn" id="per-all" onclick="setDashPeriod('all')">Всё время</button>
       </div>
 
+      <!-- ПРОГНОЗ МЕСЯЦА -->
+      <div class="block" id="forecastBlock" style="margin-bottom:16px;">
+        <div style="display:flex;justify-content:space-between;align-items:center;gap:10px;margin-bottom:2px;">
+          <div class="dsect" id="fcLbl" style="margin:0;"><svg class="ic" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><path d="M3 3v18h18M7 14l4-4 4 4 4-6"/></svg> Прогноз месяца</div>
+          <button onclick="openWorkdaysModal()" title="Настроить рабочие дни" style="width:30px;height:30px;border-radius:8px;background:var(--card);border:1px solid var(--line2);color:var(--txt2);cursor:pointer;display:flex;align-items:center;justify-content:center;flex:0 0 auto;"><svg class="ic" width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 1 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 1 1-2.83-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 1 1 2.83-2.83l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 1 1 2.83 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z"/></svg></button>
+        </div>
+        <div id="forecastChart"><div style="font-size:12px;color:var(--txt3);padding:6px 0;">Загрузка...</div></div>
+      </div>
+
       <div class="dash-grid" id="ovKpiGrid" style="grid-template-columns:repeat(3,1fr);">
         <div class="dcard"><div class="dl" id="ovSoldLbl">Продаж</div><div class="dv" id="kpiSold" style="color:var(--accent);">—</div><div class="dh" id="kpiSoldH">из плана 141</div></div>
         <div class="dcard"><div class="dl">Конверсия команды<span class="hint" onclick="showHint('conv',event)">?</span></div><div class="dv" id="kpiConv" style="color:var(--accent);">—</div><div class="dh" id="ovConvH">лид → продажа</div></div>
@@ -722,6 +731,21 @@
     </div>
   </div>
 </main>
+
+<!-- МОДАЛКА: НАСТРОЙКА РАБОЧИХ ДНЕЙ -->
+<div id="workdaysOverlay" style="display:none;position:fixed;inset:0;background:rgba(0,0,0,.55);z-index:100;padding:20px;overflow-y:auto;" onclick="if(event.target===this)closeWorkdaysModal()">
+  <div style="max-width:420px;margin:40px auto;background:var(--bg);border:1px solid var(--line2);border-radius:16px;overflow:hidden;">
+    <div style="display:flex;justify-content:space-between;align-items:center;padding:16px 18px;border-bottom:1px solid var(--line);">
+      <div style="font-size:16px;font-weight:700;" id="wdTitle">Рабочие дни</div>
+      <button onclick="closeWorkdaysModal()" style="width:30px;height:30px;border-radius:8px;background:var(--card);border:1px solid var(--line2);color:var(--txt);font-size:16px;cursor:pointer;">✕</button>
+    </div>
+    <div style="padding:16px 18px;">
+      <div style="font-size:12.5px;color:var(--txt2);margin-bottom:12px;" id="wdHint">Отметьте рабочие дни — прогноз будет учитывать только их.</div>
+      <div id="wdDays" style="display:flex;flex-direction:column;gap:8px;"></div>
+      <button onclick="saveWorkdays()" id="wdSaveBtn" style="width:100%;margin-top:16px;padding:11px;border-radius:9px;background:var(--accent);border:none;color:#fff;font-size:13.5px;font-weight:600;cursor:pointer;">Сохранить</button>
+    </div>
+  </div>
+</div>
 
 <!-- МОДАЛЬНОЕ ОКНО: ПОДОЗРИТЕЛЬНЫЕ -->
 <div id="suspOverlay" style="display:none;position:fixed;inset:0;background:rgba(0,0,0,.55);z-index:100;padding:20px;overflow-y:auto;" onclick="if(event.target===this)closeSuspModal()">
@@ -1382,6 +1406,8 @@ function applyLiveDash(d){
 
   // ===== ПЛАН / ФАКТ ПО МОПам =====
   renderPlanFact(d);
+  // ===== ПРОГНОЗ МЕСЯЦА =====
+  renderForecast(d);
   // ===== СКОРОСТЬ ВОРОНКИ =====
   renderVelocity(d);
   // ===== СИГНАЛЫ =====
@@ -1747,6 +1773,7 @@ function applySuspicious(d){
   // объединяем оба источника (sync — деньги/воронка/задачи, speed — звонки/зависшие)
   suspData=fromSync.concat(fromSpeed);
   loadSuspReviewed();
+  loadOrgSettings();
 }
 async function loadSuspReviewed(){
   if(!SESSION)return;
@@ -1864,6 +1891,154 @@ async function reviewSusp(id,status){
     await fetch('/api/user-data',{method:'POST',headers:{'content-type':'application/json'},
       body:JSON.stringify({action:'susp-review',session:SESSION,dealId:id,status,note,deal})});
   }catch(e){}
+}
+
+// ===== ПРОГНОЗ МЕСЯЦА + РАБОЧИЕ ДНИ =====
+// настройки организации: goal (цель по деньгам), workdays (массив 0..6, 0=Вс)
+let orgSettings = { goal: null, workdays: [1,2,3,4,5,6] }; // по умолчанию Пн-Сб (кроме Вс)
+let _lastDashData = null;
+
+async function loadOrgSettings(){
+  if(!SESSION)return;
+  try{
+    const r=await fetch('/api/user-data',{method:'POST',headers:{'content-type':'application/json'},body:JSON.stringify({action:'settings-get',session:SESSION})});
+    const d=await r.json();
+    if(d&&d.settings){
+      if(d.settings.goal!=null)orgSettings.goal=d.settings.goal;
+      if(Array.isArray(d.settings.workdays))orgSettings.workdays=d.settings.workdays;
+    }
+  }catch(e){}
+  renderForecast(_lastDashData);
+}
+async function saveOrgSettings(partial){
+  try{
+    await fetch('/api/user-data',{method:'POST',headers:{'content-type':'application/json'},
+      body:JSON.stringify({action:'settings-set',session:SESSION,settings:partial})});
+  }catch(e){}
+}
+
+const DAY_NAMES_RU=['Воскресенье','Понедельник','Вторник','Среда','Четверг','Пятница','Суббота'];
+const DAY_NAMES_UZ=['Yakshanba','Dushanba','Seshanba','Chorshanba','Payshanba','Juma','Shanba'];
+// порядок отображения: Пн(1)..Вс(0)
+const DAY_ORDER=[1,2,3,4,5,6,0];
+
+function openWorkdaysModal(){
+  const uz=state.lang==='uz';
+  document.getElementById('wdTitle').textContent=uz?'Ish kunlari':'Рабочие дни';
+  document.getElementById('wdHint').textContent=uz?'Ish kunlarini belgilang — prognoz faqat shularni hisobga oladi.':'Отметьте рабочие дни — прогноз будет учитывать только их.';
+  document.getElementById('wdSaveBtn').textContent=uz?'Saqlash':'Сохранить';
+  const names=uz?DAY_NAMES_UZ:DAY_NAMES_RU;
+  const wd=orgSettings.workdays||[];
+  document.getElementById('wdDays').innerHTML=DAY_ORDER.map(dn=>`
+    <label style="display:flex;align-items:center;gap:10px;padding:9px 12px;border-radius:9px;border:1px solid var(--line2);background:var(--card);cursor:pointer;font-size:13.5px;">
+      <input type="checkbox" value="${dn}" ${wd.includes(dn)?'checked':''} style="width:17px;height:17px;cursor:pointer;accent-color:var(--accent);">
+      <span>${names[dn]}</span>
+    </label>`).join('');
+  document.getElementById('workdaysOverlay').style.display='block';
+}
+function closeWorkdaysModal(){document.getElementById('workdaysOverlay').style.display='none';}
+async function saveWorkdays(){
+  const checks=document.querySelectorAll('#wdDays input[type=checkbox]:checked');
+  const days=Array.from(checks).map(c=>parseInt(c.value,10));
+  if(!days.length){alert(state.lang==='uz'?'Kamida bitta kun tanlang':'Выберите хотя бы один день');return;}
+  orgSettings.workdays=days;
+  await saveOrgSettings({workdays:days});
+  closeWorkdaysModal();
+  renderForecast(_lastDashData);
+}
+
+function editForecastGoal(){
+  const uz=state.lang==='uz';
+  const cur=orgSettings.goal||getGoal();
+  const inp=prompt(uz?'Oylik maqsad (summa, soʻm):':'Цель по выручке на месяц (сум):', cur);
+  if(inp===null)return;
+  const cleaned=parseInt(String(inp).replace(/[^0-9]/g,''),10);
+  if(!cleaned||cleaned<=0){alert(uz?'Nol emas, masalan 250000000':'Введите число больше нуля, например 250000000');return;}
+  orgSettings.goal=cleaned;
+  saveOrgSettings({goal:cleaned});
+  renderForecast(_lastDashData);
+}
+
+// подсчёт рабочих дней месяца: прошедших и всего
+function countWorkdays(year, month, workdays){
+  const daysInMonth=new Date(year, month+1, 0).getDate();
+  const today=new Date();
+  const isCurrentMonth=(today.getFullYear()===year&&today.getMonth()===month);
+  const todayDate=today.getDate();
+  let passed=0, total=0;
+  for(let d=1; d<=daysInMonth; d++){
+    const dow=new Date(year, month, d).getDay(); // 0=Вс
+    if(!workdays.includes(dow))continue;
+    total++;
+    if(isCurrentMonth && d<=todayDate)passed++;
+    else if(!isCurrentMonth)passed++; // прошлый/будущий не считаем текущим, но total нужен
+  }
+  return {passed, total, daysInMonth};
+}
+
+function renderForecast(d){
+  _lastDashData=d;
+  const box=document.getElementById('forecastChart');if(!box)return;
+  const uz=state.lang==='uz';
+  const t=(d&&d.totals)||{};
+  const earned=t.revenue||0; // выручка за текущий месяц (касса)
+  const goal=orgSettings.goal||getGoal();
+  const now=new Date();
+  const wd=orgSettings.workdays&&orgSettings.workdays.length?orgSettings.workdays:[1,2,3,4,5,6];
+  const {passed, total}=countWorkdays(now.getFullYear(), now.getMonth(), wd);
+  // прогноз: (заработано / прошедшие раб.дни) * все раб.дни месяца
+  let forecast=null;
+  if(passed>0){
+    const perDay=earned/passed;
+    forecast=Math.round(perDay*total);
+  }
+  const goalPct=goal>0&&forecast!=null?Math.round(forecast/goal*100):null;
+  const factPct=goal>0?Math.round(earned/goal*100):null;
+
+  const fc=(n)=>fmtSum(n);
+  let html='';
+  // три числа: факт / прогноз / цель
+  html+='<div style="display:grid;grid-template-columns:repeat(3,1fr);gap:10px;">';
+  html+=`<div style="background:var(--card);border:1px solid var(--line);border-radius:10px;padding:11px 12px;">
+    <div style="font-size:11px;color:var(--txt2);">${uz?'Bugungacha kassa':'Заработано сейчас'}</div>
+    <div style="font-size:19px;font-weight:700;color:var(--green);margin-top:2px;">${fc(earned)}</div>
+    <div style="font-size:10px;color:var(--txt3);">${factPct!=null?(uz?`maqsadning ${factPct}%`:`${factPct}% от цели`):''}</div>
+  </div>`;
+  html+=`<div style="background:var(--card);border:1px solid var(--line);border-radius:10px;padding:11px 12px;">
+    <div style="font-size:11px;color:var(--txt2);">${uz?'Oy oxiriga prognoz':'Прогноз к концу месяца'}</div>
+    <div style="font-size:19px;font-weight:700;color:var(--accent);margin-top:2px;">${forecast!=null?fc(forecast):'—'}</div>
+    <div style="font-size:10px;color:var(--txt3);">${uz?`${passed}/${total} ish kuni oʻtdi`:`прошло ${passed} из ${total} раб. дней`}</div>
+  </div>`;
+  html+=`<div style="background:var(--card);border:1px solid var(--line);border-radius:10px;padding:11px 12px;cursor:pointer;" onclick="editForecastGoal()" title="${uz?'Maqsadni oʻzgartirish':'Изменить цель'}">
+    <div style="font-size:11px;color:var(--txt2);">${uz?'Maqsad ✏️':'Цель ✏️'}</div>
+    <div style="font-size:19px;font-weight:700;margin-top:2px;">${goal>0?fc(goal):'—'}</div>
+    <div style="font-size:10px;color:var(--txt3);">${goalPct!=null?(uz?`prognoz: ${goalPct}%`:`прогноз: ${goalPct}%`):''}</div>
+  </div>`;
+  html+='</div>';
+  // полоса: факт (зелёная) + прогноз (пунктир) относительно цели
+  if(goal>0){
+    const fp=Math.min(100,Math.round(earned/goal*100));
+    const pp=Math.min(100,goalPct||0);
+    html+=`<div style="margin-top:12px;">
+      <div style="height:10px;background:var(--card2);border-radius:6px;overflow:hidden;position:relative;">
+        <div style="position:absolute;left:0;top:0;height:100%;width:${pp}%;background:var(--accent);opacity:.3;"></div>
+        <div style="position:absolute;left:0;top:0;height:100%;width:${fp}%;background:var(--green);"></div>
+      </div>
+      <div style="display:flex;justify-content:space-between;font-size:10px;color:var(--txt3);margin-top:4px;">
+        <span>${uz?'Yashil — bugungacha, ochiq — prognoz':'Зелёное — сейчас, светлое — прогноз'}</span>
+        <span>${uz?'maqsad 100%':'цель 100%'}</span>
+      </div>
+    </div>`;
+  }
+  // вердикт
+  if(goalPct!=null){
+    let verdict, vcolor;
+    if(goalPct>=100){verdict=uz?'✅ Prognoz maqsaddan yuqori — zoʻr temp!':'✅ Прогноз выше цели — отличный темп!';vcolor='var(--green)';}
+    else if(goalPct>=80){verdict=uz?'⚠️ Maqsadga yaqin, biroz jadallashtiring':'⚠️ Близко к цели, чуть поднажать';vcolor='var(--gold)';}
+    else{verdict=uz?'🔴 Temp past — maqsaddan ortda':'🔴 Темп низкий — отстаёшь от цели';vcolor='var(--red)';}
+    html+=`<div style="font-size:12px;color:${vcolor};margin-top:10px;font-weight:500;">${verdict}</div>`;
+  }
+  box.innerHTML=html;
 }
 
 // ===== СКОРОСТЬ ВОРОНКИ (VELOCITY) =====
