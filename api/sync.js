@@ -109,20 +109,32 @@ export default async function handler(req, res) {
     let leadsAudit = 0, noContactAudit = 0, soldTeamAudit = 0;
     // === ВСЯ БАЗА (все данные, без фильтра дат) — для фильтра «всё время» на дашборде ===
     let leadsBase = 0, soldBase = 0, revenueBase = 0, noContactBase = 0, soldTeamBase = 0;
+    const SUSPICIOUS_THRESHOLD = 1000000; // продажа с бюджетом пустым или < 1М — подозрительная
+    const suspicious = []; // список подозрительных продаж
 
     for (const L of all) {
       const stName = statusName[L.status_id] || "";
       const price = L.price || 0;
       const isSold = stName === SOLD;
-      const isOwn = isSold && price <= OWN_THRESHOLD;
-      if (isOwn) { ownExcluded++; continue; }
 
       const createdThisMonth = (L.created_at || 0) >= monthStart;
       const closedThisMonth = (L.closed_at || 0) >= monthStart;
       const inAudit = (L.created_at || 0) >= lookbackStart; // окно аудита
       const mop = ACTIVE_MOPS[L.responsible_user_id]; // null если не из пятёрки
 
-      // === ВСЯ БАЗА (все аккаунты воронки) ===
+      // === ПОДОЗРИТЕЛЬНЫЕ: проданные сделки с пустым или маленьким (<1М) бюджетом ===
+      if (isSold && (!price || price < SUSPICIOUS_THRESHOLD)) {
+        suspicious.push({
+          id: L.id,
+          name: L.name || "",
+          price: price,
+          responsible: ACTIVE_MOPS[L.responsible_user_id] || String(L.responsible_user_id || ""),
+          closed_at: L.closed_at || 0,
+          created_at: L.created_at || 0,
+        });
+      }
+
+      // === ВСЯ БАЗА (все аккаунты воронки) — считаем ВСЕ продажи ===
       leadsBase++;
       if (isSold) { soldBase++; revenueBase += price; }
 
@@ -256,8 +268,10 @@ export default async function handler(req, res) {
         noContactPctAll,              // недозвон по всей базе
         // === ОКНО АУДИТА (~4 мес) — отдельно ===
         convAudit, noContactPctAudit, leadsAudit,
+        suspiciousCount: suspicious.length,
       },
       mopsByConv, mopsBySales, problems, problemsAll,
+      suspicious: suspicious.sort((a, b) => (b.closed_at || b.created_at || 0) - (a.closed_at || a.created_at || 0)).slice(0, 200),
     };
 
     await redisSet(redisUrl, redisToken, "dashboard", JSON.stringify(result));
