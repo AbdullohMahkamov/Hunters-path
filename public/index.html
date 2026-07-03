@@ -631,6 +631,17 @@
         <div class="dsect" id="secDisc"><svg class="ic" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><path d="M13 2L4 14h7l-1 8 9-12h-7z"/></svg> Дисциплина менеджеров<span class="hint" onclick="showHint('early',event)">?</span></div>
         <div id="disciplineChart"><div style="font-size:12px;color:var(--txt3);">Нажмите «Обновить дисциплину» — это подробный расчёт по звонкам и задачам, идёт 20-40 секунд.</div></div>
       </div>
+
+      <div class="block" id="suspBlock" style="cursor:pointer;" onclick="openSuspModal()">
+        <div style="display:flex;justify-content:space-between;align-items:center;gap:10px;">
+          <div class="dsect" style="margin:0;"><svg class="ic" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><path d="M12 9v4M12 17h.01M10.3 3.9 1.8 18a2 2 0 0 0 1.7 3h17a2 2 0 0 0 1.7-3L13.7 3.9a2 2 0 0 0-3.4 0z"/></svg> Подозрительные действия</div>
+          <div style="display:flex;align-items:center;gap:8px;">
+            <span id="suspCount" style="background:var(--red-bg);color:var(--red);font-weight:700;font-size:13px;padding:3px 10px;border-radius:20px;">0</span>
+            <svg class="ic" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="var(--txt3)" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><path d="M9 18l6-6-6-6"/></svg>
+          </div>
+        </div>
+        <div style="font-size:11.5px;color:var(--txt3);margin-top:6px;">Продажи с пустым или маленьким бюджетом (&lt;1М) — аванс, предоплата, ошибка. Нажми, чтобы проверить.</div>
+      </div>
     </div>
 
     <div class="foot" style="margin-top:14px;">
@@ -691,6 +702,20 @@
     </div>
   </div>
 </main>
+
+<!-- МОДАЛЬНОЕ ОКНО: ПОДОЗРИТЕЛЬНЫЕ -->
+<div id="suspOverlay" style="display:none;position:fixed;inset:0;background:rgba(0,0,0,.55);z-index:100;padding:20px;overflow-y:auto;" onclick="if(event.target===this)closeSuspModal()">
+  <div style="max-width:640px;margin:24px auto;background:var(--bg);border:1px solid var(--line2);border-radius:16px;overflow:hidden;">
+    <div style="display:flex;justify-content:space-between;align-items:center;padding:16px 18px;border-bottom:1px solid var(--line);">
+      <div style="font-size:16px;font-weight:700;" id="suspModalTitle">Подозрительные действия</div>
+      <div style="display:flex;gap:8px;align-items:center;">
+        <button onclick="toggleSuspHistory()" id="suspHistBtn" style="padding:6px 12px;border-radius:8px;background:var(--card);border:1px solid var(--line2);color:var(--txt2);font-size:12.5px;cursor:pointer;">История</button>
+        <button onclick="closeSuspModal()" style="width:30px;height:30px;border-radius:8px;background:var(--card);border:1px solid var(--line2);color:var(--txt);font-size:16px;cursor:pointer;">✕</button>
+      </div>
+    </div>
+    <div id="suspModalBody" style="padding:14px 18px;max-height:70vh;overflow-y:auto;"></div>
+  </div>
+</div>
 
 <script>
 // ===== МИНИМАЛИСТИЧНЫЕ SVG-ИКОНКИ (тонкие контуры, как у Claude) =====
@@ -1250,6 +1275,7 @@ async function renderDashboard(){
     const d=await r.json();
     if(d&&!d.empty&&!d.error&&d.totals){
       applyLiveDash(d);
+      applySuspicious(d);
       dashLoaded=true;
     }else if(d&&d.empty){
       if(note)note.textContent='⚪ Живые данные ещё не загружены. Нажми «Обновить из amoCRM» ниже.';
@@ -1667,6 +1693,99 @@ function renderActivity(){
       </div>`;
     }).join('')+
     `<div style="font-size:10.5px;color:var(--txt3);margin-top:10px;line-height:1.5;">${uz?'Faollik = qo\'ng\'iroq + voronka + vazifa + yopish. Bazani yopish ham faollik.':'Активность = звонки + движение + задачи + закрытия. Работа со старой базой тоже считается.'}${activityData.ageSec!=null?` · ${uz?'yangilangan':'обновлено'} ${Math.round((activityData.ageSec||0)/60)} ${uz?'daq oldin':'мин назад'}`:''}</div>`;
+}
+
+// ===== ПОДОЗРИТЕЛЬНЫЕ ДЕЙСТВИЯ =====
+let suspData=[];
+let suspReviewed={};
+let suspHistoryMode=false;
+const AMO_BASE='https://huntercademy.amocrm.ru/leads/detail/';
+
+function applySuspicious(d){
+  suspData=(d&&d.suspicious)||[];
+  loadSuspReviewed();
+}
+async function loadSuspReviewed(){
+  if(!SESSION)return;
+  try{
+    const r=await fetch('/api/user-data',{method:'POST',headers:{'content-type':'application/json'},body:JSON.stringify({action:'susp-status',session:SESSION})});
+    const d=await r.json();
+    suspReviewed=(d&&d.reviewed)||{};
+  }catch(e){suspReviewed={};}
+  updateSuspCount();
+}
+function updateSuspCount(){
+  const el=document.getElementById('suspCount');if(!el)return;
+  const active=suspData.filter(s=>!suspReviewed[s.id]);
+  el.textContent=active.length;
+  el.style.background=active.length?'var(--red-bg)':'var(--card2)';
+  el.style.color=active.length?'var(--red)':'var(--txt3)';
+}
+function openSuspModal(){suspHistoryMode=false;document.getElementById('suspOverlay').style.display='block';renderSuspModal();}
+function closeSuspModal(){document.getElementById('suspOverlay').style.display='none';}
+function toggleSuspHistory(){suspHistoryMode=!suspHistoryMode;renderSuspModal();}
+function fmtSuspSum(n){return n?new Intl.NumberFormat('ru-RU').format(n)+' сум':'нет бюджета';}
+function fmtSuspDate(unix){if(!unix)return '';const d=new Date(unix*1000);return d.toLocaleDateString('ru-RU');}
+function renderSuspModal(){
+  const body=document.getElementById('suspModalBody');
+  const title=document.getElementById('suspModalTitle');
+  const histBtn=document.getElementById('suspHistBtn');
+  if(!body)return;
+  if(suspHistoryMode){
+    title.textContent='История проверок';
+    histBtn.textContent='← Назад';
+    const hist=Object.entries(suspReviewed).map(([id,v])=>({id,...v})).sort((a,b)=>(b.at||0)-(a.at||0));
+    if(!hist.length){body.innerHTML='<div style="font-size:13px;color:var(--txt3);padding:20px;text-align:center;">История пуста</div>';return;}
+    body.innerHTML=hist.map(h=>{
+      const dd=h.deal||{};
+      const stColor=h.status==='checked'?'var(--green)':'var(--txt3)';
+      const stText=h.status==='checked'?'Проверено':'Отклонено';
+      return `<div style="padding:12px 0;border-bottom:1px solid var(--line);">
+        <div style="display:flex;justify-content:space-between;gap:8px;">
+          <b style="font-size:13.5px;">${escapeHtml(dd.name||('Сделка '+h.id))}</b>
+          <span style="font-size:11.5px;color:${stColor};font-weight:600;white-space:nowrap;">${stText}</span>
+        </div>
+        <div style="font-size:12px;color:var(--txt3);margin-top:3px;">${fmtSuspSum(dd.price)} · ${escapeHtml(dd.responsible||'')} · ${fmtSuspDate(dd.closed_at||dd.created_at)}</div>
+        ${h.note?`<div style="font-size:12.5px;color:var(--txt2);margin-top:6px;background:var(--card);border-radius:8px;padding:8px 10px;">📝 ${escapeHtml(h.note)}</div>`:''}
+        <div style="font-size:10.5px;color:var(--txt3);margin-top:4px;">${new Date(h.at).toLocaleString('ru-RU')}</div>
+      </div>`;
+    }).join('');
+    return;
+  }
+  title.textContent='Подозрительные действия';
+  histBtn.textContent='История';
+  const active=suspData.filter(s=>!suspReviewed[s.id]);
+  if(!active.length){
+    body.innerHTML='<div style="font-size:13px;color:var(--txt3);padding:20px;text-align:center;">Нет активных подозрительных сделок 👍<br><span style="font-size:11.5px;">Проверенные — в «Истории»</span></div>';
+    return;
+  }
+  body.innerHTML=active.map(s=>`
+    <div style="padding:14px 0;border-bottom:1px solid var(--line);" id="susp-${s.id}">
+      <div style="display:flex;justify-content:space-between;gap:8px;">
+        <b style="font-size:14px;">${escapeHtml(s.name||('Сделка '+s.id))}</b>
+        <span style="font-size:13px;font-weight:700;color:var(--red);white-space:nowrap;">${fmtSuspSum(s.price)}</span>
+      </div>
+      <div style="font-size:12px;color:var(--txt3);margin-top:3px;">${escapeHtml(s.responsible||'')} · ${fmtSuspDate(s.closed_at||s.created_at)}</div>
+      <a href="${AMO_BASE}${s.id}" target="_blank" style="display:inline-block;margin-top:8px;font-size:12.5px;color:var(--accent);text-decoration:none;">Открыть в amoCRM →</a>
+      <div style="margin-top:10px;">
+        <textarea id="note-${s.id}" placeholder="Примечание (что выяснилось)..." style="width:100%;box-sizing:border-box;padding:8px 10px;border-radius:8px;border:1px solid var(--line2);background:var(--card);color:var(--txt);font-size:12.5px;resize:vertical;min-height:38px;"></textarea>
+      </div>
+      <div style="display:flex;gap:8px;margin-top:8px;">
+        <button onclick="reviewSusp('${s.id}','checked')" style="flex:1;padding:9px;border-radius:8px;background:var(--green);border:none;color:#fff;font-size:12.5px;font-weight:600;cursor:pointer;">Проверено</button>
+        <button onclick="reviewSusp('${s.id}','rejected')" style="flex:1;padding:9px;border-radius:8px;background:var(--card);border:1px solid var(--line2);color:var(--txt2);font-size:12.5px;font-weight:600;cursor:pointer;">Отклонить</button>
+      </div>
+    </div>`).join('');
+}
+async function reviewSusp(id,status){
+  const note=(document.getElementById('note-'+id)||{}).value||'';
+  const deal=suspData.find(s=>String(s.id)===String(id))||null;
+  suspReviewed[id]={status,note,at:Date.now(),by:USER_ROLE,deal};
+  const row=document.getElementById('susp-'+id);if(row)row.style.display='none';
+  updateSuspCount();renderSuspModal();
+  try{
+    await fetch('/api/user-data',{method:'POST',headers:{'content-type':'application/json'},
+      body:JSON.stringify({action:'susp-review',session:SESSION,dealId:id,status,note,deal})});
+  }catch(e){}
 }
 
 // ===== ПЛАН / ФАКТ ПО МОПам =====
