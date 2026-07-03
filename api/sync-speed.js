@@ -96,6 +96,7 @@ export default async function handler(req, res) {
           firstCall: null,   // время первого исходящего звонка
           calls: 0,          // кол-во исходящих звонков
           tasks: 0,          // кол-во задач
+          tasksDone: 0,      // выполненных задач (нажат «выполнено»)
         };
       }
       if (leads.length < 250) break;
@@ -145,6 +146,7 @@ export default async function handler(req, res) {
         const li = leadInfo[t.entity_id];
         if (!li) continue;
         li.tasks++;
+        if (t.is_completed) li.tasksDone = (li.tasksDone || 0) + 1;
       }
       if (tasks.length < 250) break;
       page++;
@@ -155,7 +157,7 @@ export default async function handler(req, res) {
     const stat = {}; // mopName -> агрегаты
     for (const name of Object.values(ACTIVE_MOPS)) {
       stat[name] = { leads:0, firstCallTimes:[], reached:0, callsTotal:0, withTask:0,
-                     closedEarly:0, noReachClosed:0 };
+                     closedEarly:0, noReachClosed:0, tasksTotal:0, tasksDone:0 };
     }
 
     const suspicious2 = []; // подозрительные по звонкам (этап 2)
@@ -172,6 +174,8 @@ export default async function handler(req, res) {
       S.leads++;
       S.callsTotal += L.calls;
       if (L.tasks > 0) S.withTask++;
+      S.tasksTotal += (L.tasks || 0);
+      S.tasksDone += (L.tasksDone || 0);
       if (L.firstCall) {
         S.reached++;
         const mins = (L.firstCall - L.created) / 60;
@@ -219,11 +223,16 @@ export default async function handler(req, res) {
         medianFirstCallMin: medMin !== null ? Math.round(medMin) : null,
         avgCallsPerLead: S.leads ? +(S.callsTotal / S.leads).toFixed(1) : 0,
         taskRate: S.leads ? Math.round(S.withTask / S.leads * 100) : 0,
-        // % закрытых "не дозвонился" при < 3 звонках (халтура)
+        // % закрытых "не дозвонился" при < 3 звонках (халтура) — оставлено для совместимости
         earlyClosePct: S.noReachClosed ? Math.round(S.closedEarly / S.noReachClosed * 100) : 0,
         noReachClosed: S.noReachClosed,
         closedEarly: S.closedEarly,
+        // % дозвона — до скольких лидов реально дозвонился
         reachedPct: S.leads ? Math.round(S.reached / S.leads * 100) : 0,
+        // задачи: всего и реально выполнено (нажат «выполнено»)
+        tasksTotal: S.tasksTotal,
+        tasksDone: S.tasksDone,
+        tasksDonePct: S.tasksTotal ? Math.round(S.tasksDone / S.tasksTotal * 100) : 0,
       };
     }).sort((a,b)=> (a.medianFirstCallMin??9e9) - (b.medianFirstCallMin??9e9));
 
