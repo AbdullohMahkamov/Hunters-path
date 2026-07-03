@@ -2005,8 +2005,13 @@ function renderDiscipline(sp){
     const speedOk=m.medianFirstCallMin!=null&&m.medianFirstCallMin<=30;
     const speedBad=m.medianFirstCallMin!=null&&m.medianFirstCallMin>180;
     const taskOk=m.taskRate>=60;
-    const reachOk=(m.reachedPct||0)>=60;
-    const reachBad=(m.reachedPct||0)<30;
+    // дозвон берём из рабочего источника (тот же, что в блоке «Конверсия и дозвон»)
+    let reach=m.reachedPct;
+    const dashMops=(window._dashData&&window._dashData.mopsByConv)||[];
+    const dm=dashMops.find(x=>x.name===m.name);
+    if(dm&&dm.reachPct!=null)reach=dm.reachPct;
+    const reachOk=(reach||0)>=60;
+    const reachBad=(reach||0)<30;
     const doneOk=(m.tasksDonePct||0)>=70;
     const doneBad=(m.tasksDonePct||0)<40;
     const c=(ok,bad)=>ok?'var(--green)':(bad?'var(--red)':'var(--txt2)');
@@ -2015,7 +2020,7 @@ function renderDiscipline(sp){
       <div style="font-size:14px;font-weight:600;margin-bottom:7px;">${escapeHtml(m.name)} <span style="font-size:11px;color:var(--txt3);font-weight:400;">· ${m.leads} лидов</span></div>
       <div style="display:grid;grid-template-columns:1fr 1fr;gap:6px 12px;font-size:12px;">
         <div>⚡ 1-й звонок${hintIcon('firstcall')}: <b style="color:${c(speedOk,speedBad)}">${fmtMin(m.medianFirstCallMin)}</b></div>
-        <div>📞 % дозвона${hintIcon('reach')}: <b style="color:${c(reachOk,reachBad)}">${m.reachedPct!=null?m.reachedPct+'%':'—'}</b></div>
+        <div>📞 % дозвона${hintIcon('reach')}: <b style="color:${c(reachOk,reachBad)}">${reach!=null?reach+'%':'—'}</b></div>
         <div>📋 Ставит задачи${hintIcon('tasks')}: <b style="color:${c(taskOk,m.taskRate<30)}">${m.taskRate}%</b></div>
         <div>✅ Задач выполнено${hintIcon('tasksdone')}: <b style="color:${m.tasksTotal?c(doneOk,doneBad):'var(--txt3)'}">${doneDisplay}</b></div>
       </div>
