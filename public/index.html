@@ -552,14 +552,8 @@
         <div class="dcard"><div class="dl">Прибыль</div><div class="dv" id="kpiProfit">—</div><div class="dh" id="ovProfitH">этот месяц</div></div>
       </div>
 
-      <!-- мини-динамика -->
-      <div class="block" style="margin-top:16px;">
-        <div class="dsect">Динамика продаж</div>
-        <div id="overviewTrend"><div style="font-size:12px;color:var(--txt3);padding:10px;">Загрузка...</div></div>
-      </div>
-
       <!-- сумма продаж за период -->
-      <div class="block">
+      <div class="block" style="margin-top:16px;">
         <div class="dsect" id="ovSalesSumLbl">Сумма продаж (текущий месяц)</div>
         <div id="overviewSalesSum"><div style="font-size:12px;color:var(--txt3);padding:10px;">Загрузка...</div></div>
       </div>
@@ -604,10 +598,6 @@
 
     <!-- РАЗДЕЛ: ПРОДАЖИ (низ воронки — обработка) -->
     <div class="dgroup" id="dg-sales" style="display:none;">
-      <div style="display:flex;gap:6px;margin-bottom:14px;">
-        <button class="perbtn on" id="sl-per-month" onclick="setDashPeriod('month')">Текущий месяц</button>
-        <button class="perbtn" id="sl-per-all" onclick="setDashPeriod('all')">Всё время</button>
-      </div>
 
       <div class="two-col">
         <div class="block">
@@ -1712,14 +1702,11 @@ let overviewExtrasLoaded=false;
 let ovFinYear=null, ovFinMonth=null;
 async function loadOverviewExtras(){
   const uz=state.lang==='uz';
-  // мини-динамика — грузим один раз
   if(!overviewExtrasLoaded){
     overviewExtrasLoaded=true;
-    try{const r=await fetch('/api/trends');const d=await r.json();renderOverviewTrend((d.snaps)||[]);}
-    catch(e){const b=document.getElementById('overviewTrend');if(b)b.innerHTML='';}
     // текущий месяц из финансов (для прибыли + продаж месяца)
     try{const r=await fetch('/api/finance',{method:'POST',headers:{'content-type':'application/json'},body:JSON.stringify({})});ovFinMonth=await r.json();}catch(e){ovFinMonth=null;}
-    // год (для суммы продаж за всё время)
+    // год (для прибыли за всё время)
     try{const r=await fetch('/api/finance',{method:'POST',headers:{'content-type':'application/json'},body:JSON.stringify({action:'year'})});const d=await r.json();ovFinYear=(d&&d.ok)?d.year:null;}catch(e){ovFinYear=null;}
   }
   renderOverviewMoney();
