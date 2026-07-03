@@ -94,6 +94,7 @@ export default async function handler(req, res) {
           price: L.price || 0,
           lossId: L.loss_reason_id || null,
           firstCall: null,   // время первого исходящего звонка
+          reachedReal: false,// реальный разговор >60 сек
           calls: 0,          // кол-во исходящих звонков
           tasks: 0,          // кол-во задач
           tasksDone: 0,      // выполненных задач (нажат «выполнено»)
@@ -128,6 +129,32 @@ export default async function handler(req, res) {
       if (events.length < 250) break;
       page++;
       await new Promise(rs => setTimeout(rs, 150));
+    }
+
+    // 3a) ПРИМЕЧАНИЯ-ЗВОНКИ с ДЛИТЕЛЬНОСТЬЮ: реальный дозвон = разговор дольше 60 сек.
+    //     Длительность хранится в notes типа call_in/call_out (params.duration, в секундах).
+    const REACH_MIN_SEC = 60;
+    for (const noteType of ["call_out", "call_in"]) {
+      page = 1; guard = 0;
+      while (guard < 120) {
+        guard++;
+        const url = `${base}/leads/notes?filter[note_type]=${noteType}` +
+          `&filter[created_at][from]=${monthStart}&limit=250&page=${page}`;
+        const r = await fetch(url, { headers: H });
+        if (r.status === 204) break;
+        if (!r.ok) break;
+        const d = await r.json();
+        const notes = (d._embedded && d._embedded.notes) || [];
+        for (const n of notes) {
+          const li = leadInfo[n.entity_id];
+          if (!li) continue;
+          const dur = (n.params && (n.params.duration || n.params.call_duration)) || 0;
+          if (dur >= REACH_MIN_SEC) li.reachedReal = true; // реально поговорил >60 сек
+        }
+        if (notes.length < 250) break;
+        page++;
+        await new Promise(rs => setTimeout(rs, 120));
+      }
     }
 
     // 3b) ЗАДАЧИ — через отдельный эндпоинт /tasks (привязаны к лиду через entity_id, entity_type=leads)
@@ -177,10 +204,11 @@ export default async function handler(req, res) {
       S.tasksTotal += (L.tasks || 0);
       S.tasksDone += (L.tasksDone || 0);
       if (L.firstCall) {
-        S.reached++;
         const mins = (L.firstCall - L.created) / 60;
         if (mins >= 0 && mins < 60*24*14) S.firstCallTimes.push(mins);
       }
+      // РЕАЛЬНЫЙ ДОЗВОН — только если был разговор дольше 60 сек
+      if (L.reachedReal) S.reached++;
       // ДЕТЕКТОР ХАЛТУРЫ (с учётом «мёртвых» номеров):
       if (L.status === LOST_STATUS) {
         if (isWrongNumber(L.lossId)) {
