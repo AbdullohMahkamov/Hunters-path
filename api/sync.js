@@ -43,6 +43,10 @@ export default async function handler(req, res) {
 
   const now = new Date();
   const monthStart = Math.floor(new Date(now.getFullYear(), now.getMonth(), 1).getTime() / 1000);
+  // начало сегодняшнего дня (по локальному времени сервера ~ UTC; для Ташкента UTC+5 сместим)
+  const TZ_OFFSET = 5 * 3600; // Узбекистан UTC+5
+  const nowLocal = new Date(Date.now() + TZ_OFFSET * 1000);
+  const dayStart = Math.floor(new Date(Date.UTC(nowLocal.getUTCFullYear(), nowLocal.getUTCMonth(), nowLocal.getUTCDate()) ).getTime() / 1000) - TZ_OFFSET;
   // Тянем лиды, созданные за последние 120 дней, чтобы поймать старые лиды, закрывшиеся в этом месяце.
   // Продажи считаем по дате ЗАКРЫТИЯ (closed_at) в этом месяце. Объём лидов — по created_at в этом месяце.
   const lookbackStart = monthStart - 120 * 24 * 3600;
@@ -100,6 +104,7 @@ export default async function handler(req, res) {
     // ВЫРУЧКА/КАССА — по ВСЕМ аккаунтам, продажи закрытые (closed_at) в этом месяце.
     // КОНВЕРСИЯ/ДИСЦИПЛИНА — по 5 действующим МОПам. Считаем ДВА периода: месяц и всё окно (~4 мес).
     let sold = 0, soldSum = 0, ownExcluded = 0, noContact = 0;
+    let soldToday = 0, revenueToday = 0, leadsToday = 0; // метрики за сегодня
     let soldPeriod = 0, revenuePeriod = 0;  // продажи за окно аудита (~4 месяца)
     let soldTeam = 0, soldSumTeam = 0;     // продажи только пятёрки (для среднего чека команды)
     const lossCount = {};                  // причина -> кол-во ЗА МЕСЯЦ (пятёрка)
@@ -125,6 +130,10 @@ export default async function handler(req, res) {
       const inAudit = (L.created_at || 0) >= lookbackStart; // окно аудита
       const mop = ACTIVE_MOPS[L.responsible_user_id]; // null если не из пятёрки
       const respName = ACTIVE_MOPS[L.responsible_user_id] || String(L.responsible_user_id || "");
+
+      // === СЕГОДНЯ: лиды обработанные (созданные сегодня), продажи и касса за сегодня ===
+      if ((L.created_at || 0) >= dayStart) leadsToday++;
+      if (isSold && (L.closed_at || 0) >= dayStart) { soldToday++; revenueToday += price; }
 
       // причина потери (по имени)
       let lossReason = "";
@@ -342,6 +351,8 @@ export default async function handler(req, res) {
         revenueAll: revenueBase,      // вся выручка базы
         convAll,                      // конверсия по всей базе
         noContactPctAll,              // недозвон по всей базе
+        // === СЕГОДНЯ ===
+        soldToday, revenueToday, leadsToday,
         // === ОКНО АУДИТА (~4 мес) — отдельно ===
         convAudit, noContactPctAudit, leadsAudit,
         suspiciousCount: suspicious.length,
