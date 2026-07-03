@@ -6,6 +6,7 @@ const PIPELINE = "HunterAcademy";   // считаем ТОЛЬКО эту вор
 const OWN_THRESHOLD = 1600000;      // <=1.6М = "свои", исключаем
 const SOLD = "Sotildi";
 const CLOSED_LOST = "Yopildi";
+const ADSET_FIELD_ID = 194405;      // кастомное поле adset_name (источник/аудитория рекламы)
 
 // Действующая пятёрка МОПов (ID из amoCRM)
 const ACTIVE_MOPS = {
@@ -108,6 +109,8 @@ export default async function handler(req, res) {
     // === VELOCITY (скорость воронки) ===
     const saleDurations = [];      // длительности «создан → продан» в днях (для медианы/среднего)
     const stageDistribution = {};  // текущий статус (открытые лиды) -> количество
+    // === ИСТОЧНИКИ РЕКЛАМЫ (adset_name) ===
+    const adsets = {};             // adset_name -> {leads, sold, revenue}
     let soldPeriod = 0, revenuePeriod = 0;  // продажи за окно аудита (~4 месяца)
     let soldTeam = 0, soldSumTeam = 0;     // продажи только пятёрки (для среднего чека команды)
     const lossCount = {};                  // причина -> кол-во ЗА МЕСЯЦ (пятёрка)
@@ -147,6 +150,19 @@ export default async function handler(req, res) {
       // распределение открытых лидов по текущему этапу (не продано и не закрыто)
       if (!isSold && !isLost) {
         stageDistribution[stName] = (stageDistribution[stName] || 0) + 1;
+      }
+
+      // === ИСТОЧНИК РЕКЛАМЫ (adset_name) ===
+      let adset = "";
+      const cfv = L.custom_fields_values || (L._embedded && L._embedded.custom_fields_values);
+      if (Array.isArray(cfv)) {
+        const f = cfv.find(x => x.field_id === ADSET_FIELD_ID);
+        if (f && f.values && f.values[0]) adset = String(f.values[0].value || "").trim();
+      }
+      if (adset) {
+        const a = adsets[adset] || (adsets[adset] = { leads: 0, sold: 0, revenue: 0 });
+        a.leads++;
+        if (isSold) { a.sold++; a.revenue += price; }
       }
 
       // причина потери (по имени)
@@ -328,6 +344,18 @@ export default async function handler(req, res) {
       .map(([name, count]) => ({ name, count }))
       .sort((a, b) => b.count - a.count);
 
+    // === ИСТОЧНИКИ РЕКЛАМЫ: массив с конверсией, сортировка по выручке ===
+    const adsetsArr = Object.entries(adsets)
+      .map(([name, a]) => ({
+        name,
+        leads: a.leads,
+        sold: a.sold,
+        revenue: a.revenue,
+        conv: a.leads > 0 ? +(a.sold / a.leads * 100).toFixed(1) : 0,
+        avgCheck: a.sold > 0 ? Math.round(a.revenue / a.sold) : 0,
+      }))
+      .sort((x, y) => y.revenue - x.revenue);
+
     // === ОКНО АУДИТА (~4 мес) — отдельно, для аудита ===
     const convAudit = leadsAudit > 0 ? +(soldTeamAudit / leadsAudit * 100).toFixed(2) : 0;
     const noContactPctAudit = leadsAudit > 0 ? +(noContactAudit / leadsAudit * 100).toFixed(0) : 0;
@@ -386,6 +414,7 @@ export default async function handler(req, res) {
       },
       mopsByConv, mopsBySales, problems, problemsAll,
       velocity: { median: velocityMedian, avg: velocityAvg, count: saleDurations.length, stages: stagesArr },
+      adsets: adsetsArr.slice(0, 50),
       suspicious: suspicious.sort((a, b) => (b.closed_at || b.created_at || 0) - (a.closed_at || a.created_at || 0)).slice(0, 200),
     };
 
