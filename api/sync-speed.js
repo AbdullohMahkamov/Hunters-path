@@ -143,10 +143,12 @@ export default async function handler(req, res) {
     const callByLead = {};
     {
       page = 1; guard = 0;
-      while (guard < 400) {
+      let stop = false;
+      while (guard < 400 && !stop) {
         guard++;
+        // без фильтра по дате (он обрывал выборку); сортируем свежие первыми, стоп когда ушли за месяц
         const url = `${base}/leads/notes?filter[note_type][0]=call_out&filter[note_type][1]=call_in` +
-          `&filter[created_at][from]=${monthStart}&limit=250&page=${page}`;
+          `&order[created_at]=desc&limit=250&page=${page}`;
         const r = await fetch(url, { headers: H });
         if (r.status === 204) break;
         if (!r.ok) break;
@@ -155,6 +157,7 @@ export default async function handler(req, res) {
         const notes = (d._embedded && d._embedded.notes) || [];
         for (const n of notes) {
           if (n.note_type !== "call_out" && n.note_type !== "call_in") continue;
+          if ((n.created_at || 0) < monthStart) { stop = true; continue; } // старее месяца — дальше не нужно
           notesSeen++;
           const leadId = n.entity_id;
           if (!leadId) continue;
@@ -167,29 +170,30 @@ export default async function handler(req, res) {
         }
         if (notes.length < 250) break;
         page++;
-        await new Promise(rs => setTimeout(rs, 110));
+        await new Promise(rs => setTimeout(rs, 100));
       }
     }
 
     // Привязываем звонки к МОПу через ОТВЕТСТВЕННОГО ЗА ЛИД (звонки Utel пишутся на служебный аккаунт).
-    // Ответственного берём из leadInfo (загруженные лиды) или догружаем отдельно (не засоряя leadInfo).
+    let leadsFetched = 0;
     {
       const respByLead = {}; // leadId -> responsible_user_id
-      for (const id in leadInfo) respByLead[id] = leadInfo[id].resp;
+      for (const id in leadInfo) if (leadInfo[id] && leadInfo[id].resp) respByLead[id] = leadInfo[id].resp;
       const missing = Object.keys(callByLead).filter(id => respByLead[id] == null);
-      for (let i = 0; i < missing.length; i += 200) {
-        const chunk = missing.slice(i, i + 200);
+      // amoCRM filter[id][]: безопасно ~50 id за запрос (иначе URL слишком длинный)
+      for (let i = 0; i < missing.length; i += 50) {
+        const chunk = missing.slice(i, i + 50);
         const qs = chunk.map(id => `filter[id][]=${id}`).join("&");
         try {
-          const r = await fetch(`${base}/leads?${qs}&limit=250`, { headers: H });
+          const r = await fetch(`${base}/leads?${qs}&limit=50`, { headers: H });
           if (r.ok) {
             const d = await r.json();
-            for (const L of ((d._embedded && d._embedded.leads) || [])) {
-              respByLead[L.id] = L.responsible_user_id;
-            }
+            const arr = (d._embedded && d._embedded.leads) || [];
+            leadsFetched += arr.length;
+            for (const L of arr) respByLead[L.id] = L.responsible_user_id;
           }
         } catch (e) {}
-        await new Promise(rs => setTimeout(rs, 100));
+        await new Promise(rs => setTimeout(rs, 90));
       }
       // раскидываем по МОПам
       for (const leadId in callByLead) {
@@ -318,7 +322,7 @@ export default async function handler(req, res) {
       };
     }).sort((a,b)=> (a.medianFirstCallMin??9e9) - (b.medianFirstCallMin??9e9));
 
-    const result = { updatedAt: new Date().toISOString(), period: "Текущий месяц", mops, suspicious2: suspicious2.slice(0, 300), _debug: { notesSeen, notesPages, callByLeadSize: Object.keys(callByLead).length, notesMopMatched, notesAnswered } };
+    const result = { updatedAt: new Date().toISOString(), period: "Текущий месяц", mops, suspicious2: suspicious2.slice(0, 300), _debug: { notesSeen, notesPages, callByLeadSize: Object.keys(callByLead).length, leadsFetched, notesMopMatched, notesAnswered } };
     await redisSet(redisUrl, redisToken, "speed", JSON.stringify(result));
     res.status(200).json({ ok: true, ...result });
   } catch (err) {
