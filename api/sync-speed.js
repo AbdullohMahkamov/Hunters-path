@@ -138,7 +138,7 @@ export default async function handler(req, res) {
     const REACH_MIN_SEC = 60;
     const reachedLeadsByMop = {};
     const callLeadsByMop = {};
-    let notesSeen = 0, notesAnswered = 0, notesMopMatched = 0;
+    let notesSeen = 0, notesAnswered = 0, notesMopMatched = 0, notesPages = 0;
     // собираем звонки по лидам: leadId -> {called:true, answered:bool}
     const callByLead = {};
     {
@@ -150,6 +150,7 @@ export default async function handler(req, res) {
         const r = await fetch(url, { headers: H });
         if (r.status === 204) break;
         if (!r.ok) break;
+        notesPages++;
         const d = await r.json();
         const notes = (d._embedded && d._embedded.notes) || [];
         for (const n of notes) {
@@ -317,7 +318,7 @@ export default async function handler(req, res) {
       };
     }).sort((a,b)=> (a.medianFirstCallMin??9e9) - (b.medianFirstCallMin??9e9));
 
-    const result = { updatedAt: new Date().toISOString(), period: "Текущий месяц", mops, suspicious2: suspicious2.slice(0, 300), _debug: { notesSeen, notesMopMatched, notesAnswered } };
+    const result = { updatedAt: new Date().toISOString(), period: "Текущий месяц", mops, suspicious2: suspicious2.slice(0, 300), _debug: { notesSeen, notesPages, callByLeadSize: Object.keys(callByLead).length, notesMopMatched, notesAnswered } };
     await redisSet(redisUrl, redisToken, "speed", JSON.stringify(result));
     res.status(200).json({ ok: true, ...result });
   } catch (err) {
