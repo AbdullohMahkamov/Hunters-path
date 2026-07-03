@@ -636,6 +636,11 @@
         <div id="mopChart"></div>
       </div>
 
+      <div class="block" id="velocityBlock">
+        <div class="dsect" id="secVelocity"><svg class="ic" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><path d="M12 2v4M12 18v4M2 12h4M18 12h4M5 5l2.5 2.5M16.5 16.5 19 19M19 5l-2.5 2.5M7.5 16.5 5 19"/></svg> Скорость воронки<span class="hint" onclick="showHint('velocity',event)">?</span></div>
+        <div id="velocityChart"><div style="font-size:12px;color:var(--txt3);">Загрузка...</div></div>
+      </div>
+
       <div class="block" id="suspBlock">
         <div style="display:flex;justify-content:space-between;align-items:center;gap:10px;">
           <div class="dsect" style="margin:0;"><svg class="ic" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><path d="M12 9v4M12 17h.01M10.3 3.9 1.8 18a2 2 0 0 0 1.7 3h17a2 2 0 0 0 1.7-3L13.7 3.9a2 2 0 0 0-3.4 0z"/></svg> Подозрительные действия</div>
@@ -1377,6 +1382,8 @@ function applyLiveDash(d){
 
   // ===== ПЛАН / ФАКТ ПО МОПам =====
   renderPlanFact(d);
+  // ===== СКОРОСТЬ ВОРОНКИ =====
+  renderVelocity(d);
   // ===== СИГНАЛЫ =====
   renderSignals(d);
 
@@ -1857,6 +1864,54 @@ async function reviewSusp(id,status){
     await fetch('/api/user-data',{method:'POST',headers:{'content-type':'application/json'},
       body:JSON.stringify({action:'susp-review',session:SESSION,dealId:id,status,note,deal})});
   }catch(e){}
+}
+
+// ===== СКОРОСТЬ ВОРОНКИ (VELOCITY) =====
+function renderVelocity(d){
+  const box=document.getElementById('velocityChart');if(!box)return;
+  const v=d&&d.velocity;
+  const uz=state.lang==='uz';
+  if(!v||(v.median==null&&(!v.stages||!v.stages.length))){
+    box.innerHTML='<div style="font-size:12px;color:var(--txt3);">'+(uz?'Maʼlumot yoʻq':'Нет данных')+'</div>';
+    return;
+  }
+  const fmtDays=(n)=>{
+    if(n==null)return '—';
+    if(n<1)return uz?'<1 kun':'<1 дня';
+    const r=Math.round(n);
+    return r+' '+(uz?'kun':(r%10===1&&r%100!==11?'день':(r%10>=2&&r%10<=4&&(r%100<10||r%100>=20)?'дня':'дней')));
+  };
+  // верх: медиана и среднее время сделки
+  let html='<div style="display:grid;grid-template-columns:1fr 1fr;gap:10px;margin-bottom:14px;">';
+  html+=`<div style="background:var(--card);border:1px solid var(--line);border-radius:10px;padding:11px 13px;">
+    <div style="font-size:11.5px;color:var(--txt2);">${uz?'Median: lid → sotuv':'Медиана: лид → продажа'}</div>
+    <div style="font-size:20px;font-weight:700;color:var(--accent);margin-top:2px;">${fmtDays(v.median)}</div>
+    <div style="font-size:10.5px;color:var(--txt3);">${uz?'odatda shuncha vaqt':'обычно столько идёт сделка'}</div>
+  </div>`;
+  html+=`<div style="background:var(--card);border:1px solid var(--line);border-radius:10px;padding:11px 13px;">
+    <div style="font-size:11.5px;color:var(--txt2);">${uz?'Oʻrtacha vaqt':'Среднее время'}</div>
+    <div style="font-size:20px;font-weight:700;margin-top:2px;">${fmtDays(v.avg)}</div>
+    <div style="font-size:10.5px;color:var(--txt3);">${v.count||0} ${uz?'sotuv boʻyicha':'сделок в расчёте'}</div>
+  </div>`;
+  html+='</div>';
+  // распределение по этапам (где скопились открытые лиды)
+  const stages=(v.stages||[]).filter(s=>s.name);
+  if(stages.length){
+    const max=Math.max(1,...stages.map(s=>s.count));
+    html+=`<div style="font-size:12px;font-weight:600;color:var(--txt2);margin-bottom:8px;">${uz?'Ochiq lidlar bosqichlar boʻyicha':'Открытые лиды по этапам'}</div>`;
+    html+=stages.map(s=>`
+      <div style="margin-bottom:8px;">
+        <div style="display:flex;justify-content:space-between;font-size:12px;margin-bottom:3px;">
+          <span style="color:var(--txt);">${escapeHtml(s.name)}</span>
+          <span style="color:var(--txt2);font-weight:600;">${s.count}</span>
+        </div>
+        <div style="height:7px;background:var(--card2);border-radius:6px;overflow:hidden;">
+          <div style="height:100%;width:${Math.round(s.count/max*100)}%;background:var(--accent);border-radius:6px;"></div>
+        </div>
+      </div>`).join('');
+    html+=`<div style="font-size:11px;color:var(--txt3);margin-top:8px;">${uz?'Katta ustun — lidlar shu bosqichda toʻplanib qolgan (torlik).':'Длинная полоса — лиды скопились на этом этапе (узкое место).'}</div>`;
+  }
+  box.innerHTML=html;
 }
 
 // ===== ПЛАН / ФАКТ ПО МОПам =====
@@ -2608,6 +2663,7 @@ const HINTS={
   activity:{t:'Активность менеджера',d:'Реальная работа за период: звонки + движение сделок по воронке + выполненные задачи + закрытия (включая старую базу). Показывает, работал человек или нет — даже если новых лидов взял мало. «Нет активности» = красный флаг.'},
   tasks:{t:'Ставит задачи',d:'Процент клиентов, которым менеджер поставил напоминание «перезвонить». Дисциплинированный менеджер планирует следующий шаг, а не бросает клиента.'},
   tasksdone:{t:'Задач выполнено',d:'Процент реально выполненных задач (нажал «выполнено») из всех поставленных. Показывает, доводит ли менеджер напоминания до конца, а не просто ставит их для галочки. Хорошо — 70%+.'},
+  velocity:{t:'Скорость воронки',d:'Медиана — сколько дней обычно идёт сделка от прихода лида до продажи (половина сделок быстрее, половина медленнее). Распределение по этапам показывает, где скапливаются открытые лиды — там узкое место воронки.'},
   own:{t:'«Свои» сделки',d:'Внутренние продажи — бартер, друзья, доплаты, служебные записи. Их не считаем в конверсии и оценке менеджеров, чтобы цифры были честными. Но в общую выручку они входят.'},
   goal:{t:'Цель месяца',d:'Сколько денег вы хотите заработать за месяц. Можно нажать и вписать свою сумму. Прогресс-полоса показывает, сколько уже сделано.'},
   problems:{t:'Причины потерь',d:'Почему клиенты не покупают — по данным из CRM. Топ причин показывает, где главные дыры: не дозвонились, дорого, передумали и т.д.'},
