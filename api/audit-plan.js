@@ -39,9 +39,9 @@ export default async function handler(req, res) {
       } else {
         auditText += `Продаж в этом месяце: ${t.sold}, выручка ${t.revenue}.\n`;
       }
-      // Для аудита используем метрики ЗА ВЕСЬ ПЕРИОД (~4 мес), чтобы не смешивать с месячными
-      const convA = t.convAll != null ? t.convAll : t.conv;
-      const ncA = t.noContactPctAll != null ? t.noContactPctAll : t.noContactPct;
+      // Для аудита используем метрики ЗА ОКНО АУДИТА (~4 мес)
+      const convA = t.convAudit != null ? t.convAudit : t.conv;
+      const ncA = t.noContactPctAudit != null ? t.noContactPctAudit : t.noContactPct;
       auditText += `За период (3-4 мес): конверсия ${convA}%, средний чек ${t.avgCheck}, потеря до контакта ${ncA}%.\n`;
     }
     // Причины потерь — за весь период (для аудита)
