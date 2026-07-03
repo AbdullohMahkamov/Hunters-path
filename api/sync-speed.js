@@ -143,12 +143,10 @@ export default async function handler(req, res) {
     const callByLead = {};
     {
       page = 1; guard = 0;
-      let stop = false;
-      while (guard < 400 && !stop) {
+      while (guard < 400) {
         guard++;
-        // без фильтра по дате (он обрывал выборку); сортируем свежие первыми, стоп когда ушли за месяц
         const url = `${base}/leads/notes?filter[note_type][0]=call_out&filter[note_type][1]=call_in` +
-          `&order[created_at]=desc&limit=250&page=${page}`;
+          `&filter[created_at][from]=${monthStart}&limit=250&page=${page}`;
         const r = await fetch(url, { headers: H });
         if (r.status === 204) break;
         if (!r.ok) break;
@@ -157,7 +155,6 @@ export default async function handler(req, res) {
         const notes = (d._embedded && d._embedded.notes) || [];
         for (const n of notes) {
           if (n.note_type !== "call_out" && n.note_type !== "call_in") continue;
-          if ((n.created_at || 0) < monthStart) { stop = true; continue; } // старее месяца — дальше не нужно
           notesSeen++;
           const leadId = n.entity_id;
           if (!leadId) continue;
@@ -175,7 +172,7 @@ export default async function handler(req, res) {
     }
 
     // Привязываем звонки к МОПу через ОТВЕТСТВЕННОГО ЗА ЛИД (звонки Utel пишутся на служебный аккаунт).
-    let leadsFetched = 0;
+    let leadsFetched = 0, respSample = [];
     {
       const respByLead = {}; // leadId -> responsible_user_id
       for (const id in leadInfo) if (leadInfo[id] && leadInfo[id].resp) respByLead[id] = leadInfo[id].resp;
@@ -207,6 +204,8 @@ export default async function handler(req, res) {
           if (li) li.reachedReal = true;
         }
       }
+      // ДИАГНОСТИКА: какие responsible_user_id у лидов со звонками (первые 15)
+      respSample = Object.keys(callByLead).slice(0, 15).map(id => respByLead[id]);
     }
 
     // 3b) ЗАДАЧИ — через отдельный эндпоинт /tasks (привязаны к лиду через entity_id, entity_type=leads)
@@ -322,7 +321,7 @@ export default async function handler(req, res) {
       };
     }).sort((a,b)=> (a.medianFirstCallMin??9e9) - (b.medianFirstCallMin??9e9));
 
-    const result = { updatedAt: new Date().toISOString(), period: "Текущий месяц", mops, suspicious2: suspicious2.slice(0, 300), _debug: { notesSeen, notesPages, callByLeadSize: Object.keys(callByLead).length, leadsFetched, notesMopMatched, notesAnswered } };
+    const result = { updatedAt: new Date().toISOString(), period: "Текущий месяц", mops, suspicious2: suspicious2.slice(0, 300), _debug: { notesSeen, notesPages, callByLeadSize: Object.keys(callByLead).length, leadsFetched, notesMopMatched, notesAnswered, respSample, activeMopIds: Object.keys(ACTIVE_MOPS) } };
     await redisSet(redisUrl, redisToken, "speed", JSON.stringify(result));
     res.status(200).json({ ok: true, ...result });
   } catch (err) {
