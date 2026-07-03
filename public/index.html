@@ -674,10 +674,6 @@
       <div class="chat-sidebar" id="chatSidebar">
         <button class="side-new ic-btn" id="newChatBtn" onclick="newChat()"><svg class="ic" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><path d="M12 5v14M5 12h14"/></svg>Новый чат</button>
         <div class="side-list" id="sideList"></div>
-        <div class="side-foot">
-          <div class="side-label" id="themeLabel">Тема оформления</div>
-          <div class="theme-row" id="themeRow"></div>
-        </div>
       </div>
       <!-- Затемнение под сайдбар на мобильном -->
       <div class="side-backdrop" id="sideBackdrop" onclick="toggleSidebar(false)"></div>
@@ -2468,12 +2464,12 @@ function renderThemeRow(){
 function applyThemeClass(){
   const themes=['theme-cream','theme-light','theme-slate','theme-forest'];
   themes.forEach(t=>document.body.classList.remove(t));
-  if(state.theme)document.body.classList.add(state.theme);
+  // Выбор темы убран — всегда светлая (белая) тема по умолчанию.
+  document.body.classList.add('theme-light');
 }
 function setTheme(id){
-  state.theme=id;save();
+  state.theme='theme-light';save();
   applyThemeClass();
-  renderThemeRow();
 }
 function applyTheme(){applyThemeClass();}
 
