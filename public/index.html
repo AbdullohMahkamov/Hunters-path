@@ -1721,7 +1721,10 @@ let suspHistoryMode=false;
 const AMO_BASE='https://huntercademy.amocrm.ru/leads/detail/';
 
 function applySuspicious(d){
-  suspData=(d&&d.suspicious)||[];
+  const fromSync=(d&&d.suspicious)||[];
+  const fromSpeed=(d&&d.speed&&d.speed.suspicious2)||[];
+  // объединяем оба источника (sync — деньги/воронка/задачи, speed — звонки/зависшие)
+  suspData=fromSync.concat(fromSpeed);
   loadSuspReviewed();
 }
 async function loadSuspReviewed(){
@@ -2030,6 +2033,12 @@ async function syncSpeed(){
     const d=await r.json();
     if(d&&d.ok){
       renderDiscipline(d);
+      // добавляем подозрительные по звонкам (этап 2) к уже загруженным
+      if(d.suspicious2){
+        const fromSync=suspData.filter(s=>['money','tasks'].includes(s.cat)||s.type==='same_day_sale'||s.type==='wrong_number_abuse');
+        suspData=fromSync.concat(d.suspicious2);
+        updateSuspCount();
+      }
       btn.textContent='✅ Готово';
     }else{
       btn.textContent='⚠️ Ошибка';
