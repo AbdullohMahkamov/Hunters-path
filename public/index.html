@@ -1359,7 +1359,7 @@ async function loadFinance(force){
   // первый заход — тянем список месяцев и ставим текущий по умолчанию
   if(financeMonths===null){
     try{
-      const lr=await fetch('/api/finance',{method:'POST',headers:{'content-type':'application/json'},body:JSON.stringify({action:'list'})});
+      const lr=await fetch('/api/finance',{method:'POST',headers:{'content-type':'application/json'},body:JSON.stringify({action:'list',session:SESSION})});
       const ld=await lr.json();
       financeMonths=(ld&&ld.months)||[];
     }catch(e){financeMonths=[];}
@@ -1374,7 +1374,7 @@ async function loadFinance(force){
   box.innerHTML=`<div style="font-size:12px;color:var(--txt3);padding:14px;">${uz?'O\'qilmoqda...':'Читаю...'}</div>`;
   try{
     if(finView==='year'){
-      const r=await fetch('/api/finance',{method:'POST',headers:{'content-type':'application/json'},body:JSON.stringify({action:'year'})});
+      const r=await fetch('/api/finance',{method:'POST',headers:{'content-type':'application/json'},body:JSON.stringify({action:'year',session:SESSION})});
       const d=await r.json();financeLoaded=true;
       if(d&&d.ok){renderFinanceYear(d.year||[]);}
       else if(d&&d.error==='no_access'){box.innerHTML=noAccessMsg(uz);}
@@ -1384,7 +1384,7 @@ async function loadFinance(force){
       // клиентский кэш: если месяц уже читали и не форсим — показываем мгновенно
       if(force&&month)delete finCache[month];
       if(!force&&finCache[month]){renderFinance(finCache[month]);return;}
-      const r=await fetch('/api/finance',{method:'POST',headers:{'content-type':'application/json'},body:JSON.stringify({month,force:!!force})});
+      const r=await fetch('/api/finance',{method:'POST',headers:{'content-type':'application/json'},body:JSON.stringify({month,force:!!force,session:SESSION})});
       const d=await r.json();financeLoaded=true;
       if(d&&d.ok){finCache[month]=d;renderFinance(d);}
       else if(d&&d.error==='no_access'){box.innerHTML=noAccessMsg(uz);}
@@ -1499,7 +1499,7 @@ async function runFinanceAnalysis(force){
   box.innerHTML=`<div style="background:var(--card);border:1px solid var(--line);border-radius:12px;padding:14px;font-size:13px;color:var(--txt3);">${uz?'AI moliyani tahlil qilyapti...':'ИИ анализирует финансы...'}</div>`;
   try{
     const r=await fetch('/api/finance',{method:'POST',headers:{'content-type':'application/json'},
-      body:JSON.stringify({action:'analyze',fin:d,lang:state.lang||'ru',force:!!force})});
+      body:JSON.stringify({action:'analyze',fin:d,lang:state.lang||'ru',force:!!force,session:SESSION})});
     const j=await r.json();
     if(j&&j.ok&&j.analysis){
       window._finAnalysisCache[key]=j.analysis;
@@ -1705,9 +1705,9 @@ async function loadOverviewExtras(){
   if(!overviewExtrasLoaded){
     overviewExtrasLoaded=true;
     // текущий месяц из финансов (для прибыли + продаж месяца)
-    try{const r=await fetch('/api/finance',{method:'POST',headers:{'content-type':'application/json'},body:JSON.stringify({})});ovFinMonth=await r.json();}catch(e){ovFinMonth=null;}
+    try{const r=await fetch('/api/finance',{method:'POST',headers:{'content-type':'application/json'},body:JSON.stringify({session:SESSION})});ovFinMonth=await r.json();}catch(e){ovFinMonth=null;}
     // год (для прибыли за всё время)
-    try{const r=await fetch('/api/finance',{method:'POST',headers:{'content-type':'application/json'},body:JSON.stringify({action:'year'})});const d=await r.json();ovFinYear=(d&&d.ok)?d.year:null;}catch(e){ovFinYear=null;}
+    try{const r=await fetch('/api/finance',{method:'POST',headers:{'content-type':'application/json'},body:JSON.stringify({action:'year',session:SESSION})});const d=await r.json();ovFinYear=(d&&d.ok)?d.year:null;}catch(e){ovFinYear=null;}
   }
   renderOverviewMoney();
 }
@@ -2519,8 +2519,18 @@ function applyRole(){
   if(chatTab)chatTab.style.display=(USER_ROLE==='rop')?'none':'';
   // Демо-панель: только админ
   if(demoBtn)demoBtn.style.display=(USER_ROLE==='admin')?'':'none';
-  // РОП: скрыть кнопки, которые уводят в чат-советник (у РОПа чата нет)
   const isRop=USER_ROLE==='rop';
+  // РОП: скрыть вкладку ФИНАНСЫ (чувствительные данные владельца — прибыль, доли, расходы)
+  const finTab=document.getElementById('dtab-finance');
+  if(finTab)finTab.style.display=isRop?'none':'';
+  // если РОП стоял на финансах — увести на обзор
+  if(isRop&&dashCurrentTab==='finance')dashTab('overview');
+  // РОП: скрыть прибыль и сумму продаж (финансовые данные) в Обзоре
+  const profCard=document.getElementById('kpiProfit');
+  if(profCard&&profCard.closest('.dcard'))profCard.closest('.dcard').style.display=isRop?'none':'';
+  const salesSumBlock=document.getElementById('overviewSalesSum');
+  if(salesSumBlock&&salesSumBlock.closest('.block'))salesSumBlock.closest('.block').style.display=isRop?'none':'';
+  // РОП: скрыть кнопки, которые уводят в чат-советник (у РОПа чата нет)
   ['genBtn','nextBtn','dopSecTitle'].forEach(id=>{
     const el=document.getElementById(id);
     if(el)el.style.display=isRop?'none':'';
