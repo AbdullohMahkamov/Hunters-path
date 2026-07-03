@@ -539,9 +539,10 @@
         <div style="font-size:11px;color:var(--txt3);margin-top:5px;" id="goalProgressTxt">—</div>
       </div>
 
-      <div class="dash-grid" style="grid-template-columns:repeat(3,1fr);">
+      <div class="dash-grid" style="grid-template-columns:repeat(2,1fr);">
         <div class="dcard"><div class="dl" id="ovSoldLbl">Продаж</div><div class="dv" id="kpiSold" style="color:var(--accent);">—</div><div class="dh" id="kpiSoldH">из плана 141</div></div>
         <div class="dcard"><div class="dl">Конверсия команды<span class="hint" onclick="showHint('conv',event)">?</span></div><div class="dv" id="kpiConv" style="color:var(--accent);">—</div><div class="dh" id="ovConvH">лид → продажа</div></div>
+        <div class="dcard"><div class="dl">Средний чек<span class="hint" onclick="showHint('check',event)">?</span></div><div class="dv" id="kpiCheck">—</div><div class="dh" id="ovCheckH">выручка ÷ продажи</div></div>
         <div class="dcard"><div class="dl">Прибыль</div><div class="dv" id="kpiProfit">—</div><div class="dh" id="ovProfitH">этот месяц</div></div>
       </div>
 
@@ -1342,7 +1343,18 @@ function applyLiveDash(d){
   set('kpiRevenue',fmtSum(revShown));
   const rh=document.getElementById('ovRevH'); if(rh)rh.textContent=isAll?'за всё время':'этот месяц';
   set('kpiConv',String(convVal).replace('.',',')+'%');
-  const ch=document.getElementById('ovConvH'); if(ch)ch.textContent=isAll?'за всё время':'лид → продажа';
+  // подпись конверсии: «лидов X → продаж Y» (реальные числа)
+  const convLeads = isAll ? (t.leadsAll!=null?t.leadsAll:t.leads) : (t.leads!=null?t.leads:0);
+  const convSold = isAll ? (t.soldTeamAll!=null?t.soldTeamAll:t.soldAll) : (t.soldTeam!=null?t.soldTeam:t.sold);
+  const uzL=state.lang==='uz';
+  const ch=document.getElementById('ovConvH');
+  if(ch)ch.textContent=uzL?`${convLeads!=null?convLeads:'—'} lid → ${convSold!=null?convSold:'—'} sotuv`:`лидов ${convLeads!=null?convLeads:'—'} → продаж ${convSold!=null?convSold:'—'}`;
+  // Средний чек = выручка ÷ количество продаж
+  const chkSold = isAll ? (t.soldAll!=null?t.soldAll:t.sold) : t.sold;
+  const chkRev = isAll ? (t.revenueAll!=null?t.revenueAll:t.revenue) : t.revenue;
+  const avgCheck = (chkSold>0) ? Math.round(chkRev/chkSold) : 0;
+  set('kpiCheck', avgCheck>0?fmtSum(avgCheck):'—');
+  const chkH=document.getElementById('ovCheckH'); if(chkH)chkH.textContent=isAll?(uzL?'butun davr':'за всё время'):(uzL?'tushum ÷ sotuv':'выручка ÷ продажи');
   // подписи заголовков карточек
   const sl=document.getElementById('ovSoldLbl'); if(sl)sl.textContent=isAll?'Продаж (всё время)':'Продаж';
   const rl=document.getElementById('ovRevLbl'); if(rl)rl.textContent=isAll?'Выручка (всё время)':'Выручка';
@@ -2213,13 +2225,13 @@ function applyStaticI18n(){
   const ep=document.querySelector('#chatEmpty p');if(ep)ep.textContent=tr('emptyP');
   // KPI подписи
   const dcards=document.querySelectorAll('#dg-overview .dash-grid .dcard');
-  if(dcards.length>=3){
+  if(dcards.length>=4){
     dcards[0].querySelector('.dl').innerHTML=tr('kSold');
     dcards[0].querySelector('.dh').textContent=tr('kSoldH');
     dcards[1].querySelector('.dl').innerHTML=tr('kConv')+'<span class="hint" onclick="showHint(\'conv\',event)">?</span>';
-    dcards[1].querySelector('.dh').textContent=tr('kConvH');
-    dcards[2].querySelector('.dl').innerHTML=tr('kProfit');
-    dcards[2].querySelector('.dh').textContent=tr('kProfitH');
+    dcards[2].querySelector('.dl').innerHTML=tr('kCheck')+'<span class="hint" onclick="showHint(\'check\',event)">?</span>';
+    dcards[3].querySelector('.dl').innerHTML=tr('kProfit');
+    dcards[3].querySelector('.dh').textContent=tr('kProfitH');
   }
   // фильтры перерисуются в renderStages
 }
