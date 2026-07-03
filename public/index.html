@@ -244,6 +244,8 @@
   .perbtn.on{background:var(--accent);color:#fff;border-color:var(--accent);}
   .dtab-fin{color:var(--gold);}
   .dtab-fin.on{border-bottom-color:var(--gold);color:var(--gold);}
+  .two-col{display:grid;grid-template-columns:1fr 1fr;gap:22px;}
+  @media(max-width:720px){.two-col{grid-template-columns:1fr;gap:0;}}
   .goal-big{font-size:26px;font-weight:700;}
 
   /* dop-quests + generator modal */
@@ -559,6 +561,10 @@
 
     <!-- РАЗДЕЛ: ДИНАМИКА (тренды во времени) -->
     <div class="dgroup" id="dg-trends" style="display:none;">
+      <div style="display:flex;gap:6px;margin-bottom:14px;">
+        <button class="perbtn on" id="tr-per-month" onclick="setDashPeriod('month')">Текущий месяц</button>
+        <button class="perbtn" id="tr-per-all" onclick="setDashPeriod('all')">Всё время</button>
+      </div>
       <div id="trendsBox"><div style="font-size:12px;color:var(--txt3);padding:14px;">Загрузка динамики...</div></div>
     </div>
 
@@ -576,8 +582,12 @@
 
     <!-- РАЗДЕЛ: МАРКЕТИНГ (верх воронки — привлечение) -->
     <div class="dgroup" id="dg-marketing" style="display:none;">
+      <div style="display:flex;gap:6px;margin-bottom:14px;">
+        <button class="perbtn on" id="mk-per-month" onclick="setDashPeriod('month')">Текущий месяц</button>
+        <button class="perbtn" id="mk-per-all" onclick="setDashPeriod('all')">Всё время</button>
+      </div>
       <div class="dash-grid">
-        <div class="dcard"><div class="dl">Лидов за месяц</div><div class="dv" id="mkLeads">—</div><div class="dh">привлечено</div></div>
+        <div class="dcard"><div class="dl" id="mkLeadsLbl">Лидов за месяц</div><div class="dv" id="mkLeads">—</div><div class="dh">привлечено</div></div>
         <div class="dcard"><div class="dl">Потеря до контакта<span class="hint" onclick="showHint('reach',event)">?</span></div><div class="dv" id="mkNoContact" style="color:var(--red);">—</div><div class="dh">умерли без разговора</div></div>
       </div>
       <div class="dsect" id="secProb"><svg class="ic" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><path d="M12 3s6 7 6 11a6 6 0 0 1-12 0c0-4 6-11 6-11z"/></svg> Куда утекают лиды<span class="hint" onclick="showHint('problems',event)">?</span></div>
@@ -586,25 +596,40 @@
 
     <!-- РАЗДЕЛ: ПРОДАЖИ (низ воронки — обработка) -->
     <div class="dgroup" id="dg-sales" style="display:none;">
-      <div class="dsect" id="secPlanFact"><svg class="ic" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><path d="M9 6h11M9 12h11M9 18h11"/><path d="M4 6l1 1 2-2M4 12l1 1 2-2M4 18l1 1 2-2"/></svg> План / Факт по менеджерам</div>
-      <div id="planFactChart"></div>
-
-      <div class="dsect" id="secTop"><svg class="ic" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><path d="M8 4h8v5a4 4 0 0 1-8 0zM8 6H5v1a3 3 0 0 0 3 3M16 6h3v1a3 3 0 0 1-3 3M9 20h6M12 13v4"/></svg> Топ по продажам</div>
-      <div id="topSalesChart"></div>
-
-      <div class="dsect" id="secMop"><svg class="ic" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="9"/><circle cx="12" cy="12" r="5"/><circle cx="12" cy="12" r="1"/></svg> Конверсия и дозвон по менеджерам<span class="hint" onclick="showHint('reach',event)">?</span></div>
-      <div id="mopChart"></div>
-
-      <div class="dsect">Активность менеджеров<span class="hint" onclick="showHint('activity',event)">?</span></div>
-      <div style="display:flex;gap:6px;align-items:center;margin-bottom:12px;flex-wrap:wrap;">
-        <button class="perbtn on" id="act-month" onclick="setActPeriod('month')">За месяц</button>
-        <button class="perbtn" id="act-today" onclick="setActPeriod('today')">Сегодня</button>
-        <input type="date" id="actDate" onchange="setActPeriod('day')" style="padding:7px 10px;border-radius:8px;border:1px solid var(--line2);background:var(--card);color:var(--txt);font-size:12.5px;" />
-        <button onclick="loadActivity(true)" title="Обновить" style="padding:7px 10px;border-radius:8px;background:var(--card);border:1px solid var(--line2);color:var(--txt2);font-size:12.5px;cursor:pointer;"><svg class="ic" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><path d="M21 12a9 9 0 1 1-3-6.7L21 8M21 3v5h-5"/></svg></button>
+      <div style="display:flex;gap:6px;margin-bottom:14px;">
+        <button class="perbtn on" id="sl-per-month" onclick="setDashPeriod('month')">Текущий месяц</button>
+        <button class="perbtn" id="sl-per-all" onclick="setDashPeriod('all')">Всё время</button>
       </div>
-      <div id="activityChart"><div style="font-size:12px;color:var(--txt3);">Загрузка активности...</div></div>
 
-      <div class="dsect" id="secDisc"><svg class="ic" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><path d="M13 2L4 14h7l-1 8 9-12h-7z"/></svg> Дисциплина менеджеров<span class="hint" onclick="showHint('early',event)">?</span></div>
+      <div class="two-col">
+        <div>
+          <div class="dsect" id="secPlanFact"><svg class="ic" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><path d="M9 6h11M9 12h11M9 18h11"/><path d="M4 6l1 1 2-2M4 12l1 1 2-2M4 18l1 1 2-2"/></svg> План / Факт по менеджерам</div>
+          <div id="planFactChart"></div>
+        </div>
+        <div>
+          <div class="dsect" id="secTop"><svg class="ic" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><path d="M8 4h8v5a4 4 0 0 1-8 0zM8 6H5v1a3 3 0 0 0 3 3M16 6h3v1a3 3 0 0 1-3 3M9 20h6M12 13v4"/></svg> Топ по продажам</div>
+          <div id="topSalesChart"></div>
+        </div>
+      </div>
+
+      <div class="two-col" style="margin-top:6px;">
+        <div>
+          <div class="dsect" id="secMop"><svg class="ic" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="9"/><circle cx="12" cy="12" r="5"/><circle cx="12" cy="12" r="1"/></svg> Конверсия и дозвон<span class="hint" onclick="showHint('reach',event)">?</span></div>
+          <div id="mopChart"></div>
+        </div>
+        <div>
+          <div class="dsect">Активность менеджеров<span class="hint" onclick="showHint('activity',event)">?</span></div>
+          <div style="display:flex;gap:6px;align-items:center;margin-bottom:12px;flex-wrap:wrap;">
+            <button class="perbtn on" id="act-month" onclick="setActPeriod('month')">Месяц</button>
+            <button class="perbtn" id="act-today" onclick="setActPeriod('today')">Сегодня</button>
+            <input type="date" id="actDate" onchange="setActPeriod('day')" style="padding:6px 8px;border-radius:8px;border:1px solid var(--line2);background:var(--card);color:var(--txt);font-size:12px;" />
+            <button onclick="loadActivity(true)" title="Обновить" style="padding:6px 9px;border-radius:8px;background:var(--card);border:1px solid var(--line2);color:var(--txt2);font-size:12px;cursor:pointer;"><svg class="ic" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><path d="M21 12a9 9 0 1 1-3-6.7L21 8M21 3v5h-5"/></svg></button>
+          </div>
+          <div id="activityChart"><div style="font-size:12px;color:var(--txt3);">Загрузка активности...</div></div>
+        </div>
+      </div>
+
+      <div class="dsect" id="secDisc" style="margin-top:6px;"><svg class="ic" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><path d="M13 2L4 14h7l-1 8 9-12h-7z"/></svg> Дисциплина менеджеров<span class="hint" onclick="showHint('early',event)">?</span></div>
       <div id="disciplineChart"><div style="font-size:12px;color:var(--txt3);">Нажмите «Обновить дисциплину» — это подробный расчёт по звонкам и задачам, идёт 20-40 секунд.</div></div>
     </div>
 
@@ -1202,11 +1227,20 @@ function dashTab(tab){
 }
 function setDashPeriod(per){
   window._dashPeriod=per;
-  document.getElementById('per-month').classList.toggle('on',per==='month');
-  document.getElementById('per-all').classList.toggle('on',per==='all');
-  // перерисовываем с текущими данными
+  // синхронизируем все переключатели во всех разделах
+  ['per','tr-per','mk-per','sl-per'].forEach(pfx=>{
+    const m=document.getElementById(pfx+'-month'),a=document.getElementById(pfx+'-all');
+    if(m)m.classList.toggle('on',per==='month');
+    if(a)a.classList.toggle('on',per==='all');
+  });
+  // маркетинг: подпись «лидов»
+  const ml=document.getElementById('mkLeadsLbl');
+  if(ml)ml.textContent=per==='all'?(state.lang==='uz'?'Lidlar (butun davr)':'Лидов (всё время)'):(state.lang==='uz'?'Oylik lidlar':'Лидов за месяц');
+  // перерисовываем
   if(window._dashData)applyLiveDash(window._dashData);
   if(typeof renderOverviewMoney==='function')renderOverviewMoney();
+  // динамика реагирует (месяц = последние ~30 дней снимков; всё время = все снимки)
+  if(dashCurrentTab==='trends'&&typeof renderTrendsPeriod==='function')renderTrendsPeriod();
 }
 async function renderDashboard(){
   if(dashLoaded)return;
@@ -1493,10 +1527,23 @@ async function loadTrends(){
     const r=await fetch('/api/trends');
     const d=await r.json();
     trendsLoaded=true;
-    renderTrends(d.snaps||[]);
+    window._allSnaps=d.snaps||[];
+    renderTrendsPeriod();
   }catch(e){
     box.innerHTML=`<div style="font-size:12px;color:var(--red);padding:14px;">${uz?'Ma\'lumot olinmadi':'Не удалось загрузить'}</div>`;
   }
+}
+function renderTrendsPeriod(){
+  const all=window._allSnaps||[];
+  const per=window._dashPeriod||'month';
+  let snaps=all;
+  if(per==='month'){
+    // только снимки текущего месяца
+    const now=new Date();const ym=now.toISOString().slice(0,7); // YYYY-MM
+    snaps=all.filter(s=>(s.date||'').slice(0,7)===ym);
+    if(!snaps.length)snaps=all; // если за месяц пусто — показываем всё
+  }
+  renderTrends(snaps);
 }
 function renderTrends(snaps){
   const box=document.getElementById('trendsBox');if(!box)return;
@@ -1672,31 +1719,41 @@ function renderOverviewMoney(){
   const per=window._dashPeriod||'month';
   const fmt=n=>n==null?'—':new Intl.NumberFormat('ru-RU').format(Math.round(n))+' '+(uz?'so\'m':'сум');
   const set=(id,v)=>{const e=document.getElementById(id);if(e)e.textContent=v;};
-  // Прибыль KPI — всегда текущий месяц (из финансов)
-  const prof = ovFinMonth&&ovFinMonth.ok ? ovFinMonth.profit : null;
-  set('kpiProfit', prof!=null?fmtSum(prof):'—');
-  const ph=document.getElementById('ovProfitH'); if(ph)ph.textContent=uz?'shu oy':'этот месяц';
-  // Сумма продаж (выручка из таблицы) за период
+  // Прибыль KPI — реагирует на период: месяц → прибыль месяца, всё время → сумма прибыли всех месяцев
+  let profShown, profH;
+  if(per==='all' && ovFinYear && ovFinYear.length){
+    profShown = ovFinYear.reduce((a,y)=>a+(y.profit||0),0);
+    profH = uz?'butun davr':'за всё время';
+  }else{
+    profShown = ovFinMonth&&ovFinMonth.ok ? ovFinMonth.profit : null;
+    profH = uz?'shu oy':'этот месяц';
+  }
+  set('kpiProfit', profShown!=null?fmtSum(profShown):'—');
+  const ph=document.getElementById('ovProfitH'); if(ph)ph.textContent=profH;
+  // Сумма продаж за период
   const box=document.getElementById('overviewSalesSum');
   const lbl=document.getElementById('ovSalesSumLbl');
+  const dt=window._dashData&&window._dashData.totals;
   if(per==='all'){
     if(lbl)lbl.textContent=uz?'Sotuvlar summasi (butun davr)':'Сумма продаж (всё время)';
-    const total=(ovFinYear||[]).reduce((a,y)=>a+(y.revenue||0),0);
+    // из amoCRM: выручка за ~4 месяца (все продажи периода)
+    const total=dt&&dt.revenuePeriod!=null?dt.revenuePeriod:null;
+    const cnt=dt&&dt.soldPeriod!=null?dt.soldPeriod:null;
     if(box){
-      if(ovFinYear&&ovFinYear.length){
-        box.innerHTML=`<div style="background:var(--card);border:1px solid var(--line);border-radius:12px;padding:16px;">
-          <div style="font-size:24px;font-weight:700;color:var(--accent);">${fmt(total)}</div>
-          <div style="font-size:11px;color:var(--txt3);margin-top:4px;">${uz?'barcha oylar yig\'indisi (jadvaldan)':'сумма всех месяцев (из таблицы)'}</div>
-        </div>`;
-      }else{box.innerHTML=`<div style="font-size:12px;color:var(--txt3);padding:10px;">${uz?'Ma\'lumot yo\'q':'Нет данных'}</div>`;}
+      box.innerHTML=`<div style="background:var(--card);border:1px solid var(--line);border-radius:12px;padding:16px;">
+        <div style="font-size:24px;font-weight:700;color:var(--accent);">${fmt(total)}</div>
+        <div style="font-size:11px;color:var(--txt3);margin-top:4px;">${cnt!=null?cnt+(uz?' ta sotuv · ':' продаж · '):''}${uz?'amoCRM, ~4 oy':'amoCRM, ~4 месяца'}</div>
+      </div>`;
     }
   }else{
     if(lbl)lbl.textContent=uz?'Sotuvlar summasi (shu oy)':'Сумма продаж (текущий месяц)';
-    const rev=ovFinMonth&&ovFinMonth.ok?ovFinMonth.revenue:null;
+    // из amoCRM: выручка текущего месяца
+    const rev=dt&&dt.revenue!=null?dt.revenue:null;
+    const cnt=dt&&dt.sold!=null?dt.sold:null;
     if(box){
       box.innerHTML=`<div style="background:var(--card);border:1px solid var(--line);border-radius:12px;padding:16px;">
         <div style="font-size:24px;font-weight:700;color:var(--accent);">${fmt(rev)}</div>
-        <div style="font-size:11px;color:var(--txt3);margin-top:4px;">${ovFinMonth&&ovFinMonth.month?escapeHtml(ovFinMonth.month):''} ${uz?'(jadvaldan)':'(из таблицы)'}</div>
+        <div style="font-size:11px;color:var(--txt3);margin-top:4px;">${cnt!=null?cnt+(uz?' ta sotuv · ':' продаж · '):''}${uz?'amoCRM, shu oy':'amoCRM, этот месяц'}</div>
       </div>`;
     }
   }
