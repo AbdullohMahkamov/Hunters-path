@@ -2,6 +2,11 @@
   "version": 2,
   "buildCommand": null,
   "outputDirectory": "public",
+  "functions": {
+    "api/sync.js": { "maxDuration": 60 },
+    "api/activity.js": { "maxDuration": 60 },
+    "api/sync-speed.js": { "maxDuration": 60 }
+  },
   "crons": [
     { "path": "/api/sync", "schedule": "0 1 * * *" }
   ]
