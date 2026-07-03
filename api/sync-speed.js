@@ -131,82 +131,6 @@ export default async function handler(req, res) {
       await new Promise(rs => setTimeout(rs, 150));
     }
 
-    // 3a) ПРИМЕЧАНИЯ-ЗВОНКИ (Utel): реальный дозвон = разговор состоялся (call_status==4 или duration>=60).
-    //     Считаем per-MOP по ОТВЕТСТВЕННОМУ примечания — не зависит от того, лид какого месяца.
-    //     reachedLeadsByMop: mopName -> Set(lead_id, где был реальный разговор)
-    //     callLeadsByMop:    mopName -> Set(lead_id, кому вообще звонили в этом месяце)
-    const REACH_MIN_SEC = 60;
-    const reachedLeadsByMop = {};
-    const callLeadsByMop = {};
-    let notesSeen = 0, notesAnswered = 0, notesMopMatched = 0, notesPages = 0;
-    // собираем звонки по лидам: leadId -> {called:true, answered:bool}
-    const callByLead = {};
-    {
-      page = 1; guard = 0;
-      while (guard < 400) {
-        guard++;
-        const url = `${base}/leads/notes?filter[note_type][0]=call_out&filter[note_type][1]=call_in` +
-          `&filter[created_at][from]=${monthStart}&limit=250&page=${page}`;
-        const r = await fetch(url, { headers: H });
-        if (r.status === 204) break;
-        if (!r.ok) break;
-        notesPages++;
-        const d = await r.json();
-        const notes = (d._embedded && d._embedded.notes) || [];
-        for (const n of notes) {
-          if (n.note_type !== "call_out" && n.note_type !== "call_in") continue;
-          notesSeen++;
-          const leadId = n.entity_id;
-          if (!leadId) continue;
-          const p = n.params || {};
-          const dur = Number(p.duration) || 0;
-          const status = Number(p.call_status);
-          const answered = (status === 4) || (dur >= REACH_MIN_SEC);
-          const rec = callByLead[leadId] || (callByLead[leadId] = { called: true, answered: false });
-          if (answered) { rec.answered = true; notesAnswered++; }
-        }
-        if (notes.length < 250) break;
-        page++;
-        await new Promise(rs => setTimeout(rs, 100));
-      }
-    }
-
-    // Привязываем звонки к МОПу через ОТВЕТСТВЕННОГО ЗА ЛИД (звонки Utel пишутся на служебный аккаунт).
-    let leadsFetched = 0, respSample = [];
-    {
-      const respByLead = {}; // leadId -> responsible_user_id
-      for (const id in leadInfo) if (leadInfo[id] && leadInfo[id].resp) respByLead[id] = leadInfo[id].resp;
-      const missing = Object.keys(callByLead).filter(id => respByLead[id] == null);
-      // amoCRM filter[id][]: безопасно ~50 id за запрос (иначе URL слишком длинный)
-      for (let i = 0; i < missing.length; i += 50) {
-        const chunk = missing.slice(i, i + 50);
-        const qs = chunk.map(id => `filter[id][]=${id}`).join("&");
-        try {
-          const r = await fetch(`${base}/leads?${qs}&limit=50`, { headers: H });
-          if (r.ok) {
-            const d = await r.json();
-            const arr = (d._embedded && d._embedded.leads) || [];
-            leadsFetched += arr.length;
-            for (const L of arr) respByLead[L.id] = L.responsible_user_id;
-          }
-        } catch (e) {}
-        await new Promise(rs => setTimeout(rs, 90));
-      }
-      // раскидываем по МОПам
-      for (const leadId in callByLead) {
-        const mopName = ACTIVE_MOPS[respByLead[leadId]];
-        if (!mopName) continue;
-        notesMopMatched++;
-        (callLeadsByMop[mopName] = callLeadsByMop[mopName] || new Set()).add(leadId);
-        if (callByLead[leadId].answered) {
-          (reachedLeadsByMop[mopName] = reachedLeadsByMop[mopName] || new Set()).add(leadId);
-          const li = leadInfo[leadId];
-          if (li) li.reachedReal = true;
-        }
-      }
-      // ДИАГНОСТИКА: какие responsible_user_id у лидов со звонками (первые 15)
-      respSample = Object.keys(callByLead).slice(0, 15).map(id => respByLead[id]);
-    }
 
     // 3b) ЗАДАЧИ — через отдельный эндпоинт /tasks (привязаны к лиду через entity_id, entity_type=leads)
     page = 1; guard = 0;
@@ -306,14 +230,7 @@ export default async function handler(req, res) {
         earlyClosePct: S.noReachClosed ? Math.round(S.closedEarly / S.noReachClosed * 100) : 0,
         noReachClosed: S.noReachClosed,
         closedEarly: S.closedEarly,
-        // % дозвона — из данных Utel: сколько лидов с реальным разговором ÷ сколько лидов вообще звонили
-        reachedPct: (function(){
-          const reached = (reachedLeadsByMop[name] && reachedLeadsByMop[name].size) || 0;
-          const called = (callLeadsByMop[name] && callLeadsByMop[name].size) || 0;
-          return called ? Math.round(reached / called * 100) : 0;
-        })(),
-        reachedLeads: (reachedLeadsByMop[name] && reachedLeadsByMop[name].size) || 0,
-        calledLeads: (callLeadsByMop[name] && callLeadsByMop[name].size) || 0,
+        // % дозвона в дисциплине берётся на фронте из sync.js (mopsByConv.reachPct) — рабочий источник
         // задачи: всего и реально выполнено (нажат «выполнено»)
         tasksTotal: S.tasksTotal,
         tasksDone: S.tasksDone,
@@ -321,7 +238,7 @@ export default async function handler(req, res) {
       };
     }).sort((a,b)=> (a.medianFirstCallMin??9e9) - (b.medianFirstCallMin??9e9));
 
-    const result = { updatedAt: new Date().toISOString(), period: "Текущий месяц", mops, suspicious2: suspicious2.slice(0, 300), _debug: { notesSeen, notesPages, callByLeadSize: Object.keys(callByLead).length, leadsFetched, notesMopMatched, notesAnswered, respSample, activeMopIds: Object.keys(ACTIVE_MOPS) } };
+    const result = { updatedAt: new Date().toISOString(), period: "Текущий месяц", mops, suspicious2: suspicious2.slice(0, 300) };
     await redisSet(redisUrl, redisToken, "speed", JSON.stringify(result));
     res.status(200).json({ ok: true, ...result });
   } catch (err) {
