@@ -338,6 +338,7 @@ export default async function handler(req, res) {
         // === ВСЁ ВРЕМЯ = ВСЯ БАЗА (для дашборда) ===
         leadsAll: leadsBase,          // все лиды в базе (~8000)
         soldAll: soldBase,            // все продажи в базе (140+)
+        soldTeamAll: soldTeamBase,    // продажи пятёрки за всю базу (для конверсии)
         revenueAll: revenueBase,      // вся выручка базы
         convAll,                      // конверсия по всей базе
         noContactPctAll,              // недозвон по всей базе
