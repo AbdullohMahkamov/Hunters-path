@@ -84,7 +84,11 @@ export default async function handler(req, res) {
       const leads = (d._embedded && d._embedded.leads) || [];
       for (const L of leads) {
         leadInfo[L.id] = {
+          id: L.id,
+          name: L.name || "",
           created: L.created_at,
+          closed: L.closed_at || 0,
+          updated: L.updated_at || 0,
           resp: L.responsible_user_id,
           status: L.status_id,
           price: L.price || 0,
@@ -154,6 +158,10 @@ export default async function handler(req, res) {
                      closedEarly:0, noReachClosed:0 };
     }
 
+    const suspicious2 = []; // подозрительные по звонкам (этап 2)
+    const nowSec2 = Math.floor(Date.now() / 1000);
+    const STALL_DAYS = 7; // лид без движения дольше 7 дней = завис
+
     for (const id in leadInfo) {
       const L = leadInfo[id];
       const mop = ACTIVE_MOPS[L.resp];
@@ -171,15 +179,34 @@ export default async function handler(req, res) {
       }
       // ДЕТЕКТОР ХАЛТУРЫ (с учётом «мёртвых» номеров):
       if (L.status === LOST_STATUS) {
-        // Неверный номер: списывать можно сразу после 1 звонка — это НЕ халтура. Исключаем полностью.
         if (isWrongNumber(L.lossId)) {
-          // не считаем ни в noReachClosed, ни в closedEarly
+          // неверный номер — не халтура
         }
-        // Не дозвонился ИЛИ телефон отключён: нужно 3 звонка. Меньше — халтура.
         else if (L.lossId === NO_REACH_REASON_ID || isPhoneOff(L.lossId)) {
           S.noReachClosed++;
-          if (L.calls < 3) S.closedEarly++;
+          if (L.calls < 3) {
+            S.closedEarly++;
+            // [ЗВОНКИ] закрыл «не дозвонился» с 0-1 звонком
+            if (L.calls <= 1) {
+              suspicious2.push({ id: L.id, name: L.name, price: null, responsible: mop,
+                closed_at: L.closed || L.updated, created_at: L.created,
+                cat: "calls", type: "early_close", label: `Закрыл «не дозвонился» (${L.calls} звонк.)` });
+            }
+          }
         }
+      }
+      // [ЗВОНКИ] дозвон, но мгновенное закрытие: позвонил и закрыл в течение 2 минут
+      if (L.status === LOST_STATUS && L.firstCall && L.closed && (L.closed - L.firstCall) >= 0 && (L.closed - L.firstCall) < 120) {
+        suspicious2.push({ id: L.id, name: L.name, price: null, responsible: mop,
+          closed_at: L.closed, created_at: L.created,
+          cat: "calls", type: "instant_close", label: "Дозвон и мгновенное закрытие (<2 мин)" });
+      }
+      // [ВОРОНКА] лид завис: открыт (не продан/не закрыт), без изменений дольше 7 дней
+      if (L.status !== SOLD_STATUS && L.status !== LOST_STATUS && L.updated && (nowSec2 - L.updated) > STALL_DAYS * 24 * 3600) {
+        const days = Math.floor((nowSec2 - L.updated) / (24 * 3600));
+        suspicious2.push({ id: L.id, name: L.name, price: null, responsible: mop,
+          closed_at: L.updated, created_at: L.created,
+          cat: "funnel", type: "stalled", label: `Лид завис (${days} дн. без движения)` });
       }
     }
 
@@ -199,7 +226,7 @@ export default async function handler(req, res) {
       };
     }).sort((a,b)=> (a.medianFirstCallMin??9e9) - (b.medianFirstCallMin??9e9));
 
-    const result = { updatedAt: new Date().toISOString(), period: "Текущий месяц", mops };
+    const result = { updatedAt: new Date().toISOString(), period: "Текущий месяц", mops, suspicious2: suspicious2.slice(0, 300) };
     await redisSet(redisUrl, redisToken, "speed", JSON.stringify(result));
     res.status(200).json({ ok: true, ...result });
   } catch (err) {
