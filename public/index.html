@@ -539,9 +539,8 @@
         <div style="font-size:11px;color:var(--txt3);margin-top:5px;" id="goalProgressTxt">—</div>
       </div>
 
-      <div class="dash-grid">
+      <div class="dash-grid" style="grid-template-columns:repeat(3,1fr);">
         <div class="dcard"><div class="dl" id="ovSoldLbl">Продаж</div><div class="dv" id="kpiSold" style="color:var(--accent);">—</div><div class="dh" id="kpiSoldH">из плана 141</div></div>
-        <div class="dcard"><div class="dl" id="ovRevLbl">Выручка</div><div class="dv" id="kpiRevenue">—</div><div class="dh" id="ovRevH">этот месяц</div></div>
         <div class="dcard"><div class="dl">Конверсия команды<span class="hint" onclick="showHint('conv',event)">?</span></div><div class="dv" id="kpiConv" style="color:var(--accent);">—</div><div class="dh" id="ovConvH">лид → продажа</div></div>
         <div class="dcard"><div class="dl">Прибыль</div><div class="dv" id="kpiProfit">—</div><div class="dh" id="ovProfitH">этот месяц</div></div>
       </div>
@@ -1298,9 +1297,13 @@ async function renderDashboard(){
 }
 
 function fmtSum(n){
-  if(n>=1000000)return (n/1000000).toFixed(n>=10000000?0:1).replace('.',',')+'М';
-  if(n>=1000)return Math.round(n/1000)+'К';
-  return String(n||0);
+  n=Number(n)||0;
+  const neg=n<0; const a=Math.abs(n);
+  let s;
+  if(a>=1000000)s=(a/1000000).toFixed(a>=10000000?0:1).replace('.',',')+'М';
+  else if(a>=1000)s=Math.round(a/1000)+'К';
+  else s=String(a);
+  return (neg?'-':'')+s;
 }
 
 function applyLiveDash(d){
@@ -1893,6 +1896,7 @@ function renderOverviewMoney(){
     profH = uz?'shu oy':'этот месяц';
   }
   set('kpiProfit', profShown!=null?fmtSum(profShown):'—');
+  const pk=document.getElementById('kpiProfit'); if(pk)pk.style.color=(profShown!=null&&profShown<0)?'var(--red)':'';
   const ph=document.getElementById('ovProfitH'); if(ph)ph.textContent=profH;
   // Сумма продаж за период
   const box=document.getElementById('overviewSalesSum');
@@ -2092,6 +2096,7 @@ const T={
   kSold:{ru:'Продаж за месяц',uz:'Oylik sotuvlar'},kSoldH:{ru:'из плана 141',uz:'rejadan 141'},
   kRev:{ru:'Выручка',uz:'Tushum'},kRevH:{ru:'этот месяц',uz:'shu oy'},
   kConv:{ru:'Конверсия команды',uz:'Jamoa konversiyasi'},kConvH:{ru:'лид → продажа',uz:'lid → sotuv'},
+  kProfit:{ru:'Прибыль',uz:'Foyda'},kProfitH:{ru:'этот месяц',uz:'shu oy'},
   kCheck:{ru:'Средний чек',uz:'O‘rtacha chek'},kCheckH:{ru:'без «своих»',uz:'«o‘ziniki»siz'},
   secTop:{ru:'Топ по продажам',uz:'Sotuv bo‘yicha top'},
   secMop:{ru:'Конверсия и дозвон по менеджерам',uz:'Menejerlar konversiyasi va aloqasi'},
@@ -2192,16 +2197,14 @@ function applyStaticI18n(){
   const eh=document.querySelector('#chatEmpty h3');if(eh)eh.textContent=tr('emptyH');
   const ep=document.querySelector('#chatEmpty p');if(ep)ep.textContent=tr('emptyP');
   // KPI подписи
-  const dcards=document.querySelectorAll('#dashView .dcard');
-  if(dcards.length>=4){
+  const dcards=document.querySelectorAll('#dg-overview .dash-grid .dcard');
+  if(dcards.length>=3){
     dcards[0].querySelector('.dl').innerHTML=tr('kSold');
     dcards[0].querySelector('.dh').textContent=tr('kSoldH');
-    dcards[1].querySelector('.dl').innerHTML=tr('kRev');
-    dcards[1].querySelector('.dh').textContent=tr('kRevH');
-    dcards[2].querySelector('.dl').innerHTML=tr('kConv')+'<span class="hint" onclick="showHint(\'conv\',event)">?</span>';
-    dcards[2].querySelector('.dh').textContent=tr('kConvH');
-    dcards[3].querySelector('.dl').innerHTML=tr('kCheck')+'<span class="hint" onclick="showHint(\'check\',event)">?</span>';
-    dcards[3].querySelector('.dh').textContent=tr('kCheckH');
+    dcards[1].querySelector('.dl').innerHTML=tr('kConv')+'<span class="hint" onclick="showHint(\'conv\',event)">?</span>';
+    dcards[1].querySelector('.dh').textContent=tr('kConvH');
+    dcards[2].querySelector('.dl').innerHTML=tr('kProfit');
+    dcards[2].querySelector('.dh').textContent=tr('kProfitH');
   }
   // фильтры перерисуются в renderStages
 }
