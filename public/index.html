@@ -2030,15 +2030,37 @@ function renderForecast(d){
       </div>
     </div>`;
   }
-  // вердикт
+  // вердикт + разрыв (насколько отстаём)
   if(goalPct!=null){
     let verdict, vcolor;
+    const gap=goal-(forecast||0); // сколько прогноз не дотягивает до цели
     if(goalPct>=100){verdict=uz?'✅ Prognoz maqsaddan yuqori — zoʻr temp!':'✅ Прогноз выше цели — отличный темп!';vcolor='var(--green)';}
     else if(goalPct>=80){verdict=uz?'⚠️ Maqsadga yaqin, biroz jadallashtiring':'⚠️ Близко к цели, чуть поднажать';vcolor='var(--gold)';}
     else{verdict=uz?'🔴 Temp past — maqsaddan ortda':'🔴 Темп низкий — отстаёшь от цели';vcolor='var(--red)';}
     html+=`<div style="font-size:12px;color:${vcolor};margin-top:10px;font-weight:500;">${verdict}</div>`;
+    // насколько отстаём (разрыв в деньгах), если прогноз ниже цели
+    if(gap>0){
+      // сколько ещё нужно закрывать в день, чтобы догнать
+      const daysLeft=Math.max(1,total-passed);
+      const needPerDay=Math.round((goal-earned)/daysLeft);
+      html+=`<div style="font-size:12px;color:var(--txt2);margin-top:6px;">
+        ${uz?'Maqsadgacha yetishmaydi':'До цели не хватит'}: <b style="color:var(--red);">${fc(gap)}</b>.
+        ${uz?`Qolgan ${daysLeft} ish kunida kuniga`:`Осталось ${daysLeft} раб. дн. — нужно`} <b>${fc(needPerDay)}/${uz?'kun':'день'}</b> ${uz?'kerak':'закрывать'}.
+      </div>`;
+    }
+    // кнопка: спросить помощника (AI) с контекстом прогноза
+    const askCtx = uz
+      ? `Mening oylik prognozim: hozirgacha ${fc(earned)} kassa, oy oxiriga prognoz ${forecast!=null?fc(forecast):'—'}, maqsad ${fc(goal)}. ${gap>0?`Maqsadgacha ${fc(gap)} yetishmaydi.`:''} ${passed}/${total} ish kuni oʻtdi. Maqsadga yetish uchun aniq reja ber: nima qilishim kerak, qaysi menejerlarga eʼtibor berish, qaysi lidlarni yopish. Konkret qadamlar bilan.`
+      : `Мой прогноз на месяц: заработано ${fc(earned)}, прогноз к концу месяца ${forecast!=null?fc(forecast):'—'}, цель ${fc(goal)}. ${gap>0?`До цели не хватит ${fc(gap)}.`:''} Прошло ${passed} из ${total} рабочих дней. Дай конкретный план, как выйти на цель: что делать, на каких менеджеров нажать, какие лиды закрывать. Пошагово и по делу.`;
+    html+=`<button onclick='askForecastHelp(${JSON.stringify(askCtx)})' style="margin-top:12px;width:100%;padding:10px;border-radius:9px;background:var(--accent);border:none;color:#fff;font-size:13px;font-weight:600;cursor:pointer;display:flex;align-items:center;justify-content:center;gap:7px;">
+      <svg class="ic" width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><path d="M12 2a7 7 0 0 0-7 7c0 2.4 1.2 4.5 3 5.7V17a1 1 0 0 0 1 1h6a1 1 0 0 0 1-1v-2.3c1.8-1.2 3-3.3 3-5.7a7 7 0 0 0-7-7zM9 21h6"/></svg>
+      ${uz?'Yordamchidan yechim soʻrash':'Спросить помощника, как догнать'}
+    </button>`;
   }
   box.innerHTML=html;
+}
+function askForecastHelp(ctx){
+  quickAsk(ctx);
 }
 
 // ===== СКОРОСТЬ ВОРОНКИ (VELOCITY) =====
