@@ -131,16 +131,19 @@ export default async function handler(req, res) {
       await new Promise(rs => setTimeout(rs, 150));
     }
 
-    // 3a) ПРИМЕЧАНИЯ-ЗВОНКИ с ДЛИТЕЛЬНОСТЬЮ (Utel): реальный дозвон = разговор состоялся.
-    //     У Utel: params.duration (сек) + params.call_status (4 = разговор состоялся, 6 = не дозвонился).
-    //     Считаем дозвоном, если call_status==4 ИЛИ duration>=60.
+    // 3a) ПРИМЕЧАНИЯ-ЗВОНКИ (Utel): реальный дозвон = разговор состоялся (call_status==4 или duration>=60).
+    //     Считаем per-MOP по ОТВЕТСТВЕННОМУ примечания — не зависит от того, лид какого месяца.
+    //     reachedLeadsByMop: mopName -> Set(lead_id, где был реальный разговор)
+    //     callLeadsByMop:    mopName -> Set(lead_id, кому вообще звонили в этом месяце)
     const REACH_MIN_SEC = 60;
+    const reachedLeadsByMop = {};
+    const callLeadsByMop = {};
+    let notesSeen = 0, notesAnswered = 0;
     {
       page = 1; guard = 0;
-      while (guard < 300) {
+      while (guard < 400) {
         guard++;
-        // тянем все примечания сделок за месяц, фильтруем звонки в коде (надёжнее, чем filter по типу)
-        const url = `${base}/leads/notes?filter[note_type][]=call_out&filter[note_type][]=call_in` +
+        const url = `${base}/leads/notes?filter[note_type][0]=call_out&filter[note_type][1]=call_in` +
           `&filter[created_at][from]=${monthStart}&limit=250&page=${page}`;
         const r = await fetch(url, { headers: H });
         if (r.status === 204) break;
@@ -149,16 +152,25 @@ export default async function handler(req, res) {
         const notes = (d._embedded && d._embedded.notes) || [];
         for (const n of notes) {
           if (n.note_type !== "call_out" && n.note_type !== "call_in") continue;
-          const li = leadInfo[n.entity_id];
-          if (!li) continue;
+          notesSeen++;
+          const mopName = ACTIVE_MOPS[n.responsible_user_id];
+          if (!mopName) continue;
+          const leadId = n.entity_id;
+          (callLeadsByMop[mopName] = callLeadsByMop[mopName] || new Set()).add(leadId);
           const p = n.params || {};
-          const dur = p.duration || 0;
+          const dur = Number(p.duration) || 0;
           const answered = (p.call_status === 4) || (dur >= REACH_MIN_SEC);
-          if (answered) li.reachedReal = true;
+          if (answered) {
+            notesAnswered++;
+            (reachedLeadsByMop[mopName] = reachedLeadsByMop[mopName] || new Set()).add(leadId);
+            // если лид загружен — тоже пометим (для старых сигналов)
+            const li = leadInfo[leadId];
+            if (li) li.reachedReal = true;
+          }
         }
         if (notes.length < 250) break;
         page++;
-        await new Promise(rs => setTimeout(rs, 120));
+        await new Promise(rs => setTimeout(rs, 110));
       }
     }
 
@@ -260,8 +272,14 @@ export default async function handler(req, res) {
         earlyClosePct: S.noReachClosed ? Math.round(S.closedEarly / S.noReachClosed * 100) : 0,
         noReachClosed: S.noReachClosed,
         closedEarly: S.closedEarly,
-        // % дозвона — до скольких лидов реально дозвонился
-        reachedPct: S.leads ? Math.round(S.reached / S.leads * 100) : 0,
+        // % дозвона — из данных Utel: сколько лидов с реальным разговором ÷ сколько лидов вообще звонили
+        reachedPct: (function(){
+          const reached = (reachedLeadsByMop[name] && reachedLeadsByMop[name].size) || 0;
+          const called = (callLeadsByMop[name] && callLeadsByMop[name].size) || 0;
+          return called ? Math.round(reached / called * 100) : 0;
+        })(),
+        reachedLeads: (reachedLeadsByMop[name] && reachedLeadsByMop[name].size) || 0,
+        calledLeads: (callLeadsByMop[name] && callLeadsByMop[name].size) || 0,
         // задачи: всего и реально выполнено (нажат «выполнено»)
         tasksTotal: S.tasksTotal,
         tasksDone: S.tasksDone,
@@ -269,7 +287,7 @@ export default async function handler(req, res) {
       };
     }).sort((a,b)=> (a.medianFirstCallMin??9e9) - (b.medianFirstCallMin??9e9));
 
-    const result = { updatedAt: new Date().toISOString(), period: "Текущий месяц", mops, suspicious2: suspicious2.slice(0, 300) };
+    const result = { updatedAt: new Date().toISOString(), period: "Текущий месяц", mops, suspicious2: suspicious2.slice(0, 300), _debug: { notesSeen, notesAnswered } };
     await redisSet(redisUrl, redisToken, "speed", JSON.stringify(result));
     res.status(200).json({ ok: true, ...result });
   } catch (err) {
