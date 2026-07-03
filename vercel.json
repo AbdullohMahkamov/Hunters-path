@@ -3,11 +3,14 @@
   "buildCommand": null,
   "outputDirectory": "public",
   "functions": {
-    "api/sync.js": { "maxDuration": 60 },
-    "api/activity.js": { "maxDuration": 60 },
-    "api/sync-speed.js": { "maxDuration": 60 }
+    "api/sync.js": { "maxDuration": 300 },
+    "api/activity.js": { "maxDuration": 300 },
+    "api/sync-speed.js": { "maxDuration": 300 },
+    "api/finance.js": { "maxDuration": 120 }
   },
   "crons": [
-    { "path": "/api/sync", "schedule": "0 1 * * *" }
+    { "path": "/api/sync", "schedule": "0 * * * *" },
+    { "path": "/api/activity?action=refresh", "schedule": "10 * * * *" },
+    { "path": "/api/sync-speed", "schedule": "20 * * * *" }
   ]
 }
