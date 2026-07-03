@@ -45,6 +45,31 @@ export default async function handler(req, res) {
       return;
     }
 
+    // === НАСТРОЙКИ ОРГАНИЗАЦИИ (цель, рабочие дни) — общие для всех пользователей орг ===
+    const settingsKey = `settings:${sess.org}`;
+    if (action === "settings-get") {
+      const r = await fetch(`${url}/get/${settingsKey}`, { headers: { Authorization: `Bearer ${token}` } });
+      const d = await r.json();
+      const s = (d && d.result) ? JSON.parse(d.result) : {};
+      res.status(200).json({ ok: true, settings: s });
+      return;
+    }
+    if (action === "settings-set") {
+      // сохраняем только известные поля (цель, рабочие дни)
+      const r = await fetch(`${url}/get/${settingsKey}`, { headers: { Authorization: `Bearer ${token}` } });
+      const d = await r.json();
+      const cur = (d && d.result) ? JSON.parse(d.result) : {};
+      const incoming = (req.body && req.body.settings) || {};
+      if (incoming.goal != null) cur.goal = incoming.goal;
+      if (incoming.workdays != null) cur.workdays = incoming.workdays; // массив 0..6 (0=Вс)
+      await fetch(`${url}/set/${settingsKey}`, {
+        method: "POST", headers: { Authorization: `Bearer ${token}` },
+        body: JSON.stringify(cur),
+      });
+      res.status(200).json({ ok: true, settings: cur });
+      return;
+    }
+
     // === ПОДОЗРИТЕЛЬНЫЕ СДЕЛКИ: статусы проверки ===
     const suspKey = `suspicious:${sess.org}`;
     // получить все проверенные/отклонённые (карта id -> {status, note, at, by})
