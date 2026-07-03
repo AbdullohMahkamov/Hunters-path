@@ -131,14 +131,16 @@ export default async function handler(req, res) {
       await new Promise(rs => setTimeout(rs, 150));
     }
 
-    // 3a) ПРИМЕЧАНИЯ-ЗВОНКИ с ДЛИТЕЛЬНОСТЬЮ: реальный дозвон = разговор дольше 60 сек.
-    //     Длительность хранится в notes типа call_in/call_out (params.duration, в секундах).
+    // 3a) ПРИМЕЧАНИЯ-ЗВОНКИ с ДЛИТЕЛЬНОСТЬЮ (Utel): реальный дозвон = разговор состоялся.
+    //     У Utel: params.duration (сек) + params.call_status (4 = разговор состоялся, 6 = не дозвонился).
+    //     Считаем дозвоном, если call_status==4 ИЛИ duration>=60.
     const REACH_MIN_SEC = 60;
-    for (const noteType of ["call_out", "call_in"]) {
+    {
       page = 1; guard = 0;
-      while (guard < 120) {
+      while (guard < 300) {
         guard++;
-        const url = `${base}/leads/notes?filter[note_type]=${noteType}` +
+        // тянем все примечания сделок за месяц, фильтруем звонки в коде (надёжнее, чем filter по типу)
+        const url = `${base}/leads/notes?filter[note_type][]=call_out&filter[note_type][]=call_in` +
           `&filter[created_at][from]=${monthStart}&limit=250&page=${page}`;
         const r = await fetch(url, { headers: H });
         if (r.status === 204) break;
@@ -146,10 +148,13 @@ export default async function handler(req, res) {
         const d = await r.json();
         const notes = (d._embedded && d._embedded.notes) || [];
         for (const n of notes) {
+          if (n.note_type !== "call_out" && n.note_type !== "call_in") continue;
           const li = leadInfo[n.entity_id];
           if (!li) continue;
-          const dur = (n.params && (n.params.duration || n.params.call_duration)) || 0;
-          if (dur >= REACH_MIN_SEC) li.reachedReal = true; // реально поговорил >60 сек
+          const p = n.params || {};
+          const dur = p.duration || 0;
+          const answered = (p.call_status === 4) || (dur >= REACH_MIN_SEC);
+          if (answered) li.reachedReal = true;
         }
         if (notes.length < 250) break;
         page++;
