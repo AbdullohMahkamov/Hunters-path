@@ -52,6 +52,24 @@ export default async function handler(req, res) {
         if (p.name === PIPELINE_ID_NAME) pipelineId = p.id;
     }
 
+    // 1б) Тянем названия причин потери, чтобы отличить «неверный номер» / «телефон отключён»
+    const lossNameById = {};
+    try {
+      let lp = 1;
+      while (lp < 10) {
+        const lr = await fetch(`${base}/leads/loss_reasons?limit=250&page=${lp}`, { headers: H });
+        if (!lr.ok) break;
+        const ld = await lr.json();
+        const arr = (ld._embedded && ld._embedded.loss_reasons) || [];
+        for (const x of arr) lossNameById[x.id] = (x.name || "").toLowerCase();
+        if (arr.length < 250) break;
+        lp++;
+      }
+    } catch (e) { /* если не вышло — работаем по старой логике */ }
+    // хелперы: распознать причину по названию
+    const isWrongNumber = (id) => { const n = lossNameById[id] || ""; return n.includes("xato raqam") || n.includes("неверный номер") || n.includes("неправильн"); };
+    const isPhoneOff = (id) => { const n = lossNameById[id] || ""; return n.includes("o'chirilgan") || n.includes("o‘chirilgan") || n.includes("отключ"); };
+
     // 2) Тянем ЛИДЫ месяца: id -> {created_at, responsible, status, price, lossId}
     const leadInfo = {};
     let page = 1, guard = 0;
@@ -151,10 +169,17 @@ export default async function handler(req, res) {
         const mins = (L.firstCall - L.created) / 60;
         if (mins >= 0 && mins < 60*24*14) S.firstCallTimes.push(mins);
       }
-      // ДЕТЕКТОР ХАЛТУРЫ: закрыл "3 marta bog'lanib bo'lmadi", а звонков < 3
-      if (L.status === LOST_STATUS && L.lossId === NO_REACH_REASON_ID) {
-        S.noReachClosed++;
-        if (L.calls < 3) S.closedEarly++;
+      // ДЕТЕКТОР ХАЛТУРЫ (с учётом «мёртвых» номеров):
+      if (L.status === LOST_STATUS) {
+        // Неверный номер: списывать можно сразу после 1 звонка — это НЕ халтура. Исключаем полностью.
+        if (isWrongNumber(L.lossId)) {
+          // не считаем ни в noReachClosed, ни в closedEarly
+        }
+        // Не дозвонился ИЛИ телефон отключён: нужно 3 звонка. Меньше — халтура.
+        else if (L.lossId === NO_REACH_REASON_ID || isPhoneOff(L.lossId)) {
+          S.noReachClosed++;
+          if (L.calls < 3) S.closedEarly++;
+        }
       }
     }
 
