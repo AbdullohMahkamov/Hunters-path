@@ -45,6 +45,38 @@ export default async function handler(req, res) {
       return;
     }
 
+    // === ПОДОЗРИТЕЛЬНЫЕ СДЕЛКИ: статусы проверки ===
+    const suspKey = `suspicious:${sess.org}`;
+    // получить все проверенные/отклонённые (карта id -> {status, note, at, by})
+    if (action === "susp-status") {
+      const r = await fetch(`${url}/get/${suspKey}`, { headers: { Authorization: `Bearer ${token}` } });
+      const d = await r.json();
+      const map = (d && d.result) ? JSON.parse(d.result) : {};
+      res.status(200).json({ ok: true, reviewed: map });
+      return;
+    }
+    // пометить сделку: status = "checked" | "rejected", note — примечание
+    if (action === "susp-review") {
+      const { dealId, status, note, deal } = req.body || {};
+      if (!dealId || !status) { res.status(400).json({ error: "dealId and status required" }); return; }
+      const r = await fetch(`${url}/get/${suspKey}`, { headers: { Authorization: `Bearer ${token}` } });
+      const d = await r.json();
+      const map = (d && d.result) ? JSON.parse(d.result) : {};
+      map[dealId] = {
+        status,
+        note: note || "",
+        at: Date.now(),
+        by: sess.role || "",
+        deal: deal || null, // снимок данных сделки для истории
+      };
+      await fetch(`${url}/set/${suspKey}`, {
+        method: "POST", headers: { Authorization: `Bearer ${token}` },
+        body: JSON.stringify(map),
+      });
+      res.status(200).json({ ok: true });
+      return;
+    }
+
     res.status(400).json({ error: "Unknown action" });
   } catch (err) {
     res.status(500).json({ error: "user-data failed", detail: String(err) });
