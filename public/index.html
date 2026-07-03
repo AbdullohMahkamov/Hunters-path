@@ -527,16 +527,20 @@
     <!-- РАЗДЕЛ: ОБЗОР -->
     <div class="dgroup" id="dg-overview">
       <div id="signalsBox"></div>
+
+      <!-- СЕГОДНЯ: пульс дня -->
+      <div class="block" id="todayBlock" style="margin-bottom:14px;">
+        <div class="dsect" id="todayLbl" style="margin-top:0;"><svg class="ic" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="9"/><path d="M12 7v5l3 2"/></svg> Сегодня</div>
+        <div class="dash-grid" style="grid-template-columns:repeat(3,1fr);margin-bottom:0;">
+          <div class="dcard"><div class="dl" id="tdLeadsLbl">Лидов обработано</div><div class="dv" id="tdLeads">—</div><div class="dh" id="tdLeadsH">пришло сегодня</div></div>
+          <div class="dcard"><div class="dl" id="tdSoldLbl">Продаж</div><div class="dv" id="tdSold" style="color:var(--accent);">—</div><div class="dh" id="tdSoldH">закрыто сегодня</div></div>
+          <div class="dcard"><div class="dl" id="tdRevLbl">В кассу</div><div class="dv" id="tdRev" style="color:var(--green);">—</div><div class="dh" id="tdRevH">сумма за сегодня</div></div>
+        </div>
+      </div>
+
       <div style="display:flex;gap:6px;margin-bottom:14px;">
         <button class="perbtn on" id="per-month" onclick="setDashPeriod('month')">Текущий месяц</button>
         <button class="perbtn" id="per-all" onclick="setDashPeriod('all')">Всё время</button>
-      </div>
-      <div class="goal-card">
-        <div style="font-size:12px;color:var(--txt2);margin-bottom:4px;" id="goalTitle">ЦЕЛЬ · ЭТОТ МЕСЯЦ</div>
-        <div class="goal-big" style="color:var(--accent);cursor:pointer;" id="goalBig" onclick="editGoal()">500 000 000 <span style="font-size:15px;color:var(--txt2);">сум/мес</span></div>
-        <div style="font-size:12.5px;color:var(--txt2);margin-top:6px;" id="goalSub">Загрузка живых данных...</div>
-        <div class="bar" style="margin-top:9px;"><div class="bar-fill" id="goalProgressBar" style="width:0%;"></div></div>
-        <div style="font-size:11px;color:var(--txt3);margin-top:5px;" id="goalProgressTxt">—</div>
       </div>
 
       <div class="dash-grid" style="grid-template-columns:repeat(3,1fr);">
@@ -1319,13 +1323,15 @@ function applyLiveDash(d){
   const noContactVal = per==='all' && t.noContactPctAll!=null ? t.noContactPctAll : t.noContactPct;
   const leadsVal = per==='all' && t.leadsAll!=null ? t.leadsAll : t.leads;
 
-  // Цель — берём заданную пользователем (или 500М по умолчанию), считаем прогресс от неё
-  const goal=getGoal();
-  const goalPct=goal>0?Math.round(t.revenue/goal*100):0;
-  document.getElementById('goalProgressBar').style.width=Math.min(100,goalPct)+'%';
-  document.getElementById('goalProgressTxt').textContent=goalPct+'% пути к цели · '+((d.period||'текущий месяц').toLowerCase());
-  document.getElementById('goalSub').innerHTML='Сделано <b style="color:var(--txt);">'+fmtSum(t.revenue)+'</b> из '+fmtSum(goal);
+  // Цель убрана из Обзора — прогресс-бар и подписи больше не заполняем.
   updateGoalHeader();
+
+  // === СЕГОДНЯ ===
+  const uzT=state.lang==='uz';
+  const setT=(id,v)=>{const e=document.getElementById(id);if(e)e.textContent=v;};
+  setT('tdLeads', t.leadsToday!=null?t.leadsToday:'—');
+  setT('tdSold', t.soldToday!=null?t.soldToday:'—');
+  setT('tdRev', t.revenueToday!=null?fmtSum(t.revenueToday):'—');
 
   // значения продаж/выручки, зависящие от периода (всё время = вся база)
   const isAll = per==='all';
@@ -2184,6 +2190,18 @@ function applyStaticI18n(){
   };
   // цель
   setTxt('goalTitle',tr('goalTitle'));
+  // блок «Сегодня»
+  setTxt('todayLbl2', '');
+  const uzTd=state.lang==='uz';
+  const setT2=(id,v)=>{const e=document.getElementById(id);if(e)e.textContent=v;};
+  const tdLblEl=document.getElementById('todayLbl');
+  if(tdLblEl){const svg=tdLblEl.querySelector('svg'); tdLblEl.textContent=uzTd?' Bugun':' Сегодня'; if(svg)tdLblEl.prepend(svg);}
+  setT2('tdLeadsLbl',uzTd?'Lidlar qayta ishlangan':'Лидов обработано');
+  setT2('tdLeadsH',uzTd?'bugun keldi':'пришло сегодня');
+  setT2('tdSoldLbl',uzTd?'Sotuvlar':'Продаж');
+  setT2('tdSoldH',uzTd?'bugun yopildi':'закрыто сегодня');
+  setT2('tdRevLbl',uzTd?'Kassaga':'В кассу');
+  setT2('tdRevH',uzTd?'bugungi summa':'сумма за сегодня');
   // секции дашборда (с сохранением иконок)
   setSecLabel('secTop',tr('secTop'));
   setSecLabel('secMop',tr('secMop'),'reach');
