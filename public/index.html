@@ -1780,6 +1780,7 @@ function applySuspicious(d){
   suspData=fromSync.concat(fromSpeed);
   loadSuspReviewed();
   loadOrgSettings();
+  loadMetaSpend();
 }
 async function loadSuspReviewed(){
   if(!SESSION)return;
@@ -2075,13 +2076,45 @@ function askForecastHelp(ctx){
   quickAsk(ctx);
 }
 
-// ===== ИСТОЧНИКИ РЕКЛАМЫ (adset) =====
+// ===== ИСТОЧНИКИ РЕКЛАМЫ (adset) + ROI из Meta =====
 let _adsetsExpanded=false;
+let _metaSpend=null; // {adsets:[{name,spend,...}], updatedAt}
 function toggleAdsets(){_adsetsExpanded=!_adsetsExpanded;renderAdsets(_lastDashData);}
+
+async function loadMetaSpend(){
+  try{
+    const r=await fetch('/api/meta-ads?action=get');
+    const d=await r.json();
+    if(d&&d.ok){_metaSpend=d;renderAdsets(_lastDashData);}
+  }catch(e){}
+}
+async function refreshMetaSpend(){
+  const btn=document.getElementById('metaRefreshBtn');
+  const uz=state.lang==='uz';
+  if(btn){btn.disabled=true;btn.textContent=uz?'Yuklanmoqda...':'Загрузка...';}
+  try{
+    const r=await fetch('/api/meta-ads?action=refresh');
+    const d=await r.json();
+    if(d&&d.ok){_metaSpend=d;renderAdsets(_lastDashData);}
+    else alert((uz?'Xatolik: ':'Ошибка: ')+((d&&d.error)||'—'));
+  }catch(e){alert(String(e));}
+  if(btn){btn.disabled=false;btn.textContent=uz?'Xarajatlarni yangilash':'Обновить расходы';}
+}
+
+function fmtRoi(rev,spend){
+  if(!spend||spend<=0)return null;
+  return (rev/spend); // во сколько раз окупилось
+}
+
 function renderAdsets(d){
   const box=document.getElementById('adsetsChart');if(!box)return;
   const uz=state.lang==='uz';
   const arr=(d&&d.adsets)||[];
+  // индекс расходов по имени adset
+  const spendMap={};
+  if(_metaSpend&&_metaSpend.adsets)for(const s of _metaSpend.adsets)spendMap[s.name]=s.spend;
+  const hasSpend=_metaSpend&&_metaSpend.adsets&&_metaSpend.adsets.length;
+
   if(!arr.length){
     box.innerHTML='<div style="font-size:12px;color:var(--txt3);">'+(uz?'Manba maʼlumoti yoʻq (adset_name toʻldirilmagan)':'Нет данных об источниках (adset_name не заполнен)')+'</div>';
     return;
@@ -2089,21 +2122,46 @@ function renderAdsets(d){
   const maxRev=Math.max(1,...arr.map(a=>a.revenue));
   const LIMIT=5;
   const shown=_adsetsExpanded?arr:arr.slice(0,LIMIT);
-  let html=`<div style="font-size:11px;color:var(--txt3);margin-bottom:10px;">${uz?'Qaysi auditoriya koʻproq mijoz keltiradi. Reklama xarajatlari ulanganda — ROI koʻrsatiladi.':'Какая аудитория приносит больше клиентов. Когда подключим расходы на рекламу — покажем окупаемость (ROI).'}</div>`;
-  html+=shown.map(a=>`
+  // шапка: кнопка обновить расходы из Meta + статус
+  let html='';
+  html+=`<div style="display:flex;justify-content:space-between;align-items:center;gap:8px;margin-bottom:10px;flex-wrap:wrap;">
+    <div style="font-size:11px;color:var(--txt3);flex:1;min-width:150px;">${hasSpend?(uz?'ROI = tushum ÷ reklama xarajati':'ROI = выручка ÷ расходы на рекламу'):(uz?'«Xarajatlarni yangilash»ni bosing — Meta’dan reklama xarajati tortiladi':'Нажмите «Обновить расходы» — подтянем траты из Meta')}</div>
+    <button id="metaRefreshBtn" onclick="refreshMetaSpend()" style="padding:7px 12px;border-radius:8px;background:var(--accent);border:none;color:#fff;font-size:12px;font-weight:600;cursor:pointer;white-space:nowrap;">${uz?'Xarajatlarni yangilash':'Обновить расходы'}</button>
+  </div>`;
+  if(hasSpend&&_metaSpend.updatedAt){
+    html+=`<div style="font-size:10.5px;color:var(--txt3);margin-bottom:10px;">${uz?'Meta yangilangan':'Meta обновлено'}: ${new Date(_metaSpend.updatedAt).toLocaleString(uz?'uz':'ru')}</div>`;
+  }
+  html+=shown.map(a=>{
+    const spend=spendMap[a.name];
+    const roi=fmtRoi(a.revenue,spend);
+    let roiTag='';
+    if(hasSpend){
+      if(spend>0&&roi!=null){
+        const roiColor=roi>=2?'var(--green)':(roi>=1?'var(--gold)':'var(--red)');
+        roiTag=`<span style="font-size:12px;font-weight:700;color:${roiColor};white-space:nowrap;">ROI ${roi.toFixed(1)}x</span>`;
+      }else if(spend>0){
+        roiTag=`<span style="font-size:11px;color:var(--red);white-space:nowrap;">${uz?'0 sotuv':'0 продаж'}</span>`;
+      }else{
+        roiTag=`<span style="font-size:11px;color:var(--txt3);white-space:nowrap;">${uz?'xarajat yoʻq':'нет расходов'}</span>`;
+      }
+    }
+    return `
     <div style="padding:11px 0;border-bottom:1px solid var(--line);">
-      <div style="display:flex;justify-content:space-between;gap:8px;margin-bottom:5px;">
+      <div style="display:flex;justify-content:space-between;gap:8px;margin-bottom:5px;align-items:center;">
         <b style="font-size:13px;">${escapeHtml(a.name)}</b>
-        <span style="font-size:13px;font-weight:700;color:var(--green);white-space:nowrap;">${fmtSum(a.revenue)}</span>
+        <div style="display:flex;gap:10px;align-items:center;">
+          ${roiTag}
+          <span style="font-size:13px;font-weight:700;color:var(--green);white-space:nowrap;">${fmtSum(a.revenue)}</span>
+        </div>
       </div>
       <div style="height:6px;background:var(--card2);border-radius:5px;overflow:hidden;margin-bottom:5px;">
         <div style="height:100%;width:${Math.round(a.revenue/maxRev*100)}%;background:var(--accent);border-radius:5px;"></div>
       </div>
       <div style="font-size:11.5px;color:var(--txt3);">
-        ${a.leads} ${uz?'lid':'лидов'} · ${a.sold} ${uz?'sotuv':'продаж'} · ${uz?'konv':'конв'}. ${String(a.conv).replace('.',',')}%${a.avgCheck?` · ${uz?'chek':'чек'} ${fmtSum(a.avgCheck)}`:''}
+        ${a.leads} ${uz?'lid':'лидов'} · ${a.sold} ${uz?'sotuv':'продаж'} · ${uz?'konv':'конв'}. ${String(a.conv).replace('.',',')}%${hasSpend&&spend>0?` · ${uz?'xarajat':'расход'} ${fmtSum(spend)}`:''}
       </div>
-    </div>`).join('');
-  // кнопка «показать ещё / свернуть»
+    </div>`;
+  }).join('');
   if(arr.length>LIMIT){
     const rest=arr.length-LIMIT;
     html+=`<button onclick="toggleAdsets()" style="margin-top:12px;width:100%;padding:9px;border-radius:8px;background:var(--card);border:1px solid var(--line2);color:var(--txt2);font-size:12.5px;font-weight:600;cursor:pointer;">
