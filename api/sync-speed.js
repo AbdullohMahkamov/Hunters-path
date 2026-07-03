@@ -138,7 +138,7 @@ export default async function handler(req, res) {
     const REACH_MIN_SEC = 60;
     const reachedLeadsByMop = {};
     const callLeadsByMop = {};
-    let notesSeen = 0, notesAnswered = 0;
+    let notesSeen = 0, notesAnswered = 0, notesMopMatched = 0;
     {
       page = 1; guard = 0;
       while (guard < 400) {
@@ -155,11 +155,13 @@ export default async function handler(req, res) {
           notesSeen++;
           const mopName = ACTIVE_MOPS[n.responsible_user_id];
           if (!mopName) continue;
+          notesMopMatched++;
           const leadId = n.entity_id;
           (callLeadsByMop[mopName] = callLeadsByMop[mopName] || new Set()).add(leadId);
           const p = n.params || {};
           const dur = Number(p.duration) || 0;
-          const answered = (p.call_status === 4) || (dur >= REACH_MIN_SEC);
+          const status = Number(p.call_status);
+          const answered = (status === 4) || (dur >= REACH_MIN_SEC);
           if (answered) {
             notesAnswered++;
             (reachedLeadsByMop[mopName] = reachedLeadsByMop[mopName] || new Set()).add(leadId);
@@ -287,7 +289,7 @@ export default async function handler(req, res) {
       };
     }).sort((a,b)=> (a.medianFirstCallMin??9e9) - (b.medianFirstCallMin??9e9));
 
-    const result = { updatedAt: new Date().toISOString(), period: "Текущий месяц", mops, suspicious2: suspicious2.slice(0, 300), _debug: { notesSeen, notesAnswered } };
+    const result = { updatedAt: new Date().toISOString(), period: "Текущий месяц", mops, suspicious2: suspicious2.slice(0, 300), _debug: { notesSeen, notesMopMatched, notesAnswered } };
     await redisSet(redisUrl, redisToken, "speed", JSON.stringify(result));
     res.status(200).json({ ok: true, ...result });
   } catch (err) {
