@@ -288,6 +288,20 @@ async function readMonth(tab, opts) {
 export default async function handler(req, res) {
   if (req.method !== "POST" && req.method !== "GET") { res.status(405).json({ error: "Method not allowed" }); return; }
   try {
+    // ЗАЩИТА: РОП не имеет доступа к финансам (чувствительные данные владельца)
+    const session = (req.body && req.body.session) || (req.query && req.query.session) || "";
+    const rurl = process.env.UPSTASH_REDIS_REST_URL, rtok = process.env.UPSTASH_REDIS_REST_TOKEN;
+    if (session && rurl) {
+      try {
+        const sr = await fetch(`${rurl}/get/session:${encodeURIComponent(session)}`, { headers: { Authorization: `Bearer ${rtok}` } });
+        const sd = await sr.json();
+        if (sd && sd.result) {
+          const info = JSON.parse(sd.result);
+          if (info && info.role === "rop") { res.status(403).json({ error: "forbidden", msg: "Финансы недоступны для этой роли" }); return; }
+        }
+      } catch (e) { /* если проверка не удалась — продолжаем, фронт всё равно скрывает */ }
+    }
+
     const action = (req.body && req.body.action) || (req.query && req.query.action) || "";
     const curMonth = new Date().getMonth() + 1;
 
