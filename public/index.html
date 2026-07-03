@@ -532,9 +532,9 @@
       <div class="block" id="todayBlock" style="margin-bottom:14px;">
         <div class="dsect" id="todayLbl" style="margin-top:0;"><svg class="ic" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="9"/><path d="M12 7v5l3 2"/></svg> Сегодня</div>
         <div class="dash-grid" style="grid-template-columns:repeat(3,1fr);margin-bottom:0;">
-          <div class="dcard"><div class="dl" id="tdLeadsLbl">Лидов обработано</div><div class="dv" id="tdLeads">—</div><div class="dh" id="tdLeadsH">пришло сегодня</div></div>
-          <div class="dcard"><div class="dl" id="tdSoldLbl">Продаж</div><div class="dv" id="tdSold" style="color:var(--accent);">—</div><div class="dh" id="tdSoldH">закрыто сегодня</div></div>
-          <div class="dcard"><div class="dl" id="tdRevLbl">В кассу</div><div class="dv" id="tdRev" style="color:var(--green);">—</div><div class="dh" id="tdRevH">сумма за сегодня</div></div>
+          <div class="dcard"><div class="dl" id="tdLeadsLbl">Новые обработанные лиды</div><div class="dv" id="tdLeads">—</div></div>
+          <div class="dcard"><div class="dl" id="tdSoldLbl">Сегодняшние продажи</div><div class="dv" id="tdSold" style="color:var(--accent);">—</div></div>
+          <div class="dcard"><div class="dl" id="tdRevLbl">Сегодняшняя выручка</div><div class="dv" id="tdRev" style="color:var(--green);">—</div></div>
         </div>
       </div>
 
@@ -2196,12 +2196,9 @@ function applyStaticI18n(){
   const setT2=(id,v)=>{const e=document.getElementById(id);if(e)e.textContent=v;};
   const tdLblEl=document.getElementById('todayLbl');
   if(tdLblEl){const svg=tdLblEl.querySelector('svg'); tdLblEl.textContent=uzTd?' Bugun':' Сегодня'; if(svg)tdLblEl.prepend(svg);}
-  setT2('tdLeadsLbl',uzTd?'Lidlar qayta ishlangan':'Лидов обработано');
-  setT2('tdLeadsH',uzTd?'bugun keldi':'пришло сегодня');
-  setT2('tdSoldLbl',uzTd?'Sotuvlar':'Продаж');
-  setT2('tdSoldH',uzTd?'bugun yopildi':'закрыто сегодня');
-  setT2('tdRevLbl',uzTd?'Kassaga':'В кассу');
-  setT2('tdRevH',uzTd?'bugungi summa':'сумма за сегодня');
+  setT2('tdLeadsLbl',uzTd?'Yangi ishlangan lidlar':'Новые обработанные лиды');
+  setT2('tdSoldLbl',uzTd?'Bugungi sotuvlar':'Сегодняшние продажи');
+  setT2('tdRevLbl',uzTd?'Bugungi tushum':'Сегодняшняя выручка');
   // секции дашборда (с сохранением иконок)
   setSecLabel('secTop',tr('secTop'));
   setSecLabel('secMop',tr('secMop'),'reach');
