@@ -1285,10 +1285,10 @@ function applyLiveDash(d){
   document.getElementById('goalSub').innerHTML='Сделано <b style="color:var(--txt);">'+fmtSum(t.revenue)+'</b> из '+fmtSum(goal);
   updateGoalHeader();
 
-  // значения продаж/выручки, зависящие от периода
+  // значения продаж/выручки, зависящие от периода (всё время = вся база)
   const isAll = per==='all';
-  const soldShown = isAll && t.soldPeriod!=null ? t.soldPeriod : t.sold;
-  const revShown = isAll && t.revenuePeriod!=null ? t.revenuePeriod : t.revenue;
+  const soldShown = isAll && t.soldAll!=null ? t.soldAll : t.sold;
+  const revShown = isAll && t.revenueAll!=null ? t.revenueAll : t.revenue;
 
   // KPI
   set('kpiSold',soldShown);
@@ -1734,11 +1734,11 @@ function renderOverviewMoney(){
   if(per==='all'){
     if(lbl)lbl.textContent=uz?'Sotuvlar summasi (butun davr)':'Сумма продаж (всё время)';
     // из amoCRM: выручка за ~4 месяца (все продажи периода)
-    const total=dt&&dt.revenuePeriod!=null?dt.revenuePeriod:null;
-    const cnt=dt&&dt.soldPeriod!=null?dt.soldPeriod:null;
+    const total=dt&&dt.revenueAll!=null?dt.revenueAll:null;
+    const cnt=dt&&dt.soldAll!=null?dt.soldAll:null;
     if(box){
       box.innerHTML=`<div style="font-size:24px;font-weight:700;color:var(--accent);">${fmt(total)}</div>
-        <div style="font-size:11px;color:var(--txt3);margin-top:4px;">${cnt!=null?cnt+(uz?' ta sotuv · ':' продаж · '):''}${uz?'amoCRM, ~4 oy':'amoCRM, ~4 месяца'}</div>`;
+        <div style="font-size:11px;color:var(--txt3);margin-top:4px;">${cnt!=null?cnt+(uz?' ta sotuv · ':' продаж · '):''}${uz?'amoCRM, butun baza':'amoCRM, вся база'}</div>`;
     }
   }else{
     if(lbl)lbl.textContent=uz?'Sotuvlar summasi (shu oy)':'Сумма продаж (текущий месяц)';
