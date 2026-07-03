@@ -2076,6 +2076,8 @@ function askForecastHelp(ctx){
 }
 
 // ===== ИСТОЧНИКИ РЕКЛАМЫ (adset) =====
+let _adsetsExpanded=false;
+function toggleAdsets(){_adsetsExpanded=!_adsetsExpanded;renderAdsets(_lastDashData);}
 function renderAdsets(d){
   const box=document.getElementById('adsetsChart');if(!box)return;
   const uz=state.lang==='uz';
@@ -2085,8 +2087,10 @@ function renderAdsets(d){
     return;
   }
   const maxRev=Math.max(1,...arr.map(a=>a.revenue));
+  const LIMIT=5;
+  const shown=_adsetsExpanded?arr:arr.slice(0,LIMIT);
   let html=`<div style="font-size:11px;color:var(--txt3);margin-bottom:10px;">${uz?'Qaysi auditoriya koʻproq mijoz keltiradi. Reklama xarajatlari ulanganda — ROI koʻrsatiladi.':'Какая аудитория приносит больше клиентов. Когда подключим расходы на рекламу — покажем окупаемость (ROI).'}</div>`;
-  html+=arr.map(a=>`
+  html+=shown.map(a=>`
     <div style="padding:11px 0;border-bottom:1px solid var(--line);">
       <div style="display:flex;justify-content:space-between;gap:8px;margin-bottom:5px;">
         <b style="font-size:13px;">${escapeHtml(a.name)}</b>
@@ -2099,6 +2103,13 @@ function renderAdsets(d){
         ${a.leads} ${uz?'lid':'лидов'} · ${a.sold} ${uz?'sotuv':'продаж'} · ${uz?'konv':'конв'}. ${String(a.conv).replace('.',',')}%${a.avgCheck?` · ${uz?'chek':'чек'} ${fmtSum(a.avgCheck)}`:''}
       </div>
     </div>`).join('');
+  // кнопка «показать ещё / свернуть»
+  if(arr.length>LIMIT){
+    const rest=arr.length-LIMIT;
+    html+=`<button onclick="toggleAdsets()" style="margin-top:12px;width:100%;padding:9px;border-radius:8px;background:var(--card);border:1px solid var(--line2);color:var(--txt2);font-size:12.5px;font-weight:600;cursor:pointer;">
+      ${_adsetsExpanded?(uz?'Yigʻish':'Свернуть'):(uz?`Yana ${rest} ta koʻrsatish`:`Показать ещё ${rest}`)}
+    </button>`;
+  }
   box.innerHTML=html;
 }
 
