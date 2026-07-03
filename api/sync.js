@@ -105,6 +105,9 @@ export default async function handler(req, res) {
     // КОНВЕРСИЯ/ДИСЦИПЛИНА — по 5 действующим МОПам. Считаем ДВА периода: месяц и всё окно (~4 мес).
     let sold = 0, soldSum = 0, ownExcluded = 0, noContact = 0;
     let soldToday = 0, revenueToday = 0, leadsToday = 0; // метрики за сегодня
+    // === VELOCITY (скорость воронки) ===
+    const saleDurations = [];      // длительности «создан → продан» в днях (для медианы/среднего)
+    const stageDistribution = {};  // текущий статус (открытые лиды) -> количество
     let soldPeriod = 0, revenuePeriod = 0;  // продажи за окно аудита (~4 месяца)
     let soldTeam = 0, soldSumTeam = 0;     // продажи только пятёрки (для среднего чека команды)
     const lossCount = {};                  // причина -> кол-во ЗА МЕСЯЦ (пятёрка)
@@ -134,6 +137,17 @@ export default async function handler(req, res) {
       // === СЕГОДНЯ: лиды обработанные (созданные сегодня), продажи и касса за сегодня ===
       if ((L.created_at || 0) >= dayStart) leadsToday++;
       if (isSold && (L.closed_at || 0) >= dayStart) { soldToday++; revenueToday += price; }
+
+      // === VELOCITY ===
+      // время «создан → продан» в днях (для проданных с корректными датами)
+      if (isSold && L.created_at && L.closed_at && L.closed_at > L.created_at) {
+        const days = (L.closed_at - L.created_at) / DAY;
+        if (days >= 0 && days < 365) saleDurations.push(days);
+      }
+      // распределение открытых лидов по текущему этапу (не продано и не закрыто)
+      if (!isSold && !isLost) {
+        stageDistribution[stName] = (stageDistribution[stName] || 0) + 1;
+      }
 
       // причина потери (по имени)
       let lossReason = "";
@@ -301,6 +315,19 @@ export default async function handler(req, res) {
     const convAll = leadsBase > 0 ? +(soldTeamBase / leadsBase * 100).toFixed(2) : 0;
     const noContactPctAll = leadsBase > 0 ? +(noContactBase / leadsBase * 100).toFixed(0) : 0;
 
+    // === VELOCITY: медиана и среднее «создан → продан» + распределение по этапам ===
+    let velocityMedian = null, velocityAvg = null;
+    if (saleDurations.length) {
+      const sorted = saleDurations.slice().sort((a, b) => a - b);
+      const mid = Math.floor(sorted.length / 2);
+      velocityMedian = +(sorted.length % 2 ? sorted[mid] : (sorted[mid - 1] + sorted[mid]) / 2).toFixed(1);
+      velocityAvg = +(saleDurations.reduce((a, b) => a + b, 0) / saleDurations.length).toFixed(1);
+    }
+    // распределение по этапам -> отсортированный массив [{name, count}]
+    const stagesArr = Object.entries(stageDistribution)
+      .map(([name, count]) => ({ name, count }))
+      .sort((a, b) => b.count - a.count);
+
     // === ОКНО АУДИТА (~4 мес) — отдельно, для аудита ===
     const convAudit = leadsAudit > 0 ? +(soldTeamAudit / leadsAudit * 100).toFixed(2) : 0;
     const noContactPctAudit = leadsAudit > 0 ? +(noContactAudit / leadsAudit * 100).toFixed(0) : 0;
@@ -358,6 +385,7 @@ export default async function handler(req, res) {
         suspiciousCount: suspicious.length,
       },
       mopsByConv, mopsBySales, problems, problemsAll,
+      velocity: { median: velocityMedian, avg: velocityAvg, count: saleDurations.length, stages: stagesArr },
       suspicious: suspicious.sort((a, b) => (b.closed_at || b.created_at || 0) - (a.closed_at || a.created_at || 0)).slice(0, 200),
     };
 
