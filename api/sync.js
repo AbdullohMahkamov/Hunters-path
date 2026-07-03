@@ -110,28 +110,47 @@ export default async function handler(req, res) {
     // === ВСЯ БАЗА (все данные, без фильтра дат) — для фильтра «всё время» на дашборде ===
     let leadsBase = 0, soldBase = 0, revenueBase = 0, noContactBase = 0, soldTeamBase = 0;
     const SUSPICIOUS_THRESHOLD = 1000000; // продажа с бюджетом пустым или < 1М — подозрительная
-    const suspicious = []; // список подозрительных продаж
+    const suspicious = []; // список подозрительных (с типом и категорией)
+    const wrongNumByMopDay = {}; // "mop|day" -> count (для «массово неверный номер»)
+    const DAY = 24 * 3600;
 
     for (const L of all) {
       const stName = statusName[L.status_id] || "";
       const price = L.price || 0;
       const isSold = stName === SOLD;
+      const isLost = stName === CLOSED_LOST;
 
       const createdThisMonth = (L.created_at || 0) >= monthStart;
       const closedThisMonth = (L.closed_at || 0) >= monthStart;
       const inAudit = (L.created_at || 0) >= lookbackStart; // окно аудита
       const mop = ACTIVE_MOPS[L.responsible_user_id]; // null если не из пятёрки
+      const respName = ACTIVE_MOPS[L.responsible_user_id] || String(L.responsible_user_id || "");
 
-      // === ПОДОЗРИТЕЛЬНЫЕ: проданные сделки с пустым или маленьким (<1М) бюджетом ===
+      // причина потери (по имени)
+      let lossReason = "";
+      {
+        const lid = L.loss_reason_id || (L._embedded && L._embedded.loss_reason && L._embedded.loss_reason[0] && L._embedded.loss_reason[0].id);
+        if (lid && lossName[lid]) lossReason = lossName[lid];
+      }
+      const base = { id: L.id, name: L.name || "", price, responsible: respName, closed_at: L.closed_at || 0, created_at: L.created_at || 0 };
+
+      // [ДЕНЬГИ] продажа с пустым или маленьким (<1М) бюджетом
       if (isSold && (!price || price < SUSPICIOUS_THRESHOLD)) {
-        suspicious.push({
-          id: L.id,
-          name: L.name || "",
-          price: price,
-          responsible: ACTIVE_MOPS[L.responsible_user_id] || String(L.responsible_user_id || ""),
-          closed_at: L.closed_at || 0,
-          created_at: L.created_at || 0,
-        });
+        suspicious.push({ ...base, cat: "money", type: "low_check", label: "Чек до 1 млн (аванс/предоплата?)" });
+      }
+
+      // [ВОРОНКА] продажа в день создания — лид создан и продан в тот же день
+      if (isSold && L.created_at && L.closed_at && (L.closed_at - L.created_at) < DAY && (L.closed_at - L.created_at) >= 0) {
+        suspicious.push({ ...base, cat: "funnel", type: "same_day_sale", label: "Продажа в день создания (проверить)" });
+      }
+
+      // [ЗВОНКИ] копим «неверный номер» по МОПу за день — потом отберём тех, у кого ≥5/день
+      if (isLost && /xato raqam|неверн/i.test(lossReason) && mop && L.closed_at) {
+        const dk = Math.floor((L.closed_at + 5 * 3600) / DAY); // день по UTC+5
+        const key = mop + "|" + dk;
+        (wrongNumByMopDay[key] = wrongNumByMopDay[key] || { count: 0, mop, day: L.closed_at, items: [] });
+        wrongNumByMopDay[key].count++;
+        wrongNumByMopDay[key].items.push(base);
       }
 
       // === ВСЯ БАЗА (все аккаунты воронки) — считаем ВСЕ продажи ===
@@ -206,6 +225,62 @@ export default async function handler(req, res) {
         if (isSold) soldTeamBase++;
       }
     }
+
+    // [ЗВОНКИ] «массово неверный номер» — МОП поставил ≥5 «неверный номер» за один день
+    for (const key in wrongNumByMopDay) {
+      const w = wrongNumByMopDay[key];
+      if (w.count >= 5) {
+        suspicious.push({
+          id: "wrongnum_" + key,
+          name: `${w.mop}: ${w.count} «неверных номеров» за день`,
+          price: null,
+          responsible: w.mop,
+          closed_at: w.day,
+          created_at: w.day,
+          cat: "calls",
+          type: "wrong_number_abuse",
+          label: "Массово «неверный номер» (≥5/день)",
+          count: w.count,
+        });
+      }
+    }
+
+    // [ЗАДАЧИ] просроченные задачи активных МОПов (срок прошёл, не выполнена)
+    try {
+      const nowSec = Math.floor(Date.now() / 1000);
+      let tpage = 1, tguard = 0;
+      while (tguard < 40) {
+        tguard++;
+        const turl = `https://${SUBDOMAIN}.amocrm.ru/api/v4/tasks?limit=250&page=${tpage}&filter[is_completed]=0`;
+        const tr = await fetch(turl, { headers: { Authorization: `Bearer ${token}` } });
+        if (tr.status === 204) break;
+        if (!tr.ok) break;
+        const td = await tr.json();
+        const tasks = (td._embedded && td._embedded.tasks) || [];
+        for (const T of tasks) {
+          const mopName = ACTIVE_MOPS[T.responsible_user_id];
+          if (!mopName) continue;
+          // просрочена: срок (complete_till) прошёл (со следующего дня — т.е. строго меньше начала сегодня)
+          if (T.complete_till && T.complete_till < nowSec) {
+            suspicious.push({
+              id: "task_" + T.id,
+              name: (T.text || "Задача").slice(0, 80),
+              price: null,
+              responsible: mopName,
+              closed_at: T.complete_till,
+              created_at: T.created_at || 0,
+              cat: "tasks",
+              type: "overdue_task",
+              label: "Просроченная задача",
+              leadId: (T.entity_type === "leads" ? T.entity_id : null),
+            });
+          }
+        }
+        if (tasks.length < 250) break;
+        tpage++;
+        await new Promise(rs => setTimeout(rs, 60));
+      }
+    } catch (e) { /* задачи не критичны */ }
 
     const totalLeads = Object.values(byMop).reduce((a, m) => a + m.leads, 0);
     const conv = totalLeads > 0 ? +(soldTeam / totalLeads * 100).toFixed(2) : 0;
