@@ -248,6 +248,10 @@
   @media(max-width:720px){.two-col{grid-template-columns:1fr;gap:0;}}
   .block{background:var(--card);border:1px solid var(--line);border-radius:14px;padding:16px 18px;margin-bottom:16px;}
   .block .dsect{margin-top:0;}
+  .susp-tile{display:flex;justify-content:space-between;align-items:center;gap:8px;background:var(--bg);border:1px solid var(--line2);border-radius:11px;padding:12px 14px;margin-bottom:10px;cursor:pointer;transition:border-color .15s;}
+  .susp-tile:hover{border-color:var(--accent);}
+  .susp-tile-t{font-size:13px;font-weight:600;color:var(--txt);}
+  .susp-tile-n{background:var(--red-bg);color:var(--red);font-weight:700;font-size:12.5px;padding:2px 9px;border-radius:20px;min-width:20px;text-align:center;}
   .goal-big{font-size:26px;font-weight:700;}
 
   /* dop-quests + generator modal */
@@ -632,15 +636,30 @@
         <div id="disciplineChart"><div style="font-size:12px;color:var(--txt3);">Нажмите «Обновить дисциплину» — это подробный расчёт по звонкам и задачам, идёт 20-40 секунд.</div></div>
       </div>
 
-      <div class="block" id="suspBlock" style="cursor:pointer;" onclick="openSuspModal()">
+      <div class="block" id="suspBlock">
         <div style="display:flex;justify-content:space-between;align-items:center;gap:10px;">
           <div class="dsect" style="margin:0;"><svg class="ic" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><path d="M12 9v4M12 17h.01M10.3 3.9 1.8 18a2 2 0 0 0 1.7 3h17a2 2 0 0 0 1.7-3L13.7 3.9a2 2 0 0 0-3.4 0z"/></svg> Подозрительные действия</div>
-          <div style="display:flex;align-items:center;gap:8px;">
-            <span id="suspCount" style="background:var(--red-bg);color:var(--red);font-weight:700;font-size:13px;padding:3px 10px;border-radius:20px;">0</span>
-            <svg class="ic" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="var(--txt3)" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><path d="M9 18l6-6-6-6"/></svg>
+          <span id="suspCount" style="background:var(--red-bg);color:var(--red);font-weight:700;font-size:13px;padding:3px 10px;border-radius:20px;">0</span>
+        </div>
+        <div style="font-size:11.5px;color:var(--txt3);margin:6px 0 12px;">Нажми на категорию, чтобы проверить сделки.</div>
+        <div class="two-col" style="gap:10px;">
+          <div class="susp-tile" onclick="openSuspModal('money')">
+            <div class="susp-tile-t">💰 По продажам и деньгам</div>
+            <span class="susp-tile-n" id="suspN-money">0</span>
+          </div>
+          <div class="susp-tile" onclick="openSuspModal('calls')">
+            <div class="susp-tile-t">📞 По звонкам и активности</div>
+            <span class="susp-tile-n" id="suspN-calls">0</span>
+          </div>
+          <div class="susp-tile" onclick="openSuspModal('funnel')">
+            <div class="susp-tile-t">🔀 По воронке</div>
+            <span class="susp-tile-n" id="suspN-funnel">0</span>
+          </div>
+          <div class="susp-tile" onclick="openSuspModal('tasks')">
+            <div class="susp-tile-t">✓ По задачам</div>
+            <span class="susp-tile-n" id="suspN-tasks">0</span>
           </div>
         </div>
-        <div style="font-size:11.5px;color:var(--txt3);margin-top:6px;">Продажи с пустым или маленьким бюджетом (&lt;1М) — аванс, предоплата, ошибка. Нажми, чтобы проверить.</div>
       </div>
     </div>
 
@@ -1715,13 +1734,18 @@ async function loadSuspReviewed(){
   updateSuspCount();
 }
 function updateSuspCount(){
-  const el=document.getElementById('suspCount');if(!el)return;
   const active=suspData.filter(s=>!suspReviewed[s.id]);
-  el.textContent=active.length;
-  el.style.background=active.length?'var(--red-bg)':'var(--card2)';
-  el.style.color=active.length?'var(--red)':'var(--txt3)';
+  const el=document.getElementById('suspCount');
+  if(el){el.textContent=active.length;el.style.background=active.length?'var(--red-bg)':'var(--card2)';el.style.color=active.length?'var(--red)':'var(--txt3)';}
+  // счётчики по категориям
+  ['money','calls','funnel','tasks'].forEach(cat=>{
+    const n=active.filter(s=>(s.cat||'money')===cat).length;
+    const tile=document.getElementById('suspN-'+cat);
+    if(tile){tile.textContent=n;tile.style.background=n?'var(--red-bg)':'var(--card2)';tile.style.color=n?'var(--red)':'var(--txt3)';}
+  });
 }
-function openSuspModal(){suspHistoryMode=false;document.getElementById('suspOverlay').style.display='block';renderSuspModal();}
+let suspCatFilter=null;
+function openSuspModal(cat){suspCatFilter=cat||null;suspHistoryMode=false;document.getElementById('suspOverlay').style.display='block';renderSuspModal();}
 function closeSuspModal(){document.getElementById('suspOverlay').style.display='none';}
 function toggleSuspHistory(){suspHistoryMode=!suspHistoryMode;renderSuspModal();}
 function fmtSuspSum(n){return n?new Intl.NumberFormat('ru-RU').format(n)+' сум':'нет бюджета';}
@@ -1759,19 +1783,30 @@ function renderSuspModal(){
     body.innerHTML='<div style="font-size:13px;color:var(--txt3);padding:20px;text-align:center;">Нет активных подозрительных действий 👍<br><span style="font-size:11.5px;">Проверенные — в «Истории»</span></div>';
     return;
   }
-  // группировка по категориям
   const cats=[
     {key:'money',title:'💰 По продажам и деньгам'},
     {key:'calls',title:'📞 По звонкам и активности'},
     {key:'funnel',title:'🔀 По воронке'},
     {key:'tasks',title:'✓ По задачам'},
   ];
+  // если выбрана одна категория — показываем только её
+  const showCats = suspCatFilter ? cats.filter(c=>c.key===suspCatFilter) : cats;
+  if(suspCatFilter){
+    const cinfo=cats.find(c=>c.key===suspCatFilter);
+    if(cinfo)title.textContent=cinfo.title;
+  }
   let html='';
-  for(const c of cats){
+  let totalShown=0;
+  for(const c of showCats){
     const items=active.filter(s=>(s.cat||'money')===c.key);
     if(!items.length)continue;
-    html+=`<div style="font-size:12px;font-weight:700;color:var(--txt2);text-transform:uppercase;letter-spacing:.3px;margin:16px 0 6px;">${c.title} <span style="color:var(--red);">(${items.length})</span></div>`;
+    totalShown+=items.length;
+    if(!suspCatFilter)html+=`<div style="font-size:12px;font-weight:700;color:var(--txt2);text-transform:uppercase;letter-spacing:.3px;margin:16px 0 6px;">${c.title} <span style="color:var(--red);">(${items.length})</span></div>`;
     html+=items.map(s=>suspCardHtml(s)).join('');
+  }
+  if(!totalShown){
+    body.innerHTML='<div style="font-size:13px;color:var(--txt3);padding:20px;text-align:center;">В этой категории нет активных 👍</div>';
+    return;
   }
   body.innerHTML=html;
 }
