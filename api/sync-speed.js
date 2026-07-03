@@ -139,6 +139,8 @@ export default async function handler(req, res) {
     const reachedLeadsByMop = {};
     const callLeadsByMop = {};
     let notesSeen = 0, notesAnswered = 0, notesMopMatched = 0;
+    // собираем звонки по лидам: leadId -> {called:true, answered:bool}
+    const callByLead = {};
     {
       page = 1; guard = 0;
       while (guard < 400) {
@@ -153,26 +155,52 @@ export default async function handler(req, res) {
         for (const n of notes) {
           if (n.note_type !== "call_out" && n.note_type !== "call_in") continue;
           notesSeen++;
-          const mopName = ACTIVE_MOPS[n.responsible_user_id];
-          if (!mopName) continue;
-          notesMopMatched++;
           const leadId = n.entity_id;
-          (callLeadsByMop[mopName] = callLeadsByMop[mopName] || new Set()).add(leadId);
+          if (!leadId) continue;
           const p = n.params || {};
           const dur = Number(p.duration) || 0;
           const status = Number(p.call_status);
           const answered = (status === 4) || (dur >= REACH_MIN_SEC);
-          if (answered) {
-            notesAnswered++;
-            (reachedLeadsByMop[mopName] = reachedLeadsByMop[mopName] || new Set()).add(leadId);
-            // если лид загружен — тоже пометим (для старых сигналов)
-            const li = leadInfo[leadId];
-            if (li) li.reachedReal = true;
-          }
+          const rec = callByLead[leadId] || (callByLead[leadId] = { called: true, answered: false });
+          if (answered) { rec.answered = true; notesAnswered++; }
         }
         if (notes.length < 250) break;
         page++;
         await new Promise(rs => setTimeout(rs, 110));
+      }
+    }
+
+    // Привязываем звонки к МОПу через ОТВЕТСТВЕННОГО ЗА ЛИД (звонки Utel пишутся на служебный аккаунт).
+    // Ответственного берём из leadInfo (загруженные лиды) или догружаем отдельно (не засоряя leadInfo).
+    {
+      const respByLead = {}; // leadId -> responsible_user_id
+      for (const id in leadInfo) respByLead[id] = leadInfo[id].resp;
+      const missing = Object.keys(callByLead).filter(id => respByLead[id] == null);
+      for (let i = 0; i < missing.length; i += 200) {
+        const chunk = missing.slice(i, i + 200);
+        const qs = chunk.map(id => `filter[id][]=${id}`).join("&");
+        try {
+          const r = await fetch(`${base}/leads?${qs}&limit=250`, { headers: H });
+          if (r.ok) {
+            const d = await r.json();
+            for (const L of ((d._embedded && d._embedded.leads) || [])) {
+              respByLead[L.id] = L.responsible_user_id;
+            }
+          }
+        } catch (e) {}
+        await new Promise(rs => setTimeout(rs, 100));
+      }
+      // раскидываем по МОПам
+      for (const leadId in callByLead) {
+        const mopName = ACTIVE_MOPS[respByLead[leadId]];
+        if (!mopName) continue;
+        notesMopMatched++;
+        (callLeadsByMop[mopName] = callLeadsByMop[mopName] || new Set()).add(leadId);
+        if (callByLead[leadId].answered) {
+          (reachedLeadsByMop[mopName] = reachedLeadsByMop[mopName] || new Set()).add(leadId);
+          const li = leadInfo[leadId];
+          if (li) li.reachedReal = true;
+        }
       }
     }
 
