@@ -222,6 +222,7 @@ export default async function handler(req, res) {
         // % закрытых "не дозвонился" при < 3 звонках (халтура)
         earlyClosePct: S.noReachClosed ? Math.round(S.closedEarly / S.noReachClosed * 100) : 0,
         noReachClosed: S.noReachClosed,
+        closedEarly: S.closedEarly,
         reachedPct: S.leads ? Math.round(S.reached / S.leads * 100) : 0,
       };
     }).sort((a,b)=> (a.medianFirstCallMin??9e9) - (b.medianFirstCallMin??9e9));
