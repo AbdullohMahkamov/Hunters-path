@@ -2004,21 +2004,21 @@ function renderDiscipline(sp){
   document.getElementById('disciplineChart').innerHTML=mops.map(m=>{
     const speedOk=m.medianFirstCallMin!=null&&m.medianFirstCallMin<=30;
     const speedBad=m.medianFirstCallMin!=null&&m.medianFirstCallMin>180;
-    const haltBad=m.earlyClosePct>=30;
     const taskOk=m.taskRate>=60;
+    const reachOk=(m.reachedPct||0)>=60;
+    const reachBad=(m.reachedPct||0)<30;
+    const doneOk=(m.tasksDonePct||0)>=70;
+    const doneBad=(m.tasksDonePct||0)<40;
     const c=(ok,bad)=>ok?'var(--green)':(bad?'var(--red)':'var(--txt2)');
-    // «Закрыл рано»: показываем и %, и сырое «X из Y», чтобы было видно, есть ли вообще данные
-    const nr=m.noReachClosed||0;
-    const ce=m.closedEarly!=null?m.closedEarly:Math.round((m.earlyClosePct||0)/100*nr);
-    const earlyDisplay = nr>0 ? `${m.earlyClosePct}% <span style="color:var(--txt3);font-weight:400;">(${ce} из ${nr})</span>` : '<span style="color:var(--txt3);font-weight:400;">нет закрытых «не дозвонился»</span>';
+    const doneDisplay = m.tasksTotal ? `${m.tasksDonePct}% <span style="color:var(--txt3);font-weight:400;">(${m.tasksDone} из ${m.tasksTotal})</span>` : '<span style="color:var(--txt3);font-weight:400;">нет задач</span>';
     return `<div style="background:var(--card);border:1px solid var(--line);border-radius:10px;padding:11px 12px;margin-bottom:9px;">
       <div style="font-size:14px;font-weight:600;margin-bottom:7px;">${escapeHtml(m.name)} <span style="font-size:11px;color:var(--txt3);font-weight:400;">· ${m.leads} лидов</span></div>
       <div style="display:grid;grid-template-columns:1fr 1fr;gap:6px 12px;font-size:12px;">
         <div>⚡ 1-й звонок${hintIcon('firstcall')}: <b style="color:${c(speedOk,speedBad)}">${fmtMin(m.medianFirstCallMin)}</b></div>
+        <div>📞 % дозвона${hintIcon('reach')}: <b style="color:${c(reachOk,reachBad)}">${m.reachedPct!=null?m.reachedPct+'%':'—'}</b></div>
         <div>📋 Ставит задачи${hintIcon('tasks')}: <b style="color:${c(taskOk,m.taskRate<30)}">${m.taskRate}%</b></div>
-        <div style="grid-column:1/3;">🚩 Закрыл рано${hintIcon('early')}: <b style="color:${nr>0?c(!haltBad,haltBad):'var(--txt3)'}">${earlyDisplay}</b></div>
+        <div>✅ Задач выполнено${hintIcon('tasksdone')}: <b style="color:${m.tasksTotal?c(doneOk,doneBad):'var(--txt3)'}">${doneDisplay}</b></div>
       </div>
-      ${haltBad?'<div style="font-size:11px;color:var(--red);margin-top:6px;">⚠️ Часто закрывает «не дозвонился» при &lt;3 звонках — проверь в Подозрительных</div>':''}
     </div>`;
   }).join('');
 }
@@ -2573,6 +2573,7 @@ const HINTS={
   early:{t:'Закрыл рано',d:'Менеджер написал «не дозвонился», хотя реально звонил меньше 3 раз. Это признак халтуры — клиента списали, толком не пытаясь. Высокий % (30+) — повод проверить.'},
   activity:{t:'Активность менеджера',d:'Реальная работа за период: звонки + движение сделок по воронке + выполненные задачи + закрытия (включая старую базу). Показывает, работал человек или нет — даже если новых лидов взял мало. «Нет активности» = красный флаг.'},
   tasks:{t:'Ставит задачи',d:'Процент клиентов, которым менеджер поставил напоминание «перезвонить». Дисциплинированный менеджер планирует следующий шаг, а не бросает клиента.'},
+  tasksdone:{t:'Задач выполнено',d:'Процент реально выполненных задач (нажал «выполнено») из всех поставленных. Показывает, доводит ли менеджер напоминания до конца, а не просто ставит их для галочки. Хорошо — 70%+.'},
   own:{t:'«Свои» сделки',d:'Внутренние продажи — бартер, друзья, доплаты, служебные записи. Их не считаем в конверсии и оценке менеджеров, чтобы цифры были честными. Но в общую выручку они входят.'},
   goal:{t:'Цель месяца',d:'Сколько денег вы хотите заработать за месяц. Можно нажать и вписать свою сумму. Прогресс-полоса показывает, сколько уже сделано.'},
   problems:{t:'Причины потерь',d:'Почему клиенты не покупают — по данным из CRM. Топ причин показывает, где главные дыры: не дозвонились, дорого, передумали и т.д.'},
