@@ -539,11 +539,10 @@
         <div style="font-size:11px;color:var(--txt3);margin-top:5px;" id="goalProgressTxt">—</div>
       </div>
 
-      <div class="dash-grid" style="grid-template-columns:repeat(2,1fr);">
+      <div class="dash-grid" style="grid-template-columns:repeat(3,1fr);">
         <div class="dcard"><div class="dl" id="ovSoldLbl">Продаж</div><div class="dv" id="kpiSold" style="color:var(--accent);">—</div><div class="dh" id="kpiSoldH">из плана 141</div></div>
         <div class="dcard"><div class="dl">Конверсия команды<span class="hint" onclick="showHint('conv',event)">?</span></div><div class="dv" id="kpiConv" style="color:var(--accent);">—</div><div class="dh" id="ovConvH">лид → продажа</div></div>
         <div class="dcard"><div class="dl">Средний чек<span class="hint" onclick="showHint('check',event)">?</span></div><div class="dv" id="kpiCheck">—</div><div class="dh" id="ovCheckH">выручка ÷ продажи</div></div>
-        <div class="dcard"><div class="dl">Прибыль</div><div class="dv" id="kpiProfit">—</div><div class="dh" id="ovProfitH">этот месяц</div></div>
       </div>
 
       <!-- сумма продаж за период -->
@@ -2221,13 +2220,11 @@ function applyStaticI18n(){
   const ep=document.querySelector('#chatEmpty p');if(ep)ep.textContent=tr('emptyP');
   // KPI подписи
   const dcards=document.querySelectorAll('#dg-overview .dash-grid .dcard');
-  if(dcards.length>=4){
+  if(dcards.length>=3){
     dcards[0].querySelector('.dl').innerHTML=tr('kSold');
     dcards[0].querySelector('.dh').textContent=tr('kSoldH');
     dcards[1].querySelector('.dl').innerHTML=tr('kConv')+'<span class="hint" onclick="showHint(\'conv\',event)">?</span>';
     dcards[2].querySelector('.dl').innerHTML=tr('kCheck')+'<span class="hint" onclick="showHint(\'check\',event)">?</span>';
-    dcards[3].querySelector('.dl').innerHTML=tr('kProfit');
-    dcards[3].querySelector('.dh').textContent=tr('kProfitH');
   }
   // фильтры перерисуются в renderStages
 }
