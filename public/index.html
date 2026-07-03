@@ -2004,19 +2004,21 @@ function renderDiscipline(sp){
   document.getElementById('disciplineChart').innerHTML=mops.map(m=>{
     const speedOk=m.medianFirstCallMin!=null&&m.medianFirstCallMin<=30;
     const speedBad=m.medianFirstCallMin!=null&&m.medianFirstCallMin>180;
-    const persistOk=m.avgCallsPerLead>=3;
     const haltBad=m.earlyClosePct>=30;
     const taskOk=m.taskRate>=60;
     const c=(ok,bad)=>ok?'var(--green)':(bad?'var(--red)':'var(--txt2)');
+    // «Закрыл рано»: показываем и %, и сырое «X из Y», чтобы было видно, есть ли вообще данные
+    const nr=m.noReachClosed||0;
+    const ce=m.closedEarly!=null?m.closedEarly:Math.round((m.earlyClosePct||0)/100*nr);
+    const earlyDisplay = nr>0 ? `${m.earlyClosePct}% <span style="color:var(--txt3);font-weight:400;">(${ce} из ${nr})</span>` : '<span style="color:var(--txt3);font-weight:400;">нет закрытых «не дозвонился»</span>';
     return `<div style="background:var(--card);border:1px solid var(--line);border-radius:10px;padding:11px 12px;margin-bottom:9px;">
       <div style="font-size:14px;font-weight:600;margin-bottom:7px;">${escapeHtml(m.name)} <span style="font-size:11px;color:var(--txt3);font-weight:400;">· ${m.leads} лидов</span></div>
       <div style="display:grid;grid-template-columns:1fr 1fr;gap:6px 12px;font-size:12px;">
         <div>⚡ 1-й звонок${hintIcon('firstcall')}: <b style="color:${c(speedOk,speedBad)}">${fmtMin(m.medianFirstCallMin)}</b></div>
-        <div>📞 Звонков/лид${hintIcon('persist')}: <b style="color:${c(persistOk,m.avgCallsPerLead<2)}">${m.avgCallsPerLead}</b></div>
-        <div>🚩 Закрыл рано${hintIcon('early')}: <b style="color:${c(!haltBad,haltBad)}">${m.earlyClosePct}%</b></div>
         <div>📋 Ставит задачи${hintIcon('tasks')}: <b style="color:${c(taskOk,m.taskRate<30)}">${m.taskRate}%</b></div>
+        <div style="grid-column:1/3;">🚩 Закрыл рано${hintIcon('early')}: <b style="color:${nr>0?c(!haltBad,haltBad):'var(--txt3)'}">${earlyDisplay}</b></div>
       </div>
-      ${haltBad?'<div style="font-size:11px;color:var(--red);margin-top:6px;">⚠️ Часто закрывает «не дозвонился» при &lt;3 звонках — проверь</div>':''}
+      ${haltBad?'<div style="font-size:11px;color:var(--red);margin-top:6px;">⚠️ Часто закрывает «не дозвонился» при &lt;3 звонках — проверь в Подозрительных</div>':''}
     </div>`;
   }).join('');
 }
