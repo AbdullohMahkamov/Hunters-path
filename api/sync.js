@@ -77,7 +77,7 @@ export default async function handler(req, res) {
     }
 
     // 3) Тянем ВСЕ сделки воронки HunterAcademy (вся база — для фильтра «всё время»).
-    //    Без фильтра по дате. Кэшируется, поэтому тяжёлый сбор идёт раз в сутки (крон) или по кнопке.
+    //    Без фильтра по дате. Задержка минимальная, чтобы уложиться в лимит времени функции.
     let all = [], page = 1, guard = 0;
     while (guard < 100) {
       guard++;
@@ -86,13 +86,14 @@ export default async function handler(req, res) {
       if (pipelineId) url += `&filter[pipeline_id]=${pipelineId}`;
       const r = await fetch(url, { headers: { Authorization: `Bearer ${token}` } });
       if (r.status === 204) break;
+      if (r.status === 429) { await new Promise(rs => setTimeout(rs, 800)); continue; } // rate limit — подождать и повторить
       if (!r.ok) { const t = await r.text(); res.status(r.status).json({ error: "amoCRM leads error", detail: t.slice(0,500) }); return; }
       const data = await r.json();
       const leads = (data._embedded && data._embedded.leads) || [];
       all = all.concat(leads);
       if (leads.length < 250) break;
       page++;
-      await new Promise((rs) => setTimeout(rs, 140));
+      await new Promise((rs) => setTimeout(rs, 40));
     }
 
     // 4) Считаем.
