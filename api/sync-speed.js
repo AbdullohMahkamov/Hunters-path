@@ -1,19 +1,41 @@
-// /api/sync-speed.js — оценка дисциплины МОПов из СОБЫТИЙ amoCRM (Вариант В: все события месяца).
-// Считает: скорость 1-го звонка, настойчивость дозвона, "закрыл рано" (детектор халтуры), задачи.
-// Тяжёлый модуль — тянет события пачками. Запуск: ночью (Cron) или вручную.
+// /api/sync-speed.js — оценка дисциплины МОПов из СОБЫТИЙ amoCRM.
+// Мультитенант: настройки клиента из конфига (org). Витрина hunter = дефолт.
 
-const SUBDOMAIN = "huntercademy";
-const PIPELINE_ID_NAME = "HunterAcademy";
-const SOLD_STATUS = 142;     // Sotildi
-const LOST_STATUS = 143;     // Yopildi
-const OWN_THRESHOLD = 1600000;
-
-const ACTIVE_MOPS = {
-  13660834: "Komiljon", 13703650: "Samandar", 13904266: "Abdulla-Legenda",
-  13833590: "Begoyim", 13681582: "Abulbositxon",
+const HUNTER_CFG = {
+  subdomain: "huntercademy",
+  pipelineName: "HunterAcademy",
+  soldStatus: 142,     // Sotildi
+  lostStatus: 143,     // Yopildi
+  ownThreshold: 1600000,
+  noReachReasonId: 22815982, // "3 marta bog'lanib bo'lmadi"
+  mops: {
+    13660834: "Komiljon", 13703650: "Samandar", 13904266: "Abdulla-Legenda",
+    13833590: "Begoyim", 13681582: "Abulbositxon",
+  },
 };
-// loss reason id "3 marta bog'lanib bo'lmadi"
-const NO_REACH_REASON_ID = 22815982;
+
+async function redisGetCfg(url, token, key) {
+  try {
+    const r = await fetch(`${url}/get/${encodeURIComponent(key)}`, { headers: { Authorization: `Bearer ${token}` } });
+    const d = await r.json();
+    return d && d.result != null ? JSON.parse(d.result) : null;
+  } catch (e) { return null; }
+}
+async function resolveConfig(org, redisUrl, redisToken) {
+  org = org || "hunter";
+  if (org === "hunter") return { org, token: process.env.AMOCRM_TOKEN, ...HUNTER_CFG };
+  const s = await redisGetCfg(redisUrl, redisToken, `clientcfg:${org}`);
+  if (!s || !s.subdomain || !s.token) return null;
+  return {
+    org, token: s.token, subdomain: s.subdomain,
+    pipelineName: s.pipeline || "",
+    soldStatus: s.soldStatus != null ? s.soldStatus : null,
+    lostStatus: s.lostStatus != null ? s.lostStatus : null,
+    ownThreshold: s.ownThreshold != null ? s.ownThreshold : 0,
+    noReachReasonId: s.noReachReasonId != null ? s.noReachReasonId : null,
+    mops: s.mops || {},
+  };
+}
 
 async function redisSet(url, token, key, value) {
   const r = await fetch(`${url}/set/${encodeURIComponent(key)}`, {
@@ -31,11 +53,25 @@ function median(arr){
 }
 
 export default async function handler(req, res) {
-  const token = process.env.AMOCRM_TOKEN;
   const redisUrl = process.env.UPSTASH_REDIS_REST_URL;
   const redisToken = process.env.UPSTASH_REDIS_REST_TOKEN;
-  if (!token) { res.status(500).json({ error: "AMOCRM_TOKEN not set" }); return; }
   if (!redisUrl || !redisToken) { res.status(500).json({ error: "Upstash env not set" }); return; }
+
+  const org = (req.query && req.query.org) || "hunter";
+  const cfg = await resolveConfig(org, redisUrl, redisToken);
+  if (!cfg) { res.status(400).json({ error: `Клиент "${org}" не настроен` }); return; }
+
+  const token = cfg.token;
+  if (!token) { res.status(500).json({ error: "AMOCRM_TOKEN not set" }); return; }
+
+  const SUBDOMAIN = cfg.subdomain;
+  const PIPELINE_ID_NAME = cfg.pipelineName;
+  const SOLD_STATUS = cfg.soldStatus;
+  const LOST_STATUS = cfg.lostStatus;
+  const OWN_THRESHOLD = cfg.ownThreshold;
+  const ACTIVE_MOPS = cfg.mops || {};
+  const NO_REACH_REASON_ID = cfg.noReachReasonId;
+  const K = (name) => org === "hunter" ? name : `${name}:${org}`;
 
   const H = { Authorization: `Bearer ${token}` };
   const base = `https://${SUBDOMAIN}.amocrm.ru/api/v4`;
@@ -239,7 +275,7 @@ export default async function handler(req, res) {
     }).sort((a,b)=> (a.medianFirstCallMin??9e9) - (b.medianFirstCallMin??9e9));
 
     const result = { updatedAt: new Date().toISOString(), period: "Текущий месяц", mops, suspicious2: suspicious2.slice(0, 300) };
-    await redisSet(redisUrl, redisToken, "speed", JSON.stringify(result));
+    await redisSet(redisUrl, redisToken, K("speed"), JSON.stringify(result));
     res.status(200).json({ ok: true, ...result });
   } catch (err) {
     res.status(500).json({ error: "speed sync failed", detail: String(err) });
