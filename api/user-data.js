@@ -52,7 +52,7 @@ export default async function handler(req, res) {
       const d = await r.json();
       const s = (d && d.result) ? JSON.parse(d.result) : {};
       // маржа и расход на рекламу — только админу (чувствительно: раскрывает прибыль)
-      if (sess.role !== "admin") { delete s.margin; delete s.adSpend; }
+      if (sess.role !== "admin") { delete s.margin; delete s.adSpend; delete s.adSpendMonth; delete s.adSpendAll; }
       res.status(200).json({ ok: true, settings: s });
       return;
     }
@@ -67,8 +67,10 @@ export default async function handler(req, res) {
       if (incoming.workdays != null) cur.workdays = incoming.workdays; // массив 0..6 (0=Вс)
       // маржа и расход на рекламу — только админ
       if (sess.role === "admin") {
-        if (incoming.margin != null) cur.margin = incoming.margin;         // % прибыли (0..100)
-        if (incoming.adSpend != null) cur.adSpend = incoming.adSpend;      // расход на таргет за месяц
+        if (incoming.margin != null) cur.margin = incoming.margin;
+        if (incoming.adSpend != null) cur.adSpend = incoming.adSpend;             // legacy (общий)
+        if (incoming.adSpendMonth != null) cur.adSpendMonth = incoming.adSpendMonth; // за месяц
+        if (incoming.adSpendAll != null) cur.adSpendAll = incoming.adSpendAll;       // за всё время
       }
       await fetch(`${url}/set/${settingsKey}`, {
         method: "POST", headers: { Authorization: `Bearer ${token}` },
