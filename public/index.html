@@ -630,6 +630,10 @@
         </div>
         <div class="block">
           <div class="dsect" id="secDisc"><svg class="ic" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><path d="M13 2L4 14h7l-1 8 9-12h-7z"/></svg> Дисциплина менеджеров<span class="hint" onclick="showHint('early',event)">?</span></div>
+          <div style="display:flex;gap:6px;margin-bottom:12px;">
+            <button class="perbtn on" id="disc-per-month" onclick="setDiscPeriod('month')">За месяц</button>
+            <button class="perbtn" id="disc-per-today" onclick="setDiscPeriod('today')">За сегодня</button>
+          </div>
           <div id="disciplineChart"><div style="font-size:12px;color:var(--txt3);">Нажмите «Обновить дисциплину» — это подробный расчёт по звонкам и задачам, идёт 20-40 секунд.</div></div>
         </div>
       </div>
@@ -1958,6 +1962,10 @@ function openClientForm(){
       <div id="cf_probe"></div>
       ${cInput('cf_login','Логин для клиента','avtodrive')}
       ${cInput('cf_pass','Пароль для клиента','')}
+      <div style="border-top:1px solid var(--line);margin-top:6px;padding-top:10px;">
+        <div style="font-size:11.5px;color:var(--txt2);margin-bottom:6px;">Финансы клиента (необязательно) — ссылка на Google-таблицу с открытым доступом «по ссылке»:</div>
+        ${cInput('cf_sheet','Ссылка или ID Google-таблицы','https://docs.google.com/spreadsheets/d/...')}
+      </div>
     </div>
     <button onclick="saveClient()" id="cf_saveBtn" style="width:100%;margin-top:12px;padding:11px;border-radius:9px;background:var(--accent);border:none;color:#fff;font-size:13.5px;font-weight:600;cursor:pointer;">Сохранить клиента</button>
   `;
@@ -2010,6 +2018,12 @@ async function saveClient(){
     subdomain:g('cf_sub'), token:g('cf_token'),
     login:g('cf_login'), password:g('cf_pass'), role:'admin',
   };
+  // финансовая таблица: извлекаем ID из ссылки или берём как есть
+  const sheetRaw=g('cf_sheet');
+  if(sheetRaw){
+    const mm=sheetRaw.match(/\/d\/([a-zA-Z0-9_-]+)/);
+    client.financeSheetId=mm?mm[1]:sheetRaw.trim();
+  }
   if(!client.name||!client.org||!client.subdomain||!client.token||!client.login||!client.password){
     alert('Заполните все поля');return;
   }
@@ -2666,29 +2680,45 @@ function fmtMin(m){
   if(m<60*24)return (m/60).toFixed(1).replace('.',',')+' ч';
   return Math.round(m/60/24)+' дн';
 }
+let _discPeriod='month';
+let _discData=null;
+function setDiscPeriod(per){
+  _discPeriod=per;
+  document.getElementById('disc-per-month').classList.toggle('on',per==='month');
+  document.getElementById('disc-per-today').classList.toggle('on',per==='today');
+  if(_discData)renderDiscipline(_discData);
+}
 function renderDiscipline(sp){
-  const mops=sp.mops||[];
-  if(!mops.length){document.getElementById('disciplineChart').innerHTML='<div style="font-size:12px;color:var(--txt3);">Нет данных за месяц</div>';return;}
+  _discData=sp;
+  const uz=state.lang==='uz';
+  const isToday=_discPeriod==='today';
+  const mops=isToday?(sp.mopsDay||[]):(sp.mops||[]);
+  if(!mops.length){document.getElementById('disciplineChart').innerHTML='<div style="font-size:12px;color:var(--txt3);">'+(isToday?(uz?'Bugun uchun maʼlumot yoʻq':'Нет данных за сегодня'):(uz?'Oy uchun maʼlumot yoʻq':'Нет данных за месяц'))+'</div>';return;}
   document.getElementById('disciplineChart').innerHTML=mops.map(m=>{
     const speedOk=m.medianFirstCallMin!=null&&m.medianFirstCallMin<=30;
     const speedBad=m.medianFirstCallMin!=null&&m.medianFirstCallMin>180;
     const taskOk=m.taskRate>=60;
-    // дозвон берём из рабочего источника (тот же, что в блоке «Конверсия и дозвон»)
-    let reach=m.reachedPct;
-    const dashMops=(window._dashData&&window._dashData.mopsByConv)||[];
-    const dm=dashMops.find(x=>x.name===m.name);
-    if(dm&&dm.reachPct!=null)reach=dm.reachPct;
+    // дозвон берём из рабочего источника (месячный) — только для «за месяц»
+    let reach=isToday?null:m.reachedPct;
+    if(!isToday){
+      const dashMops=(window._dashData&&window._dashData.mopsByConv)||[];
+      const dm=dashMops.find(x=>x.name===m.name);
+      if(dm&&dm.reachPct!=null)reach=dm.reachPct;
+    }
     const reachOk=(reach||0)>=60;
     const reachBad=(reach||0)<30;
     const doneOk=(m.tasksDonePct||0)>=70;
     const doneBad=(m.tasksDonePct||0)<40;
     const c=(ok,bad)=>ok?'var(--green)':(bad?'var(--red)':'var(--txt2)');
     const doneDisplay = m.tasksTotal ? `${m.tasksDonePct}% <span style="color:var(--txt3);font-weight:400;">(${m.tasksDone} из ${m.tasksTotal})</span>` : '<span style="color:var(--txt3);font-weight:400;">нет задач</span>';
+    const reachCell = isToday
+      ? `<div>📞 % дозвона${hintIcon('reach')}: <b style="color:var(--txt3)">— <span style="font-size:10px;font-weight:400;">за месяц</span></b></div>`
+      : `<div>📞 % дозвона${hintIcon('reach')}: <b style="color:${c(reachOk,reachBad)}">${reach!=null?reach+'%':'—'}</b></div>`;
     return `<div style="background:var(--card);border:1px solid var(--line);border-radius:10px;padding:11px 12px;margin-bottom:9px;">
-      <div style="font-size:14px;font-weight:600;margin-bottom:7px;">${escapeHtml(m.name)} <span style="font-size:11px;color:var(--txt3);font-weight:400;">· ${m.leads} лидов</span></div>
+      <div style="font-size:14px;font-weight:600;margin-bottom:7px;">${escapeHtml(m.name)} <span style="font-size:11px;color:var(--txt3);font-weight:400;">· ${m.leads} ${uz?'lid':'лидов'}</span></div>
       <div style="display:grid;grid-template-columns:1fr 1fr;gap:6px 12px;font-size:12px;">
         <div>⚡ 1-й звонок${hintIcon('firstcall')}: <b style="color:${c(speedOk,speedBad)}">${fmtMin(m.medianFirstCallMin)}</b></div>
-        <div>📞 % дозвона${hintIcon('reach')}: <b style="color:${c(reachOk,reachBad)}">${reach!=null?reach+'%':'—'}</b></div>
+        ${reachCell}
         <div>📋 Ставит задачи${hintIcon('tasks')}: <b style="color:${c(taskOk,m.taskRate<30)}">${m.taskRate}%</b></div>
         <div>✅ Задач выполнено${hintIcon('tasksdone')}: <b style="color:${m.tasksTotal?c(doneOk,doneBad):'var(--txt3)'}">${doneDisplay}</b></div>
       </div>
