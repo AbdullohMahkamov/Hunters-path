@@ -2302,10 +2302,37 @@ function editAdSpend(){
   renderAdsets(_lastDashData);
 }
 
+// автоматически считает маржу из финансов (прибыль ÷ выручка за текущий месяц)
+let _autoMargin=null;
+let _autoMarginTried=false;
+async function autoLoadMargin(){
+  if(_autoMarginTried)return;
+  _autoMarginTried=true;
+  if(orgSettings.margin!=null)return; // задана вручную — не трогаем
+  try{
+    const r=await fetch('/api/finance'+orgQ(),{method:'POST',headers:{'content-type':'application/json'},
+      body:JSON.stringify({session:SESSION})});
+    const d=await r.json();
+    if(d&&d.ok&&d.revenue>0&&d.profit!=null){
+      const m=+(d.profit/d.revenue*100).toFixed(1);
+      _autoMargin=m;
+      renderAdsets(_lastDashData);
+    }
+  }catch(e){}
+}
+// маржа: приоритет ручная, иначе авто из финансов
+function getMargin(){
+  if(orgSettings.margin!=null)return {val:orgSettings.margin,auto:false};
+  if(_autoMargin!=null)return {val:_autoMargin,auto:true};
+  return {val:null,auto:false};
+}
+
 function renderAdsets(d){
   const box=document.getElementById('adsetsChart');if(!box)return;
   const uz=state.lang==='uz';
   const isAdmin=(typeof USER_ROLE!=='undefined'&&USER_ROLE==='admin');
+  // авто-подтягивание маржи из финансов (один раз, только админ, если не задана вручную)
+  if(isAdmin&&!_autoMarginTried&&orgSettings.margin==null)autoLoadMargin();
   const per=window._dashPeriod||'month'; // фильтр периода из Маркетинга
   const isAll=per==='all';
   const arrRaw=(d&&d.adsets)||[];
@@ -2333,7 +2360,8 @@ function renderAdsets(d){
   if(isAdmin){
     const adRevenue=arr.reduce((s,a)=>s+(a.revenue||0),0); // выручка с рекламных лидов за период
     const adSpend=(orgSettings.adSpend!=null&&orgSettings.adSpend>0)?orgSettings.adSpend:null; // только ручной ввод
-    const margin=orgSettings.margin;
+    const marginInfo=getMargin();
+    const margin=marginInfo.val;
     const roas=(adSpend>0)?adRevenue/adSpend:null;
     let roi=null;
     if(adSpend>0&&margin!=null){
@@ -2341,6 +2369,8 @@ function renderAdsets(d){
       roi=(profit-adSpend)/adSpend*100;
     }
     const spendTxt=adSpend>0?fmtSum(adSpend):(uz?'kiriting':'укажите');
+    const marginSrc=margin==null?(uz?'marjani kiriting':'укажите маржу'):(marginInfo.auto?(uz?'moliyadan · sof foyda':'из финансов · чистая прибыль'):(uz?'sof foyda':'чистая прибыль'));
+    const marginLbl=margin!=null?` (${uz?'marja':'маржа'} ${String(margin).replace('.',',')}%) ✏️`:' ✏️';
     const perLabel=isAll?(uz?'butun davr':'всё время'):(uz?'shu oy':'текущий месяц');
     summaryHtml=`<div style="background:var(--card);border:1px solid var(--line2);border-radius:11px;padding:13px;margin-bottom:14px;">
       <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:10px;">
@@ -2366,9 +2396,9 @@ function renderAdsets(d){
           <div style="font-size:9.5px;color:var(--txt3);">${uz?'tushum ÷ xarajat':'выручка ÷ расход'}</div>
         </div>
         <div style="background:var(--bg2);border-radius:9px;padding:9px 11px;cursor:pointer;" onclick="editMargin()" title="${uz?'Marjani oʻzgartirish':'Изменить маржу'}">
-          <div style="font-size:10.5px;color:var(--txt2);">ROI${margin!=null?` (${uz?'marja':'маржа'} ${margin}%) ✏️`:' ✏️'}</div>
+          <div style="font-size:10.5px;color:var(--txt2);">ROI${marginLbl}</div>
           <div style="font-size:19px;font-weight:800;color:${roi==null?'var(--txt3)':(roi>=0?'var(--green)':'var(--red)')};">${roi!=null?(roi>0?'+':'')+Math.round(roi)+'%':'—'}</div>
-          <div style="font-size:9.5px;color:var(--txt3);">${margin==null?(uz?'marjani kiriting':'укажите маржу'):(uz?'sof foyda':'чистая прибыль')}</div>
+          <div style="font-size:9.5px;color:var(--txt3);">${marginSrc}</div>
         </div>
       </div>
     </div>`;
