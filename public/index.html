@@ -351,6 +351,10 @@
   .msg.me .m-bubble{background:var(--accent);color:#fff;padding:11px 15px;border-radius:15px 15px 4px 15px;
     max-width:85%;font-size:14.5px;line-height:1.55;white-space:pre-wrap;word-wrap:break-word;}
   .msg.k .m-bubble{color:var(--txt);font-size:14.5px;line-height:1.65;}
+  /* звёздочка в ответе (как Claude) */
+  .m-bubble .ans-star{display:inline-block;width:16px;height:16px;color:#c15f3c;vertical-align:-2px;margin-right:7px;}
+  .msg.k.streaming .ans-star{animation:starpulse 1s ease-in-out infinite;}
+  @keyframes starpulse{0%,100%{opacity:1;transform:scale(1)}50%{opacity:.35;transform:scale(.82)}}
   /* живые карточки данных в чате */
   .chat-card{max-width:720px;margin:10px auto 0;padding:0 20px;}
   .chat-card .cc-box{background:var(--card);border:1px solid var(--line);border-radius:13px;overflow:hidden;}
@@ -378,7 +382,7 @@
   .qchip.hot .dot{background:#e5484d;} .qchip.warn .dot{background:#d9a300;}
   .qlbl{font-size:12px;font-weight:700;margin:2px 2px 7px;display:flex;align-items:center;gap:5px;letter-spacing:0;text-transform:none;}
   .qlbl .ql-ic{font-size:13px;}
-  .qlbl-smart{color:var(--txt);}
+  .qlbl-smart{color:#c0392b;font-weight:700;}
   .qlbl-daily{color:var(--txt3);font-weight:600;}
   .qbar+.qbar{padding-top:2px;}
   /* markdown inside assistant */
@@ -747,17 +751,17 @@
               <div style="font-size:13px;color:var(--txt2);line-height:1.55;margin-bottom:13px;">Система проанализирует данные, покажет где теряются деньги, спросит вашу цель и составит персональный план задач.</div>
               <button onclick="openWizard()" style="width:100%;padding:12px;border-radius:10px;background:var(--accent);border:none;color:#fff;font-size:14px;font-weight:600;cursor:pointer;">Сделать полный аудит</button>
             </div>
-            <div class="ce-icon">💬</div>
-            <h3>Ваш ИИ-советник по продажам</h3>
-            <p>Задайте любой вопрос про рост продаж. Советник знает ваши реальные цифры из CRM, команду и воронку.</p>
+            <div class="ce-icon" style="color:#c15f3c;"><svg width="34" height="34" viewBox="0 0 24 24" fill="currentColor"><path d="M12 2l1.6 6.4L20 10l-6.4 1.6L12 18l-1.6-6.4L4 10l6.4-1.6L12 2z"/></svg></div>
+            <h3>Чем помочь по продажам?</h3>
+            <p>Спросите — покажу цифры и что делать. Я вижу ваши продажи, менеджеров, рекламу и деньги.</p>
           </div>
         </div>
         <div class="qbar" id="smartQBar" style="display:none;">
-          <div class="qlbl qlbl-smart" id="smartQLbl"><span class="ql-ic">⚡</span> Система нашла проблемы — нажмите, чтобы разобраться</div>
+          <div class="qlbl qlbl-smart" id="smartQLbl">Система нашла — стоит разобраться</div>
           <div class="qrow" id="smartQRow"></div>
         </div>
         <div class="qbar" id="quickQBar">
-          <div class="qlbl qlbl-daily"><span class="ql-ic">💬</span> Обычные вопросы</div>
+          <div class="qlbl qlbl-daily">Ежедневные вопросы</div>
           <div class="qrow" id="quickRow">
             <button class="qchip" onclick="quickAsk('Как дела сегодня? Что по продажам?')">Как дела сегодня?</button>
             <button class="qchip" onclick="quickAsk('Что сейчас не так с продажами?')">Что не так?</button>
@@ -3354,7 +3358,12 @@ function appendMsgDom(role,text,fileNames){
     for(const type of cards){const c=renderChatCard(type);if(c)cardsHtml+=c;}
   }
   const body = role==='user' ? (escapeHtml(text)+filesHtml) : (mdToHtml(cleanText)+filesHtml);
-  d.innerHTML=`<div class="m-bubble">${body}</div>${cardsHtml}`;
+  if(role==='user'){
+    d.innerHTML=`<div class="m-bubble">${body}</div>${cardsHtml}`;
+  }else{
+    const star='<svg class="ans-star" viewBox="0 0 24 24" fill="currentColor"><path d="M12 2l1.6 6.4L20 10l-6.4 1.6L12 18l-1.6-6.4L4 10l6.4-1.6L12 2z"/></svg>';
+    d.innerHTML=`<div class="m-bubble">${star}${body}</div>${cardsHtml}`;
+  }
   chatScroll.appendChild(d);
   return d;
 }
@@ -3533,6 +3542,8 @@ async function sendMsg(){
     chat.messages.push(msgObj);
     const dom=appendMsgDom('assistant','');
     const bubble=dom&&dom.querySelector?dom.querySelector('.m-bubble'):null;
+    if(dom)dom.classList.add('streaming');
+    const star='<svg class="ans-star" viewBox="0 0 24 24" fill="currentColor"><path d="M12 2l1.6 6.4L20 10l-6.4 1.6L12 18l-1.6-6.4L4 10l6.4-1.6L12 2z"/></svg>';
     const reader=r.body.getReader();
     const dec=new TextDecoder();
     let acc='';
@@ -3541,8 +3552,8 @@ async function sendMsg(){
       if(done)break;
       acc+=dec.decode(value,{stream:true});
       msgObj.text=acc;
-      // во время стрима прячем метки карточек (покажем их в конце)
-      if(bubble){bubble.innerHTML=mdToHtml(acc.replace(/\[\[CARD:\w+\]\]/g,'').replace(/\[\[CARD:$/,''));}
+      // во время стрима: звёздочка пульсирует + текст без меток карточек
+      if(bubble){bubble.innerHTML=star+mdToHtml(acc.replace(/\[\[CARD:\w+\]\]/g,'').replace(/\[\[CARD:$/,''));}
       chatScroll.scrollTop=chatScroll.scrollHeight;
     }
     // финал: перерисовываем сообщение целиком — с живыми карточками из меток
