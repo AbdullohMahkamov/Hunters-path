@@ -64,7 +64,7 @@ export default async function handler(req, res) {
       return;
     }
 
-    // Вход админа по паролю
+    // Вход админа по паролю (витрина hunter — как было)
     if (action === "admin") {
       if ((password || "") !== adminPassword()) {
         res.status(200).json({ ok: false, error: "Неверный пароль" });
@@ -72,6 +72,30 @@ export default async function handler(req, res) {
       }
       const sessToken = crypto.randomBytes(24).toString("hex");
       const info = { role: "admin", org: "hunter" };
+      await redisSet(redisUrl, redisToken, `session:${sessToken}`, JSON.stringify(info), 30 * 24 * 3600);
+      res.status(200).json({ ok: true, session: sessToken, ...info });
+      return;
+    }
+
+    // Вход КЛИЕНТА (мультитенант): по логину org + паролю из реестра clients:list.
+    // Каждый клиент — своя org, свои данные. Роль admin (владелец своего кабинета) или rop.
+    if (action === "client") {
+      const login = String((req.body && req.body.login) || "").trim().toLowerCase();
+      const pass = String((req.body && req.body.password) || "");
+      const clients = (await (async () => {
+        try {
+          const r = await fetch(`${redisUrl}/get/clients:list`, { headers: { Authorization: `Bearer ${redisToken}` } });
+          const d = await r.json();
+          return d && d.result != null ? JSON.parse(d.result) : [];
+        } catch (e) { return []; }
+      })());
+      const c = clients.find(x => (x.login || "").toLowerCase() === login);
+      if (!c || c.password !== pass) {
+        res.status(200).json({ ok: false, error: "Неверный логин или пароль" });
+        return;
+      }
+      const sessToken = crypto.randomBytes(24).toString("hex");
+      const info = { role: c.role || "admin", org: c.org, clientName: c.name || c.org };
       await redisSet(redisUrl, redisToken, `session:${sessToken}`, JSON.stringify(info), 30 * 24 * 3600);
       res.status(200).json({ ok: true, session: sessToken, ...info });
       return;
