@@ -317,6 +317,34 @@
     font-size:14.5px;font-weight:500;cursor:pointer;margin-bottom:14px;text-align:left;display:flex;align-items:center;gap:9px;}
   .side-new:hover{background:var(--card2);}
   .side-hist-lbl{font-size:12px;color:var(--txt3);font-weight:500;margin:2px 10px 4px;}
+  /* новая оболочка: скрываем старую шапку и вкладки, чат на весь экран */
+  body.shell header{display:none!important;}
+  body.shell .tabs{display:none!important;}
+  body.shell main{padding:0!important;margin:0!important;height:100dvh;max-height:100dvh;}
+  body.shell #chatView.active{height:100dvh;}
+  body.shell #dashView.active,body.shell #mapView.active{height:100dvh;overflow-y:auto;padding:56px 18px 24px!important;max-width:900px;margin:0 auto!important;}
+  /* меню разделов в сайдбаре чата */
+  .sec-toggle{display:flex;align-items:center;gap:10px;padding:9px 10px;border-radius:9px;font-size:14.5px;
+    color:var(--txt);cursor:pointer;border:none;background:transparent;width:100%;text-align:left;font-family:inherit;font-weight:500;}
+  .sec-toggle:hover{background:var(--card2);}
+  .sec-toggle svg.lead{width:17px;height:17px;color:var(--txt2);flex:0 0 auto;}
+  .sec-toggle .chev{margin-left:auto;width:15px;height:15px;color:var(--txt3);transition:transform .18s;}
+  .sec-toggle.open .chev{transform:rotate(180deg);}
+  .side-menu{display:none;flex-direction:column;gap:1px;padding:3px 0 6px 6px;margin-bottom:6px;}
+  .side-menu.open{display:flex;}
+  .menu-item{display:flex;align-items:center;gap:11px;padding:8px 10px;border-radius:8px;font-size:13.5px;
+    color:var(--txt2);cursor:pointer;border:none;background:transparent;width:100%;text-align:left;font-family:inherit;}
+  .menu-item:hover{background:var(--card2);}
+  .menu-item svg{width:16px;height:16px;color:var(--txt3);flex:0 0 auto;}
+  .side-div{border-top:1px solid var(--line);margin:6px 4px 8px;}
+  .side-user{border-top:1px solid var(--line);padding-top:8px;margin-top:6px;}
+  .user-btn{display:flex;align-items:center;gap:10px;padding:8px;border-radius:9px;cursor:pointer;width:100%;border:none;background:transparent;text-align:left;font-family:inherit;}
+  .user-btn:hover{background:var(--card2);}
+  .user-av{width:30px;height:30px;border-radius:50%;background:var(--txt);color:#fff;display:flex;align-items:center;justify-content:center;font-size:13px;font-weight:700;flex:0 0 auto;}
+  .user-meta{min-width:0;flex:1;}
+  .user-name{font-size:13.5px;font-weight:600;color:var(--txt);white-space:nowrap;overflow:hidden;text-overflow:ellipsis;}
+  .user-role{font-size:11.5px;color:var(--txt3);}
+  .user-btn .gear{width:16px;height:16px;color:var(--txt3);flex:0 0 auto;}
   .side-list{flex:1;overflow-y:auto;display:flex;flex-direction:column;gap:3px;-webkit-overflow-scrolling:touch;}
   .side-item{display:flex;align-items:center;gap:8px;padding:9px 10px;border-radius:8px;cursor:pointer;
     font-size:13px;color:var(--txt2);position:relative;}
@@ -516,6 +544,10 @@
 </div>
 
 <main>
+  <!-- Кнопка возврата к чату (в разделах, новая оболочка) -->
+  <button id="backToChat" onclick="switchTab('chat')" style="display:none;position:fixed;top:12px;left:12px;z-index:40;width:38px;height:38px;border-radius:10px;background:var(--card);border:1px solid var(--line2);color:var(--txt);cursor:pointer;align-items:center;justify-content:center;box-shadow:0 2px 10px rgba(0,0,0,.08);" title="К чату">
+    <svg width="19" height="19" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 11.5a8.38 8.38 0 0 1-.9 3.8 8.5 8.5 0 0 1-7.6 4.7 8.38 8.38 0 0 1-3.8-.9L3 21l1.9-5.7a8.38 8.38 0 0 1-.9-3.8 8.5 8.5 0 0 1 4.7-7.6 8.38 8.38 0 0 1 3.8-.9h.5a8.48 8.48 0 0 1 8 8v.5z"/></svg>
+  </button>
   <!-- MAP VIEW -->
   <div class="view active" id="mapView">
     <div class="filters" id="filters"></div>
@@ -752,16 +784,39 @@
   <!-- CHAT VIEW (стиль Claude v5) -->
   <div class="view" id="chatView">
     <div class="chat-layout">
-      <!-- Боковая панель: навигация + новый чат + история -->
+      <!-- Боковая панель: навигация + разделы + новый чат + история + пользователь -->
       <div class="chat-sidebar" id="chatSidebar">
         <div class="side-nav">
           <button class="side-nav-ic" onclick="toggleSidebar(false)" title="Свернуть"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="3" width="18" height="18" rx="2"/><line x1="9" y1="3" x2="9" y2="21"/></svg></button>
-          <button class="side-nav-ic" onclick="switchTab('dash')" title="Назад к дашборду"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="15 18 9 12 15 6"/></svg></button>
           <div class="side-brand"><div class="side-logo">H</div><span>Hunter AI</span></div>
         </div>
+
+        <!-- Разделы (сворачиваемое меню) -->
+        <button class="sec-toggle" id="secToggle" onclick="toggleSecMenu()">
+          <svg class="lead" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="3" y1="6" x2="21" y2="6"/><line x1="3" y1="12" x2="21" y2="12"/><line x1="3" y1="18" x2="21" y2="18"/></svg>
+          Разделы
+          <svg class="chev" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="6 9 12 15 18 9"/></svg>
+        </button>
+        <div class="side-menu" id="sideMenu">
+          <button class="menu-item" onclick="goSection('dash')"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M3 3v18h18"/><rect x="7" y="10" width="3" height="8"/><rect x="12" y="6" width="3" height="12"/><rect x="17" y="13" width="3" height="5"/></svg>Дашборд</button>
+          <button class="menu-item" onclick="goSection('map')"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M9 11l3 3L22 4"/><path d="M21 12v7a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11"/></svg>Задачи</button>
+          <button class="menu-item" onclick="goSection('finance')"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><line x1="12" y1="1" x2="12" y2="23"/><path d="M17 5H9.5a3.5 3.5 0 0 0 0 7h5a3.5 3.5 0 0 1 0 7H6"/></svg>Финансы</button>
+          <button class="menu-item" id="menuClientsSide" onclick="openClientsModal()" style="display:none;"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M23 21v-2a4 4 0 0 0-3-3.87M16 3.13a4 4 0 0 1 0 7.75"/></svg>Клиенты</button>
+        </div>
+        <div class="side-div"></div>
+
         <button class="side-new" id="newChatBtn" onclick="newChat()"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg>Новый чат</button>
         <div class="side-hist-lbl">Недавние</div>
         <div class="side-list" id="sideList"></div>
+
+        <!-- пользователь внизу -->
+        <div class="side-user">
+          <button class="user-btn" onclick="switchTab('map')">
+            <div class="user-av" id="userAv">А</div>
+            <div class="user-meta"><div class="user-name">Абдуллох</div><div class="user-role" id="userRoleSide">Владелец</div></div>
+            <svg class="gear" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 1 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 1 1-2.83-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 1 1 2.83-2.83l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 1 1 2.83 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z"/></svg>
+          </button>
+        </div>
       </div>
       <div class="side-backdrop" id="sideBackdrop" onclick="toggleSidebar(false)"></div>
 
@@ -1382,15 +1437,33 @@ function skipGen(i){
 function switchTab(t){
   state.tab=t;save();
   ['map','dash','chat'].forEach(x=>{
-    document.getElementById('tab-'+x).classList.toggle('active',t===x);
+    const tb=document.getElementById('tab-'+x);if(tb)tb.classList.toggle('active',t===x);
   });
   mapView.classList.toggle('active',t==='map');
   document.getElementById('dashView').classList.toggle('active',t==='dash');
   const cv=document.getElementById('chatView');
   cv.classList.toggle('active',t==='chat');
   document.body.classList.toggle('chat-open',t==='chat');
+  // новая оболочка: кнопка «к чату» видна в разделах (не в чате)
+  const btc=document.getElementById('backToChat');
+  if(btc)btc.style.display=(document.body.classList.contains('shell')&&t!=='chat')?'flex':'none';
   if(t==='chat'){renderChat();scrollChatBottom();loadSmartQuestions();}
   if(t==='dash'){renderDashboard();if(state.dashTab)dashTab(state.dashTab);}
+}
+
+/* ===== НОВАЯ ОБОЛОЧКА: меню разделов из чата ===== */
+function toggleSecMenu(){
+  const menu=document.getElementById('sideMenu'),tg=document.getElementById('secToggle');
+  if(!menu||!tg)return;
+  const open=menu.classList.toggle('open');tg.classList.toggle('open',open);
+}
+function goSection(sec){
+  // сворачиваем меню разделов
+  const menu=document.getElementById('sideMenu'),tg=document.getElementById('secToggle');
+  if(menu)menu.classList.remove('open'); if(tg)tg.classList.remove('open');
+  if(typeof toggleSidebar==='function')toggleSidebar(false);
+  if(sec==='finance'){switchTab('dash');dashTab('finance');}
+  else switchTab(sec);
 }
 
 /* ===== DASHBOARD ===== */
@@ -3653,7 +3726,13 @@ function bootApp(){
   if(state.lang==='uz')setLang('uz');
   applyRole();
   maybeShowWelcome();
-  const start=(USER_ROLE==='rop')?'dash':(state.tab&&['chat','dash','map'].includes(state.tab)?state.tab:'chat');
+  // НОВАЯ ОБОЛОЧКА: чат — главное окно, старые разделы под «Разделы»
+  document.body.classList.add('shell');
+  // роль/имя в сайдбаре
+  const rl=USER_ROLE==='rop'?'РОП':(USER_ROLE==='demo'?'Демо':'Владелец');
+  const rs=document.getElementById('userRoleSide');if(rs)rs.textContent=rl;
+  if(USER_ROLE==='admin'){const mc=document.getElementById('menuClientsSide');if(mc)mc.style.display='flex';}
+  const start=(USER_ROLE==='rop')?'dash':'chat';
   switchTab(start);
   document.getElementById('loginScreen').style.display='none';
 }
