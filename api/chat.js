@@ -129,9 +129,47 @@ export default async function handler(req, res) {
   if (!apiKey) { res.status(500).json({ error: "ANTHROPIC_API_KEY not set on server" }); return; }
 
   try {
-    const { messages, progress, lang, session } = req.body || {};
+    const { messages, progress, lang, session, action } = req.body || {};
 
     const org = await resolveSessionOrg(session);
+
+    // ЖИВЫЕ ДАННЫЕ из кэша (org-aware): дашборд (со speed) + финансы — нужны и чату, и умным вопросам
+    const cache = await readCache("dashboard", org);
+    const speed = await readCache("speed", org);
+    if (cache && speed) cache.speed = speed;
+    const fin = await readCache(org === "hunter" ? "fin:v2:current" : `${org}:fin:v2:current`, null);
+    const live = liveBlock(cache, fin);
+
+    // === УМНЫЕ ВОПРОСЫ: AI находит проблемы и предлагает, что спросить ===
+    if (action === "smart-questions") {
+      if (!cache || !cache.totals) { res.status(200).json({ ok: true, questions: [] }); return; }
+      const qSystem = `Ты — директор по продажам. Смотришь данные бизнеса и находишь 3-4 ПРОБЛЕМЫ или зоны внимания, которые владелец сам не заметил бы.
+Для каждой сформулируй КОРОТКИЙ вопрос (3-6 слов) от лица владельца ("Почему...", "Кто...", "Куда...", "Успеваем ли..."), который он захочет нажать.
+Срочность: "hot" (горит, теряем деньги) или "warn" (внимание).
+Отвечай ТОЛЬКО валидным JSON-массивом, без markdown, без пояснений:
+[{"q":"Почему Komiljon не дозванивается?","level":"hot"},{"q":"Успеваем на план месяца?","level":"warn"}]
+Язык: ${lang === "uz" ? "узбекский латиницей" : "русский"}. Максимум 4. Если всё хорошо — 1-2 общих вопроса.`;
+      const qReq = {
+        model: "claude-sonnet-4-6", max_tokens: 500,
+        system: qSystem + live,
+        messages: [{ role: "user", content: "Проанализируй данные и предложи вопросы." }],
+      };
+      const qr = await fetch("https://api.anthropic.com/v1/messages", {
+        method: "POST",
+        headers: { "content-type": "application/json", "x-api-key": apiKey, "anthropic-version": "2023-06-01" },
+        body: JSON.stringify(qReq),
+      });
+      if (!qr.ok) { res.status(200).json({ ok: true, questions: [] }); return; }
+      const qd = await qr.json();
+      let txt = "";
+      for (const b of (qd.content || [])) if (b.type === "text") txt += b.text;
+      txt = txt.replace(/```json|```/g, "").trim();
+      let questions = [];
+      try { questions = JSON.parse(txt); } catch (e) { questions = []; }
+      if (!Array.isArray(questions)) questions = [];
+      res.status(200).json({ ok: true, questions: questions.slice(0, 4) });
+      return;
+    }
 
     const SYSTEM = `Ты — личный директор по продажам (РОП) для владельца бизнеса. Твоя работа — смотреть на все данные бизнеса и отвечать простым языком: ЧТО НЕ ТАК, КАК ИСПРАВИТЬ, ЧЕГО НЕ ХВАТАЕТ ДО ЦЕЛИ.
 
@@ -160,16 +198,18 @@ export default async function handler(req, res) {
 
 СТРОГАЯ ГРАНИЦА: отвечаешь ТОЛЬКО про бизнес, продажи, маркетинг, команду, воронку, рекламу, деньги бизнеса, рост. Если вопрос не про это — вежливо откажись одной фразой и верни к делу.
 
-ЯЗЫК: ${lang === "uz" ? "Отвечай ПО-УЗБЕКСКИ (латиница)." : "Отвечай ПО-РУССКИ."} Клиентский контент (реклама/скрипты) всегда на узбекском.`;
+ЯЗЫК: ${lang === "uz" ? "Отвечай ПО-УЗБЕКСКИ (латиница)." : "Отвечай ПО-РУССКИ."} Клиентский контент (реклама/скрипты) всегда на узбекском.
+
+ВИЗУАЛЬНЫЕ КАРТОЧКИ: когда твой ответ касается конкретных данных, вставь В КОНЦЕ ответа специальную метку — приложение покажет живую карточку с реальными цифрами. Метки (пиши ровно так, на отдельной строке):
+[[CARD:today]] — когда речь про сегодняшний день (лиды/продажи/дозвон сегодня)
+[[CARD:mops]] — когда речь про менеджеров (кто как работает)
+[[CARD:month]] — когда речь про итоги месяца (продажи, выручка, конверсия, цель)
+[[CARD:adsets]] — когда речь про рекламу/источники/ROI
+[[CARD:problems]] — когда речь про причины потерь лидов
+[[CARD:forecast]] — когда речь про план/прогноз/отставание от цели
+Вставляй 1, максимум 2 метки — только самые релевантные вопросу. Не описывай карточку словами повторно, приложение само нарисует цифры. Твой текст — это объяснение и совет, карточка — данные.`;
 
     let progressNote = "";
-
-    // ЖИВЫЕ ДАННЫЕ из кэша (org-aware): дашборд (со speed внутри) + финансы
-    const cache = await readCache("dashboard", org);
-    const speed = await readCache("speed", org);
-    if (cache && speed) cache.speed = speed;
-    const fin = await readCache(org === "hunter" ? "fin:v2:current" : `${org}:fin:v2:current`, null);
-    const live = liveBlock(cache, fin);
 
     const anthropicReq = {
       model: "claude-sonnet-4-6",
