@@ -1,30 +1,59 @@
-// /api/sync.js — тянет сделки из воронки HunterAcademy, считает живые KPI, кладёт в кэш Upstash.
-// Запуск: ночью (Vercel Cron) или вручную кнопкой. amoCRM дёргается только тут, раз в сутки.
+// /api/sync.js — тянет сделки из воронки клиента, считает живые KPI, кладёт в кэш Upstash.
+// Мультитенант: настройки клиента берутся из конфига (org). Витрина hunter = дефолт.
 
-const SUBDOMAIN = "huntercademy";
-const PIPELINE = "HunterAcademy";   // считаем ТОЛЬКО эту воронку
-const OWN_THRESHOLD = 1600000;      // <=1.6М = "свои", исключаем
-const SOLD = "Sotildi";
-const CLOSED_LOST = "Yopildi";
-const ADSET_FIELD_ID = 194405;      // кастомное поле adset_name (источник/аудитория рекламы)
-
-// Действующая пятёрка МОПов (ID из amoCRM)
-const ACTIVE_MOPS = {
-  13660834: "Komiljon",
-  13703650: "Samandar",
-  13904266: "Abdulla-Legenda",
-  13833590: "Begoyim",
-  13681582: "Abulbositxon",
+// Дефолтный конфиг витрины (org=hunter) — ровно те значения, что были захардкожены.
+const HUNTER_CFG = {
+  subdomain: "huntercademy",
+  pipeline: "HunterAcademy",
+  ownThreshold: 1600000,
+  sold: "Sotildi",
+  lost: "Yopildi",
+  adsetFieldId: 194405,
+  mops: {
+    13660834: "Komiljon",
+    13703650: "Samandar",
+    13904266: "Abdulla-Legenda",
+    13833590: "Begoyim",
+    13681582: "Abulbositxon",
+  },
+  noContactReasons: [
+    "3 marta bog'lanib bo'lmadi", "Ignor", "Telefon raqami o'chirilgan",
+    "Javobsiz hamma chatlarni o'chirib tashlagan", "Xato raqam",
+    "Ruxsat berishmadi", "Dubl",
+  ],
+  noContactStages: ["Bog'lanib bo'lmadi", "Bog'lanib bo'lmadi 2"],
 };
 
-// Причины потери контакта (дозвон не состоялся / мусор)
-const NO_CONTACT_REASONS = new Set([
-  "3 marta bog'lanib bo'lmadi", "Ignor", "Telefon raqami o'chirilgan",
-  "Javobsiz hamma chatlarni o'chirib tashlagan", "Xato raqam",
-  "Ruxsat berishmadi", "Dubl",
-]);
-// Этапы "в процессе дозвона" тоже считаем непробитым контактом, если сделка закрылась там
-const NO_CONTACT_STAGES = new Set(["Bog'lanib bo'lmadi", "Bog'lanib bo'lmadi 2"]);
+async function redisGetCfg(url, token, key) {
+  try {
+    const r = await fetch(`${url}/get/${encodeURIComponent(key)}`, { headers: { Authorization: `Bearer ${token}` } });
+    const d = await r.json();
+    return d && d.result != null ? JSON.parse(d.result) : null;
+  } catch (e) { return null; }
+}
+
+// Возвращает конфиг клиента. Для hunter — дефолт (+ ENV токен). Для новых — из Upstash.
+async function resolveConfig(org, redisUrl, redisToken) {
+  org = org || "hunter";
+  if (org === "hunter") {
+    return { org, token: process.env.AMOCRM_TOKEN, ...HUNTER_CFG };
+  }
+  const stored = await redisGetCfg(redisUrl, redisToken, `clientcfg:${org}`);
+  if (!stored || !stored.subdomain || !stored.token) return null;
+  return {
+    org,
+    token: stored.token,
+    subdomain: stored.subdomain,
+    pipeline: stored.pipeline || "",
+    ownThreshold: stored.ownThreshold != null ? stored.ownThreshold : 0,
+    sold: stored.sold || "",
+    lost: stored.lost || "",
+    adsetFieldId: stored.adsetFieldId || null,
+    mops: stored.mops || {},
+    noContactReasons: stored.noContactReasons || [],
+    noContactStages: stored.noContactStages || [],
+  };
+}
 
 async function redisSet(url, token, key, value) {
   const r = await fetch(`${url}/set/${encodeURIComponent(key)}`, {
@@ -36,11 +65,30 @@ async function redisSet(url, token, key, value) {
 }
 
 export default async function handler(req, res) {
-  const token = process.env.AMOCRM_TOKEN;
   const redisUrl = process.env.UPSTASH_REDIS_REST_URL;
   const redisToken = process.env.UPSTASH_REDIS_REST_TOKEN;
-  if (!token) { res.status(500).json({ error: "AMOCRM_TOKEN not set" }); return; }
   if (!redisUrl || !redisToken) { res.status(500).json({ error: "Upstash env not set" }); return; }
+
+  // какой клиент? по умолчанию hunter (витрина). Новый клиент передаёт ?org=...
+  const org = (req.query && req.query.org) || "hunter";
+  const cfg = await resolveConfig(org, redisUrl, redisToken);
+  if (!cfg) { res.status(400).json({ error: `Клиент "${org}" не настроен` }); return; }
+
+  const token = cfg.token;
+  if (!token) { res.status(500).json({ error: "AMOCRM_TOKEN not set" }); return; }
+
+  // локальные значения из конфига (заменяют прежние захардкоженные константы)
+  const SUBDOMAIN = cfg.subdomain;
+  const PIPELINE = cfg.pipeline;
+  const OWN_THRESHOLD = cfg.ownThreshold;
+  const SOLD = cfg.sold;
+  const CLOSED_LOST = cfg.lost;
+  const ADSET_FIELD_ID = cfg.adsetFieldId;
+  const ACTIVE_MOPS = cfg.mops || {};
+  const NO_CONTACT_REASONS = new Set(cfg.noContactReasons || []);
+  const NO_CONTACT_STAGES = new Set(cfg.noContactStages || []);
+  // ключи кэша с префиксом клиента (чтобы данные клиентов не смешивались)
+  const K = (name) => org === "hunter" ? name : `${name}:${org}`;
 
   const now = new Date();
   const monthStart = Math.floor(new Date(now.getFullYear(), now.getMonth(), 1).getTime() / 1000);
@@ -418,7 +466,7 @@ export default async function handler(req, res) {
       suspicious: suspicious.sort((a, b) => (b.closed_at || b.created_at || 0) - (a.closed_at || a.created_at || 0)).slice(0, 200),
     };
 
-    await redisSet(redisUrl, redisToken, "dashboard", JSON.stringify(result));
+    await redisSet(redisUrl, redisToken, K("dashboard"), JSON.stringify(result));
 
     // === СНИМОК ДНЯ ДЛЯ ДИНАМИКИ ===
     // Ключ по дате (YYYY-MM-DD). Перезапись за тот же день — норм (последнее значение дня).
@@ -433,18 +481,18 @@ export default async function handler(req, res) {
         leads: result.totals.leads,
         noContactPct: result.totals.noContactPct,
       };
-      await redisSet(redisUrl, redisToken, `snap:${today}`, JSON.stringify(snap));
+      await redisSet(redisUrl, redisToken, K(`snap:${today}`), JSON.stringify(snap));
       // ведём список дат снимков (последние 90)
       let dates = (await (async () => {
         try {
-          const r = await fetch(`${redisUrl}/get/snap:list`, { headers: { Authorization: `Bearer ${redisToken}` } });
+          const r = await fetch(`${redisUrl}/get/${encodeURIComponent(K("snap:list"))}`, { headers: { Authorization: `Bearer ${redisToken}` } });
           const d = await r.json();
           return d && d.result ? JSON.parse(d.result) : [];
         } catch (e) { return []; }
       })());
       if (!dates.includes(today)) dates.push(today);
       dates = dates.slice(-90); // храним максимум 90 дней
-      await redisSet(redisUrl, redisToken, "snap:list", JSON.stringify(dates));
+      await redisSet(redisUrl, redisToken, K("snap:list"), JSON.stringify(dates));
     } catch (e) { /* снимок не критичен, не роняем sync */ }
 
     res.status(200).json({ ok: true, ...result });
