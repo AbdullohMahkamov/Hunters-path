@@ -448,6 +448,7 @@
       <button id="lang-uz" onclick="setLang('uz')">UZ</button>
     </div>
     <button onclick="logout()" title="Выйти" style="margin-left:8px;background:var(--card);border:1px solid var(--line2);color:var(--txt2);border-radius:8px;padding:5px 10px;font-size:12.5px;cursor:pointer;flex:0 0 auto;" class="ic-btn"><svg class="ic" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><path d="M9 4H5v16h4M16 12H9M13 8l4 4-4 4"/></svg>Выйти</button>
+    <button id="clientsBtn" onclick="openClientsModal()" title="Клиенты" style="display:none;margin-left:6px;background:var(--card);border:1px solid var(--line2);color:var(--txt2);border-radius:8px;padding:5px 9px;font-size:12px;cursor:pointer;flex:0 0 auto;" class="ic-btn"><svg class="ic" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2M9 11a4 4 0 1 0 0-8 4 4 0 0 0 0 8zM23 21v-2a4 4 0 0 0-3-3.87M16 3.13a4 4 0 0 1 0 7.75"/></svg>Клиенты</button>
     <button id="demoBtn" onclick="openDemoPanel()" title="Демо-аккаунты" style="display:none;margin-left:6px;background:var(--card);border:1px solid var(--line2);color:var(--txt2);border-radius:8px;padding:5px 9px;font-size:12px;cursor:pointer;flex:0 0 auto;" class="ic-btn"><svg class="ic" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><path d="M4 6h16v6a8 8 0 0 1-16 0zM9 11h.01M15 11h.01"/></svg>Демо</button>
   </div>
 </header>
@@ -735,6 +736,21 @@
     </div>
   </div>
 </main>
+
+<!-- МОДАЛКА: УПРАВЛЕНИЕ КЛИЕНТАМИ (супер-админ) -->
+<div id="clientsOverlay" style="display:none;position:fixed;inset:0;background:rgba(0,0,0,.55);z-index:100;padding:20px;overflow-y:auto;" onclick="if(event.target===this)closeClientsModal()">
+  <div style="max-width:560px;margin:30px auto;background:var(--bg);border:1px solid var(--line2);border-radius:16px;overflow:hidden;">
+    <div style="display:flex;justify-content:space-between;align-items:center;padding:16px 18px;border-bottom:1px solid var(--line);">
+      <div style="font-size:16px;font-weight:700;">Клиенты</div>
+      <button onclick="closeClientsModal()" style="width:30px;height:30px;border-radius:8px;background:var(--card);border:1px solid var(--line2);color:var(--txt);font-size:16px;cursor:pointer;">✕</button>
+    </div>
+    <div style="padding:16px 18px;">
+      <div id="clientsList" style="margin-bottom:16px;"></div>
+      <button onclick="openClientForm()" style="width:100%;padding:11px;border-radius:9px;background:var(--accent);border:none;color:#fff;font-size:13.5px;font-weight:600;cursor:pointer;">+ Добавить клиента</button>
+      <div id="clientForm" style="display:none;margin-top:16px;border-top:1px solid var(--line);padding-top:16px;"></div>
+    </div>
+  </div>
+</div>
 
 <!-- МОДАЛКА: НАСТРОЙКА РАБОЧИХ ДНЕЙ -->
 <div id="workdaysOverlay" style="display:none;position:fixed;inset:0;background:rgba(0,0,0,.55);z-index:100;padding:20px;overflow-y:auto;" onclick="if(event.target===this)closeWorkdaysModal()">
@@ -1900,6 +1916,121 @@ async function reviewSusp(id,status){
     await fetch('/api/user-data',{method:'POST',headers:{'content-type':'application/json'},
       body:JSON.stringify({action:'susp-review',session:SESSION,dealId:id,status,note,deal})});
   }catch(e){}
+}
+
+// ===== УПРАВЛЕНИЕ КЛИЕНТАМИ (супер-админ hunter) =====
+function openClientsModal(){document.getElementById('clientsOverlay').style.display='block';loadClientsList();}
+function closeClientsModal(){document.getElementById('clientsOverlay').style.display='none';document.getElementById('clientForm').style.display='none';}
+async function loadClientsList(){
+  const box=document.getElementById('clientsList');
+  box.innerHTML='<div style="font-size:12px;color:var(--txt3);">Загрузка...</div>';
+  try{
+    const r=await fetch('/api/user-data',{method:'POST',headers:{'content-type':'application/json'},body:JSON.stringify({action:'clients-list',session:SESSION})});
+    const d=await r.json();
+    if(!d.ok){box.innerHTML='<div style="font-size:12px;color:var(--red);">'+(d.error||'Ошибка')+'</div>';return;}
+    if(!d.clients||!d.clients.length){box.innerHTML='<div style="font-size:12px;color:var(--txt3);">Пока нет клиентов. Добавьте первого.</div>';return;}
+    box.innerHTML=d.clients.map(c=>`
+      <div style="display:flex;justify-content:space-between;align-items:center;padding:10px 12px;border:1px solid var(--line);border-radius:9px;margin-bottom:8px;">
+        <div>
+          <div style="font-size:13.5px;font-weight:600;">${escapeHtml(c.name)}</div>
+          <div style="font-size:11px;color:var(--txt3);">${escapeHtml(c.subdomain)}.amocrm.ru · логин: ${escapeHtml(c.login)}</div>
+        </div>
+        <button onclick="deleteClient('${escapeHtml(c.org)}')" style="background:var(--card);border:1px solid var(--line2);color:var(--red);border-radius:7px;padding:5px 10px;font-size:12px;cursor:pointer;">Удалить</button>
+      </div>`).join('');
+  }catch(e){box.innerHTML='<div style="font-size:12px;color:var(--red);">'+String(e)+'</div>';}
+}
+async function deleteClient(org){
+  if(!confirm('Удалить клиента '+org+'? Данные подключения будут стёрты.'))return;
+  await fetch('/api/user-data',{method:'POST',headers:{'content-type':'application/json'},body:JSON.stringify({action:'client-delete',session:SESSION,org})});
+  loadClientsList();
+}
+function openClientForm(){
+  const f=document.getElementById('clientForm');
+  f.style.display='block';
+  f.innerHTML=`
+    <div style="font-size:13px;font-weight:700;margin-bottom:10px;">Новый клиент</div>
+    <div style="display:flex;flex-direction:column;gap:8px;">
+      ${cInput('cf_name','Название','Автошкола Драйв')}
+      ${cInput('cf_org','Код (латиницей, без пробелов)','avtodrive')}
+      ${cInput('cf_sub','Субдомен amoCRM','avtodrive')}
+      ${cInput('cf_token','Токен доступа amoCRM','')}
+      <button onclick="probeClient()" style="padding:9px;border-radius:8px;background:var(--card);border:1px solid var(--accent);color:var(--accent);font-size:12.5px;font-weight:600;cursor:pointer;">Проверить связь и подтянуть воронки</button>
+      <div id="cf_probe"></div>
+      ${cInput('cf_login','Логин для клиента','avtodrive')}
+      ${cInput('cf_pass','Пароль для клиента','')}
+    </div>
+    <button onclick="saveClient()" id="cf_saveBtn" style="width:100%;margin-top:12px;padding:11px;border-radius:9px;background:var(--accent);border:none;color:#fff;font-size:13.5px;font-weight:600;cursor:pointer;">Сохранить клиента</button>
+  `;
+}
+function cInput(id,label,ph){
+  return `<div><div style="font-size:11px;color:var(--txt2);margin-bottom:3px;">${label}</div>
+    <input id="${id}" placeholder="${ph}" style="width:100%;padding:8px 10px;border-radius:8px;border:1px solid var(--line2);background:var(--card);color:var(--txt);font-size:13px;box-sizing:border-box;"></div>`;
+}
+let _probeData=null;
+async function probeClient(){
+  const sub=document.getElementById('cf_sub').value.trim();
+  const token=document.getElementById('cf_token').value.trim();
+  const box=document.getElementById('cf_probe');
+  if(!sub||!token){box.innerHTML='<div style="font-size:11.5px;color:var(--red);">Введите субдомен и токен</div>';return;}
+  box.innerHTML='<div style="font-size:11.5px;color:var(--txt3);">Проверяю...</div>';
+  try{
+    const r=await fetch('/api/user-data',{method:'POST',headers:{'content-type':'application/json'},body:JSON.stringify({action:'client-probe',session:SESSION,subdomain:sub,token})});
+    const d=await r.json();
+    if(!d.ok){box.innerHTML='<div style="font-size:11.5px;color:var(--red);">'+(d.error||'Ошибка связи')+'</div>';return;}
+    _probeData=d;
+    // выбор воронки
+    const pipeOpts=d.pipelines.map(p=>`<option value="${p.id}">${escapeHtml(p.name)}</option>`).join('');
+    box.innerHTML=`<div style="background:var(--card);border:1px solid var(--green);border-radius:8px;padding:10px;margin:6px 0;">
+      <div style="font-size:11.5px;color:var(--green);margin-bottom:8px;">✓ Связь есть! Воронок: ${d.pipelines.length}, менеджеров: ${d.users.length}</div>
+      <div style="font-size:11px;color:var(--txt2);margin-bottom:3px;">Воронка</div>
+      <select id="cf_pipe" onchange="onPipeChange()" style="width:100%;padding:7px;border-radius:7px;border:1px solid var(--line2);background:var(--bg);color:var(--txt);font-size:12.5px;margin-bottom:8px;">${pipeOpts}</select>
+      <div id="cf_statuses"></div>
+      <div style="font-size:11px;color:var(--txt2);margin:8px 0 3px;">Менеджеры (отметьте продажников)</div>
+      <div id="cf_users" style="max-height:140px;overflow-y:auto;border:1px solid var(--line);border-radius:7px;padding:6px;">${d.users.map(u=>`<label style="display:flex;gap:7px;align-items:center;font-size:12px;padding:3px;"><input type="checkbox" class="cf_mop" value="${u.id}" data-name="${escapeHtml(u.name)}">${escapeHtml(u.name)}</label>`).join('')}</div>
+    </div>`;
+    onPipeChange();
+  }catch(e){box.innerHTML='<div style="font-size:11.5px;color:var(--red);">'+String(e)+'</div>';}
+}
+function onPipeChange(){
+  if(!_probeData)return;
+  const pid=document.getElementById('cf_pipe').value;
+  const pipe=_probeData.pipelines.find(p=>String(p.id)===String(pid));
+  if(!pipe)return;
+  const opts=pipe.statuses.map(s=>`<option value="${escapeHtml(s.name)}">${escapeHtml(s.name)}</option>`).join('');
+  document.getElementById('cf_statuses').innerHTML=`
+    <div style="font-size:11px;color:var(--txt2);margin-bottom:3px;">Статус «Продажа»</div>
+    <select id="cf_sold" style="width:100%;padding:7px;border-radius:7px;border:1px solid var(--line2);background:var(--bg);color:var(--txt);font-size:12.5px;margin-bottom:6px;">${opts}</select>
+    <div style="font-size:11px;color:var(--txt2);margin-bottom:3px;">Статус «Отказ/Потеря»</div>
+    <select id="cf_lost" style="width:100%;padding:7px;border-radius:7px;border:1px solid var(--line2);background:var(--bg);color:var(--txt);font-size:12.5px;">${opts}</select>`;
+}
+async function saveClient(){
+  const g=(id)=>{const e=document.getElementById(id);return e?e.value.trim():'';};
+  const client={
+    name:g('cf_name'), org:g('cf_org').toLowerCase().replace(/[^a-z0-9_-]/g,''),
+    subdomain:g('cf_sub'), token:g('cf_token'),
+    login:g('cf_login'), password:g('cf_pass'), role:'admin',
+  };
+  if(!client.name||!client.org||!client.subdomain||!client.token||!client.login||!client.password){
+    alert('Заполните все поля');return;
+  }
+  // воронка/статусы/мопы из probe
+  if(_probeData){
+    const pipe=_probeData.pipelines.find(p=>String(p.id)===String(document.getElementById('cf_pipe').value));
+    if(pipe)client.pipeline=pipe.name;
+    client.sold=g('cf_sold'); client.lost=g('cf_lost');
+    const mops={};
+    document.querySelectorAll('.cf_mop:checked').forEach(c=>{mops[c.value]=c.getAttribute('data-name');});
+    client.mops=mops;
+  }
+  const btn=document.getElementById('cf_saveBtn');
+  if(btn){btn.disabled=true;btn.textContent='Сохранение...';}
+  try{
+    const r=await fetch('/api/user-data',{method:'POST',headers:{'content-type':'application/json'},body:JSON.stringify({action:'client-save',session:SESSION,client})});
+    const d=await r.json();
+    if(d.ok){alert('Клиент добавлен! Логин: '+client.login);document.getElementById('clientForm').style.display='none';loadClientsList();}
+    else alert('Ошибка: '+(d.error||'—'));
+  }catch(e){alert(String(e));}
+  if(btn){btn.disabled=false;btn.textContent='Сохранить клиента';}
 }
 
 // ===== ПРОГНОЗ МЕСЯЦА + РАБОЧИЕ ДНИ =====
@@ -3189,6 +3320,8 @@ function applyRole(){
   if(chatTab)chatTab.style.display=(USER_ROLE==='rop')?'none':'';
   // Демо-панель: только админ
   if(demoBtn)demoBtn.style.display=(USER_ROLE==='admin')?'':'none';
+  const clientsBtn=document.getElementById('clientsBtn');
+  if(clientsBtn)clientsBtn.style.display=(USER_ROLE==='admin'&&(USER_ORG==='hunter'||!USER_ORG))?'':'none';
   const isRop=USER_ROLE==='rop';
   // РОП: скрыть вкладку ФИНАНСЫ (чувствительные данные владельца — прибыль, доли, расходы)
   const finTab=document.getElementById('dtab-finance');
