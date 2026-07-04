@@ -208,9 +208,13 @@ export default async function handler(req, res) {
         if (f && f.values && f.values[0]) adset = String(f.values[0].value || "").trim();
       }
       if (adset) {
-        const a = adsets[adset] || (adsets[adset] = { leads: 0, sold: 0, revenue: 0 });
+        // всё время
+        const a = adsets[adset] || (adsets[adset] = { leads: 0, sold: 0, revenue: 0, leadsMonth: 0, soldMonth: 0, revenueMonth: 0 });
         a.leads++;
         if (isSold) { a.sold++; a.revenue += price; }
+        // текущий месяц: лид создан в этом месяце ИЛИ продажа закрыта в этом месяце
+        if (createdThisMonth) a.leadsMonth++;
+        if (isSold && closedThisMonth) { a.soldMonth++; a.revenueMonth += price; }
       }
 
       // причина потери (по имени)
@@ -392,17 +396,20 @@ export default async function handler(req, res) {
       .map(([name, count]) => ({ name, count }))
       .sort((a, b) => b.count - a.count);
 
-    // === ИСТОЧНИКИ РЕКЛАМЫ: массив с конверсией, сортировка по выручке ===
+    // === ИСТОЧНИКИ РЕКЛАМЫ: месяц + всё время, сортировка по выручке месяца ===
     const adsetsArr = Object.entries(adsets)
       .map(([name, a]) => ({
         name,
-        leads: a.leads,
-        sold: a.sold,
-        revenue: a.revenue,
+        // всё время
+        leads: a.leads, sold: a.sold, revenue: a.revenue,
         conv: a.leads > 0 ? +(a.sold / a.leads * 100).toFixed(1) : 0,
         avgCheck: a.sold > 0 ? Math.round(a.revenue / a.sold) : 0,
+        // текущий месяц
+        leadsMonth: a.leadsMonth, soldMonth: a.soldMonth, revenueMonth: a.revenueMonth,
+        convMonth: a.leadsMonth > 0 ? +(a.soldMonth / a.leadsMonth * 100).toFixed(1) : 0,
+        avgCheckMonth: a.soldMonth > 0 ? Math.round(a.revenueMonth / a.soldMonth) : 0,
       }))
-      .sort((x, y) => y.revenue - x.revenue);
+      .sort((x, y) => y.revenueMonth - x.revenueMonth);
 
     // === ОКНО АУДИТА (~4 мес) — отдельно, для аудита ===
     const convAudit = leadsAudit > 0 ? +(soldTeamAudit / leadsAudit * 100).toFixed(2) : 0;
