@@ -361,6 +361,15 @@
     border-radius:9px;background:var(--card);border:1px solid var(--line2);color:var(--txt2);cursor:pointer;
     align-items:center;justify-content:center;box-shadow:0 2px 8px rgba(0,0,0,.08);}
   #openSidebarBtn svg{width:19px;height:19px;stroke-width:2;}
+  /* одна кнопка «Обновить» сверху справа */
+  body.shell #topSyncBtn{position:fixed;top:12px;right:16px;z-index:45;display:flex;align-items:center;gap:7px;
+    padding:7px 13px 7px 11px;border-radius:20px;background:var(--card);border:1px solid var(--line2);
+    color:var(--txt);font-size:13px;font-weight:600;cursor:pointer;box-shadow:0 2px 8px rgba(0,0,0,.06);font-family:inherit;}
+  body.shell #topSyncBtn:hover{background:var(--card2);}
+  #topSyncBtn svg{width:15px;height:15px;flex:0 0 auto;}
+  #topSyncBtn.spinning svg{animation:spin 1s linear infinite;}
+  @keyframes spin{to{transform:rotate(360deg)}}
+  body:not(.shell) #topSyncBtn{display:none;}
   /* меню разделов в сайдбаре чата */
   .sec-toggle{display:flex;align-items:center;gap:10px;padding:9px 10px;border-radius:9px;font-size:14.5px;
     color:var(--txt);cursor:pointer;border:none;background:transparent;width:100%;text-align:left;font-family:inherit;font-weight:500;}
@@ -450,7 +459,8 @@
   .msg.me{display:flex;justify-content:flex-end;}
   .msg.me .m-bubble{background:#f0efec;color:var(--txt);padding:11px 16px;border-radius:18px;
     max-width:75%;font-size:15px;line-height:1.5;white-space:pre-wrap;word-wrap:break-word;
-    font-family:ui-sans-serif,-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,sans-serif;}
+    font-family:'Inter','Segoe UI',-apple-system,BlinkMacSystemFont,ui-sans-serif,Roboto,"Helvetica Neue",Arial,sans-serif;
+    letter-spacing:.1px;}
   .msg.k .m-bubble{color:var(--txt);font-size:16px;line-height:1.72;font-weight:400;
     font-family:'Iowan Old Style','Palatino Linotype','Palatino','Book Antiqua',Georgia,serif;
     letter-spacing:.1px;}
@@ -597,6 +607,11 @@
 </div>
 
 <main>
+  <!-- ОДНА кнопка «Обновить» сверху справа (новая оболочка) -->
+  <button id="topSyncBtn" onclick="syncAll()" title="Обновить данные из amoCRM">
+    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 12a9 9 0 1 1-3-6.7L21 8M21 3v5h-5"/></svg>
+    <span id="topSyncLbl">Обновить</span>
+  </button>
   <!-- Кнопка открыть свёрнутый сайдбар (новая оболочка) -->
   <button id="openSidebarBtn" onclick="openSidebar()" title="Показать панель">
     <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="3" width="18" height="18" rx="2"/><line x1="9" y1="3" x2="9" y2="21"/></svg>
@@ -831,11 +846,7 @@
       </div>
     </div>
 
-    <div class="foot" style="margin-top:14px;">
-      <button id="syncBtn" onclick="syncNow()">Обновить из amoCRM</button>
-      <button id="syncSpeedBtn" onclick="syncSpeed()">Обновить дисциплину</button>
-    </div>
-    <div style="font-size:11px;color:var(--txt3);margin-top:8px;line-height:1.5;" id="dashNote">Нажми «Обновить из amoCRM» для первой загрузки живых данных. Дальше обновляется автоматически каждую ночь.</div>
+    <div style="font-size:11px;color:var(--txt3);margin-top:8px;line-height:1.5;" id="dashNote">Данные обновляются автоматически каждую ночь. Кнопка «Обновить» сверху — для ручного обновления.</div>
   </div>
 
   <!-- CHAT VIEW (стиль Claude v5) -->
@@ -2995,29 +3006,28 @@ async function syncSpeed(){
   if(syncingSpeed)return;
   syncingSpeed=true;
   const btn=document.getElementById('syncSpeedBtn');
-  const old=btn.textContent;btn.textContent='⏳ Считаю события (20-40 сек)...';btn.disabled=true;
-  document.getElementById('disciplineChart').innerHTML='<div style="font-size:12px;color:var(--txt3);">⏳ Тяну события из amoCRM, это долго...</div>';
+  const old=btn?btn.textContent:'';if(btn){btn.textContent='⏳ Считаю события (20-40 сек)...';btn.disabled=true;}
+  const dc=document.getElementById('disciplineChart');if(dc)dc.innerHTML='<div style="font-size:12px;color:var(--txt3);">⏳ Тяну события из amoCRM, это долго...</div>';
   try{
     const r=await fetch('/api/sync-speed'+orgQ());
     const d=await r.json();
     if(d&&d.ok){
       renderDiscipline(d);
-      // добавляем подозрительные по звонкам (этап 2) к уже загруженным
       if(d.suspicious2){
         const fromSync=suspData.filter(s=>['money','tasks'].includes(s.cat)||s.type==='same_day_sale'||s.type==='wrong_number_abuse');
         suspData=fromSync.concat(d.suspicious2);
         updateSuspCount();
       }
-      btn.textContent='✅ Готово';
+      if(btn)btn.textContent='✅ Готово';
     }else{
-      btn.textContent='⚠️ Ошибка';
-      document.getElementById('disciplineChart').innerHTML='<div style="font-size:12px;color:var(--red);">Ошибка: '+(d.error||'')+' '+(d.detail||'')+'</div>';
+      if(btn)btn.textContent='⚠️ Ошибка';
+      if(dc)dc.innerHTML='<div style="font-size:12px;color:var(--red);">Ошибка: '+(d.error||'')+' '+(d.detail||'')+'</div>';
     }
   }catch(e){
-    btn.textContent='⚠️ Нет связи';
-    document.getElementById('disciplineChart').innerHTML='<div style="font-size:12px;color:var(--red);">Таймаут или нет связи. События — тяжёлый расчёт, попробуй ещё раз.</div>';
+    if(btn)btn.textContent='⚠️ Нет связи';
+    if(dc)dc.innerHTML='<div style="font-size:12px;color:var(--red);">Таймаут или нет связи. События — тяжёлый расчёт, попробуй ещё раз.</div>';
   }
-  setTimeout(()=>{btn.textContent=old;btn.disabled=false;syncingSpeed=false;},2500);
+  setTimeout(()=>{if(btn){btn.textContent=old;btn.disabled=false;}syncingSpeed=false;},2500);
 }
 
 let syncing=false;
@@ -3025,23 +3035,57 @@ async function syncNow(){
   if(syncing)return;
   syncing=true;
   const btn=document.getElementById('syncBtn');
-  const old=btn.textContent;btn.textContent='⏳ Тяну из amoCRM (10-20 сек)...';btn.disabled=true;
+  const old=btn?btn.textContent:'';if(btn){btn.textContent='⏳ Тяну из amoCRM (10-20 сек)...';btn.disabled=true;}
   try{
     const r=await fetch('/api/sync'+orgQ());
     const d=await r.json();
     if(d&&d.ok){
       dashLoaded=false;
       await renderDashboard();
-      btn.textContent='✅ Обновлено';
+      if(btn)btn.textContent='✅ Обновлено';
     }else{
-      btn.textContent='⚠️ Ошибка';
+      if(btn)btn.textContent='⚠️ Ошибка';
       const note=document.getElementById('dashNote');
       if(note)note.textContent='Ошибка: '+(d.error||'')+' '+(d.detail||'');
     }
   }catch(e){
-    btn.textContent='⚠️ Нет связи';
+    if(btn)btn.textContent='⚠️ Нет связи';
   }
-  setTimeout(()=>{btn.textContent=old;btn.disabled=false;syncing=false;},2500);
+  setTimeout(()=>{if(btn){btn.textContent=old;btn.disabled=false;}syncing=false;},2500);
+}
+
+// ОДНА кнопка «Обновить» сверху — обновляет всё: данные + дисциплину
+let syncingAll=false;
+async function syncAll(){
+  if(syncingAll)return;
+  syncingAll=true;
+  const btn=document.getElementById('topSyncBtn');
+  const lbl=document.getElementById('topSyncLbl');
+  if(btn)btn.classList.add('spinning');
+  if(lbl)lbl.textContent='Обновляю...';
+  try{
+    // 1) основные данные из amoCRM
+    const r=await fetch('/api/sync'+orgQ());
+    const d=await r.json();
+    if(d&&d.ok){dashLoaded=false;await renderDashboard();}
+    if(lbl)lbl.textContent='Дисциплина...';
+    // 2) дисциплина (тяжёлый расчёт)
+    const r2=await fetch('/api/sync-speed'+orgQ());
+    const d2=await r2.json();
+    if(d2&&d2.ok){
+      renderDiscipline(d2);
+      if(d2.suspicious2){
+        const fromSync=suspData.filter(s=>['money','tasks'].includes(s.cat)||s.type==='same_day_sale'||s.type==='wrong_number_abuse');
+        suspData=fromSync.concat(d2.suspicious2);updateSuspCount();
+      }
+    }
+    if(lbl)lbl.textContent='Готово ✓';
+    if(typeof loadSmartQuestions==='function')loadSmartQuestions(true);
+  }catch(e){
+    if(lbl)lbl.textContent='Нет связи';
+  }
+  if(btn)btn.classList.remove('spinning');
+  setTimeout(()=>{if(lbl)lbl.textContent='Обновить';syncingAll=false;},2500);
 }
 
 /* ===== LANGUAGE ===== */
