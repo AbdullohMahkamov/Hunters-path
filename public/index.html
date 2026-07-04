@@ -420,7 +420,19 @@
   .ctx-item.danger{color:var(--red);}
 
   /* Main chat area */
-  .chat-main{flex:1;display:flex;flex-direction:column;min-width:0;min-height:0;}
+  .chat-main{flex:1;display:flex;flex-direction:column;min-width:0;min-height:0;position:relative;}
+  .chat-fade-top{position:absolute;top:0;left:0;right:0;height:44px;pointer-events:none;z-index:6;opacity:0;transition:opacity .2s;
+    background:linear-gradient(to bottom, var(--bg) 0%, rgba(255,255,255,0) 100%);
+    -webkit-backdrop-filter:blur(6px);backdrop-filter:blur(6px);
+    -webkit-mask-image:linear-gradient(to bottom, #000 35%, transparent 100%);mask-image:linear-gradient(to bottom, #000 35%, transparent 100%);}
+  .chat-main.scrolled .chat-fade-top{opacity:1;}
+  .scroll-down-btn{position:absolute;bottom:118px;left:50%;transform:translateX(-50%) scale(.9);z-index:8;
+    width:36px;height:36px;border-radius:50%;background:var(--card);border:1px solid var(--line2);color:var(--txt2);
+    cursor:pointer;display:flex;align-items:center;justify-content:center;box-shadow:0 3px 12px rgba(0,0,0,.12);
+    opacity:0;pointer-events:none;transition:opacity .2s,transform .2s;}
+  .scroll-down-btn svg{width:18px;height:18px;}
+  .chat-main.show-scrolldown .scroll-down-btn{opacity:1;pointer-events:auto;transform:translateX(-50%) scale(1);}
+  .scroll-down-btn:hover{background:var(--card2);color:var(--txt);}
   .chat-topbar{display:flex;align-items:center;gap:10px;padding:8px 14px;background:var(--bg);min-height:20px;}
   .side-toggle{display:none;background:none;border:none;color:var(--txt2);font-size:19px;cursor:pointer;padding:0;}
   .chat-title-cur{display:none;}
@@ -868,6 +880,12 @@
           <button class="side-toggle" onclick="toggleSidebar(true)" title="Чаты">☰</button>
           <div class="chat-title-cur" id="chatTitleCur">Новый чат</div>
         </div>
+        <!-- лёгкий блюр сверху (как в Claude), когда чат прокручен -->
+        <div class="chat-fade-top" id="chatFadeTop"></div>
+        <!-- кнопка «вниз» появляется при прокрутке вверх -->
+        <button class="scroll-down-btn" id="scrollDownBtn" onclick="scrollChatBottom(true)" title="Вниз">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="12" y1="5" x2="12" y2="19"/><polyline points="19 12 12 19 5 12"/></svg>
+        </button>
 
         <div class="chat-scroll" id="chatScroll">
           <!-- ПУСТОЙ ЭКРАН: приветствие + поле ввода по центру + подсказки (как v5) -->
@@ -925,7 +943,6 @@
               </div>
             </div>
           </div>
-          <div class="chat-disclaimer">Hunter AI видит ваши данные из CRM. Проверяйте важные решения.</div>
         </div>
       </div>
     </div>
@@ -3540,13 +3557,27 @@ function sendFromCenter(){
   document.getElementById('chatBox').value=v;
   sendMsg();
 }
-function scrollChatBottom(){
+function scrollChatBottom(smooth){
+  if(smooth){chatScroll.scrollTo({top:chatScroll.scrollHeight,behavior:'smooth'});return;}
   const jump=()=>{chatScroll.scrollTop=chatScroll.scrollHeight;};
   jump();
   requestAnimationFrame(()=>{jump();requestAnimationFrame(jump);});
   setTimeout(jump,120);
   setTimeout(jump,350);
 }
+// слежение за прокруткой: блюр сверху + кнопка «вниз»
+function onChatScroll(){
+  const sc=document.getElementById('chatScroll');const main=sc?sc.closest('.chat-main'):null;if(!sc||!main)return;
+  const scrolled=sc.scrollTop>12;
+  main.classList.toggle('scrolled',scrolled);
+  const nearBottom=(sc.scrollHeight-sc.scrollTop-sc.clientHeight)<120;
+  const hasContent=sc.scrollHeight>sc.clientHeight+40;
+  main.classList.toggle('show-scrolldown',hasContent&&!nearBottom);
+}
+(function attachScrollWatch(){
+  const sc=document.getElementById('chatScroll');
+  if(sc){sc.addEventListener('scroll',onChatScroll,{passive:true});}
+})();
 function appendMsgDom(role,text,fileNames){
   const d=document.createElement('div');d.className='msg '+(role==='user'?'me':'k');
   let filesHtml='';
@@ -3569,6 +3600,7 @@ function appendMsgDom(role,text,fileNames){
     d.innerHTML=`<div class="m-bubble">${star}${body}</div>${cardsHtml}`;
   }
   chatScroll.appendChild(d);
+  setTimeout(onChatScroll,50);
   return d;
 }
 
