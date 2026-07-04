@@ -168,29 +168,32 @@ export default async function handler(req, res) {
     }
 
     // 3a) ЗВОНКИ С ДЛИТЕЛЬНОСТЬЮ — из notes (примечаний) типа call_out/call_in.
-    // В params.DURATION лежит длительность звонка. Разговор дольше REACHED_SEC = реальный дозвон.
-    const REACHED_SEC = 40; // взяли трубку и поговорили (>40 сек)
+    // Utel пишет params.duration (секунды). Разговор дольше REACHED_SEC = реальный дозвон.
+    const REACHED_SEC = 40;
+    let notesSeen = 0, callNotesSeen = 0, reachedSet = 0; // диагностика
     page = 1; guard = 0;
-    while (guard < 120) {
+    while (guard < 200) {
       guard++;
-      const url = `${base}/leads/notes?filter[note_type][]=call_in&filter[note_type][]=call_out` +
-        `&filter[created_at][from]=${monthStart}&limit=250&page=${page}`;
+      // без фильтра по типу (глобальный фильтр note_type ненадёжен) — фильтруем в коде
+      const url = `${base}/leads/notes?filter[created_at][from]=${monthStart}&limit=250&page=${page}`;
       const r = await fetch(url, { headers: H });
       if (r.status === 204) break;
       if (!r.ok) break;
       const d = await r.json();
       const notes = (d._embedded && d._embedded.notes) || [];
       for (const n of notes) {
+        notesSeen++;
+        if (n.note_type !== "call_out" && n.note_type !== "call_in") continue;
+        callNotesSeen++;
         const li = leadInfo[n.entity_id];
         if (!li) continue;
         const p = n.params || {};
-        // длительность может лежать под разными ключами в зависимости от телефонии
-        const dur = parseInt(p.duration || p.DURATION || 0, 10) || 0;
-        if (dur >= REACHED_SEC) li.reachedReal = true;
+        const dur = parseInt(p.duration != null ? p.duration : (p.DURATION || 0), 10) || 0;
+        if (dur >= REACHED_SEC) { li.reachedReal = true; reachedSet++; }
       }
       if (notes.length < 250) break;
       page++;
-      await new Promise(rs => setTimeout(rs, 150));
+      await new Promise(rs => setTimeout(rs, 120));
     }
 
 
@@ -337,7 +340,7 @@ export default async function handler(req, res) {
       };
     }).sort((a,b)=> (a.medianFirstCallMin??9e9) - (b.medianFirstCallMin??9e9));
 
-    const result = { updatedAt: new Date().toISOString(), period: "Текущий месяц", mops, mopsDay, suspicious2: suspicious2.slice(0, 300) };
+    const result = { updatedAt: new Date().toISOString(), period: "Текущий месяц", mops, mopsDay, suspicious2: suspicious2.slice(0, 300), _callDiag: { notesSeen, callNotesSeen, reachedSet } };
     await redisSet(redisUrl, redisToken, K("speed"), JSON.stringify(result));
     res.status(200).json({ ok: true, ...result });
   } catch (err) {
