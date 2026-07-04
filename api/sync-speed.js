@@ -192,10 +192,15 @@ export default async function handler(req, res) {
     }
 
     // 4) Считаем дисциплину по каждому действующему МОПу
+    const TZ_OFFSET2 = 5 * 3600; // UTC+5
+    const nowLocal2 = new Date(Date.now() + TZ_OFFSET2 * 1000);
+    const dayStart2 = Math.floor(new Date(Date.UTC(nowLocal2.getUTCFullYear(), nowLocal2.getUTCMonth(), nowLocal2.getUTCDate())).getTime() / 1000) - TZ_OFFSET2;
     const stat = {}; // mopName -> агрегаты
+    const statDay = {}; // mopName -> агрегаты ТОЛЬКО за сегодня
     for (const name of Object.values(ACTIVE_MOPS)) {
       stat[name] = { leads:0, firstCallTimes:[], reached:0, callsTotal:0, withTask:0,
                      closedEarly:0, noReachClosed:0, tasksTotal:0, tasksDone:0 };
+      statDay[name] = { leads:0, firstCallTimes:[], callsTotal:0, withTask:0, tasksTotal:0, tasksDone:0 };
     }
 
     const suspicious2 = []; // подозрительные по звонкам (этап 2)
@@ -217,6 +222,19 @@ export default async function handler(req, res) {
       if (L.firstCall) {
         const mins = (L.firstCall - L.created) / 60;
         if (mins >= 0 && mins < 60*24*14) S.firstCallTimes.push(mins);
+      }
+      // === СЕГОДНЯ: лид создан сегодня ===
+      if ((L.created || 0) >= dayStart2) {
+        const D = statDay[mop];
+        D.leads++;
+        D.callsTotal += L.calls;
+        if (L.tasks > 0) D.withTask++;
+        D.tasksTotal += (L.tasks || 0);
+        D.tasksDone += (L.tasksDone || 0);
+        if (L.firstCall) {
+          const mins = (L.firstCall - L.created) / 60;
+          if (mins >= 0 && mins < 60*24*14) D.firstCallTimes.push(mins);
+        }
       }
       // РЕАЛЬНЫЙ ДОЗВОН — только если был разговор дольше 60 сек
       if (L.reachedReal) S.reached++;
@@ -274,7 +292,22 @@ export default async function handler(req, res) {
       };
     }).sort((a,b)=> (a.medianFirstCallMin??9e9) - (b.medianFirstCallMin??9e9));
 
-    const result = { updatedAt: new Date().toISOString(), period: "Текущий месяц", mops, suspicious2: suspicious2.slice(0, 300) };
+    // мопы за сегодня (те же метрики, но только по лидам, созданным сегодня)
+    const mopsDay = Object.entries(statDay).map(([name, D]) => {
+      const medMin = median(D.firstCallTimes);
+      return {
+        name,
+        leads: D.leads,
+        medianFirstCallMin: medMin !== null ? Math.round(medMin) : null,
+        avgCallsPerLead: D.leads ? +(D.callsTotal / D.leads).toFixed(1) : 0,
+        taskRate: D.leads ? Math.round(D.withTask / D.leads * 100) : 0,
+        tasksTotal: D.tasksTotal,
+        tasksDone: D.tasksDone,
+        tasksDonePct: D.tasksTotal ? Math.round(D.tasksDone / D.tasksTotal * 100) : 0,
+      };
+    }).sort((a,b)=> (a.medianFirstCallMin??9e9) - (b.medianFirstCallMin??9e9));
+
+    const result = { updatedAt: new Date().toISOString(), period: "Текущий месяц", mops, mopsDay, suspicious2: suspicious2.slice(0, 300) };
     await redisSet(redisUrl, redisToken, K("speed"), JSON.stringify(result));
     res.status(200).json({ ok: true, ...result });
   } catch (err) {
