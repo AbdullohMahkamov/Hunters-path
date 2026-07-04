@@ -159,10 +159,23 @@
     font-size:18px;cursor:pointer;flex:0 0 auto;display:flex;align-items:center;justify-content:center;}
   .send-btn:disabled{opacity:.4;}
 
-  .chat-empty{text-align:center;padding:20px;color:var(--txt2);max-width:560px;margin:auto;}
-  .chat-empty .ce-icon{margin-bottom:16px;}
-  .chat-empty h3{font-family:Georgia,'Times New Roman',serif;font-size:30px;color:var(--txt);margin:0 0 10px;font-weight:400;letter-spacing:-.3px;}
-  .chat-empty p{font-size:14px;line-height:1.6;margin:0;}
+  .chat-empty{text-align:center;padding:20px;color:var(--txt2);max-width:600px;margin:auto;width:100%;}
+  .chat-empty .ce-hi{font-family:Georgia,'Times New Roman',serif;font-size:30px;color:var(--txt);margin:0 0 22px;
+    font-weight:400;letter-spacing:-.3px;display:flex;align-items:center;justify-content:center;gap:11px;}
+  .chat-empty .ce-star{color:#c15f3c;flex:0 0 auto;}
+  .ce-input{max-width:600px;margin:0 auto 18px;}
+  .ce-qs{max-width:600px;margin:0 auto;text-align:left;}
+  .ce-qgrid{display:flex;flex-direction:column;gap:7px;}
+  .ce-qbtn{text-align:left;border:1px solid var(--line);background:var(--card);border-radius:12px;
+    padding:13px 15px;font-size:14.5px;font-weight:400;color:var(--txt);cursor:pointer;display:flex;align-items:center;gap:11px;line-height:1.3;}
+  .ce-qbtn:hover{background:var(--card2);border-color:var(--line2);}
+  .ce-qbtn.hot{border-color:#f0cfca;background:#fdf0ef;color:#c0392b;font-weight:500;}
+  .ce-arr{margin-left:auto;color:var(--txt3);}
+  .chat-bottom{flex:0 0 auto;width:100%;max-width:760px;margin:0 auto;padding:6px 20px 16px;}
+  .qmix{display:flex;gap:7px;overflow-x:auto;padding-bottom:10px;scrollbar-width:none;align-items:center;}
+  .qmix::-webkit-scrollbar{display:none}
+  .qmix .qchip{flex:0 0 auto;}
+  .chat-disclaimer{text-align:center;font-size:11.5px;color:var(--txt3);margin-top:9px;}
 
   .quick{display:flex;gap:7px;padding:0 20px 10px;flex-wrap:wrap;background:var(--bg);max-width:720px;margin:0 auto;width:100%;}
   .quick button{font-size:11.5px;padding:7px 11px;border-radius:999px;background:var(--card);
@@ -303,6 +316,7 @@
   .side-new{width:100%;padding:9px 10px;border-radius:9px;background:transparent;color:var(--txt);border:none;
     font-size:14.5px;font-weight:500;cursor:pointer;margin-bottom:14px;text-align:left;display:flex;align-items:center;gap:9px;}
   .side-new:hover{background:var(--card2);}
+  .side-hist-lbl{font-size:12px;color:var(--txt3);font-weight:500;margin:2px 10px 4px;}
   .side-list{flex:1;overflow-y:auto;display:flex;flex-direction:column;gap:3px;-webkit-overflow-scrolling:touch;}
   .side-item{display:flex;align-items:center;gap:8px;padding:9px 10px;border-radius:8px;cursor:pointer;
     font-size:13px;color:var(--txt2);position:relative;}
@@ -735,61 +749,80 @@
     <div style="font-size:11px;color:var(--txt3);margin-top:8px;line-height:1.5;" id="dashNote">Нажми «Обновить из amoCRM» для первой загрузки живых данных. Дальше обновляется автоматически каждую ночь.</div>
   </div>
 
-  <!-- CHAT VIEW -->
+  <!-- CHAT VIEW (стиль Claude v5) -->
   <div class="view" id="chatView">
     <div class="chat-layout">
-      <!-- Боковая панель чатов -->
+      <!-- Боковая панель: навигация + новый чат + история -->
       <div class="chat-sidebar" id="chatSidebar">
         <div class="side-nav">
           <button class="side-nav-ic" onclick="toggleSidebar(false)" title="Свернуть"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="3" width="18" height="18" rx="2"/><line x1="9" y1="3" x2="9" y2="21"/></svg></button>
           <button class="side-nav-ic" onclick="switchTab('dash')" title="Назад к дашборду"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="15 18 9 12 15 6"/></svg></button>
           <div class="side-brand"><div class="side-logo">H</div><span>Hunter AI</span></div>
         </div>
-        <button class="side-new ic-btn" id="newChatBtn" onclick="newChat()"><svg class="ic" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><path d="M12 5v14M5 12h14"/></svg>Новый чат</button>
+        <button class="side-new" id="newChatBtn" onclick="newChat()"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg>Новый чат</button>
+        <div class="side-hist-lbl">Недавние</div>
         <div class="side-list" id="sideList"></div>
       </div>
-      <!-- Затемнение под сайдбар на мобильном -->
       <div class="side-backdrop" id="sideBackdrop" onclick="toggleSidebar(false)"></div>
 
-      <!-- Основная область чата -->
+      <!-- Основная область -->
       <div class="chat-main">
         <div class="chat-topbar">
           <button class="side-toggle" onclick="toggleSidebar(true)" title="Чаты">☰</button>
           <div class="chat-title-cur" id="chatTitleCur">Новый чат</div>
         </div>
+
         <div class="chat-scroll" id="chatScroll">
+          <!-- ПУСТОЙ ЭКРАН: приветствие + поле ввода по центру + подсказки (как v5) -->
           <div class="chat-empty" id="chatEmpty">
-            <div id="wizBanner" style="display:none;background:var(--accent-bg);border:1px solid var(--accent);border-radius:14px;padding:18px;margin-bottom:22px;text-align:left;">
+            <div id="wizBanner" style="display:none;background:var(--card2);border:1px solid var(--line2);border-radius:14px;padding:18px;margin-bottom:22px;text-align:left;">
               <div style="font-size:15px;font-weight:700;margin-bottom:6px;" data-t="auditBannerT">Начнём с аудита вашего бизнеса</div>
               <div style="font-size:13px;color:var(--txt2);line-height:1.55;margin-bottom:13px;">Система проанализирует данные, покажет где теряются деньги, спросит вашу цель и составит персональный план задач.</div>
-              <button onclick="openWizard()" style="width:100%;padding:12px;border-radius:10px;background:var(--accent);border:none;color:#fff;font-size:14px;font-weight:600;cursor:pointer;">Сделать полный аудит</button>
+              <button onclick="openWizard()" style="width:100%;padding:12px;border-radius:10px;background:#c15f3c;border:none;color:#fff;font-size:14px;font-weight:600;cursor:pointer;">Сделать полный аудит</button>
             </div>
-            <div class="ce-icon" style="color:#c15f3c;"><svg width="34" height="34" viewBox="0 0 24 24" fill="currentColor"><path d="M12 2l1.6 6.4L20 10l-6.4 1.6L12 18l-1.6-6.4L4 10l6.4-1.6L12 2z"/></svg></div>
-            <h3>Чем помочь по продажам?</h3>
-            <p>Спросите — покажу цифры и что делать. Я вижу ваши продажи, менеджеров, рекламу и деньги.</p>
+            <div class="ce-hi"><svg class="ce-star" width="26" height="26" viewBox="0 0 24 24" fill="currentColor"><path d="M12 2l1.6 6.4L20 10l-6.4 1.6L12 18l-1.6-6.4L4 10l6.4-1.6L12 2z"/></svg><span id="ceTitle">Чем помочь по продажам?</span></div>
+            <!-- поле ввода по центру -->
+            <div class="ce-input">
+              <div class="chat-input">
+                <div class="inner">
+                  <button class="attach-btn" onclick="document.getElementById('fileInput').click()" aria-label="Прикрепить файл"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><path d="M21.44 11.05l-9.19 9.19a6 6 0 0 1-8.49-8.49l9.19-9.19a4 4 0 0 1 5.66 5.66l-9.2 9.19a2 2 0 0 1-2.83-2.83l8.49-8.48"/></svg></button>
+                  <textarea id="chatBoxC" rows="1" placeholder="Спросите о бизнесе..." oninput="autoGrow(this)"></textarea>
+                  <button class="send-btn" onclick="sendFromCenter()"><svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.1" stroke-linecap="round" stroke-linejoin="round"><line x1="12" y1="19" x2="12" y2="5"/><polyline points="5 12 12 5 19 12"/></svg></button>
+                </div>
+              </div>
+            </div>
+            <!-- подсказки под полем -->
+            <div class="ce-qs">
+              <div class="qbar" id="smartQBar" style="display:none;">
+                <div class="qlbl qlbl-smart" id="smartQLbl">Система нашла — стоит разобраться</div>
+                <div class="ce-qgrid" id="smartQRow"></div>
+              </div>
+              <div class="qbar" id="quickQBar">
+                <div class="qlbl qlbl-daily">Ежедневные вопросы</div>
+                <div class="ce-qgrid" id="quickRow">
+                  <button class="ce-qbtn" onclick="quickAsk('Как дела сегодня? Что по продажам?')">Как дела сегодня?<span class="ce-arr">›</span></button>
+                  <button class="ce-qbtn" onclick="quickAsk('Что сейчас не так с продажами?')">Что не так?<span class="ce-arr">›</span></button>
+                  <button class="ce-qbtn" onclick="quickAsk('Чего не хватает, чтобы дойти до цели месяца?')">Как дойти до цели?<span class="ce-arr">›</span></button>
+                  <button class="ce-qbtn" onclick="quickAsk('Кто из менеджеров отстаёт и почему?')">Кто отстаёт?<span class="ce-arr">›</span></button>
+                </div>
+              </div>
+            </div>
           </div>
         </div>
-        <div class="qbar" id="smartQBar" style="display:none;">
-          <div class="qlbl qlbl-smart" id="smartQLbl">Система нашла — стоит разобраться</div>
-          <div class="qrow" id="smartQRow"></div>
-        </div>
-        <div class="qbar" id="quickQBar">
-          <div class="qlbl qlbl-daily">Ежедневные вопросы</div>
-          <div class="qrow" id="quickRow">
-            <button class="qchip" onclick="quickAsk('Как дела сегодня? Что по продажам?')">Как дела сегодня?</button>
-            <button class="qchip" onclick="quickAsk('Что сейчас не так с продажами?')">Что не так?</button>
-            <button class="qchip" onclick="quickAsk('Чего не хватает, чтобы дойти до цели месяца?')">Как дойти до цели?</button>
-            <button class="qchip" onclick="quickAsk('Кто из менеджеров отстаёт и почему?')">Кто отстаёт?</button>
+
+        <!-- НИЗ: появляется при активном чате -->
+        <div class="chat-bottom" id="chatBottom" style="display:none;">
+          <div class="qmix" id="qmixRow"></div>
+          <div class="file-chips" id="fileChips"></div>
+          <div class="chat-input">
+            <div class="inner">
+              <input type="file" id="fileInput" accept=".pdf,.png,.jpg,.jpeg,.csv,.txt,image/*" multiple style="display:none;" onchange="handleFiles(this.files)" />
+              <button class="attach-btn" onclick="document.getElementById('fileInput').click()" aria-label="Прикрепить файл"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><path d="M21.44 11.05l-9.19 9.19a6 6 0 0 1-8.49-8.49l9.19-9.19a4 4 0 0 1 5.66 5.66l-9.2 9.19a2 2 0 0 1-2.83-2.83l8.49-8.48"/></svg></button>
+              <textarea id="chatBox" rows="1" placeholder="Спросите о бизнесе..." oninput="autoGrow(this)"></textarea>
+              <button class="send-btn" id="sendBtn" onclick="sendMsg()"><svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.1" stroke-linecap="round" stroke-linejoin="round"><line x1="12" y1="19" x2="12" y2="5"/><polyline points="5 12 12 5 19 12"/></svg></button>
+            </div>
           </div>
-        </div>
-        <div class="file-chips" id="fileChips"></div>
-        <div class="chat-input">
-          <div class="inner">
-          <input type="file" id="fileInput" accept=".pdf,.png,.jpg,.jpeg,.csv,.txt,image/*" multiple style="display:none;" onchange="handleFiles(this.files)" />
-          <button class="attach-btn" onclick="document.getElementById('fileInput').click()" aria-label="Прикрепить файл"><svg class="ic" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><path d="M21 12l-8.5 8.5a4 4 0 0 1-6-6L14 6a2.7 2.7 0 0 1 4 4l-8 8a1.3 1.3 0 0 1-2-2l7.5-7.5"/></svg></button>
-          <textarea id="chatBox" rows="1" placeholder="Спросите совета..." oninput="autoGrow(this)"></textarea>
-          <button class="send-btn" id="sendBtn" onclick="sendMsg()"><svg class="ic" width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><path d="M4 12l16-8-6 16-2-6z"/></svg></button>
-          </div>
+          <div class="chat-disclaimer">Hunter AI видит ваши данные из CRM. Проверяйте важные решения.</div>
         </div>
       </div>
     </div>
@@ -3046,12 +3079,12 @@ async function loadSmartQuestions(force){
       body:JSON.stringify({action:'smart-questions',lang:state.lang||'ru',session:SESSION})});
     const d=await r.json();
     if(d&&d.ok&&Array.isArray(d.questions)&&d.questions.length){
+      window._smartQCache=d.questions; // для нижнего ряда qmix
       row.innerHTML=d.questions.map(q=>{
-        const lvl=(q.level==='hot')?'hot':(q.level==='warn'?'warn':'');
-        const dot=lvl?'<span class="dot"></span>':'';
-        return `<button class="qchip ${lvl}" onclick="quickAsk(${JSON.stringify(q.q).replace(/"/g,'&quot;')})">${dot}${escapeHtml(q.q)}</button>`;
+        return `<button class="ce-qbtn hot" onclick="quickAsk(${JSON.stringify(q.q).replace(/"/g,'&quot;')})">${escapeHtml(q.q)}<span class="ce-arr">›</span></button>`;
       }).join('');
       bar.style.display='block';
+      renderQmix();
     }else{
       bar.style.display='none';
     }
@@ -3343,11 +3376,33 @@ function renderChat(){
   ensureChats();renderSidebar();
   const chat=activeChat();
   const sc=chatScroll;
+  const bottom=document.getElementById('chatBottom');
   if(!chat.messages.length){chatEmpty.style.display='block';
-    [...sc.querySelectorAll('.msg')].forEach(m=>m.remove());maybeShowWelcome();return;}
+    if(bottom)bottom.style.display='none';
+    [...sc.querySelectorAll('.msg,.chat-card')].forEach(m=>m.remove());maybeShowWelcome();return;}
   chatEmpty.style.display='none';
-  [...sc.querySelectorAll('.msg')].forEach(m=>m.remove());
+  if(bottom)bottom.style.display='block';
+  [...sc.querySelectorAll('.msg,.chat-card')].forEach(m=>m.remove());
   chat.messages.forEach(m=>appendMsgDom(m.role,m.text,m.fileNames));
+  renderQmix();
+}
+// нижний ряд вопросов (вперемешку: умные красные + обычные) при активном чате
+function renderQmix(){
+  const row=document.getElementById('qmixRow');if(!row)return;
+  const smart=(window._smartQCache||[]);
+  let html='';
+  for(const q of smart.slice(0,2))html+=`<button class="qchip hot" onclick="quickAsk(${JSON.stringify(q.q).replace(/"/g,'&quot;')})">${escapeHtml(q.q)}</button>`;
+  html+=`<button class="qchip" onclick="quickAsk('Как дела сегодня?')">Как дела сегодня?</button>`;
+  html+=`<button class="qchip" onclick="quickAsk('Что не так?')">Что не так?</button>`;
+  html+=`<button class="qchip" onclick="quickAsk('Кто отстаёт?')">Кто отстаёт?</button>`;
+  row.innerHTML=html;
+}
+function sendFromCenter(){
+  const box=document.getElementById('chatBoxC');if(!box)return;
+  const v=box.value.trim();if(!v)return;
+  box.value='';autoGrow(box);
+  document.getElementById('chatBox').value=v;
+  sendMsg();
 }
 function scrollChatBottom(){
   const jump=()=>{chatScroll.scrollTop=chatScroll.scrollHeight;};
@@ -3507,7 +3562,9 @@ async function sendMsg(){
     renderSidebar();
   }
   save();
-  chatEmpty.style.display='none';appendMsgDom('user',text||'(файл прикреплён)',fileNames);
+  chatEmpty.style.display='none';
+  {const bottom=document.getElementById('chatBottom');if(bottom)bottom.style.display='block';renderQmix();}
+  appendMsgDom('user',text||'(файл прикреплён)',fileNames);
   chatScroll.scrollTop=chatScroll.scrollHeight;
 
   busy=true;sendBtn.disabled=true;
