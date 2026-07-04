@@ -351,6 +351,32 @@
   .msg.me .m-bubble{background:var(--accent);color:#fff;padding:11px 15px;border-radius:15px 15px 4px 15px;
     max-width:85%;font-size:14.5px;line-height:1.55;white-space:pre-wrap;word-wrap:break-word;}
   .msg.k .m-bubble{color:var(--txt);font-size:14.5px;line-height:1.65;}
+  /* живые карточки данных в чате */
+  .chat-card{max-width:720px;margin:10px auto 0;padding:0 20px;}
+  .chat-card .cc-box{background:var(--card);border:1px solid var(--line);border-radius:13px;overflow:hidden;}
+  .chat-card .cc-head{padding:11px 14px 9px;font-size:13px;font-weight:700;color:var(--txt);border-bottom:1px solid var(--line);}
+  .chat-card .cc-body{padding:10px 14px 12px;}
+  .chat-card .cc-row{display:flex;justify-content:space-between;align-items:center;gap:10px;font-size:13.5px;padding:5px 0;}
+  .chat-card .cc-row span{color:var(--txt2);} .chat-card .cc-row b{font-weight:700;}
+  .chat-card .cc-bar{height:6px;background:#eef0f3;border-radius:5px;overflow:hidden;margin:3px 0 8px;}
+  .chat-card .cc-bar>div{height:100%;border-radius:5px;}
+  .chat-card .cc-mop{padding:8px 0;border-bottom:1px solid var(--line);}
+  .chat-card .cc-mop:last-child{border-bottom:none;}
+  .chat-card .cc-mop-top{display:flex;justify-content:space-between;font-size:14px;font-weight:600;}
+  .chat-card .cc-mop-sub{font-size:11.5px;color:var(--txt3);margin-top:2px;}
+  .chat-card .cc-ad{padding:6px 0;}
+  /* умные и быстрые вопросы */
+  .qbar{max-width:760px;margin:0 auto;padding:0 16px 8px;}
+  .qrow{display:flex;gap:8px;overflow-x:auto;padding-bottom:6px;scrollbar-width:none;}
+  .qrow::-webkit-scrollbar{display:none}
+  .qchip{flex:0 0 auto;border:1px solid var(--line2);background:var(--card);border-radius:20px;padding:8px 13px;
+    font-size:12.5px;font-weight:600;color:var(--txt);cursor:pointer;white-space:nowrap;}
+  .qchip:active{background:var(--accent2,#eaf1ff);}
+  .qchip.hot{border-color:#f3b4b6;background:#fff5f5;color:#c92a2f;}
+  .qchip.warn{border-color:#f0d69a;background:#fffaf0;color:#9a6b00;}
+  .qchip .dot{display:inline-block;width:6px;height:6px;border-radius:50%;margin-right:5px;vertical-align:middle;}
+  .qchip.hot .dot{background:#e5484d;} .qchip.warn .dot{background:#d9a300;}
+  .qlbl{font-size:10.5px;color:var(--txt3);font-weight:600;text-transform:uppercase;letter-spacing:.4px;margin:2px 2px 5px;}
   /* markdown inside assistant */
   .m-bubble h1,.m-bubble h2,.m-bubble h3,.m-bubble h4{margin:14px 0 7px;line-height:1.3;font-weight:700;color:var(--txt);}
   .m-bubble h1{font-size:19px;} .m-bubble h2{font-size:17px;} .m-bubble h3{font-size:15.5px;} .m-bubble h4{font-size:14.5px;}
@@ -722,10 +748,15 @@
             <p>Задайте любой вопрос про рост продаж. Советник знает ваши реальные цифры из CRM, команду и воронку.</p>
           </div>
         </div>
+        <div class="qbar" id="smartQBar" style="display:none;">
+          <div class="qlbl" id="smartQLbl">⚡ Система заметила — стоит спросить:</div>
+          <div class="qrow" id="smartQRow"></div>
+        </div>
         <div class="quick" id="quickRow">
-          <button onclick="quickAsk('С какой задачи начать?')">С чего начать?</button>
-          <button onclick="quickAsk('Где я больше всего теряю денег и почему?')">Где теряю деньги?</button>
-          <button onclick="quickAsk('Дай план продаж на этот месяц по каждому менеджеру')">План на месяц</button>
+          <button onclick="quickAsk('Как дела сегодня? Что по продажам?')">Как дела сегодня?</button>
+          <button onclick="quickAsk('Что сейчас не так с продажами?')">Что не так?</button>
+          <button onclick="quickAsk('Чего не хватает, чтобы дойти до цели месяца?')">Как дойти до цели?</button>
+          <button onclick="quickAsk('Кто из менеджеров отстаёт и почему?')">Кто отстаёт?</button>
         </div>
         <div class="file-chips" id="fileChips"></div>
         <div class="chat-input">
@@ -1301,7 +1332,7 @@ function switchTab(t){
   const cv=document.getElementById('chatView');
   cv.classList.toggle('active',t==='chat');
   document.body.classList.toggle('chat-open',t==='chat');
-  if(t==='chat'){renderChat();scrollChatBottom();}
+  if(t==='chat'){renderChat();scrollChatBottom();loadSmartQuestions();}
   if(t==='dash'){renderDashboard();if(state.dashTab)dashTab(state.dashTab);}
 }
 
@@ -1369,7 +1400,8 @@ function fmtSum(n){
 }
 
 function applyLiveDash(d){
-  window._dashData=d; // сохраняем для переключателя периода
+  window._dashData=d; // сохраняем для переключателя периода и карточек чата
+  if(typeof loadSmartQuestions==='function')loadSmartQuestions(true); // обновить умные вопросы под свежие данные
   const t=d.totals;
   const set=(id,v)=>{const e=document.getElementById(id);if(e)e.textContent=v;};
   const per=window._dashPeriod||'month';
@@ -2976,6 +3008,31 @@ function removeFile(i){pendingFiles.splice(i,1);renderChips();}
 /* ===== CHAT ===== */
 function autoGrow(el){el.style.height='auto';el.style.height=Math.min(el.scrollHeight,120)+'px';}
 function quickAsk(t){switchTab('chat');document.getElementById('chatBox').value=t;sendMsg();}
+
+// ===== УМНЫЕ ВОПРОСЫ (AI находит проблемы из данных) =====
+let _smartQLoaded=false;
+async function loadSmartQuestions(force){
+  if(_smartQLoaded&&!force)return;
+  _smartQLoaded=true;
+  const bar=document.getElementById('smartQBar');
+  const row=document.getElementById('smartQRow');
+  if(!bar||!row)return;
+  try{
+    const r=await fetch('/api/chat',{method:'POST',headers:{'content-type':'application/json'},
+      body:JSON.stringify({action:'smart-questions',lang:state.lang||'ru',session:SESSION})});
+    const d=await r.json();
+    if(d&&d.ok&&Array.isArray(d.questions)&&d.questions.length){
+      row.innerHTML=d.questions.map(q=>{
+        const lvl=(q.level==='hot')?'hot':(q.level==='warn'?'warn':'');
+        const dot=lvl?'<span class="dot"></span>':'';
+        return `<button class="qchip ${lvl}" onclick="quickAsk(${JSON.stringify(q.q).replace(/"/g,'&quot;')})">${dot}${escapeHtml(q.q)}</button>`;
+      }).join('');
+      bar.style.display='block';
+    }else{
+      bar.style.display='none';
+    }
+  }catch(e){bar.style.display='none';}
+}
 function askNext(){switchTab('chat');quickAsk('Я выполнил '+doneCount()+' из '+TOTAL+' задач. С какой задачи продолжить и почему именно она даст максимальный рост? Дай одну конкретную задачу на сегодня.');}
 function helpQuest(id){
   let q,st;STAGES.forEach(s=>s.quests.forEach(x=>{if(x.id===id){q=x;st=s;}}));
@@ -3281,10 +3338,92 @@ function appendMsgDom(role,text,fileNames){
   if(fileNames&&fileNames.length){
     filesHtml=fileNames.map(n=>`<div class="m-file"><svg class="ic" width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><path d="M21 12l-8.5 8.5a4 4 0 0 1-6-6L14 6a2.7 2.7 0 0 1 4 4l-8 8a1.3 1.3 0 0 1-2-2l7.5-7.5"/></svg> ${escapeHtml(n)}</div>`).join('');
   }
-  const body = role==='user' ? (escapeHtml(text)+filesHtml) : (mdToHtml(text)+filesHtml);
-  d.innerHTML=`<div class="m-bubble">${body}</div>`;
+  let cardsHtml='';
+  let cleanText=text;
+  if(role!=='user'){
+    // вытаскиваем метки [[CARD:type]] и рисуем живые карточки из данных дашборда
+    const cards=[];
+    cleanText=text.replace(/\[\[CARD:(\w+)\]\]/g,(m,type)=>{cards.push(type);return '';}).trim();
+    for(const type of cards){const c=renderChatCard(type);if(c)cardsHtml+=c;}
+  }
+  const body = role==='user' ? (escapeHtml(text)+filesHtml) : (mdToHtml(cleanText)+filesHtml);
+  d.innerHTML=`<div class="m-bubble">${body}</div>${cardsHtml}`;
   chatScroll.appendChild(d);
   return d;
+}
+
+/* ===== ЖИВЫЕ КАРТОЧКИ ДАННЫХ В ЧАТЕ ===== */
+function renderChatCard(type){
+  const d=window._dashData;if(!d)return '';
+  const t=d.totals||{};
+  const sp=d.speed||{};
+  const fmt=(n)=>fmtSum(n);
+  const wrap=(title,inner)=>`<div class="chat-card"><div class="cc-box"><div class="cc-head">${title}</div><div class="cc-body">${inner}</div></div></div>`;
+  const bar=(pct,color)=>`<div class="cc-bar"><div style="width:${Math.max(2,Math.min(100,pct))}%;background:${color||'var(--accent)'}"></div></div>`;
+
+  if(type==='today'){
+    const rows=`
+      <div class="cc-row"><span>Новые лиды</span><b>${t.leadsToday??0}</b></div>
+      <div class="cc-row"><span>Продажи сегодня</span><b>${t.soldToday??0}</b></div>
+      <div class="cc-row"><span>Выручка сегодня</span><b>${fmt(t.revenueToday||0)}</b></div>`;
+    return wrap('📅 Сегодня',rows);
+  }
+  if(type==='month'){
+    const rows=`
+      <div class="cc-row"><span>Продаж</span><b>${t.sold||0}</b></div>
+      <div class="cc-row"><span>Выручка</span><b style="color:var(--green)">${fmt(t.revenue||0)}</b></div>
+      <div class="cc-row"><span>Конверсия</span><b>${t.conv||0}%</b></div>
+      <div class="cc-row"><span>Средний чек</span><b>${fmt(t.avgCheck||0)}</b></div>
+      ${t.goal?`<div class="cc-row"><span>До цели</span><b>${t.goalPct||0}%</b></div>${bar(t.goalPct||0,'var(--gold)')}`:''}`;
+    return wrap('📊 Месяц',rows);
+  }
+  if(type==='mops'){
+    const arr=(d.mopsByConv||[]).slice();
+    const discMap={};if(sp.mops)for(const m of sp.mops)discMap[m.name]=m;
+    if(!arr.length)return '';
+    const rows=arr.map(m=>{
+      const disc=discMap[m.name]||{};
+      const conv=m.conv||0;
+      const color=conv>=3?'var(--green)':(conv<1.5?'var(--red)':'var(--gold)');
+      return `<div class="cc-mop">
+        <div class="cc-mop-top"><b>${escapeHtml(m.name)}</b><span style="color:${color}">${conv}%</span></div>
+        <div class="cc-mop-sub">${m.leads} лидов → ${m.sold} продаж · дозвон ${m.reachPct??'—'}%${disc.tasksDonePct!=null?` · задачи ${disc.tasksDonePct}%`:''}</div>
+      </div>`;
+    }).join('');
+    return wrap('👥 Менеджеры',rows);
+  }
+  if(type==='adsets'){
+    const arr=(d.adsets||[]).filter(a=>(a.revenueMonth||0)>0).slice(0,5);
+    if(!arr.length)return '';
+    const max=Math.max(1,...arr.map(a=>a.revenueMonth));
+    const rows=arr.map(a=>`
+      <div class="cc-ad">
+        <div class="cc-row"><span>${escapeHtml(a.name)}</span><b style="color:var(--green)">${fmt(a.revenueMonth)}</b></div>
+        ${bar(a.revenueMonth/max*100)}
+        <div class="cc-mop-sub">${a.leadsMonth} лидов · ${a.soldMonth} продаж · ${a.convMonth}%</div>
+      </div>`).join('');
+    return wrap('💰 Источники рекламы',rows);
+  }
+  if(type==='problems'){
+    const arr=(d.problems||[]).slice(0,5);
+    if(!arr.length)return '';
+    const max=Math.max(1,...arr.map(p=>p.count));
+    const rows=arr.map(p=>`
+      <div class="cc-ad"><div class="cc-row"><span>${escapeHtml(p.name)}</span><b>${p.count}</b></div>${bar(p.count/max*100,'var(--red)')}</div>`).join('');
+    return wrap('📉 Куда теряем лиды',rows);
+  }
+  if(type==='forecast'){
+    const goal=t.goal||0,earned=t.revenue||0;
+    if(!goal)return '';
+    const gap=goal-earned;
+    const rows=`
+      <div class="cc-row"><span>Заработано</span><b style="color:var(--green)">${fmt(earned)}</b></div>
+      <div class="cc-row"><span>Цель</span><b>${fmt(goal)}</b></div>
+      <div class="cc-row"><span>Не хватает</span><b style="color:var(--red)">${fmt(gap>0?gap:0)}</b></div>
+      ${bar(t.goalPct||0,'var(--gold)')}`;
+    return wrap('🎯 План месяца',rows);
+  }
+  return '';
 }
 function escapeHtml(s){return (s||'').replace(/[&<>]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;'}[c]));}
 
@@ -3395,8 +3534,14 @@ async function sendMsg(){
       if(done)break;
       acc+=dec.decode(value,{stream:true});
       msgObj.text=acc;
-      if(bubble){bubble.innerHTML=mdToHtml(acc);}
+      // во время стрима прячем метки карточек (покажем их в конце)
+      if(bubble){bubble.innerHTML=mdToHtml(acc.replace(/\[\[CARD:\w+\]\]/g,'').replace(/\[\[CARD:$/,''));}
       chatScroll.scrollTop=chatScroll.scrollHeight;
+    }
+    // финал: перерисовываем сообщение целиком — с живыми карточками из меток
+    if(dom){
+      const rebuilt=appendMsgDom('assistant',acc);
+      dom.replaceWith(rebuilt);
     }
     save();
   }catch(e){
