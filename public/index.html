@@ -4331,26 +4331,28 @@ async function logout(){
 }
 
 // ===== ПРОВЕРКА СЕССИИ ПРИ ЗАГРУЗКЕ =====
-(function demoMode(){
-  USER_ROLE='admin'; USER_ORG='hunter';
-  var ls=document.getElementById('loginScreen'); if(ls)ls.style.display='none';
-  var demo={totals:{sold:5,revenue:16403140,conv:4.6,leads:108,soldTeam:5,goal:500000000,goalPct:3,leadsToday:67,soldToday:0,revenueToday:0},
-    mopsByConv:[{name:'Abulbositxon',leads:19,sold:0,conv:0,reachPct:95},{name:'Samandar',leads:9,sold:2,conv:22,reachPct:67},{name:'Komiljon',leads:14,sold:0,conv:0,reachPct:29}],
-    mopsBySales:[{name:'Samandar',sold:2}],speed:{mops:[]},velocity:{medianDays:12,avgDays:18},
-    adsets:[{name:'AUD: Jaloliddin',revenueMonth:6891500,leadsMonth:33,soldMonth:2,convMonth:6.1}],problems:[{name:'Не дозвонились',count:60}]};
-  window._dashData=demo; window._lastDashData=demo;
-  var of=window.fetch;
-  window.fetch=function(u,o){var s=String(u);
-    if(s.indexOf('/api/dashboard')>=0)return Promise.resolve({ok:true,json:function(){return Promise.resolve(demo);}});
-    if(s.indexOf('/api/user-data')>=0)return Promise.resolve({json:function(){return Promise.resolve({ok:true,role:'admin',org:'hunter',data:null});}});
-    if(s.indexOf('/api/chat')>=0){var b=o&&o.body?JSON.parse(o.body):{};
-      if(b.action==='smart-questions')return Promise.resolve({json:function(){return Promise.resolve({ok:true,questions:[{q:'Почему сегодня 0 продаж при 67 лидах?',level:'hot'},{q:'Почему Komiljon не дозванивается?',level:'hot'}]});}});
-      var txt=['Сегодня 67 лидов, но 0 продаж — проблема в обработке, не в потоке. Половина лидов без дозвона.','Abulbositxon взял 19 лидов, дозвон 95%, но 0 продаж — слабое закрытие.','Что сделать: разберите с ним скрипт закрытия, проверьте почему Komiljon не звонит.'].join(String.fromCharCode(10)+String.fromCharCode(10));var enc=new TextEncoder();
-      var stream=new ReadableStream({start:function(c){var i=0;var t=setInterval(function(){if(i>=txt.length){clearInterval(t);c.close();return;}c.enqueue(enc.encode(txt.slice(i,i+3)));i+=3;},16);}});
-      return Promise.resolve({ok:true,body:stream});}
-    return of(u,o);};
-  bootApp();
-  setTimeout(function(){appendMsgDom('user','Почему мало продаж сегодня?');},400);
+(async function initAuth(){
+  if(SESSION){
+    // Оптимистично прячем логин сразу, чтобы не мелькал при перезагрузке
+    const ls=document.getElementById('loginScreen');
+    if(ls)ls.style.display='none';
+    try{
+      const r=await fetch('/api/auth',{method:'POST',headers:{'content-type':'application/json'},
+        body:JSON.stringify({action:'check',session:SESSION})});
+      const d=await r.json();
+      if(d&&d.ok){
+        USER_ROLE=d.role||'';USER_ORG=d.org||'';
+        await loadCloud();
+        bootApp();
+        return;
+      }
+    }catch(e){}
+    // сессия невалидна — показываем вход обратно
+    localStorage.removeItem('hp_session');SESSION='';
+    if(ls)ls.style.display='flex';
+  }
+  // показываем экран входа (он и так виден по умолчанию)
+  document.getElementById('loginScreen').style.display='flex';
 })();
 </script>
 </body>
