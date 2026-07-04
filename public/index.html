@@ -376,7 +376,11 @@
   .qchip.warn{border-color:#f0d69a;background:#fffaf0;color:#9a6b00;}
   .qchip .dot{display:inline-block;width:6px;height:6px;border-radius:50%;margin-right:5px;vertical-align:middle;}
   .qchip.hot .dot{background:#e5484d;} .qchip.warn .dot{background:#d9a300;}
-  .qlbl{font-size:10.5px;color:var(--txt3);font-weight:600;text-transform:uppercase;letter-spacing:.4px;margin:2px 2px 5px;}
+  .qlbl{font-size:12px;font-weight:700;margin:2px 2px 7px;display:flex;align-items:center;gap:5px;letter-spacing:0;text-transform:none;}
+  .qlbl .ql-ic{font-size:13px;}
+  .qlbl-smart{color:var(--txt);}
+  .qlbl-daily{color:var(--txt3);font-weight:600;}
+  .qbar+.qbar{padding-top:2px;}
   /* markdown inside assistant */
   .m-bubble h1,.m-bubble h2,.m-bubble h3,.m-bubble h4{margin:14px 0 7px;line-height:1.3;font-weight:700;color:var(--txt);}
   .m-bubble h1{font-size:19px;} .m-bubble h2{font-size:17px;} .m-bubble h3{font-size:15.5px;} .m-bubble h4{font-size:14.5px;}
@@ -749,14 +753,17 @@
           </div>
         </div>
         <div class="qbar" id="smartQBar" style="display:none;">
-          <div class="qlbl" id="smartQLbl">⚡ Система заметила — стоит спросить:</div>
+          <div class="qlbl qlbl-smart" id="smartQLbl"><span class="ql-ic">⚡</span> Система нашла проблемы — нажмите, чтобы разобраться</div>
           <div class="qrow" id="smartQRow"></div>
         </div>
-        <div class="quick" id="quickRow">
-          <button onclick="quickAsk('Как дела сегодня? Что по продажам?')">Как дела сегодня?</button>
-          <button onclick="quickAsk('Что сейчас не так с продажами?')">Что не так?</button>
-          <button onclick="quickAsk('Чего не хватает, чтобы дойти до цели месяца?')">Как дойти до цели?</button>
-          <button onclick="quickAsk('Кто из менеджеров отстаёт и почему?')">Кто отстаёт?</button>
+        <div class="qbar" id="quickQBar">
+          <div class="qlbl qlbl-daily"><span class="ql-ic">💬</span> Обычные вопросы</div>
+          <div class="qrow" id="quickRow">
+            <button class="qchip" onclick="quickAsk('Как дела сегодня? Что по продажам?')">Как дела сегодня?</button>
+            <button class="qchip" onclick="quickAsk('Что сейчас не так с продажами?')">Что не так?</button>
+            <button class="qchip" onclick="quickAsk('Чего не хватает, чтобы дойти до цели месяца?')">Как дойти до цели?</button>
+            <button class="qchip" onclick="quickAsk('Кто из менеджеров отстаёт и почему?')">Кто отстаёт?</button>
+          </div>
         </div>
         <div class="file-chips" id="fileChips"></div>
         <div class="chat-input">
