@@ -200,7 +200,7 @@ export default async function handler(req, res) {
     for (const name of Object.values(ACTIVE_MOPS)) {
       stat[name] = { leads:0, firstCallTimes:[], reached:0, callsTotal:0, withTask:0,
                      closedEarly:0, noReachClosed:0, tasksTotal:0, tasksDone:0 };
-      statDay[name] = { leads:0, firstCallTimes:[], callsTotal:0, withTask:0, tasksTotal:0, tasksDone:0 };
+      statDay[name] = { leads:0, firstCallTimes:[], callsTotal:0, withTask:0, tasksTotal:0, tasksDone:0, reached:0 };
     }
 
     const suspicious2 = []; // подозрительные по звонкам (этап 2)
@@ -231,6 +231,7 @@ export default async function handler(req, res) {
         if (L.tasks > 0) D.withTask++;
         D.tasksTotal += (L.tasks || 0);
         D.tasksDone += (L.tasksDone || 0);
+        if (L.reachedReal) D.reached++;
         if (L.firstCall) {
           const mins = (L.firstCall - L.created) / 60;
           if (mins >= 0 && mins < 60*24*14) D.firstCallTimes.push(mins);
@@ -301,6 +302,7 @@ export default async function handler(req, res) {
         medianFirstCallMin: medMin !== null ? Math.round(medMin) : null,
         avgCallsPerLead: D.leads ? +(D.callsTotal / D.leads).toFixed(1) : 0,
         taskRate: D.leads ? Math.round(D.withTask / D.leads * 100) : 0,
+        reachedPct: D.leads ? Math.round(D.reached / D.leads * 100) : 0,
         tasksTotal: D.tasksTotal,
         tasksDone: D.tasksDone,
         tasksDonePct: D.tasksTotal ? Math.round(D.tasksDone / D.tasksTotal * 100) : 0,
