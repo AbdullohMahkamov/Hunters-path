@@ -3276,27 +3276,62 @@ function quickAsk(t){switchTab('chat');document.getElementById('chatBox').value=
 
 // ===== УМНЫЕ ВОПРОСЫ (AI находит проблемы из данных) =====
 let _smartQLoaded=false;
-async function loadSmartQuestions(force){
-  if(_smartQLoaded&&!force)return;
-  _smartQLoaded=true;
+// Умные вопросы генерируются ПРАВИЛАМИ из данных — БЕЗ обращения к AI (ноль токенов)
+function buildSmartQuestions(){
+  const d=window._dashData;
+  if(!d||!d.totals)return [];
+  const t=d.totals;
+  const out=[];
+  // 1) сегодня много лидов, но 0 продаж
+  if((t.leadsToday||0)>=8 && (t.soldToday||0)===0){
+    out.push({q:`Почему сегодня 0 продаж при ${t.leadsToday} лидах?`,w:100});
+  }
+  // 2) менеджеры с низким дозвоном (< 40%)
+  const mops=(d.mopsByConv||[]).filter(m=>m.reachPct!=null);
+  const lowReach=mops.filter(m=>m.reachPct<40).sort((a,b)=>a.reachPct-b.reachPct)[0];
+  if(lowReach){
+    out.push({q:`Почему ${lowReach.name} плохо дозванивается (${lowReach.reachPct}%)?`,w:90});
+  }
+  // 3) менеджер с лидами, но без продаж (слабое закрытие)
+  const noClose=(d.mopsByConv||[]).filter(m=>(m.leads||0)>=8 && (m.sold||0)===0).sort((a,b)=>b.leads-a.leads)[0];
+  if(noClose && (!lowReach || noClose.name!==lowReach.name)){
+    out.push({q:`Почему ${noClose.name} не закрывает сделки (${noClose.leads} лидов, 0 продаж)?`,w:80});
+  }
+  // 4) отставание от плана месяца
+  if(t.goal && t.revenue!=null){
+    const pct=t.goalPct!=null?t.goalPct:Math.round((t.revenue/t.goal)*100);
+    if(pct<70){
+      out.push({q:`Успеваем на план месяца? Сделано ${pct}% цели.`,w:70});
+    }
+  }
+  // 5) узкое место воронки — куда теряются лиды
+  const prob=(d.problems||[]).slice().sort((a,b)=>(b.count||0)-(a.count||0))[0];
+  if(prob && (prob.count||0)>=10){
+    out.push({q:`Много лидов теряется на «${prob.name}» (${prob.count}). Что делать?`,w:60});
+  }
+  // 6) высокий % без контакта
+  if((t.noContactPct||0)>=40){
+    out.push({q:`Почему ${t.noContactPct}% лидов без контакта? Как поднять дозвон?`,w:55});
+  }
+  // сортируем по важности и берём топ-3
+  return out.sort((a,b)=>b.w-a.w).slice(0,3).map(x=>({q:x.q}));
+}
+function loadSmartQuestions(force){
+  // без AI: считаем вопросы кодом из свежих данных
   const bar=document.getElementById('smartQBar');
   const row=document.getElementById('smartQRow');
   if(!bar||!row)return;
-  try{
-    const r=await fetch('/api/chat',{method:'POST',headers:{'content-type':'application/json'},
-      body:JSON.stringify({action:'smart-questions',lang:state.lang||'ru',session:SESSION})});
-    const d=await r.json();
-    if(d&&d.ok&&Array.isArray(d.questions)&&d.questions.length){
-      window._smartQCache=d.questions; // для нижнего ряда qmix
-      row.innerHTML=d.questions.map(q=>{
-        return `<button class="ce-qbtn hot" onclick="quickAsk(${JSON.stringify(q.q).replace(/"/g,'&quot;')})">${escapeHtml(q.q)}<span class="ce-arr">›</span></button>`;
-      }).join('');
-      bar.style.display='block';
-      renderQmix();
-    }else{
-      bar.style.display='none';
-    }
-  }catch(e){bar.style.display='none';}
+  const qs=buildSmartQuestions();
+  if(qs.length){
+    window._smartQCache=qs;
+    row.innerHTML=qs.map(q=>`<button class="ce-qbtn hot" onclick="quickAsk(${JSON.stringify(q.q).replace(/"/g,'&quot;')})">${escapeHtml(q.q)}<span class="ce-arr">›</span></button>`).join('');
+    bar.style.display='block';
+    renderQmix();
+  }else{
+    bar.style.display='none';
+    window._smartQCache=[];
+    renderQmix();
+  }
 }
 function askNext(){switchTab('chat');quickAsk('Я выполнил '+doneCount()+' из '+TOTAL+' задач. С какой задачи продолжить и почему именно она даст максимальный рост? Дай одну конкретную задачу на сегодня.');}
 function helpQuest(id){
