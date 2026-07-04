@@ -167,33 +167,45 @@ export default async function handler(req, res) {
       await new Promise(rs => setTimeout(rs, 150));
     }
 
-    // 3a) ЗВОНКИ С ДЛИТЕЛЬНОСТЬЮ — из notes (примечаний) типа call_out/call_in.
-    // Utel пишет params.duration (секунды). Разговор дольше REACHED_SEC = реальный дозвон.
+    // TZ и начало сегодняшнего дня (UTC+5) — нужно и для звонков, и для дневной статистики
+    const TZ_OFFSET2 = 5 * 3600;
+    const nowLocal2 = new Date(Date.now() + TZ_OFFSET2 * 1000);
+    const dayStart2 = Math.floor(new Date(Date.UTC(nowLocal2.getUTCFullYear(), nowLocal2.getUTCMonth(), nowLocal2.getUTCDate())).getTime() / 1000) - TZ_OFFSET2;
+
+    // 3a) ЗВОНКИ С ДЛИТЕЛЬНОСТЬЮ — из notes каждого лида (надёжно, как /leads/{id}/notes).
+    // Utel пишет params.duration (сек). Разговор дольше REACHED_SEC = реальный дозвон.
+    // Тянем только по лидам, которые нам нужны (созданные сегодня + за месяц, где были звонки),
+    // чтобы не перегружать: приоритет — сегодняшние лиды (для метрики «за сегодня»).
     const REACHED_SEC = 40;
-    let notesSeen = 0, callNotesSeen = 0, reachedSet = 0; // диагностика
-    page = 1; guard = 0;
-    while (guard < 200) {
-      guard++;
-      // без фильтра по типу (глобальный фильтр note_type ненадёжен) — фильтруем в коде
-      const url = `${base}/leads/notes?filter[created_at][from]=${monthStart}&limit=250&page=${page}`;
-      const r = await fetch(url, { headers: H });
-      if (r.status === 204) break;
-      if (!r.ok) break;
-      const d = await r.json();
-      const notes = (d._embedded && d._embedded.notes) || [];
-      for (const n of notes) {
-        notesSeen++;
-        if (n.note_type !== "call_out" && n.note_type !== "call_in") continue;
-        callNotesSeen++;
-        const li = leadInfo[n.entity_id];
-        if (!li) continue;
-        const p = n.params || {};
-        const dur = parseInt(p.duration != null ? p.duration : (p.DURATION || 0), 10) || 0;
-        if (dur >= REACHED_SEC) { li.reachedReal = true; reachedSet++; }
-      }
-      if (notes.length < 250) break;
-      page++;
-      await new Promise(rs => setTimeout(rs, 120));
+    let notesSeen = 0, callNotesSeen = 0, reachedSet = 0;
+    // собираем ID лидов, у которых были звонки (calls>0) — по ним проверяем длительность
+    const leadIdsToCheck = Object.keys(leadInfo).filter(id => {
+      const li = leadInfo[id];
+      return li && li.calls > 0; // были звонки — есть смысл проверять дозвон
+    });
+    // ограничим, чтобы не улететь по времени: сначала сегодняшние, потом остальные
+    leadIdsToCheck.sort((a, b) => {
+      const ta = (leadInfo[a].created || 0) >= dayStart2 ? 0 : 1;
+      const tb = (leadInfo[b].created || 0) >= dayStart2 ? 0 : 1;
+      return ta - tb;
+    });
+    const MAX_LEADS_CHECK = 400; // потолок, чтобы уложиться в лимит времени
+    const toCheck = leadIdsToCheck.slice(0, MAX_LEADS_CHECK);
+    for (const lid of toCheck) {
+      try {
+        const r = await fetch(`${base}/leads/${lid}/notes?limit=250`, { headers: H });
+        if (!r.ok) continue;
+        const d = await r.json();
+        const notes = (d._embedded && d._embedded.notes) || [];
+        for (const n of notes) {
+          notesSeen++;
+          if (n.note_type !== "call_out" && n.note_type !== "call_in") continue;
+          callNotesSeen++;
+          const p = n.params || {};
+          const dur = parseInt(p.duration != null ? p.duration : (p.DURATION || 0), 10) || 0;
+          if (dur >= REACHED_SEC) { leadInfo[lid].reachedReal = true; reachedSet++; }
+        }
+      } catch (e) { /* пропускаем сбойный лид */ }
     }
 
 
@@ -221,9 +233,6 @@ export default async function handler(req, res) {
     }
 
     // 4) Считаем дисциплину по каждому действующему МОПу
-    const TZ_OFFSET2 = 5 * 3600; // UTC+5
-    const nowLocal2 = new Date(Date.now() + TZ_OFFSET2 * 1000);
-    const dayStart2 = Math.floor(new Date(Date.UTC(nowLocal2.getUTCFullYear(), nowLocal2.getUTCMonth(), nowLocal2.getUTCDate())).getTime() / 1000) - TZ_OFFSET2;
     const stat = {}; // mopName -> агрегаты
     const statDay = {}; // mopName -> агрегаты ТОЛЬКО за сегодня
     for (const name of Object.values(ACTIVE_MOPS)) {
