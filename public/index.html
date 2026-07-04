@@ -339,6 +339,18 @@
     body.shell #chatView,body.shell #dashView,body.shell #mapView{left:0;}
     body.shell #dashView,body.shell #mapView{padding:56px 16px 30px!important;}
   }
+  /* свёрнутый сайдбар (десктоп): панель уезжает, контент на весь экран */
+  @media(min-width:701px){
+    body.shell.sidebar-collapsed .chat-sidebar{transform:translateX(-100%)!important;transition:transform .2s;}
+    body.shell.sidebar-collapsed #chatView,
+    body.shell.sidebar-collapsed #dashView,
+    body.shell.sidebar-collapsed #mapView{left:0!important;transition:left .2s;}
+    body.shell.sidebar-collapsed #openSidebarBtn{display:flex!important;}
+  }
+  #openSidebarBtn{display:none;position:fixed;top:12px;left:12px;z-index:45;width:36px;height:36px;
+    border-radius:9px;background:var(--card);border:1px solid var(--line2);color:var(--txt2);cursor:pointer;
+    align-items:center;justify-content:center;box-shadow:0 2px 8px rgba(0,0,0,.08);}
+  #openSidebarBtn svg{width:19px;height:19px;stroke-width:2;}
   /* меню разделов в сайдбаре чата */
   .sec-toggle{display:flex;align-items:center;gap:10px;padding:9px 10px;border-radius:9px;font-size:14.5px;
     color:var(--txt);cursor:pointer;border:none;background:transparent;width:100%;text-align:left;font-family:inherit;font-weight:500;}
@@ -483,7 +495,7 @@
     border:none;color:#fff;font-size:14px;font-weight:600;cursor:pointer;}
 </style>
 </head>
-<body>
+<body class="shell">
 
 <!-- ЭКРАН ВХОДА -->
 <div id="loginScreen" style="position:fixed;inset:0;z-index:500;background:radial-gradient(1200px 600px at 50% -10%, var(--accent-bg) 0%, transparent 55%), linear-gradient(160deg, var(--bg2) 0%, var(--bg) 60%);display:flex;align-items:center;justify-content:center;padding:24px;overflow:hidden;">
@@ -560,6 +572,10 @@
 </div>
 
 <main>
+  <!-- Кнопка открыть свёрнутый сайдбар (новая оболочка) -->
+  <button id="openSidebarBtn" onclick="openSidebar()" title="Показать панель">
+    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="3" width="18" height="18" rx="2"/><line x1="9" y1="3" x2="9" y2="21"/></svg>
+  </button>
   <!-- Кнопка возврата к чату (в разделах, новая оболочка) -->
   <button id="backToChat" onclick="switchTab('chat')" style="display:none;position:fixed;top:12px;left:12px;z-index:40;width:38px;height:38px;border-radius:10px;background:var(--card);border:1px solid var(--line2);color:var(--txt);cursor:pointer;align-items:center;justify-content:center;box-shadow:0 2px 10px rgba(0,0,0,.08);" title="К чату">
     <svg width="19" height="19" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 11.5a8.38 8.38 0 0 1-.9 3.8 8.5 8.5 0 0 1-7.6 4.7 8.38 8.38 0 0 1-3.8-.9L3 21l1.9-5.7a8.38 8.38 0 0 1-.9-3.8 8.5 8.5 0 0 1 4.7-7.6 8.38 8.38 0 0 1 3.8-.9h.5a8.48 8.48 0 0 1 8 8v.5z"/></svg>
@@ -803,7 +819,7 @@
       <!-- Боковая панель: навигация + разделы + новый чат + история + пользователь -->
       <div class="chat-sidebar" id="chatSidebar">
         <div class="side-nav">
-          <button class="side-nav-ic" onclick="toggleSidebar(false)" title="Свернуть"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="3" width="18" height="18" rx="2"/><line x1="9" y1="3" x2="9" y2="21"/></svg></button>
+          <button class="side-nav-ic" onclick="collapseSidebar()" title="Свернуть панель"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="3" width="18" height="18" rx="2"/><line x1="9" y1="3" x2="9" y2="21"/></svg></button>
           <div class="side-brand" onclick="switchTab('chat')" style="cursor:pointer;"><div class="side-logo">H</div><span>Hunter AI</span></div>
         </div>
 
@@ -3391,6 +3407,15 @@ function toggleSidebar(open){
   if(!sb)return;
   sb.classList.toggle('open',open);
   bd.classList.toggle('show',open);
+}
+// сворачивание фиксированного сайдбара (десктоп) / открытие-закрытие (мобайл)
+function collapseSidebar(){
+  if(window.matchMedia('(max-width:700px)').matches){toggleSidebar(false);return;}
+  document.body.classList.toggle('sidebar-collapsed');
+}
+function openSidebar(){
+  if(window.matchMedia('(max-width:700px)').matches){toggleSidebar(true);return;}
+  document.body.classList.remove('sidebar-collapsed');
 }
 
 function newChat(){
