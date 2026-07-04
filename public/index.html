@@ -864,6 +864,8 @@ const TOTAL = ALL_QUESTS.length;
 const SKEY='hunters_path_app_v1';
 let SESSION=localStorage.getItem('hp_session')||'';
 let USER_ROLE='', USER_ORG='';
+// добавляет ?org= к запросам данных (hunter — по умолчанию, поведение витрины не меняется)
+function orgQ(sep){const o=USER_ORG||'hunter';return o==='hunter'?'':((sep||'?')+'org='+encodeURIComponent(o));}
 
 let state = loadStateLocal();
 function defaultState(){
@@ -1320,7 +1322,7 @@ async function renderDashboard(){
   if(dashLoaded)return;
   const note=document.getElementById('dashNote');
   try{
-    const r=await fetch('/api/dashboard');
+    const r=await fetch('/api/dashboard'+orgQ());
     const d=await r.json();
     if(d&&!d.empty&&!d.error&&d.totals){
       applyLiveDash(d);
@@ -1714,7 +1716,7 @@ async function loadActivity(force){
   if(!activityData||force){
     box.innerHTML=`<div style="font-size:12px;color:var(--txt3);padding:10px;">${force?(uz?'Yangilanmoqda (20-40s)...':'Обновляю (20-40 сек)...'):(uz?'Yuklanmoqda...':'Загрузка активности...')}</div>`;
     try{
-      const r=await fetch('/api/activity',{method:'POST',headers:{'content-type':'application/json'},body:JSON.stringify({action:force?'refresh':'get'})});
+      const r=await fetch('/api/activity',{method:'POST',headers:{'content-type':'application/json'},body:JSON.stringify({action:force?'refresh':'get',org:USER_ORG||'hunter'})});
       const d=await r.json();
       if(d&&d.ok){activityData=d;}
       else{box.innerHTML=`<div style="font-size:12px;color:var(--red);padding:10px;">${(d&&d.error)||'Ошибка'}</div>`;return;}
@@ -2496,7 +2498,7 @@ async function syncSpeed(){
   const old=btn.textContent;btn.textContent='⏳ Считаю события (20-40 сек)...';btn.disabled=true;
   document.getElementById('disciplineChart').innerHTML='<div style="font-size:12px;color:var(--txt3);">⏳ Тяну события из amoCRM, это долго...</div>';
   try{
-    const r=await fetch('/api/sync-speed');
+    const r=await fetch('/api/sync-speed'+orgQ());
     const d=await r.json();
     if(d&&d.ok){
       renderDiscipline(d);
@@ -2525,7 +2527,7 @@ async function syncNow(){
   const btn=document.getElementById('syncBtn');
   const old=btn.textContent;btn.textContent='⏳ Тяну из amoCRM (10-20 сек)...';btn.disabled=true;
   try{
-    const r=await fetch('/api/sync');
+    const r=await fetch('/api/sync'+orgQ());
     const d=await r.json();
     if(d&&d.ok){
       dashLoaded=false;
@@ -3336,16 +3338,16 @@ let wizGoalText='';
 async function wizRunAudit(){
   document.getElementById('wizBody').innerHTML=`<div class="gen-loading">⏳ Анализирую ваш бизнес по данным CRM за последние 3-4 месяца...</div>`;
   try{
-    let d=await (await fetch('/api/dashboard')).json();
+    let d=await (await fetch('/api/dashboard'+orgQ())).json();
     // Если кэш старый (нет данных за период) или пустой — тихо пересобираем из amoCRM
     const stale = !d || !d.totals || d.totals.soldPeriod==null || !(d.problems&&d.problems.length);
     if(stale){
       document.getElementById('wizBody').innerHTML=`<div class="gen-loading">⏳ Собираю свежие данные из CRM за 3-4 месяца... (10-20 сек)</div>`;
       try{
-        const sr=await fetch('/api/sync');
+        const sr=await fetch('/api/sync'+orgQ());
         const sd=await sr.json();
         if(sd&&sd.totals){d=sd;}
-        else{d=await (await fetch('/api/dashboard')).json();}
+        else{d=await (await fetch('/api/dashboard'+orgQ())).json();}
       }catch(e){/* если sync не удался — работаем с тем что есть */}
     }
     wizAuditData=d;
