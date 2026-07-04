@@ -2035,7 +2035,7 @@ async function saveClient(){
 
 // ===== ПРОГНОЗ МЕСЯЦА + РАБОЧИЕ ДНИ =====
 // настройки организации: goal (цель по деньгам), workdays (массив 0..6, 0=Вс)
-let orgSettings = { goal: null, workdays: [1,2,3,4,5,6], margin: null, adSpend: null };
+let orgSettings = { goal: null, workdays: [1,2,3,4,5,6], margin: null, adSpend: null, adSpendMonth: null, adSpendAll: null };
 let _lastDashData = null;
 
 async function loadOrgSettings(){
@@ -2048,6 +2048,8 @@ async function loadOrgSettings(){
       if(Array.isArray(d.settings.workdays))orgSettings.workdays=d.settings.workdays;
       if(d.settings.margin!=null)orgSettings.margin=d.settings.margin;
       if(d.settings.adSpend!=null)orgSettings.adSpend=d.settings.adSpend;
+      if(d.settings.adSpendMonth!=null)orgSettings.adSpendMonth=d.settings.adSpendMonth;
+      if(d.settings.adSpendAll!=null)orgSettings.adSpendAll=d.settings.adSpendAll;
     }
   }catch(e){}
   renderForecast(_lastDashData);
@@ -2292,14 +2294,26 @@ function editMargin(){
 }
 function editAdSpend(){
   const uz=state.lang==='uz';
-  const cur=orgSettings.adSpend!=null?orgSettings.adSpend:(getAdSpend()||'');
-  const inp=prompt(uz?'Reklama xarajati (oylik summa, soʻm):':'Расход на рекламу (сумма за месяц, сум):', cur);
+  const per=window._dashPeriod||'month';
+  const isAll=per==='all';
+  const cur=isAll?(orgSettings.adSpendAll||''):(orgSettings.adSpendMonth||'');
+  const label=isAll?(uz?'Reklama xarajati (BUTUN DAVR, soʻm):':'Расход на рекламу (ВСЁ ВРЕМЯ, сум):')
+                   :(uz?'Reklama xarajati (SHU OY, soʻm):':'Расход на рекламу (ТЕКУЩИЙ МЕСЯЦ, сум):');
+  const inp=prompt(label, cur);
   if(inp===null)return;
   const s=parseInt(String(inp).replace(/[^0-9]/g,''),10);
   if(!s||s<=0){alert(uz?'Nol emas':'Введите число больше нуля');return;}
-  orgSettings.adSpend=s;
-  saveOrgSettings({adSpend:s});
+  if(isAll){orgSettings.adSpendAll=s;saveOrgSettings({adSpendAll:s});}
+  else{orgSettings.adSpendMonth=s;saveOrgSettings({adSpendMonth:s});}
   renderAdsets(_lastDashData);
+}
+// расход за выбранный период
+function getAdSpendForPeriod(isAll){
+  const v=isAll?orgSettings.adSpendAll:orgSettings.adSpendMonth;
+  if(v!=null&&v>0)return v;
+  // запасной: старое общее поле
+  if(orgSettings.adSpend!=null&&orgSettings.adSpend>0)return orgSettings.adSpend;
+  return null;
 }
 
 // автоматически считает маржу из финансов (прибыль ÷ выручка за текущий месяц)
@@ -2359,7 +2373,7 @@ function renderAdsets(d){
   let summaryHtml='';
   if(isAdmin){
     const adRevenue=arr.reduce((s,a)=>s+(a.revenue||0),0); // выручка с рекламных лидов за период
-    const adSpend=(orgSettings.adSpend!=null&&orgSettings.adSpend>0)?orgSettings.adSpend:null; // только ручной ввод
+    const adSpend=getAdSpendForPeriod(isAll); // расход за выбранный период
     const marginInfo=getMargin();
     const margin=marginInfo.val;
     const roas=(adSpend>0)?adRevenue/adSpend:null;
