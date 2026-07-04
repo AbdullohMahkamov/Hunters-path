@@ -2703,9 +2703,12 @@ function renderDiscipline(sp){
     const speedOk=m.medianFirstCallMin!=null&&m.medianFirstCallMin<=30;
     const speedBad=m.medianFirstCallMin!=null&&m.medianFirstCallMin>180;
     const taskOk=m.taskRate>=60;
-    // дозвон берём из рабочего источника (месячный) — только для «за месяц»
-    let reach=isToday?null:m.reachedPct;
-    if(!isToday){
+    // дозвон: за сегодня — из mopsDay.reachedPct, за месяц — из рабочего источника
+    let reach;
+    if(isToday){
+      reach=m.reachedPct;
+    }else{
+      reach=m.reachedPct;
       const dashMops=(window._dashData&&window._dashData.mopsByConv)||[];
       const dm=dashMops.find(x=>x.name===m.name);
       if(dm&&dm.reachPct!=null)reach=dm.reachPct;
@@ -2716,9 +2719,7 @@ function renderDiscipline(sp){
     const doneBad=(m.tasksDonePct||0)<40;
     const c=(ok,bad)=>ok?'var(--green)':(bad?'var(--red)':'var(--txt2)');
     const doneDisplay = m.tasksTotal ? `${m.tasksDonePct}% <span style="color:var(--txt3);font-weight:400;">(${m.tasksDone} из ${m.tasksTotal})</span>` : '<span style="color:var(--txt3);font-weight:400;">нет задач</span>';
-    const reachCell = isToday
-      ? `<div>📞 % дозвона${hintIcon('reach')}: <b style="color:var(--txt3)">— <span style="font-size:10px;font-weight:400;">за месяц</span></b></div>`
-      : `<div>📞 % дозвона${hintIcon('reach')}: <b style="color:${c(reachOk,reachBad)}">${reach!=null?reach+'%':'—'}</b></div>`;
+    const reachCell = `<div>📞 % дозвона${hintIcon('reach')}: <b style="color:${reach!=null?c(reachOk,reachBad):'var(--txt3)'}">${reach!=null?reach+'%':'—'}</b></div>`;
     return `<div style="background:var(--card);border:1px solid var(--line);border-radius:10px;padding:11px 12px;margin-bottom:9px;">
       <div style="font-size:14px;font-weight:600;margin-bottom:7px;">${escapeHtml(m.name)} <span style="font-size:11px;color:var(--txt3);font-weight:400;">· ${m.leads} ${uz?'lid':'лидов'}</span></div>
       <div style="display:grid;grid-template-columns:1fr 1fr;gap:6px 12px;font-size:12px;">
