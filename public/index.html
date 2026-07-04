@@ -1902,7 +1902,7 @@ async function reviewSusp(id,status){
 
 // ===== ПРОГНОЗ МЕСЯЦА + РАБОЧИЕ ДНИ =====
 // настройки организации: goal (цель по деньгам), workdays (массив 0..6, 0=Вс)
-let orgSettings = { goal: null, workdays: [1,2,3,4,5,6] }; // по умолчанию Пн-Сб (кроме Вс)
+let orgSettings = { goal: null, workdays: [1,2,3,4,5,6], margin: null, adSpend: null };
 let _lastDashData = null;
 
 async function loadOrgSettings(){
@@ -1913,9 +1913,12 @@ async function loadOrgSettings(){
     if(d&&d.settings){
       if(d.settings.goal!=null)orgSettings.goal=d.settings.goal;
       if(Array.isArray(d.settings.workdays))orgSettings.workdays=d.settings.workdays;
+      if(d.settings.margin!=null)orgSettings.margin=d.settings.margin;
+      if(d.settings.adSpend!=null)orgSettings.adSpend=d.settings.adSpend;
     }
   }catch(e){}
   renderForecast(_lastDashData);
+  renderAdsets(_lastDashData);
 }
 async function saveOrgSettings(partial){
   try{
@@ -2106,11 +2109,51 @@ function fmtRoi(rev,spend){
   return (rev/spend); // во сколько раз окупилось
 }
 
+// расход на рекламу: из настроек (введён вручную) ИЛИ из финансовой разбивки (строка target/reklama)
+function getAdSpend(){
+  if(orgSettings.adSpend!=null&&orgSettings.adSpend>0)return orgSettings.adSpend;
+  // пробуем вытащить из загруженных финансов (breakdown)
+  try{
+    for(const mo in finCache){
+      const bd=finCache[mo]&&finCache[mo].breakdown;
+      if(Array.isArray(bd)){
+        const row=bd.find(x=>/target|reklama|таргет|реклам/i.test(x.name||''));
+        if(row&&row.amount>0)return row.amount;
+      }
+    }
+  }catch(e){}
+  return null;
+}
+
+function editMargin(){
+  const uz=state.lang==='uz';
+  const cur=orgSettings.margin!=null?orgSettings.margin:'';
+  const inp=prompt(uz?'Sof foyda marjasi (%): sotuvdan necha % foyda qoladi?':'Маржа прибыли (%): сколько % прибыли остаётся с продажи?', cur);
+  if(inp===null)return;
+  const m=parseFloat(String(inp).replace(/[^0-9.]/g,''));
+  if(isNaN(m)||m<0||m>100){alert(uz?'0 dan 100 gacha son kiriting':'Введите число от 0 до 100');return;}
+  orgSettings.margin=m;
+  saveOrgSettings({margin:m});
+  renderAdsets(_lastDashData);
+}
+function editAdSpend(){
+  const uz=state.lang==='uz';
+  const cur=orgSettings.adSpend!=null?orgSettings.adSpend:(getAdSpend()||'');
+  const inp=prompt(uz?'Reklama xarajati (oylik summa, soʻm):':'Расход на рекламу (сумма за месяц, сум):', cur);
+  if(inp===null)return;
+  const s=parseInt(String(inp).replace(/[^0-9]/g,''),10);
+  if(!s||s<=0){alert(uz?'Nol emas':'Введите число больше нуля');return;}
+  orgSettings.adSpend=s;
+  saveOrgSettings({adSpend:s});
+  renderAdsets(_lastDashData);
+}
+
 function renderAdsets(d){
   const box=document.getElementById('adsetsChart');if(!box)return;
   const uz=state.lang==='uz';
+  const isAdmin=(typeof USER_ROLE!=='undefined'&&USER_ROLE==='admin');
   const arr=(d&&d.adsets)||[];
-  // индекс расходов по имени adset
+  // индекс расходов по имени adset (из Meta, когда будет)
   const spendMap={};
   if(_metaSpend&&_metaSpend.adsets)for(const s of _metaSpend.adsets)spendMap[s.name]=s.spend;
   const hasSpend=_metaSpend&&_metaSpend.adsets&&_metaSpend.adsets.length;
@@ -2119,18 +2162,62 @@ function renderAdsets(d){
     box.innerHTML='<div style="font-size:12px;color:var(--txt3);">'+(uz?'Manba maʼlumoti yoʻq (adset_name toʻldirilmagan)':'Нет данных об источниках (adset_name не заполнен)')+'</div>';
     return;
   }
+
+  // === ОБЩИЙ ROAS / ROI (только админ) ===
+  let summaryHtml='';
+  if(isAdmin){
+    const adRevenue=arr.reduce((s,a)=>s+(a.revenue||0),0); // выручка со всех рекламных лидов
+    const adSpend=getAdSpend();
+    const margin=orgSettings.margin;
+    const roas=(adSpend>0)?adRevenue/adSpend:null;
+    // ROI = (выручка*маржа - расход) / расход
+    let roi=null;
+    if(adSpend>0&&margin!=null){
+      const profit=adRevenue*(margin/100);
+      roi=(profit-adSpend)/adSpend*100; // в процентах
+    }
+    const spendTxt=adSpend>0?fmtSum(adSpend):(uz?'kiriting':'укажите');
+    summaryHtml=`<div style="background:var(--card);border:1px solid var(--line2);border-radius:11px;padding:13px;margin-bottom:14px;">
+      <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:10px;">
+        <div style="font-size:12.5px;font-weight:700;">${uz?'Reklama qoplanishi (umumiy)':'Окупаемость рекламы (общая)'}</div>
+        <span style="font-size:10px;color:var(--gold);border:1px solid var(--gold);border-radius:6px;padding:1px 6px;">${uz?'faqat admin':'только админ'}</span>
+      </div>
+      <div style="display:grid;grid-template-columns:repeat(2,1fr);gap:10px;margin-bottom:10px;">
+        <div style="background:var(--bg2);border-radius:9px;padding:9px 11px;cursor:pointer;" onclick="editAdSpend()" title="${uz?'Oʻzgartirish':'Изменить'}">
+          <div style="font-size:10.5px;color:var(--txt2);">${uz?'Reklama xarajati ✏️':'Расход на рекламу ✏️'}</div>
+          <div style="font-size:16px;font-weight:700;color:var(--red);">${spendTxt}</div>
+          <div style="font-size:9.5px;color:var(--txt3);">${orgSettings.adSpend?'':(getAdSpend()?(uz?'moliyadan':'из финансов'):'')}</div>
+        </div>
+        <div style="background:var(--bg2);border-radius:9px;padding:9px 11px;">
+          <div style="font-size:10.5px;color:var(--txt2);">${uz?'Reklamadan tushum':'Выручка с рекламы'}</div>
+          <div style="font-size:16px;font-weight:700;color:var(--green);">${fmtSum(adRevenue)}</div>
+          <div style="font-size:9.5px;color:var(--txt3);">${arr.reduce((s,a)=>s+(a.sold||0),0)} ${uz?'sotuv':'продаж'}</div>
+        </div>
+      </div>
+      <div style="display:grid;grid-template-columns:repeat(2,1fr);gap:10px;">
+        <div style="background:var(--bg2);border-radius:9px;padding:9px 11px;">
+          <div style="font-size:10.5px;color:var(--txt2);">ROAS ${hintIcon('roas')}</div>
+          <div style="font-size:19px;font-weight:800;color:${roas==null?'var(--txt3)':(roas>=1?'var(--green)':'var(--red)')};">${roas!=null?roas.toFixed(1)+'x':'—'}</div>
+          <div style="font-size:9.5px;color:var(--txt3);">${uz?'tushum ÷ xarajat':'выручка ÷ расход'}</div>
+        </div>
+        <div style="background:var(--bg2);border-radius:9px;padding:9px 11px;cursor:pointer;" onclick="editMargin()" title="${uz?'Marjani oʻzgartirish':'Изменить маржу'}">
+          <div style="font-size:10.5px;color:var(--txt2);">ROI${margin!=null?` (${uz?'marja':'маржа'} ${margin}%) ✏️`:' ✏️'}</div>
+          <div style="font-size:19px;font-weight:800;color:${roi==null?'var(--txt3)':(roi>=0?'var(--green)':'var(--red)')};">${roi!=null?(roi>0?'+':'')+Math.round(roi)+'%':'—'}</div>
+          <div style="font-size:9.5px;color:var(--txt3);">${margin==null?(uz?'marjani kiriting':'укажите маржу'):(uz?'sof foyda':'чистая прибыль')}</div>
+        </div>
+      </div>
+    </div>`;
+  }
+
   const maxRev=Math.max(1,...arr.map(a=>a.revenue));
   const LIMIT=5;
   const shown=_adsetsExpanded?arr:arr.slice(0,LIMIT);
-  // шапка: кнопка обновить расходы из Meta + статус
-  let html='';
+  let html=summaryHtml;
+  // шапка списка по аудиториям
   html+=`<div style="display:flex;justify-content:space-between;align-items:center;gap:8px;margin-bottom:10px;flex-wrap:wrap;">
-    <div style="font-size:11px;color:var(--txt3);flex:1;min-width:150px;">${hasSpend?(uz?'ROI = tushum ÷ reklama xarajati':'ROI = выручка ÷ расходы на рекламу'):(uz?'«Xarajatlarni yangilash»ni bosing — Meta’dan reklama xarajati tortiladi':'Нажмите «Обновить расходы» — подтянем траты из Meta')}</div>
-    <button id="metaRefreshBtn" onclick="refreshMetaSpend()" style="padding:7px 12px;border-radius:8px;background:var(--accent);border:none;color:#fff;font-size:12px;font-weight:600;cursor:pointer;white-space:nowrap;">${uz?'Xarajatlarni yangilash':'Обновить расходы'}</button>
+    <div style="font-size:11px;color:var(--txt3);flex:1;min-width:150px;">${hasSpend?(uz?'Har auditoriya ROI (Meta’dan)':'ROI по каждой аудитории (из Meta)'):(uz?'Auditoriyalar boʻyicha tushum. Meta ulanganda — har biriga ROI.':'Выручка по аудиториям. Когда Meta одобрит — ROI по каждой.')}</div>
+    ${isAdmin?`<button id="metaRefreshBtn" onclick="refreshMetaSpend()" style="padding:7px 12px;border-radius:8px;background:var(--accent);border:none;color:#fff;font-size:12px;font-weight:600;cursor:pointer;white-space:nowrap;">${uz?'Meta xarajati':'Расходы Meta'}</button>`:''}
   </div>`;
-  if(hasSpend&&_metaSpend.updatedAt){
-    html+=`<div style="font-size:10.5px;color:var(--txt3);margin-bottom:10px;">${uz?'Meta yangilangan':'Meta обновлено'}: ${new Date(_metaSpend.updatedAt).toLocaleString(uz?'uz':'ru')}</div>`;
-  }
   html+=shown.map(a=>{
     const spend=spendMap[a.name];
     const roi=fmtRoi(a.revenue,spend);
@@ -2138,11 +2225,9 @@ function renderAdsets(d){
     if(hasSpend){
       if(spend>0&&roi!=null){
         const roiColor=roi>=2?'var(--green)':(roi>=1?'var(--gold)':'var(--red)');
-        roiTag=`<span style="font-size:12px;font-weight:700;color:${roiColor};white-space:nowrap;">ROI ${roi.toFixed(1)}x</span>`;
+        roiTag=`<span style="font-size:12px;font-weight:700;color:${roiColor};white-space:nowrap;">ROAS ${roi.toFixed(1)}x</span>`;
       }else if(spend>0){
         roiTag=`<span style="font-size:11px;color:var(--red);white-space:nowrap;">${uz?'0 sotuv':'0 продаж'}</span>`;
-      }else{
-        roiTag=`<span style="font-size:11px;color:var(--txt3);white-space:nowrap;">${uz?'xarajat yoʻq':'нет расходов'}</span>`;
       }
     }
     return `
@@ -2970,6 +3055,8 @@ const HINTS={
   tasksdone:{t:'Задач выполнено',d:'Процент реально выполненных задач (нажал «выполнено») из всех поставленных. Показывает, доводит ли менеджер напоминания до конца, а не просто ставит их для галочки. Хорошо — 70%+.'},
   velocity:{t:'Скорость воронки',d:'Медиана — сколько дней обычно идёт сделка от прихода лида до продажи (половина сделок быстрее, половина медленнее). Распределение по этапам показывает, где скапливаются открытые лиды — там узкое место воронки.'},
   adsets:{t:'Источники рекламы',d:'Разбивка по аудиториям (adset из рекламы): сколько лидов, продаж и денег принесла каждая. Видно, какая аудитория окупается, а какая сливает бюджет. Когда подключим расходы из Meta Ads — покажем полный ROI (окупаемость).'},
+  roas:{t:'ROAS (возврат на рекламу)',d:'ROAS = выручка ÷ расход на рекламу. Показывает, сколько выручки приносит каждый вложенный в рекламу рубль. ROAS 3x = на 1 рубль рекламы 3 рубля выручки. Считает грубую отдачу, без учёта себестоимости. ROAS 1x — реклама вернула ровно потраченное.'},
+  roi:{t:'ROI (возврат на инвестиции)',d:'ROI = (выручка × маржа − расход) ÷ расход. Учитывает твою маржу прибыли, поэтому показывает ЧИСТУЮ отдачу. ROI +50% = с каждого вложенного рубля 50 копеек чистой прибыли. ROI отрицательный = реклама убыточна даже при хорошем ROAS.'},
   own:{t:'«Свои» сделки',d:'Внутренние продажи — бартер, друзья, доплаты, служебные записи. Их не считаем в конверсии и оценке менеджеров, чтобы цифры были честными. Но в общую выручку они входят.'},
   goal:{t:'Цель месяца',d:'Сколько денег вы хотите заработать за месяц. Можно нажать и вписать свою сумму. Прогресс-полоса показывает, сколько уже сделано.'},
   problems:{t:'Причины потерь',d:'Почему клиенты не покупают — по данным из CRM. Топ причин показывает, где главные дыры: не дозвонились, дорого, передумали и т.д.'},
@@ -3111,6 +3198,9 @@ function applyRole(){
   if(profCard&&profCard.closest('.dcard'))profCard.closest('.dcard').style.display=isRop?'none':'';
   const salesSumBlock=document.getElementById('overviewSalesSum');
   if(salesSumBlock&&salesSumBlock.closest('.block'))salesSumBlock.closest('.block').style.display=isRop?'none':'';
+  // РОП: скрыть блок источников рекламы (расход, ROAS, ROI — финансовые данные)
+  const adsetsBlk=document.getElementById('adsetsBlock');
+  if(adsetsBlk)adsetsBlk.style.display=isRop?'none':'';
   // РОП: скрыть кнопки, которые уводят в чат-советник (у РОПа чата нет)
   ['genBtn','nextBtn','dopSecTitle'].forEach(id=>{
     const el=document.getElementById(id);
