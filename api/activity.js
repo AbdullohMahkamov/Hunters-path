@@ -1,13 +1,24 @@
-// /api/activity.js — Активность МОПов: звонки, движение по воронке, задачи, закрытия, новые лиды.
-// Тяжёлый сбор из amoCRM → кэшируется. Свежесть: если кэшу >1 часа, пересобираем (обходит лимит крона Hobby).
-// action: "get" (из кэша, собрать если устарел), "refresh" (принудительно собрать сейчас).
+// /api/activity.js — Активность МОПов. Мультитенант: настройки клиента из конфига (org).
 
-const SUBDOMAIN = "huntercademy";
-const ACTIVE_MOPS = {
-  13660834: "Komiljon", 13703650: "Samandar", 13904266: "Abdulla-Legenda",
-  13833590: "Begoyim", 13681582: "Abulbositxon",
+const HUNTER_CFG = {
+  subdomain: "huntercademy",
+  sold: "Sotildi", lost: "Yopildi",
+  mops: {
+    13660834: "Komiljon", 13703650: "Samandar", 13904266: "Abdulla-Legenda",
+    13833590: "Begoyim", 13681582: "Abulbositxon",
+  },
 };
-const SOLD = "Sotildi", CLOSED_LOST = "Yopildi";
+async function resolveConfig(org, redisUrl, redisToken) {
+  org = org || "hunter";
+  if (org === "hunter") return { org, token: process.env.AMOCRM_TOKEN, ...HUNTER_CFG };
+  try {
+    const r = await fetch(`${redisUrl}/get/${encodeURIComponent(`clientcfg:${org}`)}`, { headers: { Authorization: `Bearer ${redisToken}` } });
+    const d = await r.json();
+    const s = d && d.result != null ? JSON.parse(d.result) : null;
+    if (!s || !s.subdomain || !s.token) return null;
+    return { org, token: s.token, subdomain: s.subdomain, sold: s.sold || "", lost: s.lost || "", mops: s.mops || {} };
+  } catch (e) { return null; }
+}
 
 async function redisGet(url, token, key) {
   try {
@@ -30,7 +41,10 @@ function dayKey(unixSec) {
   return d.toISOString().slice(0, 10);
 }
 
-async function collectActivity(token) {
+async function collectActivity(token, cfg) {
+  const SUBDOMAIN = cfg.subdomain;
+  const ACTIVE_MOPS = cfg.mops || {};
+  const SOLD = cfg.sold, CLOSED_LOST = cfg.lost;
   const H = { Authorization: `Bearer ${token}` };
   const base = `https://${SUBDOMAIN}.amocrm.ru/api/v4`;
   const now = new Date();
@@ -133,12 +147,16 @@ async function collectActivity(token) {
 }
 
 export default async function handler(req, res) {
-  const token = process.env.AMOCRM_TOKEN;
   const rurl = process.env.UPSTASH_REDIS_REST_URL, rtoken = process.env.UPSTASH_REDIS_REST_TOKEN;
+
+  const org = (req.body && req.body.org) || (req.query && req.query.org) || "hunter";
+  const cfg = await resolveConfig(org, rurl, rtoken);
+  if (!cfg) { res.status(400).json({ error: `Клиент "${org}" не настроен` }); return; }
+  const token = cfg.token;
   if (!token) { res.status(500).json({ error: "AMOCRM_TOKEN not set" }); return; }
 
   const action = (req.body && req.body.action) || (req.query && req.query.action) || "get";
-  const CACHE_KEY = "activity:v1";
+  const CACHE_KEY = org === "hunter" ? "activity:v1" : `activity:v1:${org}`;
   const FRESH_SEC = 3600; // 1 час
 
   try {
@@ -151,14 +169,14 @@ export default async function handler(req, res) {
         return;
       }
       // устарело — собираем свежее
-      const fresh = await collectActivity(token);
+      const fresh = await collectActivity(token, cfg);
       if (rurl) await redisSet(rurl, rtoken, CACHE_KEY, fresh, 172800); // 2 дня хранения
       res.status(200).json({ ok: true, ...fresh, cached: false });
       return;
     }
     // refresh: принудительный сбор
     if (action === "refresh") {
-      const fresh = await collectActivity(token);
+      const fresh = await collectActivity(token, cfg);
       if (rurl) await redisSet(rurl, rtoken, CACHE_KEY, fresh, 172800);
       res.status(200).json({ ok: true, ...fresh, cached: false });
       return;
