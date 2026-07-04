@@ -320,9 +320,25 @@
   /* новая оболочка: скрываем старую шапку и вкладки, чат на весь экран */
   body.shell header{display:none!important;}
   body.shell .tabs{display:none!important;}
-  body.shell main{padding:0!important;margin:0!important;height:100dvh;max-height:100dvh;}
-  body.shell #chatView.active{height:100dvh;}
-  body.shell #dashView.active,body.shell #mapView.active{height:100dvh;overflow-y:auto;padding:56px 18px 24px!important;max-width:900px;margin:0 auto!important;}
+  body.shell main{padding:0!important;margin:0!important;height:100dvh;max-height:100dvh;position:relative;}
+  /* сайдбар чата всегда виден и фиксирован слева */
+  body.shell .chat-sidebar{position:fixed!important;left:0;top:0;bottom:0;width:256px;z-index:30;transform:none!important;}
+  /* чат: занимает область справа от сайдбара */
+  body.shell #chatView{position:fixed;left:256px;right:0;top:0;bottom:0;display:flex!important;}
+  body.shell #chatView .chat-layout{flex:1;}
+  body.shell #chatView .chat-main{flex:1;}
+  /* прячем чат-область, когда открыт раздел (сайдбар остаётся) */
+  body.shell.sec-open #chatView .chat-main{display:none;}
+  body.shell:not(.sec-open) #chatView .chat-main{display:flex;}
+  /* разделы: справа от сайдбара, во весь экран */
+  body.shell #dashView,body.shell #mapView{position:fixed;left:256px;right:0;top:0;bottom:0;display:none;overflow-y:auto;padding:24px 28px 40px!important;margin:0!important;max-width:none!important;z-index:20;background:var(--bg);}
+  body.shell #dashView.active,body.shell #mapView.active{display:block;}
+  @media(max-width:700px){
+    body.shell .chat-sidebar{transform:translateX(-100%)!important;transition:transform .25s;}
+    body.shell .chat-sidebar.open{transform:translateX(0)!important;}
+    body.shell #chatView,body.shell #dashView,body.shell #mapView{left:0;}
+    body.shell #dashView,body.shell #mapView{padding:56px 16px 30px!important;}
+  }
   /* меню разделов в сайдбаре чата */
   .sec-toggle{display:flex;align-items:center;gap:10px;padding:9px 10px;border-radius:9px;font-size:14.5px;
     color:var(--txt);cursor:pointer;border:none;background:transparent;width:100%;text-align:left;font-family:inherit;font-weight:500;}
@@ -788,7 +804,7 @@
       <div class="chat-sidebar" id="chatSidebar">
         <div class="side-nav">
           <button class="side-nav-ic" onclick="toggleSidebar(false)" title="Свернуть"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="3" width="18" height="18" rx="2"/><line x1="9" y1="3" x2="9" y2="21"/></svg></button>
-          <div class="side-brand"><div class="side-logo">H</div><span>Hunter AI</span></div>
+          <div class="side-brand" onclick="switchTab('chat')" style="cursor:pointer;"><div class="side-logo">H</div><span>Hunter AI</span></div>
         </div>
 
         <!-- Разделы (сворачиваемое меню) -->
@@ -1442,11 +1458,17 @@ function switchTab(t){
   mapView.classList.toggle('active',t==='map');
   document.getElementById('dashView').classList.toggle('active',t==='dash');
   const cv=document.getElementById('chatView');
-  cv.classList.toggle('active',t==='chat');
+  const shell=document.body.classList.contains('shell');
+  if(shell){
+    cv.classList.add('active'); // в оболочке чат-область (с сайдбаром) всегда в DOM
+    document.body.classList.toggle('sec-open',t!=='chat'); // открыт раздел → прячем чат-окно, сайдбар остаётся
+  }else{
+    cv.classList.toggle('active',t==='chat');
+  }
   document.body.classList.toggle('chat-open',t==='chat');
   // новая оболочка: кнопка «к чату» видна в разделах (не в чате)
   const btc=document.getElementById('backToChat');
-  if(btc)btc.style.display=(document.body.classList.contains('shell')&&t!=='chat')?'flex':'none';
+  if(btc)btc.style.display='none';
   if(t==='chat'){renderChat();scrollChatBottom();loadSmartQuestions();}
   if(t==='dash'){renderDashboard();if(state.dashTab)dashTab(state.dashTab);}
 }
