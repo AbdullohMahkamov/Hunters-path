@@ -2719,7 +2719,9 @@ function renderDiscipline(sp){
     const doneBad=(m.tasksDonePct||0)<40;
     const c=(ok,bad)=>ok?'var(--green)':(bad?'var(--red)':'var(--txt2)');
     const doneDisplay = m.tasksTotal ? `${m.tasksDonePct}% <span style="color:var(--txt3);font-weight:400;">(${m.tasksDone} из ${m.tasksTotal})</span>` : '<span style="color:var(--txt3);font-weight:400;">нет задач</span>';
-    const reachCell = `<div>📞 % дозвона${hintIcon('reach')}: <b style="color:${reach!=null?c(reachOk,reachBad):'var(--txt3)'}">${reach!=null?reach+'%':'—'}</b></div>`;
+    const reachCell = isToday
+      ? `<div>📞 % обзвона${hintIcon('reach')}: <b style="color:${reach!=null?c((reach||0)>=70,(reach||0)<40):'var(--txt3)'}">${reach!=null?reach+'%':'—'}</b></div>`
+      : `<div>📞 % дозвона${hintIcon('reach')}: <b style="color:${reach!=null?c(reachOk,reachBad):'var(--txt3)'}">${reach!=null?reach+'%':'—'}</b></div>`;
     return `<div style="background:var(--card);border:1px solid var(--line);border-radius:10px;padding:11px 12px;margin-bottom:9px;">
       <div style="font-size:14px;font-weight:600;margin-bottom:7px;">${escapeHtml(m.name)} <span style="font-size:11px;color:var(--txt3);font-weight:400;">· ${m.leads} ${uz?'lid':'лидов'}</span></div>
       <div style="display:grid;grid-template-columns:1fr 1fr;gap:6px 12px;font-size:12px;">
