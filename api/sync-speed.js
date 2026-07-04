@@ -167,6 +167,32 @@ export default async function handler(req, res) {
       await new Promise(rs => setTimeout(rs, 150));
     }
 
+    // 3a) ЗВОНКИ С ДЛИТЕЛЬНОСТЬЮ — из notes (примечаний) типа call_out/call_in.
+    // В params.DURATION лежит длительность звонка. Разговор дольше REACHED_SEC = реальный дозвон.
+    const REACHED_SEC = 40; // взяли трубку и поговорили (>40 сек)
+    page = 1; guard = 0;
+    while (guard < 120) {
+      guard++;
+      const url = `${base}/leads/notes?filter[note_type][]=call_in&filter[note_type][]=call_out` +
+        `&filter[created_at][from]=${monthStart}&limit=250&page=${page}`;
+      const r = await fetch(url, { headers: H });
+      if (r.status === 204) break;
+      if (!r.ok) break;
+      const d = await r.json();
+      const notes = (d._embedded && d._embedded.notes) || [];
+      for (const n of notes) {
+        const li = leadInfo[n.entity_id];
+        if (!li) continue;
+        const p = n.params || {};
+        // длительность может лежать под разными ключами в зависимости от телефонии
+        const dur = parseInt(p.duration || p.DURATION || 0, 10) || 0;
+        if (dur >= REACHED_SEC) li.reachedReal = true;
+      }
+      if (notes.length < 250) break;
+      page++;
+      await new Promise(rs => setTimeout(rs, 150));
+    }
+
 
     // 3b) ЗАДАЧИ — через отдельный эндпоинт /tasks (привязаны к лиду через entity_id, entity_type=leads)
     page = 1; guard = 0;
@@ -200,7 +226,7 @@ export default async function handler(req, res) {
     for (const name of Object.values(ACTIVE_MOPS)) {
       stat[name] = { leads:0, firstCallTimes:[], reached:0, callsTotal:0, withTask:0,
                      closedEarly:0, noReachClosed:0, tasksTotal:0, tasksDone:0 };
-      statDay[name] = { leads:0, firstCallTimes:[], callsTotal:0, withTask:0, tasksTotal:0, tasksDone:0, calledLeads:0 };
+      statDay[name] = { leads:0, firstCallTimes:[], callsTotal:0, withTask:0, tasksTotal:0, tasksDone:0, reached:0, calledLeads:0 };
     }
 
     const suspicious2 = []; // подозрительные по звонкам (этап 2)
@@ -228,7 +254,8 @@ export default async function handler(req, res) {
         const D = statDay[mop];
         D.leads++;
         D.callsTotal += L.calls;
-        if (L.calls > 0) D.calledLeads++; // лиду сделали хотя бы один звонок
+        if (L.calls > 0) D.calledLeads++;   // сделали хотя бы один звонок
+        if (L.reachedReal) D.reached++;       // реально дозвонились (>40 сек разговор)
         if (L.tasks > 0) D.withTask++;
         D.tasksTotal += (L.tasks || 0);
         D.tasksDone += (L.tasksDone || 0);
@@ -302,7 +329,8 @@ export default async function handler(req, res) {
         medianFirstCallMin: medMin !== null ? Math.round(medMin) : null,
         avgCallsPerLead: D.leads ? +(D.callsTotal / D.leads).toFixed(1) : 0,
         taskRate: D.leads ? Math.round(D.withTask / D.leads * 100) : 0,
-        reachedPct: D.leads ? Math.round(D.calledLeads / D.leads * 100) : 0, // % лидов, кому позвонили сегодня
+        reachedPct: D.leads ? Math.round(D.reached / D.leads * 100) : 0,     // реальный дозвон (>40 сек)
+        calledPct: D.leads ? Math.round(D.calledLeads / D.leads * 100) : 0,  // % кому звонили
         tasksTotal: D.tasksTotal,
         tasksDone: D.tasksDone,
         tasksDonePct: D.tasksTotal ? Math.round(D.tasksDone / D.tasksTotal * 100) : 0,
