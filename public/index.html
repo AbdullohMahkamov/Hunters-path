@@ -2242,20 +2242,41 @@ function fmtRoi(rev,spend){
   return (rev/spend); // во сколько раз окупилось
 }
 
-// расход на рекламу: из настроек (введён вручную) ИЛИ из финансовой разбивки (строка target/reklama)
+// расход на рекламу: приоритет — ручной ввод, иначе из финансовой таблицы (строка target/reklama)
 function getAdSpend(){
   if(orgSettings.adSpend!=null&&orgSettings.adSpend>0)return orgSettings.adSpend;
-  // пробуем вытащить из загруженных финансов (breakdown)
+  if(_autoAdSpend!=null&&_autoAdSpend>0)return _autoAdSpend;
+  // пробуем из уже загруженных финансов (breakdown)
   try{
     for(const mo in finCache){
       const bd=finCache[mo]&&finCache[mo].breakdown;
       if(Array.isArray(bd)){
         const row=bd.find(x=>/target|reklama|таргет|реклам/i.test(x.name||''));
-        if(row&&row.amount>0)return row.amount;
+        if(row&&row.amount)return Math.abs(row.amount);
       }
     }
   }catch(e){}
   return null;
+}
+
+// автоматически тянет расход на рекламу из финансов за текущий месяц (кэш сервера — без трат ИИ)
+let _autoAdSpend=null;
+let _autoAdSpendTried=false;
+async function autoLoadAdSpend(){
+  if(_autoAdSpendTried)return; // тянем один раз за сессию
+  _autoAdSpendTried=true;
+  // если админ уже ввёл вручную — не нужно
+  if(orgSettings.adSpend!=null&&orgSettings.adSpend>0)return;
+  try{
+    // читаем текущий месяц (без action/month = текущий, сервер кэширует — без трат ИИ)
+    const r=await fetch('/api/finance'+orgQ(),{method:'POST',headers:{'content-type':'application/json'},
+      body:JSON.stringify({session:SESSION})});
+    const d=await r.json();
+    if(d&&d.ok&&Array.isArray(d.breakdown)){
+      const row=d.breakdown.find(x=>/target|reklama|таргет|реклам/i.test(x.name||''));
+      if(row&&row.amount){_autoAdSpend=Math.abs(row.amount);renderAdsets(_lastDashData);}
+    }
+  }catch(e){}
 }
 
 function editMargin(){
@@ -2285,6 +2306,8 @@ function renderAdsets(d){
   const box=document.getElementById('adsetsChart');if(!box)return;
   const uz=state.lang==='uz';
   const isAdmin=(typeof USER_ROLE!=='undefined'&&USER_ROLE==='admin');
+  // авто-подтягивание расхода на рекламу из финансов (один раз, только админ)
+  if(isAdmin&&!_autoAdSpendTried&&(orgSettings.adSpend==null||orgSettings.adSpend<=0))autoLoadAdSpend();
   const arr=(d&&d.adsets)||[];
   // индекс расходов по имени adset (из Meta, когда будет)
   const spendMap={};
