@@ -2306,43 +2306,52 @@ function renderAdsets(d){
   const box=document.getElementById('adsetsChart');if(!box)return;
   const uz=state.lang==='uz';
   const isAdmin=(typeof USER_ROLE!=='undefined'&&USER_ROLE==='admin');
-  // авто-подтягивание расхода на рекламу из финансов (один раз, только админ)
-  if(isAdmin&&!_autoAdSpendTried&&(orgSettings.adSpend==null||orgSettings.adSpend<=0))autoLoadAdSpend();
-  const arr=(d&&d.adsets)||[];
+  const per=window._dashPeriod||'month'; // фильтр периода из Маркетинга
+  const isAll=per==='all';
+  const arrRaw=(d&&d.adsets)||[];
+  // выбираем метрики по периоду (месяц или всё время) + пересортировка
+  const arr=arrRaw.map(a=>({
+    name:a.name,
+    leads: isAll?a.leads:(a.leadsMonth!=null?a.leadsMonth:a.leads),
+    sold:  isAll?a.sold:(a.soldMonth!=null?a.soldMonth:a.sold),
+    revenue: isAll?a.revenue:(a.revenueMonth!=null?a.revenueMonth:a.revenue),
+    conv:  isAll?a.conv:(a.convMonth!=null?a.convMonth:a.conv),
+    avgCheck: isAll?a.avgCheck:(a.avgCheckMonth!=null?a.avgCheckMonth:a.avgCheck),
+  })).filter(a=>a.leads>0||a.revenue>0).sort((x,y)=>y.revenue-x.revenue);
   // индекс расходов по имени adset (из Meta, когда будет)
   const spendMap={};
   if(_metaSpend&&_metaSpend.adsets)for(const s of _metaSpend.adsets)spendMap[s.name]=s.spend;
   const hasSpend=_metaSpend&&_metaSpend.adsets&&_metaSpend.adsets.length;
 
   if(!arr.length){
-    box.innerHTML='<div style="font-size:12px;color:var(--txt3);">'+(uz?'Manba maʼlumoti yoʻq (adset_name toʻldirilmagan)':'Нет данных об источниках (adset_name не заполнен)')+'</div>';
+    box.innerHTML='<div style="font-size:12px;color:var(--txt3);">'+(uz?'Bu davr uchun manba maʼlumoti yoʻq':'Нет данных об источниках за этот период')+'</div>';
     return;
   }
 
   // === ОБЩИЙ ROAS / ROI (только админ) ===
   let summaryHtml='';
   if(isAdmin){
-    const adRevenue=arr.reduce((s,a)=>s+(a.revenue||0),0); // выручка со всех рекламных лидов
-    const adSpend=getAdSpend();
+    const adRevenue=arr.reduce((s,a)=>s+(a.revenue||0),0); // выручка с рекламных лидов за период
+    const adSpend=(orgSettings.adSpend!=null&&orgSettings.adSpend>0)?orgSettings.adSpend:null; // только ручной ввод
     const margin=orgSettings.margin;
     const roas=(adSpend>0)?adRevenue/adSpend:null;
-    // ROI = (выручка*маржа - расход) / расход
     let roi=null;
     if(adSpend>0&&margin!=null){
       const profit=adRevenue*(margin/100);
-      roi=(profit-adSpend)/adSpend*100; // в процентах
+      roi=(profit-adSpend)/adSpend*100;
     }
     const spendTxt=adSpend>0?fmtSum(adSpend):(uz?'kiriting':'укажите');
+    const perLabel=isAll?(uz?'butun davr':'всё время'):(uz?'shu oy':'текущий месяц');
     summaryHtml=`<div style="background:var(--card);border:1px solid var(--line2);border-radius:11px;padding:13px;margin-bottom:14px;">
       <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:10px;">
-        <div style="font-size:12.5px;font-weight:700;">${uz?'Reklama qoplanishi (umumiy)':'Окупаемость рекламы (общая)'}</div>
+        <div style="font-size:12.5px;font-weight:700;">${uz?'Reklama qoplanishi':'Окупаемость рекламы'} · ${perLabel}</div>
         <span style="font-size:10px;color:var(--gold);border:1px solid var(--gold);border-radius:6px;padding:1px 6px;">${uz?'faqat admin':'только админ'}</span>
       </div>
       <div style="display:grid;grid-template-columns:repeat(2,1fr);gap:10px;margin-bottom:10px;">
         <div style="background:var(--bg2);border-radius:9px;padding:9px 11px;cursor:pointer;" onclick="editAdSpend()" title="${uz?'Oʻzgartirish':'Изменить'}">
           <div style="font-size:10.5px;color:var(--txt2);">${uz?'Reklama xarajati ✏️':'Расход на рекламу ✏️'}</div>
           <div style="font-size:16px;font-weight:700;color:var(--red);">${spendTxt}</div>
-          <div style="font-size:9.5px;color:var(--txt3);">${orgSettings.adSpend?'':(getAdSpend()?(uz?'moliyadan':'из финансов'):'')}</div>
+          <div style="font-size:9.5px;color:var(--txt3);">${uz?'qoʻlda kiritiladi':'вводится вручную'}</div>
         </div>
         <div style="background:var(--bg2);border-radius:9px;padding:9px 11px;">
           <div style="font-size:10.5px;color:var(--txt2);">${uz?'Reklamadan tushum':'Выручка с рекламы'}</div>
@@ -2369,9 +2378,8 @@ function renderAdsets(d){
   const LIMIT=5;
   const shown=_adsetsExpanded?arr:arr.slice(0,LIMIT);
   let html=summaryHtml;
-  // шапка списка по аудиториям
   html+=`<div style="display:flex;justify-content:space-between;align-items:center;gap:8px;margin-bottom:10px;flex-wrap:wrap;">
-    <div style="font-size:11px;color:var(--txt3);flex:1;min-width:150px;">${hasSpend?(uz?'Har auditoriya ROI (Meta’dan)':'ROI по каждой аудитории (из Meta)'):(uz?'Auditoriyalar boʻyicha tushum. Meta ulanganda — har biriga ROI.':'Выручка по аудиториям. Когда Meta одобрит — ROI по каждой.')}</div>
+    <div style="font-size:11px;color:var(--txt3);flex:1;min-width:150px;">${hasSpend?(uz?'Har auditoriya ROI (Meta’dan)':'ROI по каждой аудитории (из Meta)'):(uz?'Auditoriyalar boʻyicha tushum':'Выручка по аудиториям')}</div>
     ${isAdmin?`<button id="metaRefreshBtn" onclick="refreshMetaSpend()" style="padding:7px 12px;border-radius:8px;background:var(--accent);border:none;color:#fff;font-size:12px;font-weight:600;cursor:pointer;white-space:nowrap;">${uz?'Meta xarajati':'Расходы Meta'}</button>`:''}
   </div>`;
   html+=shown.map(a=>{
