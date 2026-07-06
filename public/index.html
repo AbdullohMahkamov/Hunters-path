@@ -1025,6 +1025,19 @@
     <div style="padding:16px 18px;">
       <div style="font-size:12.5px;color:var(--txt2);margin-bottom:12px;" id="wdHint">Отметьте рабочие дни — прогноз будет учитывать только их.</div>
       <div id="wdDays" style="display:flex;flex-direction:column;gap:8px;"></div>
+      <div style="border-top:1px solid var(--line);margin:16px 0 12px;"></div>
+      <div style="font-size:12.5px;color:var(--txt2);margin-bottom:10px;" id="whHint">Рабочее время — по нему считается скорость первого звонка (ночь и выходные не штрафуют менеджеров).</div>
+      <div style="display:flex;align-items:center;gap:10px;">
+        <div style="flex:1;">
+          <div style="font-size:11.5px;color:var(--txt3);margin-bottom:4px;">Начало</div>
+          <input type="time" id="whStart" value="10:00" style="width:100%;padding:9px;border-radius:9px;border:1px solid var(--line2);background:var(--card);color:var(--txt);font-size:14px;font-family:inherit;">
+        </div>
+        <div style="color:var(--txt3);margin-top:16px;">—</div>
+        <div style="flex:1;">
+          <div style="font-size:11.5px;color:var(--txt3);margin-bottom:4px;">Конец</div>
+          <input type="time" id="whEnd" value="20:00" style="width:100%;padding:9px;border-radius:9px;border:1px solid var(--line2);background:var(--card);color:var(--txt);font-size:14px;font-family:inherit;">
+        </div>
+      </div>
       <button onclick="saveWorkdays()" id="wdSaveBtn" style="width:100%;margin-top:16px;padding:11px;border-radius:9px;background:var(--accent);border:none;color:#fff;font-size:13.5px;font-weight:600;cursor:pointer;">Сохранить</button>
     </div>
   </div>
@@ -2335,7 +2348,7 @@ async function saveClient(){
 
 // ===== ПРОГНОЗ МЕСЯЦА + РАБОЧИЕ ДНИ =====
 // настройки организации: goal (цель по деньгам), workdays (массив 0..6, 0=Вс)
-let orgSettings = { goal: null, workdays: [1,2,3,4,5,6], margin: null, adSpend: null, adSpendMonth: null, adSpendAll: null };
+let orgSettings = { goal: null, workdays: [1,2,3,4,5,6], workStart: '10:00', workEnd: '20:00', margin: null, adSpend: null, adSpendMonth: null, adSpendAll: null };
 let _lastDashData = null;
 
 async function loadOrgSettings(){
@@ -2350,6 +2363,8 @@ async function loadOrgSettings(){
       if(d.settings.adSpend!=null)orgSettings.adSpend=d.settings.adSpend;
       if(d.settings.adSpendMonth!=null)orgSettings.adSpendMonth=d.settings.adSpendMonth;
       if(d.settings.adSpendAll!=null)orgSettings.adSpendAll=d.settings.adSpendAll;
+      if(d.settings.workStart)orgSettings.workStart=d.settings.workStart;
+      if(d.settings.workEnd)orgSettings.workEnd=d.settings.workEnd;
     }
   }catch(e){}
   renderForecast(_lastDashData);
@@ -2379,6 +2394,8 @@ function openWorkdaysModal(){
       <input type="checkbox" value="${dn}" ${wd.includes(dn)?'checked':''} style="width:17px;height:17px;cursor:pointer;accent-color:var(--accent);">
       <span>${names[dn]}</span>
     </label>`).join('');
+  document.getElementById('whStart').value=orgSettings.workStart||'10:00';
+  document.getElementById('whEnd').value=orgSettings.workEnd||'20:00';
   document.getElementById('workdaysOverlay').style.display='block';
 }
 function closeWorkdaysModal(){document.getElementById('workdaysOverlay').style.display='none';}
@@ -2387,7 +2404,10 @@ async function saveWorkdays(){
   const days=Array.from(checks).map(c=>parseInt(c.value,10));
   if(!days.length){alert(state.lang==='uz'?'Kamida bitta kun tanlang':'Выберите хотя бы один день');return;}
   orgSettings.workdays=days;
-  await saveOrgSettings({workdays:days});
+  const ws=document.getElementById('whStart').value||'10:00';
+  const we=document.getElementById('whEnd').value||'20:00';
+  orgSettings.workStart=ws;orgSettings.workEnd=we;
+  await saveOrgSettings({workdays:days,workStart:ws,workEnd:we});
   closeWorkdaysModal();
   renderForecast(_lastDashData);
 }
@@ -3309,16 +3329,28 @@ function quickAsk(t){
     document.getElementById('askModeOverlay').style.display='flex';
     return;
   }
-  document.getElementById('chatBox').value=t;sendMsg();
+  document.getElementById('chatBox').value='';sendMsg(t);
 }
 let _pendingQ=null;
 function askModeNew(){
   document.getElementById('askModeOverlay').style.display='none';
-  if(_pendingQ){newChat();const q=_pendingQ;_pendingQ=null;setTimeout(()=>{document.getElementById('chatBox').value=q;sendMsg();},100);}
+  const q=_pendingQ;_pendingQ=null;
+  if(!q)return;
+  // создаём новый чат синхронно
+  ensureChats();
+  const c={id:'c'+Date.now(),title:'Новый чат',messages:[],pinned:false,projectId:''};
+  state.chats.unshift(c);state.activeChatId=c.id;save();
+  switchTab('chat');
+  renderSidebar();renderChat();
+  // отправляем вопрос напрямую (без хрупкого таймера)
+  sendMsg(q);
 }
 function askModeContinue(){
   document.getElementById('askModeOverlay').style.display='none';
-  if(_pendingQ){document.getElementById('chatBox').value=_pendingQ;_pendingQ=null;sendMsg();}
+  const q=_pendingQ;_pendingQ=null;
+  if(!q)return;
+  switchTab('chat');
+  sendMsg(q);
 }
 function askModeClose(){document.getElementById('askModeOverlay').style.display='none';_pendingQ=null;}
 
@@ -3861,9 +3893,9 @@ function showHint(key,e){
 }
 
 let busy=false;
-async function sendMsg(){
+async function sendMsg(directText){
   const box=document.getElementById('chatBox');
-  const text=box.value.trim();
+  const text=(directText!=null?directText:box.value).trim();
   if((!text&&!pendingFiles.length)||busy)return;
 
   const chat=activeChat();
