@@ -365,6 +365,12 @@
   .spinning{animation:spin 1s linear infinite;}
   @keyframes spin{to{transform:rotate(360deg)}}
   @keyframes askPop{0%{opacity:0;transform:scale(.94) translateY(8px)}100%{opacity:1;transform:scale(1) translateY(0)}}
+  /* во время ответа AI — подсказки приглушены (нельзя оборвать поток) */
+  body.ai-busy .qchip,body.ai-busy .ce-qbtn,body.ai-busy .mchip{opacity:.45;pointer-events:none;}
+  #aiToast{position:fixed;bottom:96px;left:50%;transform:translateX(-50%) translateY(10px);z-index:200;
+    background:rgba(40,35,28,.92);color:#fff;font-size:12.5px;padding:8px 15px;border-radius:20px;
+    opacity:0;pointer-events:none;transition:opacity .2s,transform .2s;}
+  #aiToast.show{opacity:1;transform:translateX(-50%) translateY(0);}
   /* меню разделов в сайдбаре чата */
   .sec-toggle{display:flex;align-items:center;gap:10px;padding:9px 10px;border-radius:9px;font-size:14.5px;
     color:var(--txt);cursor:pointer;border:none;background:transparent;width:100%;text-align:left;font-family:inherit;font-weight:500;}
@@ -955,6 +961,8 @@
     </div>
   </div>
 </main>
+
+<div id="aiToast"></div>
 
 <!-- МОДАЛКА: НОВЫЙ ЧАТ ИЛИ ПРОДОЛЖИТЬ -->
 <div id="askModeOverlay" style="display:none;position:fixed;inset:0;background:rgba(30,25,20,.44);backdrop-filter:blur(3px);-webkit-backdrop-filter:blur(3px);z-index:120;align-items:center;justify-content:center;padding:20px;" onclick="if(event.target===this)askModeClose()">
@@ -3319,6 +3327,11 @@ function removeFile(i){pendingFiles.splice(i,1);renderChips();}
 /* ===== CHAT ===== */
 function autoGrow(el){el.style.height='auto';el.style.height=Math.min(el.scrollHeight,120)+'px';}
 function quickAsk(t){
+  // пока идёт ответ AI (стриминг) — не запускаем новый вопрос, чтобы не оборвать поток
+  if(busy){
+    if(typeof showToast==='function')showToast('Подождите — AI ещё отвечает');
+    return;
+  }
   switchTab('chat');
   const chat=activeChat();
   const hasMsgs=chat&&chat.messages&&chat.messages.length>0;
@@ -3332,6 +3345,12 @@ function quickAsk(t){
   document.getElementById('chatBox').value='';sendMsg(t);
 }
 let _pendingQ=null;
+let _toastT=null;
+function showToast(msg){
+  const el=document.getElementById('aiToast');if(!el)return;
+  el.textContent=msg;el.classList.add('show');
+  clearTimeout(_toastT);_toastT=setTimeout(()=>el.classList.remove('show'),2200);
+}
 function askModeNew(){
   document.getElementById('askModeOverlay').style.display='none';
   const q=_pendingQ;_pendingQ=null;
@@ -3916,7 +3935,7 @@ async function sendMsg(directText){
   appendMsgDom('user',text||'(файл прикреплён)',fileNames);
   chatScroll.scrollTop=chatScroll.scrollHeight;
 
-  busy=true;sendBtn.disabled=true;
+  busy=true;sendBtn.disabled=true;document.body.classList.add('ai-busy');
   const typing=document.createElement('div');typing.className='msg k';
   typing.innerHTML='<div class="m-bubble"><div class="typing"><span></span><span></span><span></span></div></div>';
   chatScroll.appendChild(typing);chatScroll.scrollTop=chatScroll.scrollHeight;
@@ -3952,7 +3971,7 @@ async function sendMsg(directText){
       let err='неизвестная ошибка';
       try{const j=await r.json();err=j.error||err;if(j.detail)err+='\n'+j.detail;}catch(e){}
       appendMsgDom('assistant','Советник не ответил: '+err);
-      chatScroll.scrollTop=chatScroll.scrollHeight;busy=false;sendBtn.disabled=false;return;
+      chatScroll.scrollTop=chatScroll.scrollHeight;busy=false;sendBtn.disabled=false;document.body.classList.remove('ai-busy');return;
     }
 
     // СТРИМ: читаем текст по кусочкам и дорисовываем
@@ -3986,7 +4005,7 @@ async function sendMsg(directText){
     appendMsgDom('assistant','Нет связи с сервером. Проверьте, что приложение запущено и ключ настроен.');
   }
   chatScroll.scrollTop=chatScroll.scrollHeight;
-  busy=false;sendBtn.disabled=false;
+  busy=false;sendBtn.disabled=false;document.body.classList.remove('ai-busy');
 }
 document.getElementById('chatBox').addEventListener('keydown',e=>{
   if(e.key==='Enter'&&!e.shiftKey){e.preventDefault();sendMsg();}
