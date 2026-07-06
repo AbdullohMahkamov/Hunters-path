@@ -993,19 +993,19 @@
 <div id="settingsOverlay" style="display:none;position:fixed;inset:0;background:rgba(0,0,0,.5);z-index:110;padding:20px;" onclick="if(event.target===this)closeSettings()">
   <div style="max-width:400px;margin:60px auto;background:var(--bg);border:1px solid var(--line2);border-radius:16px;overflow:hidden;box-shadow:0 12px 40px rgba(0,0,0,.18);">
     <div style="display:flex;justify-content:space-between;align-items:center;padding:16px 18px;border-bottom:1px solid var(--line);">
-      <div style="font-size:16px;font-weight:700;">Настройки</div>
+      <div style="font-size:16px;font-weight:700;" id="setTitle">Sozlamalar</div>
       <button onclick="closeSettings()" style="width:30px;height:30px;border-radius:8px;background:var(--card);border:1px solid var(--line2);color:var(--txt);font-size:15px;cursor:pointer;">✕</button>
     </div>
     <div style="padding:18px;">
-      <div style="font-size:13px;font-weight:600;color:var(--txt2);margin-bottom:8px;">Язык</div>
+      <div style="font-size:13px;font-weight:600;color:var(--txt2);margin-bottom:8px;" id="setLangLbl">Til / Язык</div>
       <div style="display:flex;gap:8px;margin-bottom:20px;">
-        <button onclick="setLang('ru')" style="flex:1;padding:9px;border-radius:9px;border:1px solid var(--line2);background:var(--card);color:var(--txt);font-size:14px;font-weight:600;cursor:pointer;">Русский</button>
-        <button onclick="setLang('uz')" style="flex:1;padding:9px;border-radius:9px;border:1px solid var(--line2);background:var(--card);color:var(--txt);font-size:14px;font-weight:600;cursor:pointer;">O'zbek</button>
+        <button id="setLangRu" onclick="setLang('ru')" style="flex:1;padding:9px;border-radius:9px;border:1px solid var(--line2);background:var(--card);color:var(--txt);font-size:14px;font-weight:600;cursor:pointer;">Русский</button>
+        <button id="setLangUz" onclick="setLang('uz')" style="flex:1;padding:9px;border-radius:9px;border:1px solid var(--line2);background:var(--card);color:var(--txt);font-size:14px;font-weight:600;cursor:pointer;">O'zbek</button>
       </div>
-      <div style="font-size:13px;font-weight:600;color:var(--txt2);margin-bottom:8px;">Аккаунт</div>
-      <div style="display:flex;justify-content:space-between;font-size:14px;padding:6px 0;"><span style="color:var(--txt2);">Пользователь</span><b>Абдуллох</b></div>
-      <div style="display:flex;justify-content:space-between;font-size:14px;padding:6px 0 16px;"><span style="color:var(--txt2);">Роль</span><b id="setRoleModal">Владелец</b></div>
-      <button onclick="logout()" style="width:100%;padding:11px;border-radius:10px;border:1px solid var(--red);background:var(--red-bg);color:var(--red);font-size:14px;font-weight:600;cursor:pointer;">Выйти</button>
+      <div style="font-size:13px;font-weight:600;color:var(--txt2);margin-bottom:8px;" id="setAccLbl">Hisob / Аккаунт</div>
+      <div style="display:flex;justify-content:space-between;font-size:14px;padding:6px 0;"><span style="color:var(--txt2);" id="setUserLbl">Foydalanuvchi</span><b id="setUserNameModal">Abdulloh</b></div>
+      <div style="display:flex;justify-content:space-between;font-size:14px;padding:6px 0 16px;"><span style="color:var(--txt2);" id="setRoleLbl">Rol</span><b id="setRoleModal">Egasi</b></div>
+      <button onclick="logout()" id="setLogoutBtn" style="width:100%;padding:11px;border-radius:10px;border:1px solid var(--red);background:var(--red-bg);color:var(--red);font-size:14px;font-weight:600;cursor:pointer;">Chiqish</button>
     </div>
   </div>
 </div>
@@ -3293,16 +3293,85 @@ function applyStaticI18n(){
 }
 
 function openSettings(){
-  const r=USER_ROLE==='rop'?'РОП':(USER_ROLE==='demo'?'Демо':'Владелец');
-  const el=document.getElementById('setRoleModal');if(el)el.textContent=r;
+  const uz=state.lang==='uz';
+  const r=USER_ROLE==='rop'?'ROP':(USER_ROLE==='demo'?'Demo':(uz?'Egasi':'Владелец'));
+  const set=(id,v)=>{const e=document.getElementById(id);if(e)e.textContent=v;};
+  set('setRoleModal',r);
+  set('setTitle',uz?'Sozlamalar':'Настройки');
+  set('setLangLbl',uz?'Til':'Язык');
+  set('setAccLbl',uz?'Hisob':'Аккаунт');
+  set('setUserLbl',uz?'Foydalanuvchi':'Пользователь');
+  set('setRoleLbl',uz?'Rol':'Роль');
+  set('setLogoutBtn',uz?'Chiqish':'Выйти');
+  highlightLangButtons();
   const o=document.getElementById('settingsOverlay');if(o)o.style.display='block';
 }
 function closeSettings(){const o=document.getElementById('settingsOverlay');if(o)o.style.display='none';}
+function highlightLangButtons(){
+  const l=state.lang||'ru';
+  const ru=document.getElementById('setLangRu'),uz=document.getElementById('setLangUz');
+  if(ru){ru.style.background=l==='ru'?'var(--txt)':'var(--card)';ru.style.color=l==='ru'?'var(--bg)':'var(--txt)';ru.style.borderColor=l==='ru'?'var(--txt)':'var(--line2)';}
+  if(uz){uz.style.background=l==='uz'?'var(--txt)':'var(--card)';uz.style.color=l==='uz'?'var(--bg)':'var(--txt)';uz.style.borderColor=l==='uz'?'var(--txt)':'var(--line2)';}
+}
+// перевод новой оболочки (меню, сайдбар, кнопки, модалки) — то, что добавлено без i18n
+function applyShellI18n(){
+  const uz=state.lang==='uz';
+  const set=(id,v)=>{const e=document.getElementById(id);if(e)e.textContent=v;};
+  const setHTMLafterSVG=(el,text)=>{if(!el)return;const svg=el.querySelector('svg');el.innerHTML=(svg?svg.outerHTML:'')+' '+text;};
+  // «Разделы» и пункты меню
+  const secTg=document.getElementById('secToggle');
+  if(secTg){const chev=secTg.querySelector('.chev'),lead=secTg.querySelector('.lead');
+    secTg.childNodes.forEach(n=>{if(n.nodeType===3)n.textContent='';});
+    // перезаписываем текстовый узел
+    const t=uz?'Bo‘limlar':'Разделы';
+    // вставим текст между иконкой и шевроном
+    if(lead&&chev){ // очистим и соберём
+      secTg.innerHTML='';secTg.appendChild(lead);secTg.appendChild(document.createTextNode(' '+t+' '));secTg.appendChild(chev);}
+  }
+  const menu=document.querySelectorAll('#sideMenu .menu-item');
+  const labels=uz?['Dashboard','Vazifalar','Mijozlar']:['Дашборд','Задачи','Клиенты'];
+  // menu-item порядок: dash, map(Задачи), clients
+  menu.forEach(mi=>{
+    const oc=mi.getAttribute('onclick')||'';
+    const svg=mi.querySelector('svg');const ih=svg?svg.outerHTML:'';
+    let t='';
+    if(oc.includes("'dash'"))t=uz?'Dashboard':'Дашборд';
+    else if(oc.includes("'map'"))t=uz?'Vazifalar':'Задачи';
+    else if(oc.includes('Clients')||oc.includes('lients'))t=uz?'Mijozlar':'Клиенты';
+    if(t)mi.innerHTML=ih+t;
+  });
+  // Новый чат
+  const nc=document.getElementById('newChatBtn');
+  if(nc){const svg=nc.querySelector('svg');nc.innerHTML=(svg?svg.outerHTML:'')+(uz?'Yangi chat':'Новый чат');}
+  // «Недавние»
+  document.querySelectorAll('.side-hist-lbl').forEach(e=>e.textContent=uz?'So‘nggilar':'Недавние');
+  // роль внизу сайдбара
+  const rl=USER_ROLE==='rop'?'ROP':(USER_ROLE==='demo'?'Demo':(uz?'Egasi':'Владелец'));
+  set('userRoleSide',rl);
+  // кнопка «Обновить»
+  set('topSyncLbl',uz?'Yangilash':'Обновить');
+  // подсказки под чатом (ежедневные вопросы) — плейсхолдер ввода
+  const box=document.getElementById('chatBox');if(box)box.placeholder=uz?'Biznes haqida so‘rang...':'Спросите о бизнесе...';
+  const boxC=document.getElementById('chatBoxC');if(boxC)boxC.placeholder=uz?'Biznes haqida so‘rang...':'Спросите о бизнесе...';
+  // приветствие в пустом чате
+  const ceTitle=document.getElementById('ceTitle');if(ceTitle)ceTitle.textContent=uz?'Sotuv bo‘yicha nimaga yordam beray?':'Чем помочь по продажам?';
+  // модалка «новый чат / продолжить»
+  set('askModeTitle',uz?'Savol berish':'Задать вопрос');
+}
+
 function setLang(l){
   state.lang=l;save();
-  document.getElementById('lang-ru').classList.toggle('on',l==='ru');
-  document.getElementById('lang-uz').classList.toggle('on',l==='uz');
+  const rb=document.getElementById('lang-ru'),ub=document.getElementById('lang-uz');
+  if(rb)rb.classList.toggle('on',l==='ru');
+  if(ub)ub.classList.toggle('on',l==='uz');
+  highlightLangButtons();
+  // обновляем подписи в настройках, если открыты
+  const uz=l==='uz';
+  const set=(id,v)=>{const e=document.getElementById(id);if(e)e.textContent=v;};
+  set('setTitle',uz?'Sozlamalar':'Настройки');set('setLangLbl',uz?'Til':'Язык');set('setAccLbl',uz?'Hisob':'Аккаунт');
+  set('setUserLbl',uz?'Foydalanuvchi':'Пользователь');set('setRoleLbl',uz?'Rol':'Роль');set('setLogoutBtn',uz?'Chiqish':'Выйти');
   applyStaticI18n();
+  applyShellI18n();
   updateGoalHeader();
   renderStages();
   renderDopQuests();
@@ -4090,6 +4159,7 @@ function bootApp(){
     });
   }
   document.getElementById('loginScreen').style.display='none';
+  applyShellI18n();
 }
 
 // Роль РОПа: скрыть вкладку Советник (чат)
