@@ -65,6 +65,8 @@ export default async function handler(req, res) {
       const incoming = (req.body && req.body.settings) || {};
       if (incoming.goal != null) cur.goal = incoming.goal;
       if (incoming.workdays != null) cur.workdays = incoming.workdays; // массив 0..6 (0=Вс)
+      if (incoming.workStart != null) cur.workStart = incoming.workStart; // "HH:MM" начало рабочего дня
+      if (incoming.workEnd != null) cur.workEnd = incoming.workEnd;       // "HH:MM" конец рабочего дня
       // маржа и расход на рекламу — только админ
       if (sess.role === "admin") {
         if (incoming.margin != null) cur.margin = incoming.margin;
@@ -121,6 +123,7 @@ export default async function handler(req, res) {
         pipeline: c.pipeline || "", sold: c.sold || "", lost: c.lost || "",
         ownThreshold: c.ownThreshold != null ? c.ownThreshold : 0,
         adsetFieldId: c.adsetFieldId || null,
+        financeSheetId: c.financeSheetId || "",
         mops: c.mops || {},
         soldStatus: c.soldStatus != null ? c.soldStatus : null,
         lostStatus: c.lostStatus != null ? c.lostStatus : null,
