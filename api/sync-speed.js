@@ -373,6 +373,7 @@ export default async function handler(req, res) {
       return {
         name,
         leads: S.leads,
+        reached: S.reached,          // сколько лидов реально дозвонились (>40 сек)
         medianFirstCallMin: medMin !== null ? Math.round(medMin) : null,
         avgCallsPerLead: S.leads ? +(S.callsTotal / S.leads).toFixed(1) : 0,
         taskRate: S.leads ? Math.round(S.withTask / S.leads * 100) : 0,
@@ -398,6 +399,8 @@ export default async function handler(req, res) {
         avgCallsPerLead: D.leads ? +(D.callsTotal / D.leads).toFixed(1) : 0,
         taskRate: D.leads ? Math.round(D.withTask / D.leads * 100) : 0,
         reachedPct: D.leads ? Math.round(D.reached / D.leads * 100) : 0,     // реальный дозвон (>40 сек)
+        reached: D.reached,             // сколько дозвонились (штук)
+        calledLeads: D.calledLeads,     // скольким звонили (штук)
         calledPct: D.leads ? Math.round(D.calledLeads / D.leads * 100) : 0,  // % кому звонили
         tasksTotal: D.tasksTotal,
         tasksDone: D.tasksDone,
