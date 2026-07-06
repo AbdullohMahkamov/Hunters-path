@@ -78,6 +78,62 @@ export default async function handler(req, res) {
   const now = new Date();
   const monthStart = Math.floor(new Date(now.getFullYear(), now.getMonth(), 1).getTime() / 1000);
 
+  // === РАБОЧЕЕ ВРЕМЯ (для честной скорости первого звонка) ===
+  // читаем настройки клиента: workdays [0..6, 0=Вс], workStart/workEnd "HH:MM"
+  const TZ_OFFSET = 5 * 3600; // Ташкент UTC+5
+  let workdays = [1,2,3,4,5,6]; // по умолчанию Пн–Сб
+  let workStartMin = 10 * 60;   // 10:00
+  let workEndMin = 20 * 60;     // 20:00
+  try {
+    const sr = await fetch(`${redisUrl}/get/${encodeURIComponent(`settings:${org}`)}`, { headers: { Authorization: `Bearer ${redisToken}` } });
+    const sd = await sr.json();
+    const st = (sd && sd.result) ? JSON.parse(sd.result) : null;
+    if (st) {
+      if (Array.isArray(st.workdays) && st.workdays.length) workdays = st.workdays;
+      const parseHM = (s) => { const m = /^(\d{1,2}):(\d{2})$/.exec(s || ""); return m ? (parseInt(m[1],10)*60 + parseInt(m[2],10)) : null; };
+      const ws = parseHM(st.workStart); if (ws != null) workStartMin = ws;
+      const we = parseHM(st.workEnd);   if (we != null) workEndMin = we;
+    }
+  } catch (e) {}
+  if (workEndMin <= workStartMin) workEndMin = workStartMin + 60; // страховка
+  const workLenMin = workEndMin - workStartMin;
+
+  // локальные компоненты (Ташкент) из unix-времени
+  function localParts(ts) {
+    const d = new Date((ts + TZ_OFFSET) * 1000);
+    return { dow: d.getUTCDay(), min: d.getUTCHours()*60 + d.getUTCMinutes(),
+             y: d.getUTCFullYear(), m: d.getUTCMonth(), day: d.getUTCDate() };
+  }
+  // начало след. рабочего дня (в рабочих минутах внутри дня = 0), возвращает unix
+  // считаем РАБОЧИЕ минуты между created и firstCall (ночь/выходные не учитываются)
+  function workingMinutes(startTs, endTs) {
+    if (endTs <= startTs) return 0;
+    // идём по дням от start до end, суммируем пересечение с рабочим окном рабочих дней
+    let total = 0;
+    let cur = startTs;
+    let guard = 0;
+    while (cur < endTs && guard < 400) {
+      guard++;
+      const p = localParts(cur);
+      const dayIsWork = workdays.includes(p.dow);
+      const winStart = startOfLocalDay(cur) + workStartMin*60;
+      const winEnd   = startOfLocalDay(cur) + workEndMin*60;
+      if (dayIsWork) {
+        const segStart = Math.max(cur, winStart);
+        const segEnd   = Math.min(endTs, winEnd);
+        if (segEnd > segStart) total += (segEnd - segStart) / 60;
+      }
+      // переходим к началу следующего дня
+      cur = startOfLocalDay(cur) + 24*3600;
+    }
+    return Math.round(total);
+  }
+  function startOfLocalDay(ts) {
+    const d = new Date((ts + TZ_OFFSET) * 1000);
+    const midnightUTC = Date.UTC(d.getUTCFullYear(), d.getUTCMonth(), d.getUTCDate());
+    return Math.floor(midnightUTC/1000) - TZ_OFFSET;
+  }
+
   try {
     // 1) Найдём pipeline_id воронки HunterAcademy
     let pipelineId = null;
@@ -258,7 +314,7 @@ export default async function handler(req, res) {
       S.tasksTotal += (L.tasks || 0);
       S.tasksDone += (L.tasksDone || 0);
       if (L.firstCall) {
-        const mins = (L.firstCall - L.created) / 60;
+        const mins = workingMinutes(L.created, L.firstCall);
         if (mins >= 0 && mins < 60*24*14) S.firstCallTimes.push(mins);
       }
       // === СЕГОДНЯ: лид создан сегодня ===
@@ -272,7 +328,7 @@ export default async function handler(req, res) {
         D.tasksTotal += (L.tasks || 0);
         D.tasksDone += (L.tasksDone || 0);
         if (L.firstCall) {
-          const mins = (L.firstCall - L.created) / 60;
+          const mins = workingMinutes(L.created, L.firstCall);
           if (mins >= 0 && mins < 60*24*14) D.firstCallTimes.push(mins);
         }
       }
