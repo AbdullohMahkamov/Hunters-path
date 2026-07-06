@@ -171,6 +171,8 @@
     cursor:pointer;flex:0 0 auto;display:flex;align-items:center;justify-content:center;padding:0;}
   .send-btn:hover{opacity:.88;} .send-btn:disabled{opacity:.25;cursor:default;}
   .send-btn svg{width:16px;height:16px;}
+  .send-btn.is-stop{background:#c0392b;}
+  .send-btn.is-stop:hover{background:#a93226;opacity:1;}
 
   .chat-empty{text-align:center;padding:20px;color:var(--txt2);max-width:600px;margin:auto;width:100%;}
   .chat-empty .ce-hi{font-family:Georgia,'Times New Roman',serif;font-size:30px;color:var(--txt);margin:0 0 22px;
@@ -3913,9 +3915,11 @@ function showHint(key,e){
 
 let busy=false;
 async function sendMsg(directText){
+  // если идёт ответ AI — кнопка работает как «стоп»
+  if(busy){stopStreaming();return;}
   const box=document.getElementById('chatBox');
   const text=(directText!=null?directText:box.value).trim();
-  if((!text&&!pendingFiles.length)||busy)return;
+  if(!text&&!pendingFiles.length)return;
 
   const chat=activeChat();
   const filesForThis=pendingFiles.slice();
@@ -3935,7 +3939,10 @@ async function sendMsg(directText){
   appendMsgDom('user',text||'(файл прикреплён)',fileNames);
   chatScroll.scrollTop=chatScroll.scrollHeight;
 
-  busy=true;sendBtn.disabled=true;document.body.classList.add('ai-busy');
+  busy=true;sendBtn.disabled=false;document.body.classList.add('ai-busy');
+  setSendStop(true); // кнопка отправки → кнопка «стоп»
+  _aborted=false;
+  _abortCtl=new AbortController();
   const typing=document.createElement('div');typing.className='msg k';
   typing.innerHTML='<div class="m-bubble"><div class="typing"><span></span><span></span><span></span></div></div>';
   chatScroll.appendChild(typing);chatScroll.scrollTop=chatScroll.scrollHeight;
@@ -3962,7 +3969,7 @@ async function sendMsg(directText){
     });
     const progress={doneCount:doneCount(),total:TOTAL,bossesDown:trophies()};
     const r=await fetch('/api/chat',{method:'POST',headers:{'content-type':'application/json'},
-      body:JSON.stringify({messages:apiMsgs,progress,lang:state.lang||'ru',session:SESSION})});
+      body:JSON.stringify({messages:apiMsgs,progress,lang:state.lang||'ru',session:SESSION}),signal:_abortCtl.signal});
 
     // если сервер вернул ошибку в JSON (не стрим)
     const ctype=r.headers.get('content-type')||'';
@@ -3983,9 +3990,11 @@ async function sendMsg(directText){
     if(dom)dom.classList.add('streaming');
     const star='<svg class="ans-star" viewBox="0 0 24 24" fill="currentColor"><path d="M12 2l1.6 6.4L20 10l-6.4 1.6L12 18l-1.6-6.4L4 10l6.4-1.6L12 2z"/></svg>';
     const reader=r.body.getReader();
+    _activeReader=reader;
     const dec=new TextDecoder();
     let acc='';
     while(true){
+      if(_aborted)break;
       const {done,value}=await reader.read();
       if(done)break;
       acc+=dec.decode(value,{stream:true});
@@ -3994,6 +4003,8 @@ async function sendMsg(directText){
       if(bubble){bubble.innerHTML=star+mdToHtml(acc.replace(/\[\[CARD:\w+\]\]/g,'').replace(/\[\[CARD:$/,''));}
       chatScroll.scrollTop=chatScroll.scrollHeight;
     }
+    // если пользователь остановил — помечаем, что ответ прерван
+    if(_aborted && acc){acc+='\n\n_(ответ остановлен)_';msgObj.text=acc;}
     // финал: перерисовываем сообщение целиком — с живыми карточками из меток
     if(dom){
       const rebuilt=appendMsgDom('assistant',acc);
@@ -4001,11 +4012,37 @@ async function sendMsg(directText){
     }
     save();
   }catch(e){
-    typing.remove();
-    appendMsgDom('assistant','Нет связи с сервером. Проверьте, что приложение запущено и ключ настроен.');
+    if(e&&e.name==='AbortError'){
+      // остановлено пользователем — это не ошибка
+      if(typing&&typing.parentNode)typing.remove();
+    }else{
+      if(typing&&typing.parentNode)typing.remove();
+      appendMsgDom('assistant','Нет связи с сервером. Проверьте, что приложение запущено и ключ настроен.');
+    }
   }
   chatScroll.scrollTop=chatScroll.scrollHeight;
   busy=false;sendBtn.disabled=false;document.body.classList.remove('ai-busy');
+  setSendStop(false); // кнопка «стоп» → снова отправка
+  _abortCtl=null;_activeReader=null;
+}
+// переключение кнопки отправки ↔ стоп
+let _abortCtl=null,_aborted=false,_activeReader=null;
+function setSendStop(isStop){
+  const btn=document.getElementById('sendBtn');if(!btn)return;
+  if(isStop){
+    btn.classList.add('is-stop');
+    btn.innerHTML='<svg width="15" height="15" viewBox="0 0 24 24" fill="currentColor"><rect x="6" y="6" width="12" height="12" rx="2.5"/></svg>';
+    btn.title='Остановить ответ';
+  }else{
+    btn.classList.remove('is-stop');
+    btn.innerHTML='<svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><line x1="12" y1="19" x2="12" y2="5"/><polyline points="5 12 12 5 19 12"/></svg>';
+    btn.title='Отправить';
+  }
+}
+function stopStreaming(){
+  _aborted=true;
+  try{if(_activeReader)_activeReader.cancel();}catch(e){}
+  try{if(_abortCtl)_abortCtl.abort();}catch(e){}
 }
 document.getElementById('chatBox').addEventListener('keydown',e=>{
   if(e.key==='Enter'&&!e.shiftKey){e.preventDefault();sendMsg();}
