@@ -423,6 +423,7 @@ export default async function handler(req, res) {
       revenue: v.revenue,
       conv: v.leads > 0 ? +(v.sold / v.leads * 100).toFixed(2) : 0,
       reachPct: v.leads > 0 ? +((v.leads - v.noContact) / v.leads * 100).toFixed(0) : 0, // % дозвона
+      reached: Math.max(0, v.leads - v.noContact), // сколько дозвонились (штук)
     }));
     const mopsByConv = [...mops].sort((a, b) => b.conv - a.conv);
     const mopsBySales = [...mops].sort((a, b) => b.sold - a.sold);
