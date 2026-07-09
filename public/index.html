@@ -4484,8 +4484,15 @@ async function sendMsg(directText){
       return {role:m.role,content:m.text};
     });
     const progress={doneCount:doneCount(),total:TOTAL,bossesDown:trophies()};
+    // рабочие дни для правильного расчёта темпа (без выходных)
+    let workdayInfo=null;
+    try{
+      const wd=(orgSettings.workdays&&orgSettings.workdays.length)?orgSettings.workdays:[1,2,3,4,5,6];
+      const nw=new Date();const cw=countWorkdays(nw.getFullYear(),nw.getMonth(),wd);
+      workdayInfo={passed:cw.passed,total:cw.total,remaining:cw.total-cw.passed};
+    }catch(e){}
     const r=await fetch('/api/chat',{method:'POST',headers:{'content-type':'application/json'},
-      body:JSON.stringify({messages:apiMsgs,progress,lang:state.lang||'ru',session:SESSION,goal:getGoal()}),signal:_abortCtl.signal});
+      body:JSON.stringify({messages:apiMsgs,progress,lang:state.lang||'ru',session:SESSION,goal:getGoal(),workdays:workdayInfo}),signal:_abortCtl.signal});
 
     // если сервер вернул ошибку в JSON (не стрим)
     const ctype=r.headers.get('content-type')||'';
