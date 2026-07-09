@@ -231,9 +231,10 @@ export default async function handler(req, res) {
 
       // === СЕГОДНЯ: лиды обработанные (созданные сегодня), продажи и касса за сегодня ===
       if ((L.created_at || 0) >= dayStart) leadsToday++;
-      // продажа сегодня — по реальной дате продажи; касса сегодня = price + доплаты с сегодняшней датой
+      // продажа сегодня — по реальной дате продажи; касса сегодня = price + доплаты по старым сделкам
       if (isSold && saleTs >= dayStart) { soldToday++; revenueToday += price; }
-      revenueToday += doplataInRange(L, dayStart, dayStart + 24 * 3600);
+      // доплата сегодня прибавляется только если продажа была раньше (не сегодня)
+      if (isSold && saleTs < dayStart) { revenueToday += doplataInRange(L, dayStart, dayStart + 24 * 3600); }
 
       // === VELOCITY ===
       // время «создан → продан» в днях (для проданных с корректными датами)
@@ -298,8 +299,11 @@ export default async function handler(req, res) {
       if (isSold && closedThisMonth) {
         sold++; soldSum += price;
       }
-      // доплаты, попавшие в текущий месяц по СВОЕЙ дате (даже если продажа была в прошлом месяце)
-      soldSum += doplataInRange(L, monthStart, nextMonth);
+      // Доплаты в этом месяце учитываем ТОЛЬКО если сама продажа была в ПРОШЛЫЕ месяцы.
+      // Если продажа этого месяца — доплата уже включена в price (полная сумма), не задваиваем.
+      if (isSold && !closedThisMonth) {
+        soldSum += doplataInRange(L, monthStart, nextMonth);
+      }
       // === ПРОДАЖИ ЗА ПЕРИОД (~4 месяца): для аудита ===
       if (isSold && (L.closed_at || 0) >= lookbackStart) {
         soldPeriod++; revenuePeriod += price;
