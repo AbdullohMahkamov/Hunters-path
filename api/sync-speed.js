@@ -338,7 +338,8 @@ export default async function handler(req, res) {
       const S = stat[mop];
       S.leads++;
       S.callsTotal += L.calls;
-      if (L.tasks > 0) S.withTask++;
+      // «ставит задачи» считаем ТОЛЬКО среди дозвонившихся (задача ставится после разговора)
+      if (L.reachedReal && L.tasks > 0) S.withTask++;
       S.tasksTotal += (L.tasks || 0);
       S.tasksDone += (L.tasksDone || 0);
       if (L.firstCall) {
@@ -370,7 +371,7 @@ export default async function handler(req, res) {
         D.callsTotal += callsToday;
         if (callsToday > 0) D.calledLeads++;    // сегодня звонили по этому лиду
         if (L.reachedReal && callsToday > 0) D.reached++; // и был реальный дозвон
-        if (L.tasks > 0) D.withTask++;
+        if (L.reachedReal && callsToday > 0 && L.tasks > 0) D.withTask++; // задачи только среди дозвонившихся
         D.tasksTotal += (L.tasks || 0);
         D.tasksDone += (L.tasksDone || 0);
         if (L.firstCall && L.firstCall >= dayStart2) {
@@ -434,7 +435,7 @@ export default async function handler(req, res) {
         medianFirstCallMin: medMin !== null ? Math.round(medMin) : null,
         medianFirstCallAssignMin: medAssign !== null ? Math.round(medAssign) : null, // 1-й звонок после назначения
         avgCallsPerLead: S.leads ? +(S.callsTotal / S.leads).toFixed(1) : 0,
-        taskRate: S.leads ? Math.round(S.withTask / S.leads * 100) : 0,
+        taskRate: S.reached ? Math.round(S.withTask / S.reached * 100) : 0,
         // % закрытых "не дозвонился" при < 3 звонках (халтура) — оставлено для совместимости
         earlyClosePct: S.noReachClosed ? Math.round(S.closedEarly / S.noReachClosed * 100) : 0,
         noReachClosed: S.noReachClosed,
@@ -457,7 +458,7 @@ export default async function handler(req, res) {
         medianFirstCallMin: medMin !== null ? Math.round(medMin) : null,
         medianFirstCallAssignMin: medAssign !== null ? Math.round(medAssign) : null,
         avgCallsPerLead: D.leads ? +(D.callsTotal / D.leads).toFixed(1) : 0,
-        taskRate: D.leads ? Math.min(100, Math.round(D.withTask / D.leads * 100)) : 0,
+        taskRate: D.reached ? Math.min(100, Math.round(D.withTask / D.reached * 100)) : 0,
         reachedPct: D.leads ? Math.min(100, Math.round(D.reached / D.leads * 100)) : 0,     // реальный дозвон (>40 сек)
         reached: D.reached,             // сколько дозвонились (штук)
         calledLeads: D.calledLeads,     // скольким звонили (штук)
