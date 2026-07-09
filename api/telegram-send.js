@@ -61,32 +61,51 @@ export default async function handler(req, res) {
       // получаем business_connection_id (нужен для отправки от имени бизнес-аккаунта)
       const conn = JSON.parse((await redisGet("tg:connection")) || "{}");
       const connId = conn.connection_id;
+      // проверяем разрешение на отправку
+      if (!connId) {
+        res.status(200).json({ ok: false, sent: 0, error: "no_connection",
+          message: "Бот не подключён к бизнес-аккаунту. Подключите: Telegram → Настройки → Telegram для бизнеса → Чат-боты → добавьте бота." });
+        return;
+      }
+      if (conn.can_reply === false) {
+        res.status(200).json({ ok: false, sent: 0, error: "no_permission",
+          message: "У бота НЕТ разрешения отправлять сообщения. Включите: Telegram → Настройки → Telegram для бизнеса → Чат-боты → ваш бот → разрешите «Отвечать на сообщения» (Reply to messages)." });
+        return;
+      }
 
       let sent = 0, errors = [];
+      let permissionError = false;
       for (const r of toSend) {
         const text = template.replace(/\{name\}/g, (r.name || "").split(" ")[0] || "");
         try {
-          const body = { chat_id: r.id, text };
-          if (connId) body.business_connection_id = connId;
+          const body = { chat_id: r.id, text, business_connection_id: connId };
           const resp = await fetch(`https://api.telegram.org/bot${BOT_TOKEN}/sendMessage`, {
             method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify(body),
           });
           const jd = await resp.json();
           if (jd.ok) sent++;
-          else errors.push({ id: r.id, err: (jd.description || "").slice(0, 80) });
+          else {
+            const desc = (jd.description || "").toLowerCase();
+            if (desc.includes("not enough rights") || desc.includes("no rights") || desc.includes("not allowed") || desc.includes("can't") || desc.includes("forbidden")) permissionError = true;
+            errors.push({ id: r.id, err: (jd.description || "").slice(0, 100) });
+          }
         } catch (e) { errors.push({ id: r.id, err: String(e).slice(0, 60) }); }
-        // пауза между сообщениями (по-человечески, не спам)
         await new Promise(rs => setTimeout(rs, DELAY_MS));
       }
 
       // обновляем счётчик за день (TTL 48ч на всякий случай)
       await redisSet(todayKey(org), String(sentToday + sent), 48 * 3600);
 
+      let note = "";
+      if (permissionError) note = "⚠️ Похоже, у бота нет разрешения отправлять. Проверьте: Telegram → Настройки → Telegram для бизнеса → Чат-боты → разрешите «Отвечать на сообщения».";
+      else if (errors.length) note = "Часть не отправилась (клиент давно не писал боту или заблокировал).";
+
       res.status(200).json({
         ok: true, sent, requested: toSend.length,
         remaining_after: Math.max(0, remaining - sent),
         errors: errors.slice(0, 5),
-        note: errors.length ? "Часть не отправилась (клиент не писал боту недавно или заблокировал)." : "",
+        permission_error: permissionError,
+        note,
       });
       return;
     }
