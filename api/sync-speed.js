@@ -226,6 +226,33 @@ export default async function handler(req, res) {
       await new Promise(rs => setTimeout(rs, 150));
     }
 
+    // 3b) Тянем события СМЕНЫ ОТВЕТСТВЕННОГО — чтобы знать, когда лид назначен на менеджера
+    // (для метрики "первый звонок после назначения")
+    page = 1; guard = 0;
+    while (guard < 60) {
+      guard++;
+      const url = `${base}/events?filter[type]=entity_responsible_changed` +
+        `&filter[created_at][from]=${monthStart}&limit=250&page=${page}&order[created_at]=asc`;
+      const r = await fetch(url, { headers: H });
+      if (r.status === 204) break;
+      if (!r.ok) break;
+      const d = await r.json();
+      const events = (d._embedded && d._embedded.events) || [];
+      for (const e of events) {
+        if (e.entity_type !== "lead") continue;
+        const li = leadInfo[e.entity_id];
+        if (!li) continue;
+        // берём ПОСЛЕДНЕЕ назначение до первого звонка (или первое назначение)
+        // сохраняем самое раннее назначение на текущего ответственного
+        if (li.assignedTs === undefined || e.created_at < li.assignedTs) {
+          li.assignedTs = e.created_at;
+        }
+      }
+      if (events.length < 250) break;
+      page++;
+      await new Promise(rs => setTimeout(rs, 150));
+    }
+
     // TZ и начало сегодняшнего дня (UTC+5) — нужно и для звонков, и для дневной статистики
     const TZ_OFFSET2 = 5 * 3600;
     const nowLocal2 = new Date(Date.now() + TZ_OFFSET2 * 1000);
@@ -295,9 +322,9 @@ export default async function handler(req, res) {
     const stat = {}; // mopName -> агрегаты
     const statDay = {}; // mopName -> агрегаты ТОЛЬКО за сегодня
     for (const name of Object.values(ACTIVE_MOPS)) {
-      stat[name] = { leads:0, firstCallTimes:[], reached:0, callsTotal:0, withTask:0,
+      stat[name] = { leads:0, firstCallTimes:[], firstCallAssignTimes:[], reached:0, callsTotal:0, withTask:0,
                      closedEarly:0, noReachClosed:0, tasksTotal:0, tasksDone:0 };
-      statDay[name] = { leads:0, firstCallTimes:[], callsTotal:0, withTask:0, tasksTotal:0, tasksDone:0, reached:0, calledLeads:0 };
+      statDay[name] = { leads:0, firstCallTimes:[], firstCallAssignTimes:[], callsTotal:0, withTask:0, tasksTotal:0, tasksDone:0, reached:0, calledLeads:0 };
     }
 
     const suspicious2 = []; // подозрительные по звонкам (этап 2)
@@ -319,6 +346,11 @@ export default async function handler(req, res) {
       if (L.firstCall) {
         const mins = workingMinutes(L.created, L.firstCall);
         if (mins >= 0 && mins < 60*24*14) S.firstCallTimes.push(mins);
+        // первый звонок после НАЗНАЧЕНИЯ ответственного (если известна дата назначения)
+        if (L.assignedTs && L.firstCall >= L.assignedTs) {
+          const minsA = workingMinutes(L.assignedTs, L.firstCall);
+          if (minsA >= 0 && minsA < 60*24*14) S.firstCallAssignTimes.push(minsA);
+        }
       }
       // === СЕГОДНЯ: активность по звонкам, сделанным сегодня ===
       const callsToday = (L._callTs || []).filter(ts => ts >= dayStart2).length;
@@ -337,6 +369,10 @@ export default async function handler(req, res) {
         if (L.firstCall && L.firstCall >= dayStart2) {
           const mins = workingMinutes(L.created, L.firstCall);
           if (mins >= 0 && mins < 60*24*14) D.firstCallTimes.push(mins);
+          if (L.assignedTs && L.firstCall >= L.assignedTs) {
+            const minsA = workingMinutes(L.assignedTs, L.firstCall);
+            if (minsA >= 0 && minsA < 60*24*14) D.firstCallAssignTimes.push(minsA);
+          }
         }
       }
       // РЕАЛЬНЫЙ ДОЗВОН — только если был разговор дольше 60 сек
@@ -377,11 +413,13 @@ export default async function handler(req, res) {
     // 5) Формируем результат
     const mops = Object.entries(stat).map(([name, S]) => {
       const medMin = median(S.firstCallTimes);
+      const medAssign = median(S.firstCallAssignTimes);
       return {
         name,
         leads: S.leads,
         reached: S.reached,          // сколько лидов реально дозвонились (>40 сек)
         medianFirstCallMin: medMin !== null ? Math.round(medMin) : null,
+        medianFirstCallAssignMin: medAssign !== null ? Math.round(medAssign) : null, // 1-й звонок после назначения
         avgCallsPerLead: S.leads ? +(S.callsTotal / S.leads).toFixed(1) : 0,
         taskRate: S.leads ? Math.round(S.withTask / S.leads * 100) : 0,
         // % закрытых "не дозвонился" при < 3 звонках (халтура) — оставлено для совместимости
@@ -399,10 +437,12 @@ export default async function handler(req, res) {
     // мопы за сегодня (те же метрики, но только по лидам, созданным сегодня)
     const mopsDay = Object.entries(statDay).map(([name, D]) => {
       const medMin = median(D.firstCallTimes);
+      const medAssign = median(D.firstCallAssignTimes);
       return {
         name,
         leads: D.leads,
         medianFirstCallMin: medMin !== null ? Math.round(medMin) : null,
+        medianFirstCallAssignMin: medAssign !== null ? Math.round(medAssign) : null,
         avgCallsPerLead: D.leads ? +(D.callsTotal / D.leads).toFixed(1) : 0,
         taskRate: D.leads ? Math.min(100, Math.round(D.withTask / D.leads * 100)) : 0,
         reachedPct: D.leads ? Math.min(100, Math.round(D.reached / D.leads * 100)) : 0,     // реальный дозвон (>40 сек)
