@@ -85,10 +85,16 @@ export default async function handler(req, res) {
       .filter(([id, m]) => m.type === "date" || m.type === "date_time")
       .map(([id, m]) => ({ field_id: +id, name: m.name, type: m.type }));
 
+    // поля доплат (по названию: doplata / doplata / сумма / summa / sana)
+    const doplataFields = Object.entries(fieldDict)
+      .filter(([id, m]) => /doplata|доплат|summa|сумма|sana/i.test(m.name || ""))
+      .map(([id, m]) => ({ field_id: +id, name: m.name, type: m.type }));
+
     res.status(200).json({
       ok: true,
-      DATE_FIELDS_FOUND: dateFields, // ← поля-даты (среди них может быть "Дата продажи")
-      note: "Ищи в DATE_FIELDS_FOUND поле вроде 'Дата продажи' / 'Дата оплаты'. Его field_id используем для правильного учёта. closed_at_status_change — это когда нажали 'Продано' (может отличаться от реальной даты).",
+      DATE_FIELDS_FOUND: dateFields,
+      DOPLATA_FIELDS_FOUND: doplataFields, // ← поля доплат (сумма + дата)
+      note: "DOPLATA_FIELDS_FOUND — новые поля доплат. Пришли их field_id (сумма и дата каждой доплаты), подключу к расчёту выручки.",
       sample_sales: samples,
     });
   } catch (e) {
