@@ -42,7 +42,7 @@ async function resolveSessionOrg(session) {
 
 function num(n){ return (n==null?0:n).toLocaleString("ru"); }
 
-function liveBlock(d, fin, realGoal) {
+function liveBlock(d, fin, realGoal, workdays) {
   if (!d || !d.totals) {
     return "\n\nЖИВЫЕ ДАННЫЕ amoCRM: пока не загружены (кэш пуст). Попроси нажать «Обновить из amoCRM» в дашборде.";
   }
@@ -63,12 +63,23 @@ function liveBlock(d, fin, realGoal) {
   s += `• Потеряно без контакта: ${t.noContactPct}% лидов (не дозвонились/не ответили)\n`;
   s += `• Сегодня: ${t.leadsToday} новых лидов, ${t.soldToday} продаж, ${num(t.revenueToday)} сум\n`;
 
-  // --- ПРОГНОЗ / ОТСТАВАНИЕ ---
+  // --- ПРОГНОЗ / ОТСТАВАНИЕ (по РАБОЧИМ дням, без выходных) ---
   if (GOAL > 0) {
     const earned = t.revenue || 0;
     const gapToGoal = GOAL - earned;
     s += `\nПРОГНОЗ И ОТСТАВАНИЕ:\n`;
     s += `• Заработано ${num(earned)} из ${num(GOAL)} — не хватает ещё ${num(gapToGoal)} сум до цели\n`;
+    if (workdays && workdays.passed > 0) {
+      // ВАЖНО: темп считаем по РАБОЧИМ дням (выходные не в счёт), по ОБЩЕЙ выручке (касса)
+      const perWorkday = Math.round(earned / workdays.passed);
+      const forecast = Math.round(perWorkday * workdays.total);
+      const needPerRemaining = workdays.remaining > 0 ? Math.round(gapToGoal / workdays.remaining) : 0;
+      s += `• Рабочих дней: прошло ${workdays.passed}, осталось ${workdays.remaining} (выходные НЕ считаются)\n`;
+      s += `• Текущий темп: ${num(perWorkday)} сум за РАБОЧИЙ день (общая выручка ÷ рабочие дни, НЕ календарные)\n`;
+      s += `• Прогноз при этом темпе: ~${num(forecast)} сум к концу месяца\n`;
+      s += `• Чтобы дойти до цели: нужно ${num(needPerRemaining)} сум/рабочий день в оставшиеся ${workdays.remaining} дней\n`;
+      s += `ВАЖНО: когда считаешь темп — дели выручку на РАБОЧИЕ дни (${workdays.passed}), НЕ на календарные. Выходные не работают.\n`;
+    }
   }
 
   // --- МОПы: продажи + дисциплина вместе ---
@@ -133,7 +144,7 @@ export default async function handler(req, res) {
   if (!apiKey) { res.status(500).json({ error: "ANTHROPIC_API_KEY not set on server" }); return; }
 
   try {
-    const { messages, progress, lang, session, action, goal } = req.body || {};
+    const { messages, progress, lang, session, action, goal, workdays } = req.body || {};
     // единая цель: из запроса клиента (меняется, когда владелец меняет цель), дефолт 250М
     const GOAL = (goal && goal > 0) ? goal : 250000000;
     const goalFmt = GOAL.toLocaleString("ru") + " сум/мес";
@@ -146,7 +157,7 @@ export default async function handler(req, res) {
     const speed = await readCache("speed", org);
     if (cache && speed) cache.speed = speed;
     const fin = await readCache(org === "hunter" ? "fin:v2:current" : `${org}:fin:v2:current`, null);
-    const live = liveBlock(cache, fin, GOAL);
+    const live = liveBlock(cache, fin, GOAL, workdays);
 
     // === УМНЫЕ ВОПРОСЫ: AI находит проблемы и предлагает, что спросить ===
     if (action === "smart-questions") {
@@ -190,6 +201,7 @@ export default async function handler(req, res) {
 2. Если есть проблема — назови её конкретно: что не так, у кого, насколько (в цифрах).
 3. ВСЕГДА давай «что делать» — конкретный шаг, а не общие слова. Не «улучшите дозвон», а «у Комиля дозвон 29% — поставьте задачу перезвонить 10 вчерашним лидам сегодня до обеда».
 4. Связывай с целью: чего не хватает, чтобы дойти до ${goalShort}.
+5. ВАЖНО про темп и прогноз: план ставится по ОБЩЕЙ ВЫРУЧКЕ (вся касса за месяц: новые продажи + доплаты), а НЕ только по новым продажам. Темп в день считай ТОЛЬКО по рабочим дням (выходные не работают) — бери цифры «рабочих дней» и «темп за рабочий день» из блока данных, не пересчитывай по календарным дням. Если делишь на календарные дни — это ошибка, темп будет занижен.
 
 ТВОЙ ХАРАКТЕР: прямой, конкретный, деловой. Говоришь цифрами, не водой. Хвалишь за результат, критикуешь по делу — но всегда с решением. Не грузишь философией.
 
