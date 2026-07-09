@@ -242,11 +242,9 @@ export default async function handler(req, res) {
         if (e.entity_type !== "lead") continue;
         const li = leadInfo[e.entity_id];
         if (!li) continue;
-        // берём ПОСЛЕДНЕЕ назначение до первого звонка (или первое назначение)
-        // сохраняем самое раннее назначение на текущего ответственного
-        if (li.assignedTs === undefined || e.created_at < li.assignedTs) {
-          li.assignedTs = e.created_at;
-        }
+        // собираем ВСЕ моменты назначения ответственного (лид может переназначаться несколько раз)
+        li._assignTs = li._assignTs || [];
+        li._assignTs.push(e.created_at);
       }
       if (events.length < 250) break;
       page++;
@@ -346,9 +344,15 @@ export default async function handler(req, res) {
       if (L.firstCall) {
         const mins = workingMinutes(L.created, L.firstCall);
         if (mins >= 0 && mins < 60*24*14) S.firstCallTimes.push(mins);
-        // первый звонок после НАЗНАЧЕНИЯ ответственного (если известна дата назначения)
-        if (L.assignedTs && L.firstCall >= L.assignedTs) {
-          const minsA = workingMinutes(L.assignedTs, L.firstCall);
+        // ПОСЛЕДНЕЕ назначение ответственного ДО первого звонка (лид мог переназначаться)
+        // если назначений нет — берём создание лида (лид сразу был назначен)
+        let assignTs = L.created;
+        if (Array.isArray(L._assignTs)) {
+          const before = L._assignTs.filter(ts => ts <= L.firstCall);
+          if (before.length) assignTs = Math.max(...before);
+        }
+        if (L.firstCall >= assignTs) {
+          const minsA = workingMinutes(assignTs, L.firstCall);
           if (minsA >= 0 && minsA < 60*24*14) S.firstCallAssignTimes.push(minsA);
         }
       }
@@ -369,8 +373,13 @@ export default async function handler(req, res) {
         if (L.firstCall && L.firstCall >= dayStart2) {
           const mins = workingMinutes(L.created, L.firstCall);
           if (mins >= 0 && mins < 60*24*14) D.firstCallTimes.push(mins);
-          if (L.assignedTs && L.firstCall >= L.assignedTs) {
-            const minsA = workingMinutes(L.assignedTs, L.firstCall);
+          let assignTs = L.created;
+          if (Array.isArray(L._assignTs)) {
+            const before = L._assignTs.filter(ts => ts <= L.firstCall);
+            if (before.length) assignTs = Math.max(...before);
+          }
+          if (L.firstCall >= assignTs) {
+            const minsA = workingMinutes(assignTs, L.firstCall);
             if (minsA >= 0 && minsA < 60*24*14) D.firstCallAssignTimes.push(minsA);
           }
         }
