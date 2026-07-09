@@ -859,16 +859,13 @@
     </div>
     <div id="tgSummary" style="display:flex;gap:10px;margin-bottom:16px;"></div>
     <div id="tgDigest" style="margin-bottom:16px;"></div>
-    <!-- РЕАКТИВАЦИЯ БАЗЫ -->
+    <!-- РЕАКТИВАЦИЯ (активные чаты) -->
     <div style="background:var(--card);border:1px solid var(--line2);border-radius:14px;padding:16px;margin-bottom:16px;">
       <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:10px;">
-        <div style="font-size:14px;font-weight:700;">🔄 Реактивация базы</div>
-        <label style="font-size:12px;color:var(--accent);cursor:pointer;font-weight:600;padding:5px 10px;border:1px solid var(--accent);border-radius:8px;">
-          Загрузить историю
-          <input type="file" accept=".json" style="display:none;" onchange="importTgHistory(event)">
-        </label>
+        <div style="font-size:14px;font-weight:700;">🔄 Рассылка по сегментам</div>
+        <button onclick="segmentActiveChats()" style="font-size:12px;color:var(--accent);cursor:pointer;font-weight:600;padding:5px 10px;border:1px solid var(--accent);border-radius:8px;background:none;">Обновить сегменты</button>
       </div>
-      <div id="tgSegments" style="font-size:13px;color:var(--txt3);">Загрузите экспорт Telegram (result.json), чтобы разбить клиентов на сегменты для безопасной рассылки (макс. 25/день).</div>
+      <div id="tgSegments" style="font-size:13px;color:var(--txt3);">Нажмите «Обновить сегменты», чтобы разбить активные чаты на группы для рассылки (макс. 25/день).</div>
     </div>
     <div id="tgChatList"><div style="font-size:13px;color:var(--txt3);">Загрузка...</div></div>
     <!-- окно переписки -->
@@ -1598,7 +1595,18 @@ function skipGen(i){
 }
 
 /* ===== TELEGRAM ===== */
-// сегментация истории Telegram в браузере (файл большой — парсим локально, 0 токенов)
+// сегментация АКТИВНЫХ чатов (те, что бот видит и может писать — без PEER_ID_INVALID)
+async function segmentActiveChats(){
+  const box=document.getElementById('tgSegments');
+  if(!box)return;
+  box.innerHTML='<div style="color:var(--txt3);">Разбиваю активные чаты на сегменты...</div>';
+  try{
+    const r=await fetch('/api/telegram-import?action=segment_active&session='+encodeURIComponent(SESSION));
+    const d=await r.json();
+    if(!d.ok){box.innerHTML='<div style="color:var(--red);">'+(d.error||'Ошибка')+'</div>';return;}
+    renderTgSegments();
+  }catch(e){box.innerHTML='<div style="color:var(--red);">Ошибка сегментации</div>';}
+}
 const TG_PRICE=['цена','стоит','сколько','narx','qancha','нарх','pul','почём'];
 const TG_OBJ=['дорого','подумаю','qimmat','oylab',"o'ylab",'потом','нет денег','keyin'];
 const TG_INSTALL=['рассрочк','части','bolib',"bo'lib",'nasiya','кредит'];
@@ -1665,10 +1673,10 @@ async function renderTgSegments(){
 // готовые шаблоны под каждый сегмент
 const TG_TEMPLATES={
   'Без ответа':'Assalomu alaykum, {name}! Kechirasiz, avval javob bera olmadim. Hunter Academy kursi bo‘yicha savolingizga javob bermoqchiman. Hali ham qiziqasizmi?',
-  'Спросили цену и ушли':'Assalomu alaykum, {name}! Hunter Academy kursi narxini so‘ragandingiz. Eslatib o‘taman: kurs to‘liq narxi + bo‘lib to‘lash (rassrochka) imkoniyati ham bor. Batafsil gaplashamizmi?',
-  'Возражение дорого/подумаю':'Assalomu alaykum, {name}! Hunter Academy haqida o‘ylab ko‘rdingizmi? Ayni damda maxsus shartlar bor — sizga mos variantni topamiz. Qanday savollaringiz bor?',
-  'Спрашивали рассрочку':'Assalomu alaykum, {name}! Rassrochka bo‘yicha so‘ragandingiz — ha, bo‘lib to‘lash mavjud. Rasmiylashtiramizmi?',
-  'Давно не общались':'Assalomu alaykum, {name}! Ancha bo‘ldi gaplashmaganimizga. Hunter Academy’da yangi guruh ochilyapti. Qaytib o‘qishni boshlamoqchimisiz?',
+  'Спросили цену':'Assalomu alaykum, {name}! Hunter Academy kursi narxini so‘ragandingiz. Kurs to‘liq narxi + bo‘lib to‘lash (rassrochka) imkoniyati ham bor. Batafsil gaplashamizmi?',
+  'Возражение':'Assalomu alaykum, {name}! Hunter Academy haqida o‘ylab ko‘rdingizmi? Ayni damda maxsus shartlar bor — sizga mos variantni topamiz. Qanday savollaringiz bor?',
+  'Рассрочка':'Assalomu alaykum, {name}! Rassrochka bo‘yicha so‘ragandingiz — ha, bo‘lib to‘lash mavjud. Rasmiylashtiramizmi?',
+  'Давно не писали':'Assalomu alaykum, {name}! Ancha bo‘ldi gaplashmaganimizga. Hunter Academy’da yangi guruh ochilyapti. Qaytib o‘qishni boshlamoqchimisiz?',
 };
 async function openTgSend(segName,count){
   const win=document.getElementById('tgChatWindow');
