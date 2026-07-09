@@ -1239,7 +1239,7 @@ function orgQ(sep){const o=USER_ORG||'hunter';return o==='hunter'?'':((sep||'?')
 
 let state = loadStateLocal();
 function defaultState(){
-  return {done:{},bosses:{},open:{},filter:'all',chats:[{id:'c0',title:'Новый чат',messages:[]}],activeChatId:'c0',lang:'ru',dopQuests:[],goal:500000000,theme:'theme-light',projects:[]};
+  return {done:{},bosses:{},open:{},filter:'all',chats:[{id:'c0',title:'Новый чат',messages:[]}],activeChatId:'c0',lang:'ru',dopQuests:[],goal:250000000,theme:'theme-light',projects:[]};
 }
 function loadStateLocal(){
   try{const s=JSON.parse(localStorage.getItem(SKEY));if(s&&s.done)return s;}catch(e){}
@@ -1299,7 +1299,13 @@ function doneCount(){return ALL_QUESTS.filter(id=>state.done[id]).length;}
 function trophies(){return STAGES.filter(s=>state.bosses[s.id]).length;}
 function rankFor(p){let r='Старт';RANKS.forEach(([m,n])=>{if(p>=m)r=n;});return r;}
 
-function getGoal(){return (state.goal&&state.goal>0)?state.goal:500000000;}function fmtGoalFull(n){return n.toLocaleString('ru');}
+function getGoal(){
+  // единая цель: приоритет — настройка организации (orgSettings.goal), затем локальная, затем дефолт
+  if(typeof orgSettings!=='undefined'&&orgSettings.goal&&orgSettings.goal>0)return orgSettings.goal;
+  if(state.goal&&state.goal>0)return state.goal;
+  return 250000000;
+}
+function fmtGoalFull(n){return n.toLocaleString('ru');}
 function updateGoalHeader(){
   const g=getGoal();
   const big=document.getElementById('goalBig');
@@ -1312,10 +1318,14 @@ function editGoal(){
   const inp=prompt('Введите цель по выручке в месяц (сум):', cur);
   if(inp===null)return;
   const cleaned=parseInt(String(inp).replace(/[^0-9]/g,''),10);
-  if(!cleaned||cleaned<=0){alert('Введите число больше нуля, например 500000000');return;}
-  state.goal=cleaned;save();
+  if(!cleaned||cleaned<=0){alert('Введите число больше нуля, например 250000000');return;}
+  state.goal=cleaned;
+  // синхронизируем единую цель: и локально, и в настройках организации
+  if(typeof orgSettings!=='undefined'){orgSettings.goal=cleaned;if(typeof saveOrgSettings==='function')saveOrgSettings({goal:cleaned});}
+  save();
   updateGoalHeader();
   dashLoaded=false;renderDashboard();
+  if(typeof loadSmartQuestions==='function')loadSmartQuestions(true);
 }
 
 function renderHeader(){
@@ -1603,7 +1613,7 @@ async function generateQuests(){
     const existingQuests=STAGES.flatMap(s=>s.quests.map(q=>({id:q.id,t:q.t})));
     const acceptedExtra=(state.dopQuests||[]).map(q=>({t:q.t}));
     const r=await fetch('/api/generate-quests',{method:'POST',headers:{'content-type':'application/json'},
-      body:JSON.stringify({existingQuests,acceptedExtra})});
+      body:JSON.stringify({existingQuests,acceptedExtra,goal:getGoal()})});
     const d=await r.json();
     if(d&&d.ok&&d.quests&&d.quests.length){
       renderGenCards(d.quests);
@@ -2769,8 +2779,11 @@ function editForecastGoal(){
   const cleaned=parseInt(String(inp).replace(/[^0-9]/g,''),10);
   if(!cleaned||cleaned<=0){alert(uz?'Nol emas, masalan 250000000':'Введите число больше нуля, например 250000000');return;}
   orgSettings.goal=cleaned;
+  state.goal=cleaned;save(); // единая цель: синхронизируем локальную тоже
   saveOrgSettings({goal:cleaned});
+  updateGoalHeader();
   renderForecast(_lastDashData);
+  if(typeof loadSmartQuestions==='function')loadSmartQuestions(true);
 }
 
 // подсчёт рабочих дней месяца: прошедших и всего
@@ -2796,7 +2809,7 @@ function renderForecast(d){
   const uz=state.lang==='uz';
   const t=(d&&d.totals)||{};
   const earned=t.revenue||0; // выручка за текущий месяц (касса)
-  const goal=orgSettings.goal||getGoal();
+  const goal=getGoal();
   const now=new Date();
   const wd=orgSettings.workdays&&orgSettings.workdays.length?orgSettings.workdays:[1,2,3,4,5,6];
   const {passed, total}=countWorkdays(now.getFullYear(), now.getMonth(), wd);
@@ -3188,7 +3201,7 @@ function renderPlanFact(d){
   const mops=d.mopsBySales||[];
   if(!mops.length){box.innerHTML='<div style="font-size:12px;color:var(--txt3);">Нет данных. Обновите из amoCRM.</div>';return;}
   // План на месяц в продажах = цель / средний чек
-  const goal=state.goal||500000000;
+  const goal=getGoal();
   const avgCheck=t.avgCheck||1800000;
   const planTotal=Math.max(1,Math.round(goal/avgCheck)); // сколько продаж нужно всего
   const planPerMop=Math.ceil(planTotal/mops.length);     // поровну на каждого (базовый вариант)
@@ -3300,10 +3313,12 @@ function renderSignals(d){
     sig.push({lvl:'red',txt:uz?`${zero.map(m=>m.name).join(', ')} — 0 sotuv, lidlar bor`:`${zero.map(m=>m.name).join(', ')} — 0 продаж при наличии лидов`});
   }
   // 4. Отставание от плана по цели
-  if(t.goalPct!=null&&t.goalPct<40){
+  const _goal=getGoal(),_earned=t.revenue||0;
+  const _goalPct=_goal>0?Math.round(_earned/_goal*100):null;
+  if(_goalPct!=null&&_goalPct<40){
     const day=new Date().getDate();
     if(day>10){
-      sig.push({lvl:'orange',txt:uz?`Oy o‘rtasi, maqsadning ${t.goalPct}%i bajarildi — sur'atni oshiring`:`Середина месяца, цель выполнена на ${t.goalPct}% — нужно ускоряться`});
+      sig.push({lvl:'orange',txt:uz?`Oy o‘rtasi, maqsadning ${_goalPct}%i bajarildi — sur'atni oshiring`:`Середина месяца, цель выполнена на ${_goalPct}% — нужно ускоряться`});
     }
   }
   // 5. Большие потери по причине
@@ -3879,8 +3894,8 @@ function buildSmartQuestions(){
   if(noClose && (!lowReach || noClose.name!==lowReach.name)){
     out.push({q:`Почему ${noClose.name} не закрывает сделки (${noClose.leads} лидов, 0 продаж)?`,w:80});
   }
-  // 4) отставание от плана месяца — считаем по РЕАЛЬНОЙ цели (как на экране), не по серверной 500M
-  const realGoal=(typeof orgSettings!=='undefined'&&orgSettings.goal)?orgSettings.goal:(typeof getGoal==='function'?getGoal():(t.goal||0));
+  // 4) отставание от плана месяца — по ЕДИНОЙ системной цели (getGoal — меняется с настройкой)
+  const realGoal=getGoal();
   const earned=t.revenue!=null?t.revenue:(t.soldSum||0);
   if(realGoal>0 && earned!=null){
     const pct=Math.round(earned/realGoal*100);
@@ -4328,7 +4343,7 @@ function renderChatCard(type){
       <div class="cc-row"><span>Выручка</span><b style="color:var(--green)">${fmt(t.revenue||0)}</b></div>
       <div class="cc-row"><span>Конверсия</span><b>${t.conv||0}%</b></div>
       <div class="cc-row"><span>Средний чек</span><b>${fmt(t.avgCheck||0)}</b></div>
-      ${t.goal?`<div class="cc-row"><span>До цели</span><b>${t.goalPct||0}%</b></div>${bar(t.goalPct||0,'var(--gold)')}`:''}`;
+      ${(function(){const g=getGoal(),e=t.revenue||0;const gp=g>0?Math.round(e/g*100):0;return g?`<div class="cc-row"><span>До цели</span><b>${gp}%</b></div>${bar(gp,'var(--gold)')}`:'';})()}`;
     return wrap('📊 Месяц',rows);
   }
   if(type==='mops'){
@@ -4367,14 +4382,15 @@ function renderChatCard(type){
     return wrap('📉 Куда теряем лиды',rows);
   }
   if(type==='forecast'){
-    const goal=t.goal||0,earned=t.revenue||0;
+    const goal=getGoal(),earned=t.revenue||0;
     if(!goal)return '';
     const gap=goal-earned;
+    const gpct=goal>0?Math.round(earned/goal*100):0;
     const rows=`
       <div class="cc-row"><span>Заработано</span><b style="color:var(--green)">${fmt(earned)}</b></div>
       <div class="cc-row"><span>Цель</span><b>${fmt(goal)}</b></div>
       <div class="cc-row"><span>Не хватает</span><b style="color:var(--red)">${fmt(gap>0?gap:0)}</b></div>
-      ${bar(t.goalPct||0,'var(--gold)')}`;
+      ${bar(gpct,'var(--gold)')}`;
     return wrap('🎯 План месяца',rows);
   }
   return '';
@@ -4469,7 +4485,7 @@ async function sendMsg(directText){
     });
     const progress={doneCount:doneCount(),total:TOTAL,bossesDown:trophies()};
     const r=await fetch('/api/chat',{method:'POST',headers:{'content-type':'application/json'},
-      body:JSON.stringify({messages:apiMsgs,progress,lang:state.lang||'ru',session:SESSION}),signal:_abortCtl.signal});
+      body:JSON.stringify({messages:apiMsgs,progress,lang:state.lang||'ru',session:SESSION,goal:getGoal()}),signal:_abortCtl.signal});
 
     // если сервер вернул ошибку в JSON (не стрим)
     const ctype=r.headers.get('content-type')||'';
