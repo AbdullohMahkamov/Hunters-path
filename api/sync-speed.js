@@ -320,17 +320,17 @@ export default async function handler(req, res) {
         const mins = workingMinutes(L.created, L.firstCall);
         if (mins >= 0 && mins < 60*24*14) S.firstCallTimes.push(mins);
       }
-      // === СЕГОДНЯ: считаем активность по ЗВОНКАМ, сделанным сегодня (а не по лидам, созданным сегодня) ===
+      // === СЕГОДНЯ: активность по звонкам, сделанным сегодня ===
       const callsToday = (L._callTs || []).filter(ts => ts >= dayStart2).length;
       const leadCreatedToday = (L.created || 0) >= dayStart2;
-      // лид попадает в дневную статистику, если сегодня по нему звонили ИЛИ он создан сегодня
-      if (callsToday > 0 || leadCreatedToday) {
+      // лид входит в дневную статистику, если сегодня по нему звонили ИЛИ он создан сегодня
+      const inTodayStat = callsToday > 0 || leadCreatedToday;
+      if (inTodayStat) {
         const D = statDay[mop];
-        if (leadCreatedToday) D.leads++;
+        D.leads++;                              // ВСЕ лиды с сегодняшней активностью (единый знаменатель)
         D.callsTotal += callsToday;
-        if (callsToday > 0) D.calledLeads++;   // сегодня по этому лиду звонили
-        // дозвон сегодня: если сегодня был разговор >40 сек (по firstCall если он сегодня, иначе по reachedReal)
-        if (L.reachedReal && callsToday > 0) D.reached++;
+        if (callsToday > 0) D.calledLeads++;    // сегодня звонили по этому лиду
+        if (L.reachedReal && callsToday > 0) D.reached++; // и был реальный дозвон
         if (L.tasks > 0) D.withTask++;
         D.tasksTotal += (L.tasks || 0);
         D.tasksDone += (L.tasksDone || 0);
@@ -404,14 +404,14 @@ export default async function handler(req, res) {
         leads: D.leads,
         medianFirstCallMin: medMin !== null ? Math.round(medMin) : null,
         avgCallsPerLead: D.leads ? +(D.callsTotal / D.leads).toFixed(1) : 0,
-        taskRate: D.leads ? Math.round(D.withTask / D.leads * 100) : 0,
-        reachedPct: D.leads ? Math.round(D.reached / D.leads * 100) : 0,     // реальный дозвон (>40 сек)
+        taskRate: D.leads ? Math.min(100, Math.round(D.withTask / D.leads * 100)) : 0,
+        reachedPct: D.leads ? Math.min(100, Math.round(D.reached / D.leads * 100)) : 0,     // реальный дозвон (>40 сек)
         reached: D.reached,             // сколько дозвонились (штук)
         calledLeads: D.calledLeads,     // скольким звонили (штук)
-        calledPct: D.leads ? Math.round(D.calledLeads / D.leads * 100) : 0,  // % кому звонили
+        calledPct: D.leads ? Math.min(100, Math.round(D.calledLeads / D.leads * 100)) : 0,  // % кому звонили
         tasksTotal: D.tasksTotal,
         tasksDone: D.tasksDone,
-        tasksDonePct: D.tasksTotal ? Math.round(D.tasksDone / D.tasksTotal * 100) : 0,
+        tasksDonePct: D.tasksTotal ? Math.min(100, Math.round(D.tasksDone / D.tasksTotal * 100)) : 0,
       };
     }).sort((a,b)=> (a.medianFirstCallMin??9e9) - (b.medianFirstCallMin??9e9));
 
