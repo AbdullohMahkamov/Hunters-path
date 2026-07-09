@@ -1713,7 +1713,8 @@ async function doTgSend(segName){
     if(d.ok===false&&d.message){rb.innerHTML='<div style="background:var(--red-bg);border:1px solid var(--red);border-radius:10px;padding:12px;color:var(--red);font-size:13px;">⚠️ '+escapeHtml(d.message)+'</div>';return;}
     rb.innerHTML=`<div style="color:${d.sent>0?'var(--green)':'var(--gold)'};font-weight:600;">✓ Отправлено: ${d.sent} из ${d.requested}</div>`+
       (d.remaining_after!=null?`<div style="font-size:12px;color:var(--txt3);">Осталось на сегодня: ${d.remaining_after}</div>`:'')+
-      (d.note?`<div style="font-size:12px;color:var(--gold);margin-top:6px;">${escapeHtml(d.note)}</div>`:'');
+      (d.note?`<div style="font-size:12px;color:var(--gold);margin-top:6px;">${escapeHtml(d.note)}</div>`:'')+
+      (d.errors&&d.errors.length?`<div style="font-size:11px;color:var(--txt3);margin-top:8px;padding:8px;background:var(--card2);border-radius:8px;">Причина от Telegram: «${escapeHtml(d.errors[0].err||'')}»</div>`:'');
   }catch(e){rb.innerHTML='<div style="color:var(--red);">Ошибка отправки</div>';}
 }
 async function loadTgDigest(){
