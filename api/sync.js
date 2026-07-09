@@ -507,9 +507,9 @@ export default async function handler(req, res) {
         revenueTeam: soldSumTeam,   // выручка пятёрки
         conv, avgCheck,
         noContactPct, ownExcluded,
-        goal: 500000000,
-        goalPct: +(soldSum / 500000000 * 100).toFixed(0),
-        needPerMonth: 141,
+        // цель НЕ хардкодим на сервере — она у каждого своя, задаётся клиентом (getGoal).
+        // клиент считает goalPct/needPerMonth сам по своей цели.
+        goal: null,
         // === ВСЁ ВРЕМЯ = ВСЯ БАЗА (для дашборда) ===
         leadsAll: leadsBase,          // все лиды в базе (~8000)
         soldAll: soldBase,            // все продажи в базе (140+)
