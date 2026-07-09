@@ -216,6 +216,9 @@ export default async function handler(req, res) {
         if (e.type === "outgoing_call") {
           li.calls++;
           if (li.firstCall === null || e.created_at < li.firstCall) li.firstCall = e.created_at;
+          if (li.callsToday === undefined) li.callsToday = 0;
+          li._callTs = li._callTs || [];
+          li._callTs.push(e.created_at); // время каждого звонка — для дневной статистики
         }
       }
       if (events.length < 250) break;
@@ -317,17 +320,21 @@ export default async function handler(req, res) {
         const mins = workingMinutes(L.created, L.firstCall);
         if (mins >= 0 && mins < 60*24*14) S.firstCallTimes.push(mins);
       }
-      // === СЕГОДНЯ: лид создан сегодня ===
-      if ((L.created || 0) >= dayStart2) {
+      // === СЕГОДНЯ: считаем активность по ЗВОНКАМ, сделанным сегодня (а не по лидам, созданным сегодня) ===
+      const callsToday = (L._callTs || []).filter(ts => ts >= dayStart2).length;
+      const leadCreatedToday = (L.created || 0) >= dayStart2;
+      // лид попадает в дневную статистику, если сегодня по нему звонили ИЛИ он создан сегодня
+      if (callsToday > 0 || leadCreatedToday) {
         const D = statDay[mop];
-        D.leads++;
-        D.callsTotal += L.calls;
-        if (L.calls > 0) D.calledLeads++;   // сделали хотя бы один звонок
-        if (L.reachedReal) D.reached++;       // реально дозвонились (>40 сек разговор)
+        if (leadCreatedToday) D.leads++;
+        D.callsTotal += callsToday;
+        if (callsToday > 0) D.calledLeads++;   // сегодня по этому лиду звонили
+        // дозвон сегодня: если сегодня был разговор >40 сек (по firstCall если он сегодня, иначе по reachedReal)
+        if (L.reachedReal && callsToday > 0) D.reached++;
         if (L.tasks > 0) D.withTask++;
         D.tasksTotal += (L.tasks || 0);
         D.tasksDone += (L.tasksDone || 0);
-        if (L.firstCall) {
+        if (L.firstCall && L.firstCall >= dayStart2) {
           const mins = workingMinutes(L.created, L.firstCall);
           if (mins >= 0 && mins < 60*24*14) D.firstCallTimes.push(mins);
         }
