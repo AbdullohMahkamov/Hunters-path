@@ -3898,20 +3898,37 @@ function buildSmartQuestions(){
   // сортируем по важности и берём топ-3
   return out.sort((a,b)=>b.w-a.w).slice(0,3).map(x=>({q:x.q}));
 }
-function loadSmartQuestions(force){
+async function loadSmartQuestions(force){
   // без AI: считаем вопросы кодом из свежих данных
   const bar=document.getElementById('smartQBar');
   const row=document.getElementById('smartQRow');
   if(!bar||!row)return;
+  // если данных дашборда ещё нет — подгружаем их (чтобы вопросы не исчезали при переходе в чат)
+  if(!window._dashData||!window._dashData.totals){
+    // показываем кэш, если он есть, пока грузим
+    if(window._smartQCache&&window._smartQCache.length){
+      row.innerHTML=window._smartQCache.map(q=>`<button class="ce-qbtn hot" onclick="quickAsk(${JSON.stringify(q.q).replace(/"/g,'&quot;')})">${escapeHtml(q.q)}<span class="ce-arr">›</span></button>`).join('');
+      bar.style.display='block';
+    }
+    try{
+      const r=await fetch('/api/dashboard'+orgQ());
+      const d=await r.json();
+      if(d&&!d.empty&&!d.error&&d.totals){window._dashData=d;}
+    }catch(e){}
+  }
   const qs=buildSmartQuestions();
   if(qs.length){
     window._smartQCache=qs;
     row.innerHTML=qs.map(q=>`<button class="ce-qbtn hot" onclick="quickAsk(${JSON.stringify(q.q).replace(/"/g,'&quot;')})">${escapeHtml(q.q)}<span class="ce-arr">›</span></button>`).join('');
     bar.style.display='block';
     renderQmix();
+  }else if(window._smartQCache&&window._smartQCache.length){
+    // данных нет, но есть кэш прошлых вопросов — показываем его (не прячем)
+    row.innerHTML=window._smartQCache.map(q=>`<button class="ce-qbtn hot" onclick="quickAsk(${JSON.stringify(q.q).replace(/"/g,'&quot;')})">${escapeHtml(q.q)}<span class="ce-arr">›</span></button>`).join('');
+    bar.style.display='block';
+    renderQmix();
   }else{
     bar.style.display='none';
-    window._smartQCache=[];
     renderQmix();
   }
 }
@@ -4561,6 +4578,12 @@ function bootApp(){
   });
   document.getElementById('loginScreen').style.display='none';
   applyShellI18n();
+  // подгружаем данные дашборда в фоне, чтобы умные вопросы были готовы сразу (и не исчезали)
+  if(!window._dashData){
+    fetch('/api/dashboard'+orgQ()).then(r=>r.json()).then(d=>{
+      if(d&&!d.empty&&!d.error&&d.totals){window._dashData=d;if(state.tab==='chat'||start==='chat')loadSmartQuestions();}
+    }).catch(()=>{});
+  }
 }
 
 // Роль РОПа: скрыть вкладку Советник (чат)
