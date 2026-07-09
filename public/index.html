@@ -2973,6 +2973,36 @@ function renderSignals(d){
     sig.push({lvl:'orange',txt:uz?`«${topProb.name}» — ${topProb.count} lid yo‘qoldi, alohida ishlash kerak`:`«${topProb.name}» — ${topProb.count} потерянных лидов, нужна отдельная работа`});
   }
 
+  // === АЛЕРТЫ ПО ДИСЦИПЛИНЕ (из speed.mops) ===
+  const sp=(d.speed&&d.speed.mops)||[];
+  const dashM=d.mopsByConv||[];
+  const reachOf=(name)=>{const dm=dashM.find(x=>x.name===name);return (dm&&dm.reachPct!=null)?dm.reachPct:null;};
+  // 6. Низкий дозвон (<40%)
+  sp.forEach(m=>{
+    const r=reachOf(m.name);
+    if(r!=null&&r<40){
+      sig.push({lvl:'red',txt:uz?`${m.name}: dozvon ${r}% — 40%dan past`:`${m.name}: дозвон ${r}% — ниже нормы (40%)`});
+    }
+  });
+  // 7. Поздний 1-й звонок (>3ч = 180 мин)
+  sp.forEach(m=>{
+    if(m.medianFirstCallMin!=null&&m.medianFirstCallMin>180){
+      sig.push({lvl:'orange',txt:uz?`${m.name}: 1-qo‘ng‘iroq ${fmtMin(m.medianFirstCallMin)} — juda kech`:`${m.name}: 1-й звонок ${fmtMin(m.medianFirstCallMin)} — слишком поздно`});
+    }
+  });
+  // 8. Лиды без задач (ставит задачи < 50% среди дозвонившихся)
+  sp.forEach(m=>{
+    if(m.taskRate!=null&&m.reached>0&&m.taskRate<50){
+      sig.push({lvl:'orange',txt:uz?`${m.name}: vazifa qo‘yish ${m.taskRate}% — suhbatlashgan lidlarga vazifa yo‘q`:`${m.name}: ставит задачи ${m.taskRate}% — по многим разговорам нет задачи`});
+    }
+  });
+  // 9. Просроченные/невыполненные задачи (выполнено < 50%)
+  sp.forEach(m=>{
+    if(m.tasksTotal>0&&m.tasksDonePct!=null&&m.tasksDonePct<50){
+      sig.push({lvl:'orange',txt:uz?`${m.name}: vazifalar bajarilishi ${m.tasksDonePct}% (${m.tasksDone}/${m.tasksTotal})`:`${m.name}: задачи выполнены ${m.tasksDonePct}% (${m.tasksDone} из ${m.tasksTotal})`});
+    }
+  });
+
   if(!sig.length){
     box.innerHTML=`<div style="background:var(--green-bg);border:1px solid var(--green);border-radius:11px;padding:12px 14px;margin-bottom:14px;font-size:13px;color:var(--green);">${uz?'✓ Kritik signallar yo‘q — hammasi joyida':'✓ Критичных сигналов нет — всё под контролем'}</div>`;
     return;
@@ -3132,6 +3162,8 @@ async function syncAll(){
     const d2=await r2.json();
     if(d2&&d2.ok){
       renderDiscipline(d2);
+      // прикрепляем дисциплину к данным дашборда и пересчитываем алерты
+      if(window._dashData){window._dashData.speed=d2;renderSignals(window._dashData);}
       if(d2.suspicious2){
         const fromSync=suspData.filter(s=>['money','tasks'].includes(s.cat)||s.type==='same_day_sale'||s.type==='wrong_number_abuse');
         suspData=fromSync.concat(d2.suspicious2);updateSuspCount();
