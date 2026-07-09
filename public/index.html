@@ -4494,19 +4494,18 @@ function bootApp(){
   const rl=USER_ROLE==='rop'?'РОП':(USER_ROLE==='demo'?'Демо':'Владелец');
   const rs=document.getElementById('userRoleSide');if(rs)rs.textContent=rl;
   if(USER_ROLE==='admin'){const mc=document.getElementById('menuClientsSide');if(mc)mc.style.display='flex';}
-  // восстанавливаем раздел, где был пользователь до F5 (чат/дашборд/задачи)
+  // восстанавливаем раздел, где был пользователь до F5 (чат/дашборд/задачи/telegram)
   let start;
   if(USER_ROLE==='rop'){start='dash';}
-  else if(state.tab && ['chat','dash','map'].includes(state.tab)){start=state.tab;}
+  else if(state.tab && ['chat','dash','map','tg'].includes(state.tab)){start=state.tab;}
   else{start='chat';}
   switchTab(start);
-  // если был раздел «Разделы» открыт и это дашборд/задачи — раскроем меню и подсветим
+  // если был раздел «Разделы» открыт — раскроем меню и подсветим текущий
   if(start!=='chat'){
     const menu=document.getElementById('sideMenu'),tg=document.getElementById('secToggle');
     if(menu)menu.classList.add('open'); if(tg)tg.classList.add('open');
     document.querySelectorAll('#sideMenu .menu-item').forEach(m=>{
-      const sec=start==='map'?'map':'dash';
-      m.classList.toggle('active', m.getAttribute('onclick')&&m.getAttribute('onclick').includes("'"+sec+"'"));
+      m.classList.toggle('active', m.getAttribute('onclick')&&m.getAttribute('onclick').includes("'"+start+"'"));
     });
   }
   document.getElementById('loginScreen').style.display='none';
