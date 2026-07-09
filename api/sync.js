@@ -195,6 +195,7 @@ export default async function handler(req, res) {
     // ВЫРУЧКА/КАССА — по ВСЕМ аккаунтам, продажи закрытые (closed_at) в этом месяце.
     // КОНВЕРСИЯ/ДИСЦИПЛИНА — по 5 действующим МОПам. Считаем ДВА периода: месяц и всё окно (~4 мес).
     let sold = 0, soldSum = 0, ownExcluded = 0, noContact = 0;
+    let newSalesSum = 0; // выручка ТОЛЬКО новых продаж месяца (без доплат) — для среднего чека
     let soldToday = 0, revenueToday = 0, leadsToday = 0; // метрики за сегодня
     // === VELOCITY (скорость воронки) ===
     const saleDurations = [];      // длительности «создан → продан» в днях (для медианы/среднего)
@@ -297,10 +298,11 @@ export default async function handler(req, res) {
 
       // === ВЫРУЧКА: ВСЕ аккаунты, проданные в этом месяце (по реальной дате) ===
       if (isSold && closedThisMonth) {
-        sold++; soldSum += price;
+        sold++; soldSum += price; newSalesSum += price; // newSalesSum — только новые продажи, без доплат (для среднего чека)
       }
       // Доплаты в этом месяце учитываем ТОЛЬКО если сама продажа была в ПРОШЛЫЕ месяцы.
       // Если продажа этого месяца — доплата уже включена в price (полная сумма), не задваиваем.
+      // Доплаты идут в общую кассу (soldSum), но НЕ в средний чек (newSalesSum).
       if (isSold && !closedThisMonth) {
         soldSum += doplataInRange(L, monthStart, nextMonth);
       }
@@ -428,7 +430,7 @@ export default async function handler(req, res) {
     const totalLeads = Object.values(byMop).reduce((a, m) => a + m.leads, 0);
     const conv = totalLeads > 0 ? +(soldTeam / totalLeads * 100).toFixed(2) : 0;
     // Средний чек — по всей кассе (все аккаунты)
-    const avgCheck = sold > 0 ? Math.round(soldSum / sold) : 0;
+    const avgCheck = sold > 0 ? Math.round(newSalesSum / sold) : 0;
     const noContactPct = totalLeads > 0 ? +(noContact / totalLeads * 100).toFixed(0) : 0;
 
     // === ВСЁ ВРЕМЯ = ВСЯ БАЗА (для дашборда) ===
