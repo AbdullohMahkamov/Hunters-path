@@ -22,7 +22,9 @@ export default async function handler(req, res) {
   if (!apiKey) { res.status(500).json({ error: "ANTHROPIC_API_KEY not set" }); return; }
 
   try {
-    const { existingQuests, acceptedExtra } = req.body || {};
+    const { existingQuests, acceptedExtra, goal } = req.body || {};
+    const GOAL = (goal && goal > 0) ? goal : 250000000;
+    const goalShort = GOAL >= 1000000 ? Math.round(GOAL / 1000000) + "М" : String(GOAL);
 
     // Живые данные: проблемы + дисциплина
     const dash = await readCache("dashboard");
@@ -41,7 +43,8 @@ export default async function handler(req, res) {
     let kpiText = "";
     if (dash && dash.totals) {
       const t = dash.totals;
-      kpiText = `\nKPI: продаж ${t.sold}, конверсия ${t.conv}%, путь к 500М ${t.goalPct}%, потеря до контакта ${t.noContactPct}%.`;
+      const gp = GOAL > 0 ? Math.round((t.revenue || 0) / GOAL * 100) : 0;
+      kpiText = `\nKPI: продаж ${t.sold}, конверсия ${t.conv}%, путь к ${goalShort} ${gp}%, потеря до контакта ${t.noContactPct}%.`;
     }
 
     const existingList = (existingQuests || []).map(q => `[${q.id}] ${q.t}`).join("\n");
