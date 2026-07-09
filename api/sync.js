@@ -9,6 +9,13 @@ const HUNTER_CFG = {
   sold: "Sotildi",
   lost: "Yopildi",
   adsetFieldId: 194405,
+  saleDateFieldId: 109880, // "Sotuv sanasi:" — реальная дата продажи (вместо даты смены статуса)
+  // доплаты: пары [сумма, дата] — каждая доплата учитывается в месяце по своей дате
+  doplataFields: [
+    { sum: 511439, date: 511441 }, // Doplata-1
+    { sum: 511443, date: 511445 }, // Doplata-2
+    { sum: 511447, date: 511449 }, // Doplata-3
+  ],
   mops: {
     13660834: "Komiljon",
     13703650: "Samandar",
@@ -84,6 +91,8 @@ export default async function handler(req, res) {
   const SOLD = cfg.sold;
   const CLOSED_LOST = cfg.lost;
   const ADSET_FIELD_ID = cfg.adsetFieldId;
+  const SALE_DATE_FIELD = cfg.saleDateFieldId || null;   // реальная дата продажи
+  const DOPLATA_FIELDS = cfg.doplataFields || [];         // [{sum, date}, ...]
   const ACTIVE_MOPS = cfg.mops || {};
   const NO_CONTACT_REASONS = new Set(cfg.noContactReasons || []);
   const NO_CONTACT_STAGES = new Set(cfg.noContactStages || []);
@@ -99,6 +108,39 @@ export default async function handler(req, res) {
   // Тянем лиды, созданные за последние 120 дней, чтобы поймать старые лиды, закрывшиеся в этом месяце.
   // Продажи считаем по дате ЗАКРЫТИЯ (closed_at) в этом месяце. Объём лидов — по created_at в этом месяце.
   const lookbackStart = monthStart - 120 * 24 * 3600;
+  const nextMonth = Math.floor(new Date(now.getFullYear(), now.getMonth() + 1, 1).getTime() / 1000);
+
+  // ===== ХЕЛПЕРЫ: реальная дата продажи и доплаты =====
+  const cfvOf = (L) => L.custom_fields_values || (L._embedded && L._embedded.custom_fields_values) || [];
+  const readNum = (L, fid) => {
+    if (!fid) return 0;
+    const cfv = cfvOf(L); const f = Array.isArray(cfv) ? cfv.find(x => x.field_id === fid) : null;
+    if (f && f.values && f.values[0] && f.values[0].value != null) { const n = parseFloat(f.values[0].value); return isNaN(n) ? 0 : n; }
+    return 0;
+  };
+  const readDate = (L, fid) => {
+    if (!fid) return null;
+    const cfv = cfvOf(L); const f = Array.isArray(cfv) ? cfv.find(x => x.field_id === fid) : null;
+    if (f && f.values && f.values[0] && f.values[0].value != null) {
+      const v = f.values[0].value;
+      return typeof v === "number" ? v : Math.floor(new Date(v).getTime() / 1000);
+    }
+    return null;
+  };
+  // реальная дата продажи: Sotuv sanasi → иначе closed_at
+  const realSaleTs = (L) => readDate(L, SALE_DATE_FIELD) || L.closed_at || 0;
+  // список доплат сделки: [{sum, ts}] — только заполненные
+  const doplatasOf = (L) => {
+    const out = [];
+    for (const df of DOPLATA_FIELDS) {
+      const sum = readNum(L, df.sum);
+      if (sum > 0) { const ts = readDate(L, df.date) || realSaleTs(L); out.push({ sum, ts }); }
+    }
+    return out;
+  };
+  // сумма доплат, попавших в диапазон [from, to)
+  const doplataInRange = (L, from, to) => doplatasOf(L).reduce((s, d) => (d.ts >= from && d.ts < to ? s + d.sum : s), 0);
+
 
   try {
     // 1) Статусы воронки HunterAcademy: id -> name, + id самой воронки
@@ -180,14 +222,18 @@ export default async function handler(req, res) {
       const isLost = stName === CLOSED_LOST;
 
       const createdThisMonth = (L.created_at || 0) >= monthStart;
-      const closedThisMonth = (L.closed_at || 0) >= monthStart;
+      // ПРОДАЖА считается в месяце по РЕАЛЬНОЙ дате продажи (Sotuv sanasi), а не по смене статуса
+      const saleTs = realSaleTs(L);
+      const closedThisMonth = isSold && saleTs >= monthStart && saleTs < nextMonth;
       const inAudit = (L.created_at || 0) >= lookbackStart; // окно аудита
       const mop = ACTIVE_MOPS[L.responsible_user_id]; // null если не из пятёрки
       const respName = ACTIVE_MOPS[L.responsible_user_id] || String(L.responsible_user_id || "");
 
       // === СЕГОДНЯ: лиды обработанные (созданные сегодня), продажи и касса за сегодня ===
       if ((L.created_at || 0) >= dayStart) leadsToday++;
-      if (isSold && (L.closed_at || 0) >= dayStart) { soldToday++; revenueToday += price; }
+      // продажа сегодня — по реальной дате продажи; касса сегодня = price + доплаты с сегодняшней датой
+      if (isSold && saleTs >= dayStart) { soldToday++; revenueToday += price; }
+      revenueToday += doplataInRange(L, dayStart, dayStart + 24 * 3600);
 
       // === VELOCITY ===
       // время «создан → продан» в днях (для проданных с корректными датами)
@@ -248,10 +294,12 @@ export default async function handler(req, res) {
       leadsBase++;
       if (isSold) { soldBase++; revenueBase += price; }
 
-      // === ВЫРУЧКА: ВСЕ аккаунты, проданные в этом месяце ===
+      // === ВЫРУЧКА: ВСЕ аккаунты, проданные в этом месяце (по реальной дате) ===
       if (isSold && closedThisMonth) {
         sold++; soldSum += price;
       }
+      // доплаты, попавшие в текущий месяц по СВОЕЙ дате (даже если продажа была в прошлом месяце)
+      soldSum += doplataInRange(L, monthStart, nextMonth);
       // === ПРОДАЖИ ЗА ПЕРИОД (~4 месяца): для аудита ===
       if (isSold && (L.closed_at || 0) >= lookbackStart) {
         soldPeriod++; revenuePeriod += price;
