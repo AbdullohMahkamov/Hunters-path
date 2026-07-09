@@ -42,12 +42,16 @@ async function resolveSessionOrg(session) {
 
 function num(n){ return (n==null?0:n).toLocaleString("ru"); }
 
-function liveBlock(d, fin) {
+function liveBlock(d, fin, realGoal) {
   if (!d || !d.totals) {
     return "\n\nЖИВЫЕ ДАННЫЕ amoCRM: пока не загружены (кэш пуст). Попроси нажать «Обновить из amoCRM» в дашборде.";
   }
   const t = d.totals;
   const sp = d.speed || {};
+  // единая цель: реальная (из запроса клиента), а не серверный дефолт
+  const GOAL = (realGoal && realGoal > 0) ? realGoal : (t.goal || 250000000);
+  const earnedNow = t.revenue || 0;
+  const goalPctReal = GOAL > 0 ? Math.round(earnedNow / GOAL * 100) : 0;
   let s = `\n\n=== ЖИВЫЕ ДАННЫЕ ИЗ amoCRM (${d.period}, обновлено ${new Date(d.updatedAt).toLocaleString("ru")}) ===\n`;
   s += `Это РЕАЛЬНЫЕ цифры бизнеса — опирайся на них.\n\n`;
 
@@ -55,16 +59,16 @@ function liveBlock(d, fin) {
   s += `ГЛАВНЫЕ ПОКАЗАТЕЛИ (текущий месяц):\n`;
   s += `• Продаж: ${t.sold} · Выручка: ${num(t.revenue)} сум · Средний чек: ${num(t.avgCheck)} сум\n`;
   s += `• Конверсия команды: ${t.conv}% (лид→продажа)\n`;
-  s += `• Цель: ${num(t.goal)} сум · достигнуто ${t.goalPct}% · нужно ~${t.needPerMonth} продаж/мес\n`;
+  s += `• Цель: ${num(GOAL)} сум · достигнуто ${goalPctReal}%\n`;
   s += `• Потеряно без контакта: ${t.noContactPct}% лидов (не дозвонились/не ответили)\n`;
   s += `• Сегодня: ${t.leadsToday} новых лидов, ${t.soldToday} продаж, ${num(t.revenueToday)} сум\n`;
 
   // --- ПРОГНОЗ / ОТСТАВАНИЕ ---
-  if (t.goal > 0) {
+  if (GOAL > 0) {
     const earned = t.revenue || 0;
-    const gapToGoal = t.goal - earned;
+    const gapToGoal = GOAL - earned;
     s += `\nПРОГНОЗ И ОТСТАВАНИЕ:\n`;
-    s += `• Заработано ${num(earned)} из ${num(t.goal)} — не хватает ещё ${num(gapToGoal)} сум до цели\n`;
+    s += `• Заработано ${num(earned)} из ${num(GOAL)} — не хватает ещё ${num(gapToGoal)} сум до цели\n`;
   }
 
   // --- МОПы: продажи + дисциплина вместе ---
@@ -129,7 +133,11 @@ export default async function handler(req, res) {
   if (!apiKey) { res.status(500).json({ error: "ANTHROPIC_API_KEY not set on server" }); return; }
 
   try {
-    const { messages, progress, lang, session, action } = req.body || {};
+    const { messages, progress, lang, session, action, goal } = req.body || {};
+    // единая цель: из запроса клиента (меняется, когда владелец меняет цель), дефолт 250М
+    const GOAL = (goal && goal > 0) ? goal : 250000000;
+    const goalFmt = GOAL.toLocaleString("ru") + " сум/мес";
+    const goalShort = GOAL >= 1000000 ? Math.round(GOAL / 1000000) + "М" : String(GOAL);
 
     const org = await resolveSessionOrg(session);
 
@@ -138,7 +146,7 @@ export default async function handler(req, res) {
     const speed = await readCache("speed", org);
     if (cache && speed) cache.speed = speed;
     const fin = await readCache(org === "hunter" ? "fin:v2:current" : `${org}:fin:v2:current`, null);
-    const live = liveBlock(cache, fin);
+    const live = liveBlock(cache, fin, GOAL);
 
     // === УМНЫЕ ВОПРОСЫ: AI находит проблемы и предлагает, что спросить ===
     if (action === "smart-questions") {
@@ -173,7 +181,7 @@ export default async function handler(req, res) {
 
     const SYSTEM = `Ты — личный директор по продажам (РОП) для владельца бизнеса. Твоя работа — смотреть на все данные бизнеса и отвечать простым языком: ЧТО НЕ ТАК, КАК ИСПРАВИТЬ, ЧЕГО НЕ ХВАТАЕТ ДО ЦЕЛИ.
 
-КТО ПЕРЕД ТОБОЙ: Абдуллох — основатель Hunter Academy (школа подготовки менеджеров по продажам, Ташкент). Цель — стабильно 500 000 000 сум/мес.
+КТО ПЕРЕД ТОБОЙ: Абдуллох — основатель Hunter Academy (школа подготовки менеджеров по продажам, Ташкент). Цель — стабильно ${goalFmt}.
 
 ГЛАВНЫЙ ПРИНЦИП: владелец не хочет копаться в цифрах. Он спрашивает по-человечески — ты отвечаешь как опытный РОП, который видит всю картину. Трудное делаешь простым.
 
@@ -181,7 +189,7 @@ export default async function handler(req, res) {
 1. СНАЧАЛА — прямой ответ на вопрос, по делу, цифрами.
 2. Если есть проблема — назови её конкретно: что не так, у кого, насколько (в цифрах).
 3. ВСЕГДА давай «что делать» — конкретный шаг, а не общие слова. Не «улучшите дозвон», а «у Комиля дозвон 29% — поставьте задачу перезвонить 10 вчерашним лидам сегодня до обеда».
-4. Связывай с целью: чего не хватает, чтобы дойти до 500М.
+4. Связывай с целью: чего не хватает, чтобы дойти до ${goalShort}.
 
 ТВОЙ ХАРАКТЕР: прямой, конкретный, деловой. Говоришь цифрами, не водой. Хвалишь за результат, критикуешь по делу — но всегда с решением. Не грузишь философией.
 
@@ -192,7 +200,7 @@ export default async function handler(req, res) {
 ДИАГНОСТИКА (когда спрашивают «что не так» / «почему просели» / «чего не хватает»):
 - Прогони все метрики, найди 2-3 главные дыры (те, что сильнее всего мешают цели).
 - По каждой: в чём проблема (цифра) → почему (корень) → что сделать (конкретный шаг сегодня).
-- Свяжи с целью 500М: «вот эти дыры стоят вам примерно X продаж/месяц».
+- Свяжи с целью ${goalShort}: «вот эти дыры стоят вам примерно X продаж/месяц».
 
 КОНТЕКСТ (база, если живых данных мало): 2 главные исторические дыры воронки — первый контакт (много лидов гибнет без разговора) и закрытие сделки (большой разрыв между сильными и слабыми МОПами). «Дорого» — редкая причина отказа, цена не проблема.
 
