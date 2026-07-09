@@ -345,13 +345,16 @@ export default async function handler(req, res) {
         const mins = workingMinutes(L.created, L.firstCall);
         if (mins >= 0 && mins < 60*24*14) S.firstCallTimes.push(mins);
         // ПОСЛЕДНЕЕ назначение ответственного ДО первого звонка (лид мог переназначаться)
-        // если назначений нет — берём создание лида (лид сразу был назначен)
-        let assignTs = L.created;
+        // берём только назначения, которые были ДО звонка
+        let assignTs = null;
         if (Array.isArray(L._assignTs)) {
           const before = L._assignTs.filter(ts => ts <= L.firstCall);
           if (before.length) assignTs = Math.max(...before);
         }
-        if (L.firstCall >= assignTs) {
+        // если валидных назначений до звонка нет — берём создание (только если оно до звонка)
+        if (assignTs === null && L.created <= L.firstCall) assignTs = L.created;
+        // считаем только при корректных данных (назначение реально было до звонка)
+        if (assignTs !== null && L.firstCall >= assignTs) {
           const minsA = workingMinutes(assignTs, L.firstCall);
           if (minsA >= 0 && minsA < 60*24*14) S.firstCallAssignTimes.push(minsA);
         }
@@ -373,12 +376,13 @@ export default async function handler(req, res) {
         if (L.firstCall && L.firstCall >= dayStart2) {
           const mins = workingMinutes(L.created, L.firstCall);
           if (mins >= 0 && mins < 60*24*14) D.firstCallTimes.push(mins);
-          let assignTs = L.created;
+          let assignTs = null;
           if (Array.isArray(L._assignTs)) {
             const before = L._assignTs.filter(ts => ts <= L.firstCall);
             if (before.length) assignTs = Math.max(...before);
           }
-          if (L.firstCall >= assignTs) {
+          if (assignTs === null && L.created <= L.firstCall) assignTs = L.created;
+          if (assignTs !== null && L.firstCall >= assignTs) {
             const minsA = workingMinutes(assignTs, L.firstCall);
             if (minsA >= 0 && minsA < 60*24*14) D.firstCallAssignTimes.push(minsA);
           }
