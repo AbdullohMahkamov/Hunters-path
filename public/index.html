@@ -781,7 +781,7 @@
 
       <div class="two-col">
         <div class="block">
-          <div class="dsect">Активность менеджеров<span class="hint" onclick="showHint('activity',event)">?</span></div>
+          <div class="dsect" id="secActivity">Активность менеджеров<span class="hint" onclick="showHint('activity',event)">?</span></div>
           <div style="display:flex;gap:6px;align-items:center;margin-bottom:12px;flex-wrap:wrap;">
             <button class="perbtn on" id="act-month" onclick="setActPeriod('month')">Месяц</button>
             <button class="perbtn" id="act-today" onclick="setActPeriod('today')">Сегодня</button>
@@ -823,7 +823,7 @@
 
       <div class="block" id="suspBlock">
         <div style="display:flex;justify-content:space-between;align-items:center;gap:10px;">
-          <div class="dsect" style="margin:0;"><svg class="ic" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><path d="M12 9v4M12 17h.01M10.3 3.9 1.8 18a2 2 0 0 0 1.7 3h17a2 2 0 0 0 1.7-3L13.7 3.9a2 2 0 0 0-3.4 0z"/></svg> Подозрительные действия</div>
+          <div class="dsect" id="secSusp" style="margin:0;"><svg class="ic" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><path d="M12 9v4M12 17h.01M10.3 3.9 1.8 18a2 2 0 0 0 1.7 3h17a2 2 0 0 0 1.7-3L13.7 3.9a2 2 0 0 0-3.4 0z"/></svg> Подозрительные действия</div>
           <span id="suspCount" style="background:var(--red-bg);color:var(--red);font-weight:700;font-size:13px;padding:3px 10px;border-radius:20px;">0</span>
         </div>
         <div style="font-size:11.5px;color:var(--txt3);margin:6px 0 12px;">Нажми на категорию, чтобы проверить сделки.</div>
@@ -1714,9 +1714,9 @@ function applyLiveDash(d){
   const uzL=state.lang==='uz';
   const ch=document.getElementById('ovConvH');
   if(ch)ch.textContent=uzL?`${convLeads!=null?convLeads:'—'} lid → ${convSold!=null?convSold:'—'} sotuv`:`лидов ${convLeads!=null?convLeads:'—'} → продаж ${convSold!=null?convSold:'—'}`;
-  // Средний чек = выручка ÷ количество продаж
+  // Средний чек = выручка НОВЫХ продаж (без доплат) ÷ количество продаж
   const chkSold = isAll ? (t.soldAll!=null?t.soldAll:t.sold) : t.sold;
-  const chkRev = isAll ? (t.revenueAll!=null?t.revenueAll:t.revenue) : t.revenue;
+  const chkRev = isAll ? (t.revenueAll!=null?t.revenueAll:t.revenue) : (t.newSalesRevenue!=null?t.newSalesRevenue:t.revenue);
   const avgCheck = (chkSold>0) ? Math.round(chkRev/chkSold) : 0;
   set('kpiCheck', avgCheck>0?fmtSum(avgCheck):'—');
   const chkH=document.getElementById('ovCheckH'); if(chkH)chkH.textContent=isAll?(uzL?'butun davr':'за всё время'):(uzL?'tushum ÷ sotuv':'выручка ÷ продажи');
@@ -3209,6 +3209,28 @@ const T={
   demoTitle:{ru:'Демо-аккаунты',uz:'Demo hisoblar'},
   demoSub:{ru:'Создавайте до 5 демо-аккаунтов для показа клиентам. Каждый — чистый, с нуля. Заходят по коду.',uz:'Mijozlarga ko‘rsatish uchun 5 tagacha demo hisob yarating. Har biri toza. Kod orqali kiradilar.'},
   demoCreate:{ru:'Создать демо-аккаунт',uz:'Demo hisob yaratish'},
+  // периоды и секции дашборда (доп.)
+  pMonth:{ru:'Текущий месяц',uz:'Joriy oy'},pAll:{ru:'Всё время',uz:'Butun davr'},
+  pMonthShort:{ru:'За месяц',uz:'Oy uchun'},pTodayShort:{ru:'За сегодня',uz:'Bugun uchun'},
+  pMonth2:{ru:'Месяц',uz:'Oy'},pToday2:{ru:'Сегодня',uz:'Bugun'},
+  secAdsets:{ru:'Источники рекламы (аудитории)',uz:'Reklama manbalari (auditoriyalar)'},
+  secActivity:{ru:'Активность менеджеров',uz:'Menejerlar faolligi'},
+  secPlanFact:{ru:'План / Факт по менеджерам',uz:'Menejerlar bo‘yicha Reja / Fakt'},
+  secVelocity:{ru:'Скорость воронки',uz:'Voronka tezligi'},
+  secSusp:{ru:'Подозрительные действия',uz:'Shubhali harakatlar'},
+  secForecast:{ru:'Прогноз месяца',uz:'Oy prognozi'},
+  loading:{ru:'Загрузка...',uz:'Yuklanmoqda...'},
+  loadingDyn:{ru:'Загрузка динамики...',uz:'Dinamika yuklanmoqda...'},
+  loadingAct:{ru:'Загрузка активности...',uz:'Faollik yuklanmoqda...'},
+  suspHint:{ru:'Нажми на категорию, чтобы проверить сделки.',uz:'Bitimlarni tekshirish uchun toifani bosing.'},
+  suspMoney:{ru:'💰 По продажам и деньгам',uz:'💰 Sotuv va pul bo‘yicha'},
+  suspCalls:{ru:'📞 По звонкам и активности',uz:'📞 Qo‘ng‘iroq va faollik bo‘yicha'},
+  suspFunnel:{ru:'🔀 По воронке',uz:'🔀 Voronka bo‘yicha'},
+  suspTasks:{ru:'✓ По задачам',uz:'✓ Vazifalar bo‘yicha'},
+  finYear:{ru:'Год',uz:'Yil'},finRefresh:{ru:'Обновить',uz:'Yangilash'},
+  dashNote2:{ru:'Данные обновляются автоматически каждую ночь. Кнопка «Обновить» сверху — для ручного обновления.',uz:'Ma’lumotlar har kecha avtomatik yangilanadi. Yuqoridagi «Yangilash» tugmasi — qo‘lda yangilash uchun.'},
+  launchTitle:{ru:'🚀 Запуск',uz:'🚀 Ishga tushirish'},
+  sumSalesMonth:{ru:'Сумма продаж (текущий месяц)',uz:'Sotuv summasi (joriy oy)'},
 };
 function tr(key){const o=T[key];if(!o)return key;const v=o[state.lang||'ru'];return v!==undefined?v:o.ru;}
 
@@ -3290,6 +3312,29 @@ function applyStaticI18n(){
     dcards[2].querySelector('.dl').innerHTML=tr('kCheck')+'<span class="hint" onclick="showHint(\'check\',event)">?</span>';
   }
   // фильтры перерисуются в renderStages
+  // переключатели периодов (Текущий месяц / Всё время / За месяц / За сегодня)
+  const setById=(id,v)=>{const e=document.getElementById(id);if(e)e.textContent=v;};
+  ['per-month','tr-per-month','mk-per-month'].forEach(id=>setById(id,tr('pMonth')));
+  ['per-all','tr-per-all','mk-per-all'].forEach(id=>setById(id,tr('pAll')));
+  setById('disc-per-month',tr('pMonthShort'));
+  setById('disc-per-today',tr('pTodayShort'));
+  // секции дашборда без data-t (с сохранением иконки)
+  const setSec2=(id,v,hintKey)=>{const e=document.getElementById(id);if(!e)return;const svg=e.querySelector('svg');const hint=hintKey?` <span class="hint" onclick="showHint('${hintKey}',event)">?</span>`:'';e.innerHTML=(svg?svg.outerHTML:'')+' '+v+hint;};
+  setSec2('secAdsets',tr('secAdsets'));
+  setSec2('secActivity',tr('secActivity'));
+  setSec2('secPlanFact',tr('secPlanFact'));
+  setSec2('secVelocity',tr('secVelocity'));
+  setSec2('secSusp',tr('secSusp'));
+  setSec2('fcLbl',tr('secForecast'));
+  // суспишес категории и подсказка
+  setById('suspHintLbl',tr('suspHint'));
+  setById('suspCatMoney',tr('suspMoney'));
+  setById('suspCatCalls',tr('suspCalls'));
+  setById('suspCatFunnel',tr('suspFunnel'));
+  setById('suspCatTasks',tr('suspTasks'));
+  // финансы кнопки
+  setById('finYearBtn',tr('finYear'));
+  setById('dashNote',tr('dashNote2'));
 }
 
 function openSettings(){
