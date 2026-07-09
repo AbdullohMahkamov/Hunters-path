@@ -25,7 +25,8 @@ export default async function handler(req, res) {
   if (!REDIS_URL || !REDIS_TOKEN) { res.status(500).json({ error: "no redis" }); return; }
   const session = (req.query && req.query.session) || (req.headers && req.headers["x-session"]);
   const sess = await getSession(session);
-  if (!sess || sess.role !== "admin") { res.status(403).json({ error: "admin only" }); return; }
+  if (!sess) { res.status(403).json({ error: "no session found", hint: "сессия не найдена в Upstash — возможно истекла или неверный токен. Открой приложение заново и возьми свежую сессию." }); return; }
+  if (sess.role !== "admin") { res.status(403).json({ error: "not admin", your_role: sess.role, hint: "эта сессия не админская" }); return; }
 
   const action = (req.query && req.query.action) || "list";
   const TZ = 5 * 3600;
@@ -83,6 +84,12 @@ export default async function handler(req, res) {
         })),
         avg_reply_minutes: avgReply,
       });
+      return;
+    }
+
+    if (action === "digest") {
+      const raw = await redisGet("tg:digest");
+      res.status(200).json({ ok: true, digest: raw ? JSON.parse(raw) : null });
       return;
     }
 
