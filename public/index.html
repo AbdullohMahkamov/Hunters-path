@@ -851,6 +851,18 @@
     <div style="font-size:11px;color:var(--txt3);margin-top:8px;line-height:1.5;" id="dashNote">Данные обновляются автоматически каждую ночь. Кнопка «Обновить» сверху — для ручного обновления.</div>
   </div>
 
+  <!-- TELEGRAM VIEW -->
+  <div class="view" id="tgView">
+    <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:16px;">
+      <div style="font-size:20px;font-weight:700;">Telegram</div>
+      <button onclick="loadTelegramChats()" style="padding:6px 13px;border-radius:18px;background:var(--card);border:1px solid var(--line2);color:var(--txt);font-size:12.5px;font-weight:600;cursor:pointer;font-family:inherit;">Обновить</button>
+    </div>
+    <div id="tgSummary" style="display:flex;gap:10px;margin-bottom:16px;"></div>
+    <div id="tgChatList"><div style="font-size:13px;color:var(--txt3);">Загрузка...</div></div>
+    <!-- окно переписки -->
+    <div id="tgChatWindow" style="display:none;"></div>
+  </div>
+
   <!-- CHAT VIEW (стиль Claude v5) -->
   <div class="view" id="chatView">
     <div class="chat-layout">
@@ -870,6 +882,7 @@
         <div class="side-menu" id="sideMenu">
           <button class="menu-item" onclick="goSection('dash')"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M3 3v18h18"/><rect x="7" y="10" width="3" height="8"/><rect x="12" y="6" width="3" height="12"/><rect x="17" y="13" width="3" height="5"/></svg>Дашборд</button>
           <button class="menu-item" onclick="goSection('map')"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M9 11l3 3L22 4"/><path d="M21 12v7a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11"/></svg>Задачи</button>
+          <button class="menu-item" id="menuTelegramSide" onclick="goSection('tg')"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M21 3L3 10l6 2 2 6 3-4 5 4z"/></svg>Telegram</button>
           <button class="menu-item" id="menuClientsSide" onclick="openClientsModal()" style="display:none;"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M23 21v-2a4 4 0 0 0-3-3.87M16 3.13a4 4 0 0 1 0 7.75"/></svg>Клиенты</button>
         </div>
         <div class="side-div"></div>
@@ -1572,6 +1585,80 @@ function skipGen(i){
   if(el)el.style.display='none';
 }
 
+/* ===== TELEGRAM ===== */
+async function loadTelegramChats(){
+  const list=document.getElementById('tgChatList');
+  const sum=document.getElementById('tgSummary');
+  const win=document.getElementById('tgChatWindow');
+  if(win)win.style.display='none';
+  if(list)list.style.display='block';
+  if(sum)sum.style.display='flex';
+  if(!list)return;
+  list.innerHTML='<div style="font-size:13px;color:var(--txt3);">Загрузка...</div>';
+  try{
+    const r=await fetch('/api/telegram-chats?action=list&session='+encodeURIComponent(SESSION));
+    const d=await r.json();
+    if(!d.ok){list.innerHTML='<div style="font-size:13px;color:var(--red);">'+(d.error||'Ошибка')+'</div>';return;}
+    // сводка
+    sum.innerHTML=`
+      <div style="flex:1;background:var(--card);border:1px solid var(--line2);border-radius:12px;padding:12px;">
+        <div style="font-size:22px;font-weight:700;">${d.total_chats}</div>
+        <div style="font-size:12px;color:var(--txt2);">Всего чатов</div>
+      </div>
+      <div style="flex:1;background:${d.waiting_reply?'var(--red-bg)':'var(--card)'};border:1px solid ${d.waiting_reply?'var(--red)':'var(--line2)'};border-radius:12px;padding:12px;">
+        <div style="font-size:22px;font-weight:700;color:${d.waiting_reply?'var(--red)':'var(--txt)'};">${d.waiting_reply}</div>
+        <div style="font-size:12px;color:var(--txt2);">Ждут ответа</div>
+      </div>
+      <div style="flex:1;background:${d.waiting_over_30min?'var(--gold-bg)':'var(--card)'};border:1px solid ${d.waiting_over_30min?'var(--gold)':'var(--line2)'};border-radius:12px;padding:12px;">
+        <div style="font-size:22px;font-weight:700;color:${d.waiting_over_30min?'var(--gold)':'var(--txt)'};">${d.waiting_over_30min}</div>
+        <div style="font-size:12px;color:var(--txt2);">Ждут >30 мин</div>
+      </div>`;
+    // список чатов
+    if(!d.chats.length){list.innerHTML='<div style="font-size:13px;color:var(--txt3);">Чатов пока нет. Напишите боту или подключите бизнес-аккаунт.</div>';return;}
+    list.innerHTML=d.chats.map(c=>{
+      const wait=c.waitingReply?`<span style="font-size:11px;color:var(--red);font-weight:600;">● ждёт ответа ${c.waitingMinutes} мин</span>`:`<span style="font-size:11px;color:var(--txt3);">вы ответили</span>`;
+      return `<div onclick="openTgChat(${c.chatId},'${escapeHtml(c.name).replace(/'/g,"")}')" style="background:var(--card);border:1px solid ${c.waitingReply?'var(--red)':'var(--line2)'};border-radius:12px;padding:12px 14px;margin-bottom:8px;cursor:pointer;">
+        <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:4px;">
+          <div style="font-weight:600;font-size:14px;">${escapeHtml(c.name)}</div>
+          <div style="font-size:11px;color:var(--txt3);">${c.lastTime}</div>
+        </div>
+        <div style="font-size:13px;color:var(--txt2);white-space:nowrap;overflow:hidden;text-overflow:ellipsis;margin-bottom:4px;">${escapeHtml(c.lastText)}</div>
+        ${wait}
+      </div>`;
+    }).join('');
+  }catch(e){list.innerHTML='<div style="font-size:13px;color:var(--red);">Нет связи</div>';}
+}
+async function openTgChat(chatId,name){
+  const list=document.getElementById('tgChatList');
+  const sum=document.getElementById('tgSummary');
+  const win=document.getElementById('tgChatWindow');
+  if(list)list.style.display='none';
+  if(sum)sum.style.display='none';
+  if(!win)return;
+  win.style.display='block';
+  win.innerHTML='<div style="font-size:13px;color:var(--txt3);">Загрузка переписки...</div>';
+  try{
+    const r=await fetch('/api/telegram-chats?action=chat&chatId='+chatId+'&session='+encodeURIComponent(SESSION));
+    const d=await r.json();
+    if(!d.ok){win.innerHTML='<div style="color:var(--red);">Ошибка</div>';return;}
+    const avg=d.avg_reply_minutes!=null?`Среднее время ответа: <b>${d.avg_reply_minutes} мин</b>`:'';
+    win.innerHTML=`
+      <div style="display:flex;align-items:center;gap:10px;margin-bottom:14px;">
+        <button onclick="loadTelegramChats()" style="width:34px;height:34px;border-radius:9px;background:var(--card);border:1px solid var(--line2);cursor:pointer;font-size:16px;">←</button>
+        <div><div style="font-weight:700;font-size:16px;">${escapeHtml(name)}</div><div style="font-size:12px;color:var(--txt3);">${avg}</div></div>
+      </div>
+      <div style="display:flex;flex-direction:column;gap:8px;max-width:680px;">
+        ${d.messages.map(m=>{
+          const mine=m.isOwner;
+          return `<div style="align-self:${mine?'flex-end':'flex-start'};max-width:75%;background:${mine?'var(--accent)':'var(--card2)'};color:${mine?'#fff':'var(--txt)'};padding:9px 13px;border-radius:14px;font-size:14px;">
+            <div>${escapeHtml(m.text)}</div>
+            <div style="font-size:10px;opacity:.6;margin-top:3px;">${m.time}</div>
+          </div>`;
+        }).join('')}
+      </div>`;
+  }catch(e){win.innerHTML='<div style="color:var(--red);">Нет связи</div>';}
+}
+
 /* ===== TABS ===== */
 function switchTab(t){
   state.tab=t;save();
@@ -1580,6 +1667,8 @@ function switchTab(t){
   });
   mapView.classList.toggle('active',t==='map');
   document.getElementById('dashView').classList.toggle('active',t==='dash');
+  const tgv=document.getElementById('tgView');
+  if(tgv)tgv.classList.toggle('active',t==='tg');
   const cv=document.getElementById('chatView');
   const shell=document.body.classList.contains('shell');
   if(shell){
@@ -1594,6 +1683,7 @@ function switchTab(t){
   if(btc)btc.style.display='none';
   if(t==='chat'){renderChat();scrollChatBottom();loadSmartQuestions();}
   if(t==='dash'){renderDashboard();if(state.dashTab)dashTab(state.dashTab);}
+  if(t==='tg'){loadTelegramChats();}
 }
 
 /* ===== НОВАЯ ОБОЛОЧКА: меню разделов из чата ===== */
