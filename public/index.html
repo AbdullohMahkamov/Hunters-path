@@ -1238,8 +1238,14 @@ async function loadCloud(){
     if(d&&d.ok){
       USER_ROLE=d.role||'';USER_ORG=d.org||'';
       if(d.data&&d.data.done){
-        // есть облачные данные — используем их
-        state=d.data;save();return true;
+        // есть облачные данные — используем их, НО сохраняем свежую вкладку из localStorage
+        // (облако обновляется с задержкой, локальная вкладка всегда актуальнее после F5)
+        let localTab=null,localDashTab=null;
+        try{const ls=JSON.parse(localStorage.getItem(SKEY));if(ls){localTab=ls.tab;localDashTab=ls.dashTab;}}catch(e){}
+        state=d.data;
+        if(localTab)state.tab=localTab;
+        if(localDashTab)state.dashTab=localDashTab;
+        save();return true;
       }else{
         // НЕТ облачных данных (новый/демо аккаунт) — чистое состояние, НЕ берём из localStorage
         state=defaultState();
