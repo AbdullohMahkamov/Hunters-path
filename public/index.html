@@ -3051,7 +3051,8 @@ function renderDiscipline(sp){
     return `<div style="background:var(--card);border:1px solid var(--line);border-radius:10px;padding:11px 12px;margin-bottom:9px;">
       <div style="font-size:14px;font-weight:600;margin-bottom:7px;">${escapeHtml(m.name)} <span style="font-size:11px;color:var(--txt3);font-weight:400;">· ${m.leads} ${uz?'lid':'лидов'}</span></div>
       <div style="display:grid;grid-template-columns:1fr 1fr;gap:6px 12px;font-size:12px;">
-        <div>⚡ 1-й звонок${hintIcon('firstcall')}: <b style="color:${c(speedOk,speedBad)}">${fmtMin(m.medianFirstCallMin)}</b></div>
+        <div>⚡ 1-й звонок (создание)${hintIcon('firstcall')}: <b style="color:${c(speedOk,speedBad)}">${fmtMin(m.medianFirstCallMin)}</b></div>
+        <div>⚡ 1-й звонок (назначение): <b style="color:${m.medianFirstCallAssignMin!=null?c(m.medianFirstCallAssignMin<=30,m.medianFirstCallAssignMin>180):'var(--txt3)'}">${m.medianFirstCallAssignMin!=null?fmtMin(m.medianFirstCallAssignMin):'—'}</b></div>
         ${reachCell}
         <div>📋 Ставит задачи${hintIcon('tasks')}: <b style="color:${c(taskOk,m.taskRate<30)}">${m.taskRate}%</b></div>
         <div>✅ Задач выполнено${hintIcon('tasksdone')}: <b style="color:${m.tasksTotal?c(doneOk,doneBad):'var(--txt3)'}">${doneDisplay}</b></div>
