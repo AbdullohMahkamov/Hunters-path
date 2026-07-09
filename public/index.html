@@ -3879,9 +3879,11 @@ function buildSmartQuestions(){
   if(noClose && (!lowReach || noClose.name!==lowReach.name)){
     out.push({q:`Почему ${noClose.name} не закрывает сделки (${noClose.leads} лидов, 0 продаж)?`,w:80});
   }
-  // 4) отставание от плана месяца
-  if(t.goal && t.revenue!=null){
-    const pct=t.goalPct!=null?t.goalPct:Math.round((t.revenue/t.goal)*100);
+  // 4) отставание от плана месяца — считаем по РЕАЛЬНОЙ цели (как на экране), не по серверной 500M
+  const realGoal=(typeof orgSettings!=='undefined'&&orgSettings.goal)?orgSettings.goal:(typeof getGoal==='function'?getGoal():(t.goal||0));
+  const earned=t.revenue!=null?t.revenue:(t.soldSum||0);
+  if(realGoal>0 && earned!=null){
+    const pct=Math.round(earned/realGoal*100);
     if(pct<70){
       out.push({q:`Успеваем на план месяца? Сделано ${pct}% цели.`,w:70});
     }
