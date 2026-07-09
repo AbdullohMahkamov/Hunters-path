@@ -859,13 +859,26 @@
     </div>
     <div id="tgSummary" style="display:flex;gap:10px;margin-bottom:16px;"></div>
     <div id="tgDigest" style="margin-bottom:16px;"></div>
-    <!-- РЕАКТИВАЦИЯ (активные чаты) -->
+    <!-- РАССЫЛКА (активные чаты) -->
     <div style="background:var(--card);border:1px solid var(--line2);border-radius:14px;padding:16px;margin-bottom:16px;">
       <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:10px;">
         <div style="font-size:14px;font-weight:700;">🔄 Рассылка по сегментам</div>
         <button onclick="segmentActiveChats()" style="font-size:12px;color:var(--accent);cursor:pointer;font-weight:600;padding:5px 10px;border:1px solid var(--accent);border-radius:8px;background:none;">Обновить сегменты</button>
       </div>
-      <div id="tgSegments" style="font-size:13px;color:var(--txt3);">Нажмите «Обновить сегменты», чтобы разбить активные чаты на группы для рассылки (макс. 25/день).</div>
+      <div style="font-size:11px;color:var(--txt3);margin-bottom:8px;">Только активные клиенты (кто писал после подключения) — им можно отправлять.</div>
+      <div id="tgSegments" style="font-size:13px;color:var(--txt3);">Нажмите «Обновить сегменты», чтобы разбить активные чаты на группы (макс. 25/день).</div>
+    </div>
+    <!-- АНАЛИЗ СТАРОЙ ИСТОРИИ -->
+    <div style="background:var(--card);border:1px solid var(--line2);border-radius:14px;padding:16px;margin-bottom:16px;">
+      <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:10px;">
+        <div style="font-size:14px;font-weight:700;">📊 Анализ истории</div>
+        <label style="font-size:12px;color:var(--accent);cursor:pointer;font-weight:600;padding:5px 10px;border:1px solid var(--accent);border-radius:8px;">
+          Загрузить историю
+          <input type="file" accept=".json" style="display:none;" onchange="analyzeTgHistory(event)">
+        </label>
+      </div>
+      <div style="font-size:11px;color:var(--txt3);margin-bottom:8px;">Загрузите экспорт Telegram (result.json) — покажу, где теряете клиентов и что улучшить. Только анализ, без рассылки.</div>
+      <div id="tgHistoryAnalysis" style="font-size:13px;color:var(--txt3);"></div>
     </div>
     <div id="tgChatList"><div style="font-size:13px;color:var(--txt3);">Загрузка...</div></div>
     <!-- окно переписки -->
@@ -1596,6 +1609,53 @@ function skipGen(i){
 
 /* ===== TELEGRAM ===== */
 // сегментация АКТИВНЫХ чатов (те, что бот видит и может писать — без PEER_ID_INVALID)
+// анализ старой истории — ТОЛЬКО для инсайтов (не для рассылки, Telegram не даёт слать в старые)
+async function analyzeTgHistory(ev){
+  const file=ev.target.files[0];
+  if(!file)return;
+  const box=document.getElementById('tgHistoryAnalysis');
+  box.innerHTML='<div style="color:var(--txt3);">Читаю файл... (может занять минуту)</div>';
+  try{
+    const text=await file.text();
+    const data=JSON.parse(text);
+    let chats=(data.chats&&data.chats.list)||[];
+    chats=chats.filter(c=>c.type==='personal_chat');
+    const cnt={};
+    chats.forEach(c=>(c.messages||[]).forEach(m=>{if(m.type==='message')cnt[m.from_id]=(cnt[m.from_id]||0)+1;}));
+    const ownerId=Object.entries(cnt).sort((a,b)=>b[1]-a[1])[0][0];
+    let total=0,priceQ=0,objQ=0,installQ=0,noReply=0,leftAfterPrice=0;
+    chats.forEach(c=>{
+      const msgs=(c.messages||[]).filter(m=>m.type==='message');
+      if(msgs.length<3)return;
+      total++;
+      const allText=msgs.map(m=>tgText(m).toLowerCase()).join(' ');
+      const last=msgs[msgs.length-1];
+      const lastFromClient=last.from_id!==ownerId;
+      const askedPrice=TG_PRICE.some(w=>allText.includes(w));
+      if(askedPrice)priceQ++;
+      if(TG_OBJ.some(w=>allText.includes(w)))objQ++;
+      if(TG_INSTALL.some(w=>allText.includes(w)))installQ++;
+      if(lastFromClient)noReply++;
+      if(askedPrice&&lastFromClient)leftAfterPrice++;
+    });
+    const pct=n=>total?Math.round(n/total*100):0;
+    box.innerHTML=`
+      <div style="font-size:13px;color:var(--txt);margin-bottom:10px;">Разобрано <b>${total}</b> клиентских диалогов:</div>
+      <div style="display:grid;grid-template-columns:1fr 1fr;gap:8px;margin-bottom:12px;">
+        <div style="background:var(--red-bg);border:1px solid var(--red);border-radius:10px;padding:10px;"><div style="font-size:20px;font-weight:700;color:var(--red);">${noReply}</div><div style="font-size:11px;color:var(--txt2);">без ответа (${pct(noReply)}%)</div></div>
+        <div style="background:var(--gold-bg);border:1px solid var(--gold);border-radius:10px;padding:10px;"><div style="font-size:20px;font-weight:700;color:var(--gold);">${leftAfterPrice}</div><div style="font-size:11px;color:var(--txt2);">спросили цену и ушли</div></div>
+        <div style="background:var(--card2);border-radius:10px;padding:10px;"><div style="font-size:20px;font-weight:700;">${priceQ}</div><div style="font-size:11px;color:var(--txt2);">спрашивали цену (${pct(priceQ)}%)</div></div>
+        <div style="background:var(--card2);border-radius:10px;padding:10px;"><div style="font-size:20px;font-weight:700;">${objQ}</div><div style="font-size:11px;color:var(--txt2);">возражения (${pct(objQ)}%)</div></div>
+      </div>
+      <div style="font-size:12px;color:var(--txt2);line-height:1.6;background:var(--card2);border-radius:10px;padding:12px;">
+        💡 <b>Выводы:</b><br>
+        ${noReply>total*0.15?`• <b>${noReply} клиентов остались без ответа</b> — это потерянные деньги. Настройте, чтобы отвечать всем.<br>`:''}
+        ${leftAfterPrice>5?`• <b>${leftAfterPrice} ушли после вопроса о цене</b> — объясняйте ценность до цены, предлагайте рассрочку.<br>`:''}
+        ${objQ>total*0.15?`• <b>${pct(objQ)}% возражений «дорого/подумаю»</b> — подготовьте ответы на эти возражения.<br>`:''}
+        ${installQ<priceQ*0.3?`• Про рассрочку спрашивают редко (${installQ}) — многие не знают, что она есть. Предлагайте сразу.<br>`:''}
+      </div>`;
+  }catch(e){box.innerHTML='<div style="color:var(--red);">Ошибка чтения файла: '+String(e).slice(0,80)+'</div>';}
+}
 async function segmentActiveChats(){
   const box=document.getElementById('tgSegments');
   if(!box)return;
@@ -1611,48 +1671,6 @@ const TG_PRICE=['цена','стоит','сколько','narx','qancha','нар
 const TG_OBJ=['дорого','подумаю','qimmat','oylab',"o'ylab",'потом','нет денег','keyin'];
 const TG_INSTALL=['рассрочк','части','bolib',"bo'lib",'nasiya','кредит'];
 function tgText(m){const t=m.text;if(Array.isArray(t))return t.map(x=>typeof x==='string'?x:(x.text||'')).join(' ');return t||'';}
-async function importTgHistory(ev){
-  const file=ev.target.files[0];
-  if(!file)return;
-  const box=document.getElementById('tgSegments');
-  box.innerHTML='<div style="color:var(--txt3);">Читаю файл... (может занять минуту)</div>';
-  try{
-    const text=await file.text();
-    const data=JSON.parse(text);
-    let chats=(data.chats&&data.chats.list)||[];
-    chats=chats.filter(c=>c.type==='personal_chat');
-    // определяем владельца (кто больше всех пишет)
-    const cnt={};
-    chats.forEach(c=>(c.messages||[]).forEach(m=>{if(m.type==='message'){cnt[m.from_id]=(cnt[m.from_id]||0)+1;}}));
-    const ownerId=Object.entries(cnt).sort((a,b)=>b[1]-a[1])[0][0];
-    // сегменты
-    const seg={'Без ответа':[],'Спросили цену и ушли':[],'Возражение дорого/подумаю':[],'Спрашивали рассрочку':[],'Давно не общались':[]};
-    const now=Date.now()/1000;
-    let total=0;
-    chats.forEach(c=>{
-      const msgs=(c.messages||[]).filter(m=>m.type==='message');
-      if(msgs.length<3)return;
-      total++;
-      const allText=msgs.map(m=>tgText(m).toLowerCase()).join(' ');
-      const last=msgs[msgs.length-1];
-      const lastFromClient=last.from_id!==ownerId;
-      const lastTs=last.date_unixtime?parseInt(last.date_unixtime):0;
-      const info={id:c.id,name:c.name||String(c.id),lastText:tgText(last).slice(0,80),lastTs};
-      const askedPrice=TG_PRICE.some(w=>allText.includes(w));
-      if(lastFromClient)seg['Без ответа'].push(info);
-      if(askedPrice&&lastFromClient)seg['Спросили цену и ушли'].push(info);
-      if(TG_OBJ.some(w=>allText.includes(w)))seg['Возражение дорого/подумаю'].push(info);
-      if(TG_INSTALL.some(w=>allText.includes(w)))seg['Спрашивали рассрочку'].push(info);
-      if(lastTs&&(now-lastTs)>60*24*3600)seg['Давно не общались'].push(info);
-    });
-    const stats={total,segments:Object.fromEntries(Object.entries(seg).map(([k,v])=>[k,v.length]))};
-    // сохраняем на сервер
-    box.innerHTML='<div style="color:var(--txt3);">Сохраняю сегменты...</div>';
-    await fetch('/api/telegram-import',{method:'POST',headers:{'content-type':'application/json'},
-      body:JSON.stringify({session:SESSION,action:'import',segments:seg,stats})});
-    renderTgSegments();
-  }catch(e){box.innerHTML='<div style="color:var(--red);">Ошибка чтения файла: '+String(e).slice(0,80)+'</div>';}
-}
 async function renderTgSegments(){
   const box=document.getElementById('tgSegments');
   if(!box)return;
