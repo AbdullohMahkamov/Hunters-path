@@ -28,6 +28,59 @@ export default async function handler(req, res) {
   const org = sess.org || "hunter";
 
   try {
+    // === СОХРАНИТЬ АГРЕГАТЫ ИСТОРИИ (компактно, без сырья) ===
+    if (req.method === "POST" && req.body && req.body.action === "save_history_stats") {
+      const stats = req.body.stats || {};
+      // сохраняем агрегаты истории (база "прошлого")
+      await redisSet(`tghist:${org}`, JSON.stringify({
+        ...stats,
+        savedAt: Math.floor(Date.now() / 1000),
+      }));
+      res.status(200).json({ ok: true, saved: true });
+      return;
+    }
+
+    // === ЖИВОЙ АНАЛИЗ: агрегаты истории + новые активные чаты ===
+    if (req.query && req.query.action === "live_analysis") {
+      const hist = JSON.parse((await redisGet(`tghist:${org}`)) || "null");
+      // считаем агрегаты по новым активным чатам
+      const idx = JSON.parse((await redisGet("tg:chats_index")) || "{}");
+      const chatIds = Object.keys(idx);
+      const PRICE = ["цена", "стоит", "сколько", "narx", "qancha", "нарх", "pul"];
+      const OBJ = ["дорого", "подумаю", "qimmat", "o'ylab", "oylab", "keyin"];
+      const INSTALL = ["рассрочк", "bo'lib", "bolib", "nasiya", "кредит"];
+      let nTotal = 0, nPrice = 0, nObj = 0, nInstall = 0, nNoReply = 0, nLeftPrice = 0;
+      for (const cid of chatIds) {
+        const msgs = JSON.parse((await redisGet(`tgchat:${cid}`)) || "[]");
+        if (!msgs.length) continue;
+        nTotal++;
+        const allText = msgs.map(m => (m.text || "").toLowerCase()).join(" ");
+        const last = msgs[msgs.length - 1];
+        const lastFromClient = last && !last.isOwner;
+        const askedPrice = PRICE.some(w => allText.includes(w));
+        if (askedPrice) nPrice++;
+        if (OBJ.some(w => allText.includes(w))) nObj++;
+        if (INSTALL.some(w => allText.includes(w))) nInstall++;
+        if (lastFromClient) nNoReply++;
+        if (askedPrice && lastFromClient) nLeftPrice++;
+      }
+      // объединяем историю + новые
+      const h = hist || {};
+      const combined = {
+        total: (h.total || 0) + nTotal,
+        priceQ: (h.priceQ || 0) + nPrice,
+        objQ: (h.objQ || 0) + nObj,
+        installQ: (h.installQ || 0) + nInstall,
+        noReply: (h.noReply || 0) + nNoReply,
+        leftAfterPrice: (h.leftAfterPrice || 0) + nLeftPrice,
+        fromHistory: h.total || 0,
+        fromNew: nTotal,
+        historyDate: h.savedAt || null,
+      };
+      res.status(200).json({ ok: true, analysis: combined });
+      return;
+    }
+
     // === СЕГМЕНТАЦИЯ ИЗ АКТИВНЫХ ЧАТОВ (те, что бот реально видит и может писать) ===
     if (req.query && req.query.action === "segment_active") {
       const idx = JSON.parse((await redisGet("tg:chats_index")) || "{}");
