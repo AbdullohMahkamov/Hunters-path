@@ -499,7 +499,8 @@ export default async function handler(req, res) {
       totals: {
         leads: totalLeads,
         sold,                       // продаж всего (все аккаунты) — текущий месяц
-        revenue: soldSum,           // выручка всего (все аккаунты) — касса месяца
+        revenue: soldSum,           // выручка всего (все аккаунты) — касса месяца (с доплатами)
+        newSalesRevenue: newSalesSum, // выручка ТОЛЬКО новых продаж (без доплат) — для среднего чека
         soldPeriod,                 // продаж за ~4 месяца (для аудита)
         revenuePeriod,              // выручка за ~4 месяца (для аудита)
         soldTeam,                   // продаж только пятёрки
