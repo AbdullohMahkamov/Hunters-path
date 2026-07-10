@@ -29,15 +29,19 @@ async function readCache(key, org) {
 }
 
 async function resolveSessionOrg(session) {
+  const info = await resolveSessionInfo(session);
+  return info ? (info.org || "hunter") : "hunter";
+}
+async function resolveSessionInfo(session) {
   const url = process.env.UPSTASH_REDIS_REST_URL;
   const token = process.env.UPSTASH_REDIS_REST_TOKEN;
-  if (!url || !token || !session) return "hunter";
+  if (!url || !token || !session) return null;
   try {
     const r = await fetch(`${url}/get/session:${session}`, { headers: { Authorization: `Bearer ${token}` } });
     const d = await r.json();
-    if (d && d.result) { const info = JSON.parse(d.result); return info.org || "hunter"; }
+    if (d && d.result) return JSON.parse(d.result);
   } catch (e) {}
-  return "hunter";
+  return null;
 }
 
 function num(n){ return (n==null?0:n).toLocaleString("ru"); }
@@ -145,6 +149,9 @@ export default async function handler(req, res) {
 
   try {
     const { messages, progress, lang, session, action, goal, workdays } = req.body || {};
+    // МОП НЕ имеет доступа к чату-советнику (только свой кабинет)
+    const _sinfo = await resolveSessionInfo(session);
+    if (_sinfo && _sinfo.role === "mop") { res.status(403).json({ error: "Недоступно для этой роли" }); return; }
     // единая цель: из запроса клиента (меняется, когда владелец меняет цель), дефолт 250М
     const GOAL = (goal && goal > 0) ? goal : 250000000;
     const goalFmt = GOAL.toLocaleString("ru") + " сум/мес";
