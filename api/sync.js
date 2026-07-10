@@ -333,7 +333,7 @@ export default async function handler(req, res) {
 
       // === МЕТРИКИ КОМАНДЫ: только пятёрка ===
       if (mop) {
-        if (!byMop[mop]) byMop[mop] = { leads: 0, sold: 0, revenue: 0, noContact: 0 };
+        if (!byMop[mop]) byMop[mop] = { leads: 0, sold: 0, revenue: 0, noContact: 0, soldToday: 0, revenueToday: 0 };
 
         // ЗА МЕСЯЦ: объём лидов и дозвон — по созданным в этом месяце
         if (createdThisMonth) {
@@ -366,6 +366,8 @@ export default async function handler(req, res) {
           soldTeam++; soldSumTeam += price;
           byMop[mop].sold++; byMop[mop].revenue += price;
         }
+        // продажи пятёрки за СЕГОДНЯ (по реальной дате продажи, UTC+5)
+        if (isSold && saleTs >= dayStart) { byMop[mop].soldToday++; byMop[mop].revenueToday += price; }
         // продажи пятёрки за всю базу
         if (isSold) soldTeamBase++;
       }
@@ -476,6 +478,8 @@ export default async function handler(req, res) {
       leads: v.leads,
       sold: v.sold,
       revenue: v.revenue,
+      soldToday: v.soldToday || 0,
+      revenueToday: v.revenueToday || 0,
       conv: v.leads > 0 ? +(v.sold / v.leads * 100).toFixed(2) : 0,
       reachPct: v.leads > 0 ? +((v.leads - v.noContact) / v.leads * 100).toFixed(0) : 0, // % дозвона
       reached: Math.max(0, v.leads - v.noContact), // сколько дозвонились (штук)

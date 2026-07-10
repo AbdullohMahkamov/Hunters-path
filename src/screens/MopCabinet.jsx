@@ -13,7 +13,8 @@ export default function MopCabinet({ onLogout }) {
   const sess = useSyncExternalStore(subscribe, getSnapshot, getSnapshot)
   const lang = useSyncExternalStore(subscribeMopLang, getMopLang, getMopLang)
   const [data, setData] = useState(null) // _mopData
-  const [tab, setTab] = useState('mine') // _mopCurTab
+  const [tab, setTabRaw] = useState(() => localStorage.getItem('mop_tab') || 'mine') // _mopCurTab (сохраняется при F5)
+  const setTab = (t) => { try { localStorage.setItem('mop_tab', t) } catch (e) { /* ignore */ }; setTabRaw(t) }
   const [loading, setLoading] = useState(true)
 
   // loadMopData — 1:1
@@ -41,8 +42,8 @@ export default function MopCabinet({ onLogout }) {
   // greetSub — логика mopTab()
   let greetSub
   if (tab === 'team') greetSub = mt('rankTitle')
-  else if (tab === 'stats') greetSub = uz ? 'Ishing ko‘rsatkichlari' : 'Показатели твоей работы'
-  else greetSub = uz ? 'Daromad va maqsadlaring' : 'Твой заработок и цели'
+  else if (tab === 'stats') greetSub = uz ? 'Ishingiz koʻrsatkichlari' : 'Показатели твоей работы'
+  else greetSub = uz ? 'Daromad va maqsadlaringiz' : 'Твой заработок и цели'
 
   function handleLang() {
     toggleMopLang() // обновит подписку -> перерисовка
@@ -77,29 +78,37 @@ export default function MopCabinet({ onLogout }) {
             </button>
           </div>
           <div className="mop-side-foot">
-            <button onClick={handleLang}>{lang === 'ru' ? "🌐 O'zbekcha" : '🌐 Русский'}</button>
-            <button onClick={onLogout}>{mt('logout')}</button>
+            <button onClick={handleLang} className="mop-foot-lang">
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round"><circle cx="12" cy="12" r="9" /><path d="M3 12h18M12 3a14 14 0 0 1 0 18M12 3a14 14 0 0 0 0 18" /></svg>
+              <span>{lang === 'ru' ? "O'zbekcha" : 'Русский'}</span>
+            </button>
+            <button onClick={onLogout} className="mop-foot-logout">
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round"><path d="M9 4H5v16h4M16 12H9M13 8l4 4-4 4" /></svg>
+              <span>{mt('logout')}</span>
+            </button>
           </div>
         </div>
         {/* КОНТЕНТ */}
         <div className="mop-main">
-          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 14, marginBottom: 22, flexWrap: 'wrap' }}>
-            <div style={{ flex: '0 0 auto' }}>
+          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'stretch', gap: 14, marginBottom: 22, flexWrap: 'wrap' }}>
+            <div style={{ flex: '0 0 auto', alignSelf: 'center' }}>
               <div className="mop-main-h" style={{ marginBottom: 3 }}>{greet}</div>
               <div className="mop-main-sub" style={{ marginBottom: 0 }}>{greetSub}</div>
             </div>
             {/* прогресс темпа — между приветствием и призом (не показываем на «Команде») */}
             {!empty && !loading && tab !== 'team' && (
-              <div style={{ flex: '1 1 260px', minWidth: 240, maxWidth: 470 }} dangerouslySetInnerHTML={{ __html: renderTempoBar(data) }} />
+              <div style={{ flex: '1 1 400px', minWidth: 240 }} dangerouslySetInnerHTML={{ __html: renderTempoBar(data) }} />
             )}
-            {/* розыгрыш — компактный, вровень с приветствием */}
-            <div style={{ flex: '0 0 auto', display: 'flex', alignItems: 'center', gap: 10, background: 'var(--gold-bg)', border: '1px solid var(--gold)', borderRadius: 12, padding: '8px 13px', maxWidth: 320 }}>
-              <div style={{ fontSize: 22, lineHeight: 1, flex: '0 0 auto' }}>🎁</div>
-              <div style={{ lineHeight: 1.3 }}>
-                <div style={{ fontSize: 12, fontWeight: 700, color: 'var(--gold)' }}>{mt('raffleCTA')}</div>
-                <div style={{ fontSize: 11.5, color: 'var(--txt)' }}><b style={{ color: 'var(--gold)' }}>{mt('specialPrize')}</b></div>
+            {/* розыгрыш — компактный, вровень с приветствием (не показываем на «Команде») */}
+            {tab !== 'team' && (
+              <div style={{ flex: '0 0 auto', display: 'flex', alignItems: 'center', gap: 10, background: 'var(--gold-bg)', border: '1px solid var(--gold)', borderRadius: 12, padding: '8px 13px', maxWidth: 320 }}>
+                <svg viewBox="0 0 24 24" width="22" height="22" fill="none" stroke="var(--gold)" strokeWidth="1.7" strokeLinecap="round" strokeLinejoin="round" style={{ flex: '0 0 auto' }}><path d="M4 11h16v9a1 1 0 0 1-1 1H5a1 1 0 0 1-1-1z" /><path d="M3 7h18v4H3z" /><path d="M12 7v14" /><path d="M12 7S10.5 3 8 4s4 3 4 3zM12 7s1.5-4 4-3-4 3-4 3z" /></svg>
+                <div style={{ lineHeight: 1.3 }}>
+                  <div style={{ fontSize: 12, fontWeight: 700, color: 'var(--gold)' }}>{mt('raffleCTA')}</div>
+                  <div style={{ fontSize: 11.5, color: 'var(--txt)' }}><b style={{ color: 'var(--gold)' }}>{mt('specialPrize')}</b></div>
+                </div>
               </div>
-            </div>
+            )}
           </div>
           <div id="mopContent">
             {loading ? (

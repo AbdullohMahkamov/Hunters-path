@@ -140,6 +140,7 @@ export default async function handler(req, res) {
       const team = Object.values(byId).map(m => ({
         id: m.id, name: m.name,
         sold: m.sold || 0, revenue: m.revenue || 0,
+        soldToday: m.soldToday || 0, revenueToday: m.revenueToday || 0,
         leads: m.leads || 0, conv: m.conv || 0,
         reachPct: m.reachPct != null ? m.reachPct : (m.reachRate || 0),
         firstCallMin: m.medianFirstCallMin != null ? m.medianFirstCallMin : null,
@@ -188,8 +189,11 @@ export default async function handler(req, res) {
         const now = new Date(Date.now() + 5 * 3600 * 1000);
         const day = now.getUTCDate();
         const bonus15 = 15 * USD;
+        // Исключение: ТОЛЬКО в июле 2026 первый бонус за темп даётся до 12 числа (обычно до 10).
+        // Остальные пороги (20 / конец месяца) и другие месяцы — без изменений.
+        const firstTempoDay = (now.getUTCFullYear() === 2026 && now.getUTCMonth() === 6) ? 12 : 10;
         const tempoBonuses = [
-          { label: "33% до 10 числа", need: 33, byDay: 10, got: planPct >= 33 && day <= 10, possible: day <= 10 },
+          { label: `33% до ${firstTempoDay} числа`, need: 33, byDay: firstTempoDay, got: planPct >= 33 && day <= firstTempoDay, possible: day <= firstTempoDay },
           { label: "66% до 20 числа", need: 66, byDay: 20, got: planPct >= 66 && day <= 20, possible: day <= 20 },
           { label: "100% до конца месяца", need: 100, byDay: 31, got: planPct >= 100, possible: true },
         ];
@@ -301,7 +305,7 @@ export default async function handler(req, res) {
         // ближайший невыполненный бонус
         let nextTempoBonus = null;
         const tempoTargets = [
-          { pct: 33, byDay: 10, got: planPct >= 33 && day <= 10 },
+          { pct: 33, byDay: firstTempoDay, got: planPct >= 33 && day <= firstTempoDay },
           { pct: 66, byDay: 20, got: planPct >= 66 && day <= 20 },
           { pct: 100, byDay: daysInMonth, got: planPct >= 100 },
         ];
