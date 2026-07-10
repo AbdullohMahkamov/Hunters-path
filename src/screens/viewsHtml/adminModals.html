@@ -1,0 +1,24 @@
+<div id="mopsOverlay" style="display:none;position:fixed;inset:0;background:rgba(0,0,0,.55);z-index:100;padding:20px;overflow-y:auto;" onclick="if(event.target===this)closeMopsModal()">
+  <div style="max-width:640px;margin:30px auto;background:var(--bg2);border-radius:16px;padding:22px;">
+    <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:18px;">
+      <div style="font-size:18px;font-weight:700;">МОПы — кабинеты</div>
+      <button onclick="closeMopsModal()" style="background:none;border:none;color:var(--txt2);font-size:22px;cursor:pointer;">×</button>
+    </div>
+    <div style="font-size:12.5px;color:var(--txt3);margin-bottom:16px;">Создайте аккаунт менеджеру (логин/пароль) и задайте личный план. МОП зайдёт в свой кабинет и увидит свои данные + рейтинг команды.</div>
+    <div id="mopsList"><div style="color:var(--txt3);font-size:13px;">Загрузка...</div></div>
+  </div>
+</div>
+
+<div id="clientsOverlay" style="display:none;position:fixed;inset:0;background:rgba(0,0,0,.55);z-index:100;padding:20px;overflow-y:auto;" onclick="if(event.target===this)closeClientsModal()">
+  <div style="max-width:560px;margin:30px auto;background:var(--bg);border:1px solid var(--line2);border-radius:16px;overflow:hidden;">
+    <div style="display:flex;justify-content:space-between;align-items:center;padding:16px 18px;border-bottom:1px solid var(--line);">
+      <div style="font-size:16px;font-weight:700;">Клиенты</div>
+      <button onclick="closeClientsModal()" style="width:30px;height:30px;border-radius:8px;background:var(--card);border:1px solid var(--line2);color:var(--txt);font-size:16px;cursor:pointer;">✕</button>
+    </div>
+    <div style="padding:16px 18px;">
+      <div id="clientsList" style="margin-bottom:16px;"></div>
+      <button onclick="openClientForm()" style="width:100%;padding:11px;border-radius:9px;background:var(--accent);border:none;color:#fff;font-size:13.5px;font-weight:600;cursor:pointer;">+ Добавить клиента</button>
+      <div id="clientForm" style="display:none;margin-top:16px;border-top:1px solid var(--line);padding-top:16px;"></div>
+    </div>
+  </div>
+</div>

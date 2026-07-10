@@ -5,11 +5,13 @@ import { applyTheme } from '../lib/theme.js'
 import { installShellStubs } from '../lib/shellStubs.js'
 import { applyLiveDash, applySuspicious } from '../lib/dashRender.js'
 import { initChat, renderChat, scrollChatBottom } from '../lib/chat.js'
+import { initAdminModals } from '../lib/adminModals.js'
 import mapViewHtml from './viewsHtml/mapView.html?raw'
 import dashViewHtml from './viewsHtml/dashView.html?raw'
 import tgViewHtml from './viewsHtml/tgView.html?raw'
 import chatMainInnerHtml from './viewsHtml/chatMainInner.html?raw'
 import askModeHtml from './viewsHtml/askModeModal.html?raw'
+import adminModalsHtml from './viewsHtml/adminModals.html?raw'
 
 // Backbone основного приложения (админ/РОП/демо) — 1:1 shell-хром монолита.
 // Тяжёлые вьюхи (дашборд/telegram/задачи) смонтированы дословными скелетами;
@@ -57,6 +59,7 @@ export default function AppShell({ onLogout }) {
       applyTheme()
       installShellStubs()
       initChat()
+      initAdminModals()
       // мосты для императивных модулей (чат/скелеты) → React
       window.__forceShellRender = () => force((n) => n + 1)
       window.__switchToChat = () => applyTab('chat')
@@ -198,8 +201,8 @@ export default function AppShell({ onLogout }) {
                     <button className={'menu-item' + (tab === 'dash' ? ' active' : '')} onClick={() => goSection('dash')}><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round"><path d="M3 3v18h18" /><rect x="7" y="10" width="3" height="8" /><rect x="12" y="6" width="3" height="12" /><rect x="17" y="13" width="3" height="5" /></svg>Дашборд</button>
                     <button className={'menu-item' + (tab === 'map' ? ' active' : '')} onClick={() => goSection('map')}><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round"><path d="M9 11l3 3L22 4" /><path d="M21 12v7a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11" /></svg>Задачи</button>
                     <button className={'menu-item' + (tab === 'tg' ? ' active' : '')} onClick={() => goSection('tg')}><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round"><path d="M21 3L3 10l6 2 2 6 3-4 5 4z" /></svg>Telegram</button>
-                    {isAdmin && <button className="menu-item" onClick={() => {/* Этап 5: клиенты */}}><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round"><path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2" /><circle cx="9" cy="7" r="4" /><path d="M23 21v-2a4 4 0 0 0-3-3.87M16 3.13a4 4 0 0 1 0 7.75" /></svg>Клиенты</button>}
-                    {isAdmin && <button className="menu-item" onClick={() => {/* Этап 5: МОПы */}}><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round"><circle cx="12" cy="8" r="4" /><path d="M4 20a8 8 0 0 1 16 0" /></svg>МОПы (кабинеты)</button>}
+                    {isAdmin && <button className="menu-item" onClick={() => { setSecOpen(false); window.openClientsModal && window.openClientsModal() }}><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round"><path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2" /><circle cx="9" cy="7" r="4" /><path d="M23 21v-2a4 4 0 0 0-3-3.87M16 3.13a4 4 0 0 1 0 7.75" /></svg>Клиенты</button>}
+                    {isAdmin && <button className="menu-item" onClick={() => { setSecOpen(false); window.openMopsModal && window.openMopsModal() }}><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round"><circle cx="12" cy="8" r="4" /><path d="M4 20a8 8 0 0 1 16 0" /></svg>МОПы (кабинеты)</button>}
                   </div>
                 </div>
                 <div className="side-brand" onClick={() => applyTab('chat')} style={{ cursor: 'pointer' }}><div className="side-logo">H</div><span>Hunter AI</span></div>
@@ -237,6 +240,7 @@ export default function AppShell({ onLogout }) {
 
         <div id="aiToast" />
         <div dangerouslySetInnerHTML={{ __html: askModeHtml }} />
+        <div dangerouslySetInnerHTML={{ __html: adminModalsHtml }} />
       </main>
 
       {/* НАСТРОЙКИ */}
