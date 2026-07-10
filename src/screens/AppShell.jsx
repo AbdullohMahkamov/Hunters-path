@@ -11,6 +11,7 @@ import { initFinanceTrends } from '../lib/financeTrends.js'
 import { initQuests, renderStages, renderDopQuests } from '../lib/quests.js'
 import { applyI18n } from '../lib/i18nApply.js'
 import { ti } from '../lib/shellI18n.js'
+import { initAuditWizard, maybeShowWelcome } from '../lib/auditWizard.js'
 import mapViewHtml from './viewsHtml/mapView.html?raw'
 import dashViewHtml from './viewsHtml/dashView.html?raw'
 import tgViewHtml from './viewsHtml/tgView.html?raw'
@@ -19,6 +20,7 @@ import askModeHtml from './viewsHtml/askModeModal.html?raw'
 import adminModalsHtml from './viewsHtml/adminModals.html?raw'
 import genOverlayHtml from './viewsHtml/genOverlay.html?raw'
 import dashModalsHtml from './viewsHtml/dashModals.html?raw'
+import wizardOverlayHtml from './viewsHtml/wizardOverlay.html?raw'
 
 // Backbone основного приложения (админ/РОП/демо) — 1:1 shell-хром монолита.
 // Тяжёлые вьюхи (дашборд/telegram/задачи) смонтированы дословными скелетами;
@@ -71,7 +73,9 @@ export default function AppShell({ onLogout }) {
       initFinanceTrends()
       initQuests()
       initDashModals()
+      initAuditWizard()
       window.__reloadDashboard = () => { dashLoadedRef.current = false; return loadDashboard() }
+      window.__switchToTab = applyTab
       // мосты для императивных модулей (чат/скелеты) → React
       window.__forceShellRender = () => force((n) => n + 1)
       window.__switchToChat = () => applyTab('chat')
@@ -89,7 +93,7 @@ export default function AppShell({ onLogout }) {
       else start = 'chat'
       bootedRef.current = true
       applyTab(start)
-      setTimeout(() => applyI18n(), 30)
+      setTimeout(() => { applyI18n(); maybeShowWelcome() }, 30)
     })()
     return () => { cancelled = true; document.body.classList.remove('shell', 'sec-open', 'chat-open') }
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -268,6 +272,7 @@ export default function AppShell({ onLogout }) {
         <div dangerouslySetInnerHTML={{ __html: adminModalsHtml }} />
         <div dangerouslySetInnerHTML={{ __html: genOverlayHtml }} />
         <div dangerouslySetInnerHTML={{ __html: dashModalsHtml }} />
+        <div dangerouslySetInnerHTML={{ __html: wizardOverlayHtml }} />
       </main>
 
       {/* НАСТРОЙКИ */}
