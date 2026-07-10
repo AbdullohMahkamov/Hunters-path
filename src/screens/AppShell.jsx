@@ -6,6 +6,7 @@ import { installShellStubs } from '../lib/shellStubs.js'
 import { applyLiveDash, applySuspicious } from '../lib/dashRender.js'
 import { initChat, renderChat, scrollChatBottom } from '../lib/chat.js'
 import { initAdminModals } from '../lib/adminModals.js'
+import { initTelegram, loadTelegramChats } from '../lib/telegram.js'
 import mapViewHtml from './viewsHtml/mapView.html?raw'
 import dashViewHtml from './viewsHtml/dashView.html?raw'
 import tgViewHtml from './viewsHtml/tgView.html?raw'
@@ -60,6 +61,7 @@ export default function AppShell({ onLogout }) {
       installShellStubs()
       initChat()
       initAdminModals()
+      initTelegram()
       // мосты для императивных модулей (чат/скелеты) → React
       window.__forceShellRender = () => force((n) => n + 1)
       window.__switchToChat = () => applyTab('chat')
@@ -91,6 +93,7 @@ export default function AppShell({ onLogout }) {
     document.body.classList.toggle('chat-open', t === 'chat')
     if (t === 'dash') { const dt = state.dashTab || 'overview'; window.dashTab && window.dashTab(dt); loadDashboard() }
     if (t === 'chat') { setTimeout(() => { renderChat(); scrollChatBottom() }, 0) }
+    if (t === 'tg') { setTimeout(() => loadTelegramChats(), 0) }
   }
 
   // роль РОПа: скрыть чувствительные блоки внутри дашборда (applyRole, 1:1 по IDs)
