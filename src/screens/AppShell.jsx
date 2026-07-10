@@ -7,6 +7,7 @@ import { applyLiveDash, applySuspicious } from '../lib/dashRender.js'
 import { initChat, renderChat, scrollChatBottom } from '../lib/chat.js'
 import { initAdminModals } from '../lib/adminModals.js'
 import { initTelegram, loadTelegramChats } from '../lib/telegram.js'
+import { initFinanceTrends } from '../lib/financeTrends.js'
 import mapViewHtml from './viewsHtml/mapView.html?raw'
 import dashViewHtml from './viewsHtml/dashView.html?raw'
 import tgViewHtml from './viewsHtml/tgView.html?raw'
@@ -62,6 +63,7 @@ export default function AppShell({ onLogout }) {
       initChat()
       initAdminModals()
       initTelegram()
+      initFinanceTrends()
       // мосты для императивных модулей (чат/скелеты) → React
       window.__forceShellRender = () => force((n) => n + 1)
       window.__switchToChat = () => applyTab('chat')

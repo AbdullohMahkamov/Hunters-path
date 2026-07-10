@@ -13,7 +13,7 @@ export function installShellStubs() {
   if (installed) return
   installed = true
 
-  // dashTab — реальное переключение под-вкладок дашборда
+  // dashTab — реальное переключение под-вкладок дашборда (+ загрузка данных, как в монолите)
   window.dashTab = function (tab) {
     state.dashTab = tab; save()
     ;['overview', 'trends', 'finance', 'marketing', 'sales'].forEach((t) => {
@@ -22,6 +22,8 @@ export function installShellStubs() {
       if (btn) btn.classList.toggle('on', t === tab)
       if (grp) grp.style.display = (t === tab) ? 'block' : 'none'
     })
+    if (tab === 'trends' && typeof window.loadTrends === 'function') window.loadTrends()
+    if (tab === 'finance' && typeof window.loadFinance === 'function') window.loadFinance()
   }
 
   // setDashPeriod / setDiscPeriod — реальные (перерисовка по данным)
@@ -46,9 +48,9 @@ export function installShellStubs() {
   // Заглушки загрузки данных / модалок — реальные реализации в следующих этапах.
   const noop = () => { /* раздел переносится в следующем этапе */ }
   ;['syncAll', 'openWorkdaysModal', 'closeWorkdaysModal', 'saveWorkdays', 'showHint',
-    'loadActivity', 'loadFinance', 'openSuspModal', 'closeSuspModal', 'toggleSuspHistory',
-    'loadTelegramChats', 'segmentActiveChats', 'analyzeTgHistory', 'askForecastHelp',
-    'openGenerator', 'askNext', 'resetHunt', 'openClientForm', 'toggleAdsets', 'refreshMetaSpend',
+    'loadActivity', 'openSuspModal', 'closeSuspModal', 'toggleSuspHistory',
+    'askForecastHelp',
+    'openGenerator', 'askNext', 'resetHunt', 'toggleAdsets', 'refreshMetaSpend',
     'editMargin', 'editAdSpend'].forEach((fn) => {
     if (typeof window[fn] !== 'function') window[fn] = noop
   })

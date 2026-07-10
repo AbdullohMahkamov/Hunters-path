@@ -486,4 +486,7 @@ export function setDashPeriodReal(per) {
   if (ml) ml.textContent = per === 'all' ? (state.lang === 'uz' ? 'Lidlar (butun davr)' : 'Лидов (всё время)') : (state.lang === 'uz' ? 'Oylik lidlar' : 'Лидов за месяц')
   if (window._dashData) applyLiveDash(window._dashData)
   renderOverviewMoney()
+  // динамика реагирует на период (месяц/всё время)
+  const trendsGrp = document.getElementById('dg-trends')
+  if (trendsGrp && trendsGrp.style.display !== 'none' && typeof window.renderTrendsPeriod === 'function') window.renderTrendsPeriod()
 }
