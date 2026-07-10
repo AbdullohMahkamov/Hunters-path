@@ -8,12 +8,14 @@ import { initChat, renderChat, scrollChatBottom } from '../lib/chat.js'
 import { initAdminModals } from '../lib/adminModals.js'
 import { initTelegram, loadTelegramChats } from '../lib/telegram.js'
 import { initFinanceTrends } from '../lib/financeTrends.js'
+import { initQuests, renderStages, renderDopQuests } from '../lib/quests.js'
 import mapViewHtml from './viewsHtml/mapView.html?raw'
 import dashViewHtml from './viewsHtml/dashView.html?raw'
 import tgViewHtml from './viewsHtml/tgView.html?raw'
 import chatMainInnerHtml from './viewsHtml/chatMainInner.html?raw'
 import askModeHtml from './viewsHtml/askModeModal.html?raw'
 import adminModalsHtml from './viewsHtml/adminModals.html?raw'
+import genOverlayHtml from './viewsHtml/genOverlay.html?raw'
 
 // Backbone основного приложения (админ/РОП/демо) — 1:1 shell-хром монолита.
 // Тяжёлые вьюхи (дашборд/telegram/задачи) смонтированы дословными скелетами;
@@ -64,6 +66,7 @@ export default function AppShell({ onLogout }) {
       initAdminModals()
       initTelegram()
       initFinanceTrends()
+      initQuests()
       // мосты для императивных модулей (чат/скелеты) → React
       window.__forceShellRender = () => force((n) => n + 1)
       window.__switchToChat = () => applyTab('chat')
@@ -96,6 +99,7 @@ export default function AppShell({ onLogout }) {
     if (t === 'dash') { const dt = state.dashTab || 'overview'; window.dashTab && window.dashTab(dt); loadDashboard() }
     if (t === 'chat') { setTimeout(() => { renderChat(); scrollChatBottom() }, 0) }
     if (t === 'tg') { setTimeout(() => loadTelegramChats(), 0) }
+    if (t === 'map') { setTimeout(() => { renderStages(); renderDopQuests() }, 0) }
   }
 
   // роль РОПа: скрыть чувствительные блоки внутри дашборда (applyRole, 1:1 по IDs)
@@ -246,6 +250,7 @@ export default function AppShell({ onLogout }) {
         <div id="aiToast" />
         <div dangerouslySetInnerHTML={{ __html: askModeHtml }} />
         <div dangerouslySetInnerHTML={{ __html: adminModalsHtml }} />
+        <div dangerouslySetInnerHTML={{ __html: genOverlayHtml }} />
       </main>
 
       {/* НАСТРОЙКИ */}
