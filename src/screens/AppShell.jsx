@@ -4,9 +4,12 @@ import { state, save, loadCloud, ensureChats, setLang } from '../lib/appState.js
 import { applyTheme } from '../lib/theme.js'
 import { installShellStubs } from '../lib/shellStubs.js'
 import { applyLiveDash, applySuspicious } from '../lib/dashRender.js'
+import { initChat, renderChat, scrollChatBottom } from '../lib/chat.js'
 import mapViewHtml from './viewsHtml/mapView.html?raw'
 import dashViewHtml from './viewsHtml/dashView.html?raw'
 import tgViewHtml from './viewsHtml/tgView.html?raw'
+import chatMainInnerHtml from './viewsHtml/chatMainInner.html?raw'
+import askModeHtml from './viewsHtml/askModeModal.html?raw'
 
 // Backbone основного приложения (админ/РОП/демо) — 1:1 shell-хром монолита.
 // Тяжёлые вьюхи (дашборд/telegram/задачи) смонтированы дословными скелетами;
@@ -53,6 +56,14 @@ export default function AppShell({ onLogout }) {
     ;(async () => {
       applyTheme()
       installShellStubs()
+      initChat()
+      // мосты для императивных модулей (чат/скелеты) → React
+      window.__forceShellRender = () => force((n) => n + 1)
+      window.__switchToChat = () => applyTab('chat')
+      window.toggleSidebar = toggleSidebar
+      window.newChat = newChat
+      window.openSettings = () => setSettingsOpen(true)
+      if (typeof window.openWizard !== 'function') window.openWizard = () => { /* мастер аудита — Этап 5 */ }
       document.body.classList.add('shell')
       await loadCloud()
       if (cancelled) return
@@ -76,6 +87,7 @@ export default function AppShell({ onLogout }) {
     document.body.classList.toggle('sec-open', t !== 'chat')
     document.body.classList.toggle('chat-open', t === 'chat')
     if (t === 'dash') { const dt = state.dashTab || 'overview'; window.dashTab && window.dashTab(dt); loadDashboard() }
+    if (t === 'chat') { setTimeout(() => { renderChat(); scrollChatBottom() }, 0) }
   }
 
   // роль РОПа: скрыть чувствительные блоки внутри дашборда (applyRole, 1:1 по IDs)
@@ -219,41 +231,12 @@ export default function AppShell({ onLogout }) {
             </div>
             <div className="side-backdrop" id="sideBackdrop" onClick={() => toggleSidebar(false)} />
 
-            <div className="chat-main">
-              <div className="chat-topbar">
-                <button className="side-toggle" onClick={() => toggleSidebar(true)} title="Чаты">☰</button>
-                <div className="chat-title-cur">{(chats.find((c) => c.id === state.activeChatId) || {}).title || 'Новый чат'}</div>
-              </div>
-              <div className="chat-scroll" id="chatScroll">
-                <div className="chat-empty" id="chatEmpty">
-                  <div className="ce-hi"><svg className="ce-star" width="26" height="26" viewBox="0 0 24 24" fill="currentColor"><path d="M12 2l1.6 6.4L20 10l-6.4 1.6L12 18l-1.6-6.4L4 10l6.4-1.6L12 2z" /></svg><span>Чем помочь по продажам?</span></div>
-                  <div className="ce-input">
-                    <div className="chat-input">
-                      <div className="inner">
-                        <textarea rows="1" placeholder="Спросите о бизнесе..." disabled title="Чат подключается в Этапе 4б" />
-                        <div className="row">
-                          <div className="spacer" />
-                          <button className="send-btn" disabled><svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round"><line x1="12" y1="19" x2="12" y2="5" /><polyline points="5 12 12 5 19 12" /></svg></button>
-                        </div>
-                      </div>
-                    </div>
-                  </div>
-                  <div className="ce-qs">
-                    <div className="qbar" id="quickQBar">
-                      <div className="qlbl qlbl-daily">Ежедневные вопросы</div>
-                      <div className="ce-qgrid" id="quickRow">
-                        <button className="ce-qbtn" disabled>Как дела сегодня?<span className="ce-arr">›</span></button>
-                        <button className="ce-qbtn" disabled>Что не так?<span className="ce-arr">›</span></button>
-                        <button className="ce-qbtn" disabled>Как дойти до цели?<span className="ce-arr">›</span></button>
-                        <button className="ce-qbtn" disabled>Кто отстаёт?<span className="ce-arr">›</span></button>
-                      </div>
-                    </div>
-                  </div>
-                </div>
-              </div>
-            </div>
+            <div className="chat-main" dangerouslySetInnerHTML={{ __html: chatMainInnerHtml }} />
           </div>
         </div>
+
+        <div id="aiToast" />
+        <div dangerouslySetInnerHTML={{ __html: askModeHtml }} />
       </main>
 
       {/* НАСТРОЙКИ */}

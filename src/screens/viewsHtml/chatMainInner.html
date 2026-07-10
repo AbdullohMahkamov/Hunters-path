@@ -1,0 +1,67 @@
+        <div class="chat-topbar">
+          <button class="side-toggle" onclick="toggleSidebar(true)" title="Чаты">☰</button>
+          <div class="chat-title-cur" id="chatTitleCur">Новый чат</div>
+        </div>
+        <!-- лёгкий блюр сверху (как в Claude), когда чат прокручен -->
+        <div class="chat-fade-top" id="chatFadeTop"></div>
+        <!-- кнопка «вниз» появляется при прокрутке вверх -->
+        <button class="scroll-down-btn" id="scrollDownBtn" onclick="scrollChatBottom(true)" title="Вниз">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="12" y1="5" x2="12" y2="19"/><polyline points="19 12 12 19 5 12"/></svg>
+        </button>
+
+        <div class="chat-scroll" id="chatScroll">
+          <!-- ПУСТОЙ ЭКРАН: приветствие + поле ввода по центру + подсказки (как v5) -->
+          <div class="chat-empty" id="chatEmpty">
+            <div id="wizBanner" style="display:none;background:var(--card2);border:1px solid var(--line2);border-radius:14px;padding:18px;margin-bottom:22px;text-align:left;">
+              <div style="font-size:15px;font-weight:700;margin-bottom:6px;" data-t="auditBannerT">Начнём с аудита вашего бизнеса</div>
+              <div style="font-size:13px;color:var(--txt2);line-height:1.55;margin-bottom:13px;">Система проанализирует данные, покажет где теряются деньги, спросит вашу цель и составит персональный план задач.</div>
+              <button onclick="openWizard()" style="width:100%;padding:12px;border-radius:10px;background:#c15f3c;border:none;color:#fff;font-size:14px;font-weight:600;cursor:pointer;">Сделать полный аудит</button>
+            </div>
+            <div class="ce-hi"><svg class="ce-star" width="26" height="26" viewBox="0 0 24 24" fill="currentColor"><path d="M12 2l1.6 6.4L20 10l-6.4 1.6L12 18l-1.6-6.4L4 10l6.4-1.6L12 2z"/></svg><span id="ceTitle">Чем помочь по продажам?</span></div>
+            <!-- поле ввода по центру -->
+            <div class="ce-input">
+              <div class="chat-input">
+                <div class="inner">
+                  <textarea id="chatBoxC" rows="1" placeholder="Спросите о бизнесе..." oninput="autoGrow(this)"></textarea>
+                  <div class="row">
+                    <button class="attach-btn" onclick="document.getElementById('fileInput').click()" aria-label="Прикрепить файл"><svg width="19" height="19" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg></button>
+                    <div class="spacer"></div>
+                    <button class="send-btn" onclick="sendFromCenter()"><svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><line x1="12" y1="19" x2="12" y2="5"/><polyline points="5 12 12 5 19 12"/></svg></button>
+                  </div>
+                </div>
+              </div>
+            </div>
+            <!-- подсказки под полем -->
+            <div class="ce-qs">
+              <div class="qbar" id="smartQBar" style="display:none;">
+                <div class="qlbl qlbl-smart" id="smartQLbl">Система нашла — стоит разобраться</div>
+                <div class="ce-qgrid" id="smartQRow"></div>
+              </div>
+              <div class="qbar" id="quickQBar">
+                <div class="qlbl qlbl-daily">Ежедневные вопросы</div>
+                <div class="ce-qgrid" id="quickRow">
+                  <button class="ce-qbtn" onclick="quickAsk('Как дела сегодня? Что по продажам?')">Как дела сегодня?<span class="ce-arr">›</span></button>
+                  <button class="ce-qbtn" onclick="quickAsk('Что сейчас не так с продажами?')">Что не так?<span class="ce-arr">›</span></button>
+                  <button class="ce-qbtn" onclick="quickAsk('Чего не хватает, чтобы дойти до цели месяца?')">Как дойти до цели?<span class="ce-arr">›</span></button>
+                  <button class="ce-qbtn" onclick="quickAsk('Кто из менеджеров отстаёт и почему?')">Кто отстаёт?<span class="ce-arr">›</span></button>
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <!-- НИЗ: появляется при активном чате -->
+        <div class="chat-bottom" id="chatBottom" style="display:none;">
+          <div class="qmix" id="qmixRow"></div>
+          <div class="file-chips" id="fileChips"></div>
+          <div class="chat-input">
+            <div class="inner">
+              <input type="file" id="fileInput" accept=".pdf,.png,.jpg,.jpeg,.csv,.txt,image/*" multiple style="display:none;" onchange="handleFiles(this.files)" />
+              <textarea id="chatBox" rows="1" placeholder="Спросите о бизнесе..." oninput="autoGrow(this)"></textarea>
+              <div class="row">
+                <button class="attach-btn" onclick="document.getElementById('fileInput').click()" aria-label="Прикрепить файл"><svg width="19" height="19" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg></button>
+                <div class="spacer"></div>
+                <button class="send-btn" id="sendBtn" onclick="sendMsg()"><svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><line x1="12" y1="19" x2="12" y2="5"/><polyline points="5 12 12 5 19 12"/></svg></button>
+              </div>
+            </div>
+          </div>
