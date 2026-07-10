@@ -5018,24 +5018,41 @@ function renderMopMine(){
   const fcm=me.firstCallMin!=null?(me.firstCallMin>=60?(Math.round(me.firstCallMin/6)/10+' '+mt('hour')):me.firstCallMin+' '+mt('min')):'—';
   const e=_mopData.earnings;
   const fmtS=n=>(n||0).toLocaleString('ru');
-  let out='';
-  // === ГЕРОЙ: ЗАРАБОТОК ===
+
+  // --- карточки-компоненты ---
+  const heroCard=e?`<div class="mop-card" style="margin-bottom:0;">
+    <div class="mop-ct">💵 ${mt('earnings')} · ${e.role==='presales'?'Pre-Sales':'Sales'}</div>
+    <div class="mop-hero-big">${fmtS(e.total)}</div>
+    <div style="font-size:12px;color:var(--txt3);margin:5px 0 14px;">${mt('sumMonth')}</div>
+    <div style="display:flex;flex-direction:column;gap:6px;font-size:13px;">
+      <div style="display:flex;justify-content:space-between;"><span style="color:var(--txt2);">${mt('fix')}</span><b>${fmtS(e.fix)}</b></div>
+      <div style="display:flex;justify-content:space-between;"><span style="color:var(--txt2);">${mt('kpi')} ${e.rate}%</span><b>${fmtS(e.kpiSum)}</b></div>
+      ${e.tempoBonusSum>0?`<div style="display:flex;justify-content:space-between;"><span style="color:var(--txt2);">${mt('tempoBonus')}</span><b style="color:var(--gold)">+${fmtS(e.tempoBonusSum)}</b></div>`:''}
+      ${e.topBonus>0?`<div style="display:flex;justify-content:space-between;"><span style="color:var(--txt2);">${e.topLabel}</span><b style="color:var(--gold)">+${fmtS(e.topBonus)}</b></div>`:''}
+    </div>
+  </div>`:'';
+
+  const planCard=me.plan>0?`<div class="mop-card" style="margin-bottom:0;">
+    <div class="mop-ct">🎯 ${mt('myPlan')}</div>
+    <div style="display:flex;justify-content:space-between;align-items:baseline;margin-bottom:9px;"><span style="font-size:14px;color:var(--txt2);">${mt('goal')}: <b style="color:var(--txt);">${fmtSumM(me.plan)}</b></span><span style="font-size:26px;font-weight:800;color:${planPct>=100?'var(--green)':(planPct>=50?'var(--accent)':'var(--gold)')}">${planPct}%</span></div>
+    <div style="height:10px;background:var(--bg);border:1px solid var(--line2);border-radius:6px;overflow:hidden;margin-bottom:10px;"><div style="height:100%;width:${Math.min(100,planPct)}%;background:${planPct>=100?'var(--green)':'var(--accent)'};"></div></div>
+    <div style="font-size:13px;color:var(--txt2);">${me.revenue<me.plan?mt('leftToPlan')+' <b>'+fmtSumM(me.plan-me.revenue)+'</b> '+mt('toPlan'):mt('planDone')}</div>
+    <div style="display:flex;justify-content:space-between;margin-top:12px;padding-top:12px;border-top:1px solid var(--line);"><span style="font-size:13px;color:var(--txt2);">${mt('mySales')}</span><b style="font-size:14px;color:var(--green);">${me.sold} · ${fmtSumM(me.revenue)}</b></div>
+  </div>`:'';
+
+  const daysCard=(e&&e.daysInfo&&e.daysInfo.gapToPlan>0)?`<div class="mop-card" style="margin-bottom:0;">
+    <div class="mop-ct">📅 ${mt('daysLeft')}</div>
+    <div style="font-size:38px;font-weight:800;color:var(--accent);line-height:1;">${e.daysInfo.workLeft}</div>
+    <div style="font-size:13px;color:var(--txt2);margin-top:10px;">${mt('perDay')}</div>
+    <div style="font-size:18px;font-weight:700;color:var(--green);">${fmtS(e.daysInfo.perDayNeeded)}</div>
+    <div style="font-size:11px;color:var(--txt3);">${mt('perDayEnd')}</div>
+  </div>`:'';
+
+  // === ВЕРХ: заработок + план + дни (3 колонки) ===
+  let out=`<div class="mop-row3" style="margin-bottom:16px;align-items:stretch;">${heroCard}${planCard}${daysCard}</div>`;
+
   if(e){
-    const roleLabel=e.role==='presales'?'Pre-Sales':'Sales';
-    out+=`<div class="mop-hero">
-      <div>
-        <div class="mop-hero-lbl">💵 ${mt('earnings')} · ${roleLabel}</div>
-        <div class="mop-hero-big">${fmtS(e.total)}</div>
-        <div style="font-size:12px;color:var(--txt3);margin-top:5px;">${mt('sumMonth')}</div>
-      </div>
-      <div class="mop-hero-break">
-        <div><span>${mt('fix')}</span><b>${fmtS(e.fix)}</b></div>
-        <div><span>${mt('kpi')} ${e.rate}%</span><b>${fmtS(e.kpiSum)}</b></div>
-        ${e.tempoBonusSum>0?`<div><span>${mt('tempoBonus')}</span><b style="color:var(--gold)">+${fmtS(e.tempoBonusSum)}</b></div>`:''}
-        ${e.topBonus>0?`<div><span>${e.topLabel}</span><b style="color:var(--gold)">+${fmtS(e.topBonus)}</b></div>`:''}
-      </div>
-    </div>`;
-    // === ЛЕСТНИЦА + СЦЕНАРИИ (2 колонки) ===
+    // === ЛЕСТНИЦА + СЦЕНАРИИ ===
     const steps=e.ladder.map(s=>{
       const cur=s.isCurrent,done=s.reached;
       const icon=cur?'📍':(done?'✅':'⬜');
@@ -5047,8 +5064,7 @@ function renderMopMine(){
     }).join('');
     const ns=e.nextStep;
     const ladderCard=`<div class="mop-card">
-      <div class="mop-ct">🪜 ${mt('ladder')}</div>
-      ${steps}
+      <div class="mop-ct">🪜 ${mt('ladder')}</div>${steps}
       ${ns?`<div style="margin-top:9px;padding:12px;background:var(--gold-bg);border-radius:10px;border:1px solid var(--gold);">
         <div style="font-size:13px;font-weight:600;">${mt('toStep')} ${ns.pct}% ${mt('sellOn')} <b>${fmtS(ns.revenueNeeded)}</b></div>
         <div style="font-size:12px;color:var(--txt2);margin-top:3px;">${mt('rateOpens')} ${ns.newRate}% → ${mt('salaryW')} <b style="color:var(--green)">${fmtS(ns.newEarn)}</b> 🔥</div>
@@ -5069,31 +5085,12 @@ function renderMopMine(){
           </div>`;}).join('')}
       </div>`;
     }
-    out+=`<div class="mop-row2" style="margin-bottom:16px;">${ladderCard}${scenCard||'<div></div>'}</div>`;
-    // === 3 КОМПАКТНЫХ: дни / бонус / розыгрыш ===
-    let c1='',c2='',c3='';
-    if(e.daysInfo&&e.daysInfo.gapToPlan>0){
-      c1=`<div class="mop-card"><div class="mop-ct">📅 ${mt('daysLeft')}</div>
-        <div style="font-size:30px;font-weight:800;color:var(--accent);line-height:1;">${e.daysInfo.workLeft}</div>
-        <div style="font-size:12px;color:var(--txt2);margin-top:6px;">${mt('perDay')} <b style="color:var(--green)">${fmtS(e.daysInfo.perDayNeeded)}</b> ${mt('perDayEnd')}</div></div>`;
-    }
-    if(e.nextTempoBonus){
-      const nb=e.nextTempoBonus;
-      c2=`<div class="mop-card"><div class="mop-ct">⚡ ${mt('nextBonus')} +$15</div>
-        <div style="display:flex;justify-content:space-between;font-size:13px;margin-bottom:7px;"><span>${nb.pct}% ${mt('by')} ${nb.byDay}${mt('dayShort')}</span><b>${nb.progress}%</b></div>
-        <div style="height:9px;background:var(--bg);border:1px solid var(--line2);border-radius:6px;overflow:hidden;"><div style="height:100%;width:${nb.progress}%;background:var(--gold);"></div></div>
-        <div style="font-size:12px;color:var(--txt3);margin-top:7px;">${mt('sellMore')} <b>${fmtS(nb.revenueNeeded)}</b> · ${nb.daysLeft} ${mt('daysWord')}</div></div>`;
-    }
-    if(_mopData.raffle&&_mopData.raffle.prize){
-      c3=`<div class="mop-card" style="border-color:var(--gold);"><div class="mop-ct" style="color:var(--gold);">🎁 ${mt('raffle')}</div>
-        <div style="font-size:13px;color:var(--txt2);">${mt('raffleDesc')}</div>
-        <div style="font-size:17px;font-weight:700;color:var(--gold);margin-top:5px;">${escapeHtml(_mopData.raffle.prize)}</div></div>`;
-    }
-    const compact=[c1,c2,c3].filter(Boolean);
-    if(compact.length)out+=`<div class="mop-row3" style="margin-bottom:16px;">${compact.join('')}</div>`;
+    out+=`<div class="mop-row2" style="margin-bottom:16px;align-items:start;">${ladderCard}${scenCard||'<div></div>'}</div>`;
   }
-  // === ВОРОНКА + ПОТЕРИ (2 колонки) ===
-  const funnelCard=`<div class="mop-card">
+
+  // === НИЗ: воронка + бонус + розыгрыш + потери + дисциплина — плотная сетка 3 колонки ===
+  const bottom=[];
+  bottom.push(`<div class="mop-card" style="margin-bottom:0;">
     <div class="mop-ct">📊 ${mt('myFunnel')}</div>
     <div class="mop-stat-grid">
       <div class="mop-stat"><b>${me.leads}</b><span>${mt('leads')}</span></div>
@@ -5101,35 +5098,33 @@ function renderMopMine(){
       <div class="mop-stat"><b>${me.sold}</b><span>${mt('salesW')}</span></div>
       <div class="mop-stat"><b>${me.conv}%</b><span>${mt('conv')}</span></div>
     </div>
-  </div>`;
-  let losingCard='<div></div>';
+  </div>`);
+  if(e&&e.nextTempoBonus){
+    const nb=e.nextTempoBonus;
+    bottom.push(`<div class="mop-card" style="margin-bottom:0;"><div class="mop-ct">⚡ ${mt('nextBonus')} +$15</div>
+      <div style="display:flex;justify-content:space-between;font-size:13px;margin-bottom:7px;"><span>${nb.pct}% ${mt('by')} ${nb.byDay}${mt('dayShort')}</span><b>${nb.progress}%</b></div>
+      <div style="height:9px;background:var(--bg);border:1px solid var(--line2);border-radius:6px;overflow:hidden;"><div style="height:100%;width:${nb.progress}%;background:var(--gold);"></div></div>
+      <div style="font-size:12px;color:var(--txt3);margin-top:7px;">${mt('sellMore')} <b>${fmtS(nb.revenueNeeded)}</b> · ${nb.daysLeft} ${mt('daysWord')}</div></div>`);
+  }
   if(e&&e.losing&&e.losing.noContact>0){
-    losingCard=`<div class="mop-card" style="border-color:var(--red);">
-      <div class="mop-ct" style="color:var(--red);">📉 ${mt('losing')}</div>
+    bottom.push(`<div class="mop-card" style="margin-bottom:0;border-color:var(--red);"><div class="mop-ct" style="color:var(--red);">📉 ${mt('losing')}</div>
       <div style="font-size:14px;"><b style="font-size:30px;color:var(--red);">${e.losing.noContact}</b> ${mt('noReach')}</div>
       ${e.losing.potentialSales>0?`<div style="font-size:13px;color:var(--txt2);margin-top:5px;">${mt('potentialLost')}${e.losing.potentialSales} ${mt('lostSales')}</div>`:''}
-      <div style="font-size:13px;color:var(--gold);margin-top:9px;font-weight:600;">${mt('losingTip')}</div>
-    </div>`;
+      <div style="font-size:13px;color:var(--gold);margin-top:9px;font-weight:600;">${mt('losingTip')}</div></div>`);
   }
-  out+=`<div class="mop-row2" style="margin-bottom:16px;">${funnelCard}${losingCard}</div>`;
-  // === ПЛАН + ДИСЦИПЛИНА (2 колонки) ===
-  let planCard='<div></div>';
-  if(me.plan>0){
-    planCard=`<div class="mop-card">
-      <div class="mop-ct">🎯 ${mt('myPlan')}</div>
-      <div style="display:flex;justify-content:space-between;align-items:baseline;margin-bottom:8px;"><span style="font-size:14px;">${mt('goal')}: <b>${fmtSumM(me.plan)}</b></span><span style="font-size:20px;font-weight:700;color:${planPct>=100?'var(--green)':(planPct>=50?'var(--accent)':'var(--gold)')}">${planPct}%</span></div>
-      <div style="height:9px;background:var(--bg);border:1px solid var(--line2);border-radius:6px;overflow:hidden;"><div style="height:100%;width:${Math.min(100,planPct)}%;background:${planPct>=100?'var(--green)':'var(--accent)'};"></div></div>
-      <div style="font-size:12px;color:var(--txt3);margin-top:8px;">${me.revenue<me.plan?mt('leftToPlan')+' '+fmtSumM(me.plan-me.revenue)+' '+mt('toPlan'):mt('planDone')}</div>
-    </div>`;
-  }
-  const discCard=`<div class="mop-card">
+  bottom.push(`<div class="mop-card" style="margin-bottom:0;">
     <div class="mop-ct">⏱️ ${mt('myDiscipline')}</div>
     <div class="mop-stat-grid">
       <div class="mop-stat"><b>${fcm}</b><span>${mt('firstCall')}</span></div>
       <div class="mop-stat"><b>${me.taskRate!=null?me.taskRate+'%':'—'}</b><span>${mt('tasks')}</span></div>
     </div>
-  </div>`;
-  out+=`<div class="mop-row2">${planCard}${discCard}</div>`;
+  </div>`);
+  if(_mopData.raffle&&_mopData.raffle.prize){
+    bottom.push(`<div class="mop-card" style="margin-bottom:0;border-color:var(--gold);"><div class="mop-ct" style="color:var(--gold);">🎁 ${mt('raffle')}</div>
+      <div style="font-size:13px;color:var(--txt2);">${mt('raffleDesc')}</div>
+      <div style="font-size:18px;font-weight:700;color:var(--gold);margin-top:6px;">${escapeHtml(_mopData.raffle.prize)}</div></div>`);
+  }
+  out+=`<div class="mop-row3" style="align-items:start;">${bottom.join('')}</div>`;
   return out;
 }
 function renderMopTeam(){
