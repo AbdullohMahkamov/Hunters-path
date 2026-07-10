@@ -42,9 +42,6 @@ export function renderMopEarnings(_mopData) {
 
   let out = `<div class="mop-row3" style="margin-bottom:16px;align-items:stretch;">${heroCard}${planCard}${daysCard}</div>`
 
-  // Способы заработка: из чего складываются деньги и сколько можно ещё поднять
-  if (e) out += renderMopEarnWays(me, e)
-
   if (e) {
     const steps = e.ladder.map((s) => {
       const cur = s.isCurrent, done = s.reached
@@ -52,7 +49,7 @@ export function renderMopEarnings(_mopData) {
       return `<div style="display:flex;align-items:center;gap:11px;padding:10px 11px;border-radius:10px;${cur ? 'background:var(--accent-bg);border:1px solid var(--accent);' : ''}margin-bottom:5px;">
         <span style="font-size:14px;">${icon}</span>
         <div style="flex:1;"><div style="font-size:13px;font-weight:${cur ? '700' : '600'};">${s.pct}% ${mt('plan')} · ${mt('rate')} ${s.rate}%</div>
-        <div style="font-size:11px;color:var(--txt3);">${mt('revenueW')} ${fmtS(s.targetRevenue)} → ${mt('salaryW')} ~${fmtS(s.earnAtStep)}</div></div>
+        <div style="font-size:11px;color:var(--txt3);">${mt('revenueW')} ${fmtS(s.targetRevenue)} → ${mt('salaryW')} ~${fmtS(s.earnAtStep + (e.tempoBonusSum || 0) + (e.topBonus || 0))}</div></div>
       </div>`
     }).join('')
     const ns = e.nextStep
@@ -60,26 +57,11 @@ export function renderMopEarnings(_mopData) {
       <div class="mop-ct">🪜 ${mt('ladder')}</div>${steps}
       ${ns ? `<div style="margin-top:9px;padding:12px;background:var(--gold-bg);border-radius:10px;border:1px solid var(--gold);">
         <div style="font-size:13px;font-weight:600;">${mt('toStep')} ${ns.pct}% ${mt('sellOn')} <b>${fmtS(ns.revenueNeeded)}</b></div>
-        <div style="font-size:12px;color:var(--txt2);margin-top:3px;">${mt('rateOpens')} ${ns.newRate}% → ${mt('salaryW')} <b style="color:var(--green)">${fmtS(ns.newEarn)}</b> 🔥</div>
+        <div style="font-size:12px;color:var(--txt2);margin-top:3px;">${mt('rateOpens')} ${ns.newRate}% → ${mt('salaryW')} <b style="color:var(--green)">${fmtS(ns.newEarn + (e.tempoBonusSum || 0) + (e.topBonus || 0))}</b> 🔥</div>
       </div>` : `<div style="margin-top:9px;padding:12px;background:var(--accent-bg);border-radius:10px;text-align:center;font-size:13px;font-weight:600;color:var(--green);">${mt('maxStep')}</div>`}
     </div>`
-    let scenCard = ''
-    if (e.scenarios && e.scenarios.length) {
-      scenCard = `<div class="mop-card" style="border-color:var(--gold);">
-        <div class="mop-ct" style="color:var(--gold);">🎯 ${mt('whatToDo')}</div>
-        ${e.scenarios.map((s) => {
-          let title = s.title
-          if (s.kind === 'plan100') title = mt('closePlan')
-          else if (s.kind === 'step') title = `${mt('reachStep')} ${s.pct}% ${mt('planWord')}`
-          else if (s.kind === 'first') title = `${mt('takeFirst')} ${s.leaderName})`
-          return `<div style="padding:12px;background:var(--bg);border:1px solid var(--line2);border-radius:11px;margin-bottom:8px;">
-            <div style="font-size:14px;font-weight:700;margin-bottom:5px;">${s.icon} ${escapeHtml(title)}</div>
-            <div style="font-size:13px;color:var(--txt2);line-height:1.6;">${mt('sellMore')} <b style="color:var(--accent)">${fmtS(s.sellMore)}</b> → ${mt('willEarn')} <b style="color:var(--green)">${fmtS(s.willEarn)}</b> <span style="color:var(--gold);font-size:12px;">(+${fmtS(s.delta)})</span>${s.topBonusNote ? `<br><span style="font-size:12px;color:var(--gold)">🎁 ${mt('forFirst')}</span>` : ''}</div>
-          </div>`
-        }).join('')}
-      </div>`
-    }
-    // до следующего бонуса — под «Что тебе сделать»
+    // «Что тебе сделать» (сценарии) убрано по просьбе.
+    // до следующего бонуса за темп
     let bonusCard = ''
     if (e.nextTempoBonus) {
       const nb = e.nextTempoBonus
@@ -88,7 +70,9 @@ export function renderMopEarnings(_mopData) {
         <div style="height:9px;background:var(--bg);border:1px solid var(--line2);border-radius:6px;overflow:hidden;"><div style="height:100%;width:${nb.progress}%;background:var(--gold);"></div></div>
         <div style="font-size:12px;color:var(--txt3);margin-top:7px;">${mt('sellMore')} <b>${fmtS(nb.revenueNeeded)}</b> · ${nb.daysLeft} ${mt('daysWord')}</div></div>`
     }
-    out += `<div class="mop-row2" style="align-items:start;">${ladderCard}<div>${scenCard || ''}${bonusCard}</div></div>`
+    out += `<div class="mop-row2" style="align-items:start;">${ladderCard}<div>${bonusCard}</div></div>`
+    // «Способы заработка» — в самом низу секции
+    out += renderMopEarnWays(me, e)
   }
   return out
 }
@@ -103,7 +87,6 @@ function renderMopEarnWays(me, e) {
   const kpiAt100 = me.plan > 0 ? Math.round(me.plan * maxRate / 100) : e.kpiSum
   const tempoMax = 3 * bonus15
   const tempoLeft = Math.max(0, tempoMax - (e.tempoBonusSum || 0))
-  const maxPotential = e.fix + kpiAt100 + tempoMax + 1000000
   const roleLabel = e.role === 'presales' ? 'Pre-Sales' : 'Sales'
   const tb = e.tempoBonuses || []
   const tbKeys = ['by10', 'by20', 'by30']
@@ -129,20 +112,8 @@ function renderMopEarnWays(me, e) {
   const topValue = e.topBonus > 0 ? `+${fmtS(e.topBonus)}` : ''
   const topNote = e.topBonus > 0 ? `${mt('ewTopGet')} <b>${e.topLabel}</b> · ${mt('ewTopVals')}` : `${mt('ewTopBecome')} · ${mt('ewTopVals')}`
 
-  return `<div class="mop-card" style="border-color:var(--gold);margin-bottom:16px;">
+  return `<div class="mop-card" style="border-color:var(--gold);margin-top:16px;margin-bottom:0;">
     <div class="mop-ct" style="color:var(--gold);">💰 ${mt('ewTitle')}</div>
-    <div style="display:flex;gap:10px;flex-wrap:wrap;margin-bottom:8px;">
-      <div style="flex:1;min-width:135px;background:var(--bg);border:1px solid var(--line2);border-radius:11px;padding:11px 13px;">
-        <div style="font-size:11px;color:var(--txt2);">${mt('ewNow')}</div>
-        <div style="font-size:22px;font-weight:800;">${fmtS(e.total)}</div>
-      </div>
-      <div style="flex:1;min-width:135px;background:var(--gold-bg);border:1px solid var(--gold);border-radius:11px;padding:11px 13px;">
-        <div style="font-size:11px;color:var(--txt2);">${mt('ewCeiling')} 🚀</div>
-        <div style="font-size:22px;font-weight:800;color:var(--gold);">${fmtS(maxPotential)}</div>
-        <div style="font-size:10px;color:var(--txt3);">${mt('ewCeilingNote')}</div>
-      </div>
-    </div>
-    <div style="font-size:11px;color:var(--txt3);text-transform:uppercase;letter-spacing:.3px;margin-top:10px;">${mt('ewSources')}</div>
     ${row('💵', `${mt('fix')} · ${roleLabel}`, fmtS(e.fix), mt('ewGuaranteed'))}
     ${row('📈', `${mt('kpi')} ${e.rate}% ${mt('ofRevenue')}`, fmtS(e.kpiSum), kpiNote, 'var(--accent)')}
     ${row('⚡', `${mt('tempoBonus')} (${mt('ewTempoEach')})`, fmtS(e.tempoBonusSum), tempoNote, 'var(--gold)')}
