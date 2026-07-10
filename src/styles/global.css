@@ -438,7 +438,11 @@
     .mop-side-foot{margin-top:0;flex-direction:row;}
     .mop-main{padding:18px 16px 40px;}
   }
-  .mop-team-wrap{max-width:720px;}
+  .mop-team-wrap{max-width:1300px;}
+  .mop-team-top{display:grid;grid-template-columns:1fr 1fr;gap:16px;margin-bottom:16px;}
+  .mop-team-grid{display:grid;grid-template-columns:1fr 1fr;gap:16px;}
+  .mop-team-top .mop-card,.mop-team-grid .mop-card{margin-bottom:0;}
+  @media(max-width:920px){.mop-team-top,.mop-team-grid{grid-template-columns:1fr;}}
   /* Меню — выпадашка в верхней панели (без рамки, компактно) */
   .sec-dropdown-wrap{position:relative;}
   .sec-dropdown-btn{display:flex;align-items:center;gap:5px;padding:6px 8px;border-radius:8px;font-size:13px;font-weight:500;
