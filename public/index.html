@@ -4945,7 +4945,7 @@ const MOP_T={
     hour:'ч',min:'мин',noData:'Данные ещё не загружены. Обратитесь к руководителю.',
     daysLeft:'Осталось рабочих дней',perDay:'Продавай по',perDayEnd:'в день до цели',
     nextBonus:'До следующего бонуса',bonusProgress:'выполни',by:'до',dayShort:'числа',daysWord:'дн.',
-    raffle:'🎁 Розыгрыш месяца',raffleDesc:'Закрой план — участвуешь в розыгрыше:',
+    raffle:'🎁 Розыгрыш месяца',raffleDesc:'Закрой план — участвуешь в розыгрыше:',raffleCTA:'Закрой план на 100% — участвуй в розыгрыше!',rafflePrizeWord:'Приз',specialPrize:'Специальный приз 🎉',
     losing:'Где ты теряешь клиентов',noReach:'не дозвонился',potentialLost:'это ~',lostSales:'потерянных продаж',losingTip:'Прозвони их — это твои деньги!',
   },
   uz:{
@@ -4966,7 +4966,7 @@ const MOP_T={
     hour:'s',min:'daq',noData:'Maʼlumotlar hali yuklanmagan. Rahbaringizga murojaat qiling.',
     daysLeft:'Qolgan ish kunlari',perDay:'Har kuni soting',perDayEnd:'maqsadgacha',
     nextBonus:'Keyingi bonusgacha',bonusProgress:'bajaring',by:'gacha',dayShort:'-sana',daysWord:'kun',
-    raffle:'🎁 Oylik o\u2019yin',raffleDesc:'Rejani yoping — o\u2019yinda qatnashasiz:',
+    raffle:'🎁 Oylik o\u2019yin',raffleDesc:'Rejani yoping — o\u2019yinda qatnashasiz:',raffleCTA:'Rejani 100% yop — o\u2019yinda qatnash!',rafflePrizeWord:'Sovrin',specialPrize:'Maxsus sovrin 🎉',
     losing:'Mijozlarni qayerda yoʻqotyapsan',noReach:'aloqa boʻlmadi',potentialLost:'bu ~',lostSales:'yoʻqotilgan sotuv',losingTip:'Ularga qoʻngʻiroq qil — bu sening puling!',
   },
 };
@@ -5033,13 +5033,13 @@ function mopTab(tab){
   // розыгрыш — вверху справа, рядом с приветствием
   const rt=document.getElementById('mopRaffleTop');
   if(rt){
-    if(_mopData&&_mopData.raffle&&_mopData.raffle.prize){
-      rt.innerHTML=`<div style="background:var(--gold-bg);border:1px solid var(--gold);border-radius:12px;padding:11px 15px;max-width:280px;">
-        <div style="font-size:12px;font-weight:700;color:var(--gold);text-transform:uppercase;letter-spacing:.3px;">${mt('raffle')}</div>
-        <div style="font-size:12px;color:var(--txt2);margin-top:3px;">${mt('raffleDesc')}</div>
-        <div style="font-size:15px;font-weight:700;color:var(--gold);margin-top:2px;">${escapeHtml(_mopData.raffle.prize)}</div>
-      </div>`;
-    }else rt.innerHTML='';
+    rt.innerHTML=`<div style="display:flex;align-items:center;gap:12px;background:var(--gold-bg);border:1px solid var(--gold);border-radius:14px;padding:12px 16px;max-width:340px;">
+      <div style="font-size:30px;line-height:1;flex:0 0 auto;">🎁</div>
+      <div>
+        <div style="font-size:13px;font-weight:700;color:var(--gold);">${mt('raffleCTA')}</div>
+        <div style="font-size:13px;color:var(--txt);margin-top:2px;"><b style="color:var(--gold)">${mt('specialPrize')}</b></div>
+      </div>
+    </div>`;
   }
   if(!_mopData||_mopData.empty){box.innerHTML=`<div class="mop-card" style="text-align:center;color:var(--txt3);">${escapeHtml((_mopData&&_mopData.message)||mt('noData'))}</div>`;return;}
   if(tab==='mine')box.innerHTML=renderMopEarnings();
