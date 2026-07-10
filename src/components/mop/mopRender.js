@@ -46,31 +46,41 @@ export function renderMopEarnings(_mopData) {
     const steps = e.ladder.map((s) => {
       const cur = s.isCurrent, done = s.reached
       const icon = cur ? '📍' : (done ? '✅' : '⬜')
-      return `<div style="display:flex;align-items:center;gap:11px;padding:10px 11px;border-radius:10px;${cur ? 'background:var(--accent-bg);border:1px solid var(--accent);' : ''}margin-bottom:5px;">
-        <span style="font-size:14px;">${icon}</span>
-        <div style="flex:1;"><div style="font-size:13px;font-weight:${cur ? '700' : '600'};">${s.pct}% ${mt('plan')} · ${mt('rate')} ${s.rate}%</div>
-        <div style="font-size:11px;color:var(--txt3);">${mt('revenueW')} ${fmtS(s.targetRevenue)} → ${mt('salaryW')} ~${fmtS(s.earnAtStep + (e.tempoBonusSum || 0) + (e.topBonus || 0))}</div></div>
+      return `<div style="display:flex;align-items:center;gap:11px;padding:11px 12px;border-radius:11px;border:1px solid ${cur ? 'var(--accent)' : 'var(--line)'};background:${cur ? 'var(--accent-bg)' : 'var(--bg)'};${done && !cur ? 'opacity:.72;' : ''}">
+        <span style="font-size:15px;flex:0 0 auto;">${icon}</span>
+        <div style="flex:1;min-width:0;"><div style="font-size:13px;font-weight:${cur ? '700' : '600'};">${s.pct}% ${mt('plan')} · ${mt('rate')} ${s.rate}%</div>
+        <div style="font-size:11px;color:var(--txt3);margin-top:2px;">${mt('revenueW')} ${fmtS(s.targetRevenue)} → ${mt('salaryW')} <b style="color:var(--txt2);">~${fmtS(s.earnAtStep + (e.tempoBonusSum || 0) + (e.topBonus || 0))}</b></div></div>
       </div>`
     }).join('')
     const ns = e.nextStep
     const ladderCard = `<div class="mop-card">
-      <div class="mop-ct">🪜 ${mt('ladder')}</div>${steps}
-      ${ns ? `<div style="margin-top:9px;padding:12px;background:var(--gold-bg);border-radius:10px;border:1px solid var(--gold);">
+      <div class="mop-ct">🪜 ${mt('ladder')}</div>
+      <div class="mop-ladder-grid">${steps}</div>
+      ${ns ? `<div style="margin-top:11px;padding:13px 14px;background:var(--gold-bg);border-radius:11px;border:1px solid var(--gold);">
         <div style="font-size:13px;font-weight:600;">${mt('toStep')} ${ns.pct}% ${mt('sellOn')} <b>${fmtS(ns.revenueNeeded)}</b></div>
         <div style="font-size:12px;color:var(--txt2);margin-top:3px;">${mt('rateOpens')} ${ns.newRate}% → ${mt('salaryW')} <b style="color:var(--green)">${fmtS(ns.newEarn + (e.tempoBonusSum || 0) + (e.topBonus || 0))}</b> 🔥</div>
-      </div>` : `<div style="margin-top:9px;padding:12px;background:var(--accent-bg);border-radius:10px;text-align:center;font-size:13px;font-weight:600;color:var(--green);">${mt('maxStep')}</div>`}
+      </div>` : `<div style="margin-top:11px;padding:13px;background:var(--accent-bg);border-radius:11px;text-align:center;font-size:13px;font-weight:600;color:var(--green);">${mt('maxStep')}</div>`}
     </div>`
     // «Что тебе сделать» (сценарии) убрано по просьбе.
-    // до следующего бонуса за темп
+    // до следующего бонуса за темп — компактная полоса на всю ширину
     let bonusCard = ''
     if (e.nextTempoBonus) {
       const nb = e.nextTempoBonus
-      bonusCard = `<div class="mop-card" style="margin-top:16px;margin-bottom:0;"><div class="mop-ct">⚡ ${mt('nextBonus')} +$15</div>
-        <div style="display:flex;justify-content:space-between;font-size:13px;margin-bottom:7px;"><span>${nb.pct}% ${mt('by')} ${nb.byDay}${mt('dayShort')}</span><b>${nb.progress}%</b></div>
-        <div style="height:9px;background:var(--bg);border:1px solid var(--line2);border-radius:6px;overflow:hidden;"><div style="height:100%;width:${nb.progress}%;background:var(--gold);"></div></div>
-        <div style="font-size:12px;color:var(--txt3);margin-top:7px;">${mt('sellMore')} <b>${fmtS(nb.revenueNeeded)}</b> · ${nb.daysLeft} ${mt('daysWord')}</div></div>`
+      bonusCard = `<div class="mop-card" style="margin-top:0;margin-bottom:16px;">
+        <div style="display:flex;align-items:center;gap:16px;flex-wrap:wrap;">
+          <div style="flex:0 0 auto;">
+            <div class="mop-ct" style="margin-bottom:3px;">⚡ ${mt('nextBonus')} +$15</div>
+            <div style="font-size:12px;color:var(--txt3);">${mt('sellMore')} <b>${fmtS(nb.revenueNeeded)}</b> · ${nb.daysLeft} ${mt('daysWord')}</div>
+          </div>
+          <div style="flex:1;min-width:190px;">
+            <div style="display:flex;justify-content:space-between;font-size:12px;margin-bottom:5px;"><span>${nb.pct}% ${mt('by')} ${nb.byDay}${mt('dayShort')}</span><b>${nb.progress}%</b></div>
+            <div style="height:9px;background:var(--bg);border:1px solid var(--line2);border-radius:6px;overflow:hidden;"><div style="height:100%;width:${nb.progress}%;background:var(--gold);"></div></div>
+          </div>
+        </div>
+      </div>`
     }
-    out += `<div class="mop-row2" style="align-items:start;">${ladderCard}<div>${bonusCard}</div></div>`
+    out += ladderCard
+    out += bonusCard
     // «Способы заработка» — в самом низу секции
     out += renderMopEarnWays(me, e)
   }
@@ -112,7 +122,7 @@ function renderMopEarnWays(me, e) {
   const topValue = e.topBonus > 0 ? `+${fmtS(e.topBonus)}` : ''
   const topNote = e.topBonus > 0 ? `${mt('ewTopGet')} <b>${e.topLabel}</b> · ${mt('ewTopVals')}` : `${mt('ewTopBecome')} · ${mt('ewTopVals')}`
 
-  return `<div class="mop-card" style="border-color:var(--gold);margin-top:16px;margin-bottom:0;">
+  return `<div class="mop-card" style="border-color:var(--gold);margin-top:0;margin-bottom:0;">
     <div class="mop-ct" style="color:var(--gold);">💰 ${mt('ewTitle')}</div>
     ${row('💵', `${mt('fix')} · ${roleLabel}`, fmtS(e.fix), mt('ewGuaranteed'))}
     ${row('📈', `${mt('kpi')} ${e.rate}% ${mt('ofRevenue')}`, fmtS(e.kpiSum), kpiNote, 'var(--accent)')}

@@ -421,9 +421,13 @@
   .mop-row2{display:grid;grid-template-columns:1fr 1fr;gap:16px;}
   .mop-row3{display:grid;grid-template-columns:1fr 1fr 1fr;gap:16px;}
   .mop-row2 .mop-card,.mop-row3 .mop-card{margin-bottom:0;}
+  .mop-ladder-grid{display:grid;grid-template-columns:1fr 1fr;gap:7px;}
   @media(max-width:920px){
     .mop-side{width:200px;flex-basis:200px;}
     .mop-row2,.mop-row3{grid-template-columns:1fr;}
+  }
+  @media(max-width:760px){
+    .mop-ladder-grid{grid-template-columns:1fr;}
   }
   @media(max-width:680px){
     .mop-shell{flex-direction:column;}
