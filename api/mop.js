@@ -235,7 +235,7 @@ export default async function handler(req, res) {
           });
         }
         // сценарий: следующая ступень (если не 100%)
-        if (ns && nextStep && nextStep.pct < 100) {
+        if (nextStep && nextStep.pct < 100) {
           const targetRev = Math.round(plan * nextStep.pct / 100);
           const at = earnAt(targetRev);
           scenarios.push({
