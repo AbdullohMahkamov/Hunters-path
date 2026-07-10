@@ -125,8 +125,14 @@ export default async function handler(req, res) {
       return;
     }
 
-    // Вход РОПа — без пароля
+    // Вход РОПа — по коду (защита от чужих)
     if (action === "rop") {
+      const code = String((req.body && req.body.code) || "").trim();
+      const ropCode = process.env.ROP_CODE || "1234567890";
+      if (code !== ropCode) {
+        res.status(200).json({ ok: false, error: "Неверный код" });
+        return;
+      }
       const sessToken = crypto.randomBytes(24).toString("hex");
       const info = { role: "rop", org: "hunter" };
       await redisSet(redisUrl, redisToken, `session:${sessToken}`, JSON.stringify(info), 30 * 24 * 3600);
