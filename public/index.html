@@ -618,7 +618,8 @@
         <div><div style="font-size:14px;font-weight:700;" id="mopHeaderName">Менеджер</div><div style="font-size:12px;color:var(--txt3);" id="mopHeaderSub">Личный кабинет</div></div>
       </div>
       <div class="mop-side-nav">
-        <button id="mopTabMine" onclick="mopTab('mine')" class="active"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="3" width="7" height="9"/><rect x="14" y="3" width="7" height="5"/><rect x="14" y="12" width="7" height="9"/><rect x="3" y="16" width="7" height="5"/></svg><span>Мои данные</span></button>
+        <button id="mopTabMine" onclick="mopTab('mine')" class="active"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 1v22M17 5H9.5a3.5 3.5 0 0 0 0 7h5a3.5 3.5 0 0 1 0 7H6"/></svg><span>Мой заработок</span></button>
+        <button id="mopTabStats" onclick="mopTab('stats')"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 3v18h18"/><rect x="7" y="10" width="3" height="7"/><rect x="12" y="6" width="3" height="11"/><rect x="17" y="13" width="3" height="4"/></svg><span>Моя статистика</span></button>
         <button id="mopTabTeam" onclick="mopTab('team')"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M23 21v-2a4 4 0 0 0-3-3.87"/></svg><span>Команда</span></button>
       </div>
       <div class="mop-side-foot">
@@ -628,8 +629,13 @@
     </div>
     <!-- КОНТЕНТ -->
     <div class="mop-main">
-      <div class="mop-main-h" id="mopGreet">Кабинет</div>
-      <div class="mop-main-sub" id="mopGreetSub">Твои данные за месяц</div>
+      <div style="display:flex;justify-content:space-between;align-items:flex-start;gap:16px;margin-bottom:22px;flex-wrap:wrap;">
+        <div>
+          <div class="mop-main-h" id="mopGreet" style="margin-bottom:3px;">Кабинет</div>
+          <div class="mop-main-sub" id="mopGreetSub" style="margin-bottom:0;">Твои данные за месяц</div>
+        </div>
+        <div id="mopRaffleTop"></div>
+      </div>
       <div id="mopContent"><div style="text-align:center;color:var(--txt3);padding:40px;">Загрузка...</div></div>
     </div>
   </div>
@@ -4912,7 +4918,7 @@ let _mopData=null,_mopCurTab='mine';
 let _mopLang=localStorage.getItem('mop_lang')||'ru';
 const MOP_T={
   ru:{
-    cabinet:'Личный кабинет',logout:'Выйти',mine:'Мои данные',team:'Команда',
+    cabinet:'Личный кабинет',logout:'Выйти',mine:'Мой заработок',stats:'Моя статистика',team:'Команда',
     earnings:'Мой заработок',sumMonth:'сум в этом месяце',fix:'Фикса',kpi:'KPI',ofRevenue:'от выручки',
     tempoBonus:'Бонусы за темп',ladder:'Лестница заработка',plan:'плана',rate:'ставка',
     revenueW:'выручка',salaryW:'зарплата',toStep:'До ступени',sellOn:'осталось продать на',
@@ -4933,7 +4939,7 @@ const MOP_T={
     losing:'Где ты теряешь клиентов',noReach:'не дозвонился',potentialLost:'это ~',lostSales:'потерянных продаж',losingTip:'Прозвони их — это твои деньги!',
   },
   uz:{
-    cabinet:'Shaxsiy kabinet',logout:'Chiqish',mine:'Mening maʼlumotlarim',team:'Jamoa',
+    cabinet:'Shaxsiy kabinet',logout:'Chiqish',mine:'Mening daromadim',stats:'Mening statistikam',team:'Jamoa',
     earnings:'Mening daromadim',sumMonth:'soʻm bu oyda',fix:'Fiksa',kpi:'KPI',ofRevenue:'tushumdan',
     tempoBonus:'Sur\u2019at bonuslari',ladder:'Daromad zinapoyasi',plan:'reja',rate:'stavka',
     revenueW:'tushum',salaryW:'oylik',toStep:'Bosqichgacha',sellOn:'yana sotish kerak',
@@ -4962,6 +4968,7 @@ function toggleMopLang(){
   const lo=document.getElementById('mopLogoutBtn');if(lo)lo.textContent=mt('logout');
   const sub=document.getElementById('mopHeaderSub');if(sub)sub.textContent=mt('cabinet');
   const tm=document.getElementById('mopTabMine');if(tm)tm.querySelector('span').textContent=mt('mine');
+  const ts=document.getElementById('mopTabStats');if(ts)ts.querySelector('span').textContent=mt('stats');
   const tt=document.getElementById('mopTabTeam');if(tt)tt.querySelector('span').textContent=mt('team');
   const nm=(_mopData&&_mopData.mopName)||window._mopName||'';
   const gr=document.getElementById('mopGreet');if(gr)gr.textContent=(_mopLang==='uz'?'Salom':'Привет')+', '+nm+' 👋';
@@ -4982,6 +4989,7 @@ async function bootMopCabinet(){
   const lo=document.getElementById('mopLogoutBtn');if(lo)lo.textContent=mt('logout');
   const sub=document.getElementById('mopHeaderSub');if(sub)sub.textContent=mt('cabinet');
   const tm=document.getElementById('mopTabMine');if(tm&&tm.querySelector('span'))tm.querySelector('span').textContent=mt('mine');
+  const ts=document.getElementById('mopTabStats');if(ts&&ts.querySelector('span'))ts.querySelector('span').textContent=mt('stats');
   const tt=document.getElementById('mopTabTeam');if(tt&&tt.querySelector('span'))tt.querySelector('span').textContent=mt('team');
   // имя из данных кабинета (по совпадению mopId) — источник истины
   const nm=(_mopData&&_mopData.mopName)||window._mopName||'Менеджер';
@@ -5000,26 +5008,43 @@ async function loadMopData(){
 }
 function mopTab(tab){
   _mopCurTab=tab;
-  const tm=document.getElementById('mopTabMine'),tt=document.getElementById('mopTabTeam');
+  const tm=document.getElementById('mopTabMine'),ts=document.getElementById('mopTabStats'),tt=document.getElementById('mopTabTeam');
   if(tm)tm.classList.toggle('active',tab==='mine');
+  if(ts)ts.classList.toggle('active',tab==='stats');
   if(tt)tt.classList.toggle('active',tab==='team');
   const grs=document.getElementById('mopGreetSub');
-  if(grs)grs.textContent=tab==='team'?mt('rankTitle'):(_mopLang==='uz'?'Bu oydagi maʼlumotlaring':'Твои данные за этот месяц');
+  const uz=_mopLang==='uz';
+  if(grs){
+    if(tab==='team')grs.textContent=mt('rankTitle');
+    else if(tab==='stats')grs.textContent=uz?'Ishing ko\u2018rsatkichlari':'Показатели твоей работы';
+    else grs.textContent=uz?'Daromad va maqsadlaring':'Твой заработок и цели';
+  }
   const box=document.getElementById('mopContent');
+  // розыгрыш — вверху справа, рядом с приветствием
+  const rt=document.getElementById('mopRaffleTop');
+  if(rt){
+    if(_mopData&&_mopData.raffle&&_mopData.raffle.prize){
+      rt.innerHTML=`<div style="background:var(--gold-bg);border:1px solid var(--gold);border-radius:12px;padding:11px 15px;max-width:280px;">
+        <div style="font-size:12px;font-weight:700;color:var(--gold);text-transform:uppercase;letter-spacing:.3px;">${mt('raffle')}</div>
+        <div style="font-size:12px;color:var(--txt2);margin-top:3px;">${mt('raffleDesc')}</div>
+        <div style="font-size:15px;font-weight:700;color:var(--gold);margin-top:2px;">${escapeHtml(_mopData.raffle.prize)}</div>
+      </div>`;
+    }else rt.innerHTML='';
+  }
   if(!_mopData||_mopData.empty){box.innerHTML=`<div class="mop-card" style="text-align:center;color:var(--txt3);">${escapeHtml((_mopData&&_mopData.message)||mt('noData'))}</div>`;return;}
-  if(tab==='mine')box.innerHTML=renderMopMine();
+  if(tab==='mine')box.innerHTML=renderMopEarnings();
+  else if(tab==='stats')box.innerHTML=renderMopStats();
   else box.innerHTML=renderMopTeam();
 }
 function fmtSumM(n){if(n>=1000000)return (n/1000000).toFixed(1).replace('.0','')+'М';if(n>=1000)return Math.round(n/1000)+'k';return String(n||0);}
-function renderMopMine(){
+// === РАЗДЕЛ 1: МОЙ ЗАРАБОТОК (деньги + цели) ===
+function renderMopEarnings(){
   const me=_mopData.me;
   if(!me)return `<div class="mop-card">${mt('notFound')}</div>`;
   const planPct=me.plan>0?Math.round(me.revenue/me.plan*100):null;
-  const fcm=me.firstCallMin!=null?(me.firstCallMin>=60?(Math.round(me.firstCallMin/6)/10+' '+mt('hour')):me.firstCallMin+' '+mt('min')):'—';
   const e=_mopData.earnings;
   const fmtS=n=>(n||0).toLocaleString('ru');
 
-  // --- карточки-компоненты ---
   const heroCard=e?`<div class="mop-card" style="margin-bottom:0;">
     <div class="mop-ct">💵 ${mt('earnings')} · ${e.role==='presales'?'Pre-Sales':'Sales'}</div>
     <div class="mop-hero-big">${fmtS(e.total)}</div>
@@ -5048,11 +5073,9 @@ function renderMopMine(){
     <div style="font-size:11px;color:var(--txt3);">${mt('perDayEnd')}</div>
   </div>`:'';
 
-  // === ВЕРХ: заработок + план + дни (3 колонки) ===
   let out=`<div class="mop-row3" style="margin-bottom:16px;align-items:stretch;">${heroCard}${planCard}${daysCard}</div>`;
 
   if(e){
-    // === ЛЕСТНИЦА + СЦЕНАРИИ ===
     const steps=e.ladder.map(s=>{
       const cur=s.isCurrent,done=s.reached;
       const icon=cur?'📍':(done?'✅':'⬜');
@@ -5085,12 +5108,28 @@ function renderMopMine(){
           </div>`;}).join('')}
       </div>`;
     }
-    out+=`<div class="mop-row2" style="margin-bottom:16px;align-items:start;">${ladderCard}${scenCard||'<div></div>'}</div>`;
+    // до следующего бонуса — под «Что тебе сделать»
+    let bonusCard='';
+    if(e.nextTempoBonus){
+      const nb=e.nextTempoBonus;
+      bonusCard=`<div class="mop-card" style="margin-top:16px;margin-bottom:0;"><div class="mop-ct">⚡ ${mt('nextBonus')} +$15</div>
+        <div style="display:flex;justify-content:space-between;font-size:13px;margin-bottom:7px;"><span>${nb.pct}% ${mt('by')} ${nb.byDay}${mt('dayShort')}</span><b>${nb.progress}%</b></div>
+        <div style="height:9px;background:var(--bg);border:1px solid var(--line2);border-radius:6px;overflow:hidden;"><div style="height:100%;width:${nb.progress}%;background:var(--gold);"></div></div>
+        <div style="font-size:12px;color:var(--txt3);margin-top:7px;">${mt('sellMore')} <b>${fmtS(nb.revenueNeeded)}</b> · ${nb.daysLeft} ${mt('daysWord')}</div></div>`;
+    }
+    out+=`<div class="mop-row2" style="align-items:start;">${ladderCard}<div>${scenCard||''}${bonusCard}</div></div>`;
   }
-
-  // === НИЗ: воронка + бонус + розыгрыш + потери + дисциплина — плотная сетка 3 колонки ===
-  const bottom=[];
-  bottom.push(`<div class="mop-card" style="margin-bottom:0;">
+  return out;
+}
+// === РАЗДЕЛ 2: МОЯ СТАТИСТИКА (работа) ===
+function renderMopStats(){
+  const me=_mopData.me;
+  if(!me)return `<div class="mop-card">${mt('notFound')}</div>`;
+  const fcm=me.firstCallMin!=null?(me.firstCallMin>=60?(Math.round(me.firstCallMin/6)/10+' '+mt('hour')):me.firstCallMin+' '+mt('min')):'—';
+  const e=_mopData.earnings;
+  const fmtS=n=>(n||0).toLocaleString('ru');
+  const cards=[];
+  cards.push(`<div class="mop-card" style="margin-bottom:0;">
     <div class="mop-ct">📊 ${mt('myFunnel')}</div>
     <div class="mop-stat-grid">
       <div class="mop-stat"><b>${me.leads}</b><span>${mt('leads')}</span></div>
@@ -5099,33 +5138,20 @@ function renderMopMine(){
       <div class="mop-stat"><b>${me.conv}%</b><span>${mt('conv')}</span></div>
     </div>
   </div>`);
-  if(e&&e.nextTempoBonus){
-    const nb=e.nextTempoBonus;
-    bottom.push(`<div class="mop-card" style="margin-bottom:0;"><div class="mop-ct">⚡ ${mt('nextBonus')} +$15</div>
-      <div style="display:flex;justify-content:space-between;font-size:13px;margin-bottom:7px;"><span>${nb.pct}% ${mt('by')} ${nb.byDay}${mt('dayShort')}</span><b>${nb.progress}%</b></div>
-      <div style="height:9px;background:var(--bg);border:1px solid var(--line2);border-radius:6px;overflow:hidden;"><div style="height:100%;width:${nb.progress}%;background:var(--gold);"></div></div>
-      <div style="font-size:12px;color:var(--txt3);margin-top:7px;">${mt('sellMore')} <b>${fmtS(nb.revenueNeeded)}</b> · ${nb.daysLeft} ${mt('daysWord')}</div></div>`);
-  }
-  if(e&&e.losing&&e.losing.noContact>0){
-    bottom.push(`<div class="mop-card" style="margin-bottom:0;border-color:var(--red);"><div class="mop-ct" style="color:var(--red);">📉 ${mt('losing')}</div>
-      <div style="font-size:14px;"><b style="font-size:30px;color:var(--red);">${e.losing.noContact}</b> ${mt('noReach')}</div>
-      ${e.losing.potentialSales>0?`<div style="font-size:13px;color:var(--txt2);margin-top:5px;">${mt('potentialLost')}${e.losing.potentialSales} ${mt('lostSales')}</div>`:''}
-      <div style="font-size:13px;color:var(--gold);margin-top:9px;font-weight:600;">${mt('losingTip')}</div></div>`);
-  }
-  bottom.push(`<div class="mop-card" style="margin-bottom:0;">
+  cards.push(`<div class="mop-card" style="margin-bottom:0;">
     <div class="mop-ct">⏱️ ${mt('myDiscipline')}</div>
     <div class="mop-stat-grid">
       <div class="mop-stat"><b>${fcm}</b><span>${mt('firstCall')}</span></div>
       <div class="mop-stat"><b>${me.taskRate!=null?me.taskRate+'%':'—'}</b><span>${mt('tasks')}</span></div>
     </div>
   </div>`);
-  if(_mopData.raffle&&_mopData.raffle.prize){
-    bottom.push(`<div class="mop-card" style="margin-bottom:0;border-color:var(--gold);"><div class="mop-ct" style="color:var(--gold);">🎁 ${mt('raffle')}</div>
-      <div style="font-size:13px;color:var(--txt2);">${mt('raffleDesc')}</div>
-      <div style="font-size:18px;font-weight:700;color:var(--gold);margin-top:6px;">${escapeHtml(_mopData.raffle.prize)}</div></div>`);
+  if(e&&e.losing&&e.losing.noContact>0){
+    cards.push(`<div class="mop-card" style="margin-bottom:0;border-color:var(--red);"><div class="mop-ct" style="color:var(--red);">📉 ${mt('losing')}</div>
+      <div style="font-size:14px;"><b style="font-size:34px;color:var(--red);">${e.losing.noContact}</b> ${mt('noReach')}</div>
+      ${e.losing.potentialSales>0?`<div style="font-size:13px;color:var(--txt2);margin-top:6px;">${mt('potentialLost')}${e.losing.potentialSales} ${mt('lostSales')}</div>`:''}
+      <div style="font-size:14px;color:var(--gold);margin-top:10px;font-weight:600;">${mt('losingTip')}</div></div>`);
   }
-  out+=`<div class="mop-row3" style="align-items:start;">${bottom.join('')}</div>`;
-  return out;
+  return `<div class="mop-row3" style="align-items:start;">${cards.join('')}</div>`;
 }
 function renderMopTeam(){
   const team=_mopData.team||[];
