@@ -42,11 +42,17 @@
       - осталось в Этапе 4: вложения файлов + умные вопросы в чате, кнопка «Обновить из amoCRM»
         (syncAll), Маркетинг (adsets/meta-ads), Динамика (loadTrends), задачи/квесты, модалка подозрительных.
 - [x] Этап 5 — модалки: МОПы CRUD, Клиенты, генератор квестов, вкладка «Задачи»,
-      **подозрительные сделки, рабочие дни, синхронизация amoCRM** — готово.
-      Осталось только: полные настройки-i18n и мастер аудита (`openWizard` — заглушка, только для demo).
+      подозрительные сделки, рабочие дни, синхронизация amoCRM, **мастер аудита (demo)** — готово.
 - [x] Этап 6 — Telegram (`src/lib/telegram.js`), финансы + динамика (`src/lib/financeTrends.js`) — готово.
-- [ ] Этап 7 — темы (сейчас форс theme-light), i18n основного приложения, адаптив
-- [ ] Этап 8 — прод-сборка, переключить `vercel.json` на Vite, `index.legacy.html`
+- [x] Этап 7 — тема (форс theme-light как в монолите), i18n основного приложения RU/UZ
+      (`i18nApply.js` + реактивный JSX-хром), адаптив 1:1 (CSS перенесён побайтово).
+- [x] Этап 8 — прод-сборка: `vercel.json` → Vite (`dist/`), `public/index.legacy.html`, задеплоено.
+
+## ✅ МИГРАЦИЯ ЗАВЕРШЕНА
+Весь фронтенд монолита (~5500 строк) перенесён на React+Vite. Backend `api/` не тронут.
+Модули в `src/lib/`: session, api, appState, i18n, shellI18n, i18nApply, theme, format,
+chat, dashRender, financeTrends, telegram, adminModals, quests(+questsData), auditWizard, shellStubs.
+Монолит сохранён как `public/index.legacy.html`.
 
 ## Что осталось (карта монолита для продолжения)
 Основное приложение (`body.shell`) — заглушка `src/screens/AppShell.jsx`. Нужно перенести:
