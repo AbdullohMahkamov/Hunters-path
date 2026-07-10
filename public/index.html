@@ -4924,8 +4924,8 @@ async function loadMopData(){
     const r=await fetch('/api/mop?action=cabinet&session='+encodeURIComponent(SESSION));
     const d=await r.json();
     if(d&&d.ok&&!d.empty){_mopData=d;}
-    else{_mopData={empty:true,message:(d&&d.message)||'Данные не загружены'};}
-  }catch(e){_mopData={empty:true,message:'Ошибка загрузки'};}
+    else{_mopData={empty:true,message:(d&&(d.message||d.error))||'Данные не загружены'};}
+  }catch(e){_mopData={empty:true,message:'Ошибка загрузки: '+String(e).slice(0,80)};}
 }
 function mopTab(tab){
   _mopCurTab=tab;
