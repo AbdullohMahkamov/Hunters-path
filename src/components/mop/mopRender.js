@@ -235,6 +235,23 @@ export function renderMopTeam(_mopData) {
   const topReach = topList('📞', mt('reach'), (m) => m.reachPct, true, (m) => m.reachPct + '%', 'var(--accent)')
   const topSpeed = topList('⚡', mt('firstCall'), (m) => m.firstCallMin, false, (m) => fmtMin(m.firstCallMin), 'var(--accent)')
 
+  // ── Итоги команды (заполняет верхний ряд) ──
+  const totSold = team.reduce((s, m) => s + (m.sold || 0), 0)
+  const totRev = team.reduce((s, m) => s + (m.revenue || 0), 0)
+  const totLeads = team.reduce((s, m) => s + (m.leads || 0), 0)
+  const avgConv = totLeads > 0 ? +(totSold / totLeads * 100).toFixed(1) : 0
+  const tile = (v, l, color) => `<div style="background:var(--bg);border:1px solid var(--line2);border-radius:11px;padding:11px 12px;">
+    <div style="font-size:20px;font-weight:800;${color ? `color:${color};` : ''}">${v}</div><div style="font-size:11px;color:var(--txt3);">${l}</div></div>`
+  const totalsCard = `<div class="mop-card">
+    <div class="mop-ct">📊 ${mt('tmTotals')}</div>
+    <div style="display:grid;grid-template-columns:1fr 1fr;gap:10px;">
+      ${tile(totSold, mt('salesW'), 'var(--accent)')}
+      ${tile(fmtSumM(totRev), mt('revW'), 'var(--green)')}
+      ${tile(avgConv + '%', mt('tmConvAvg'))}
+      ${tile(totLeads, mt('leads'))}
+    </div>
+  </div>`
+
   const tn = _mopData.toNext
   const banner = tn ? `<div class="mop-card" style="background:var(--accent-bg);border-color:var(--accent);">
       <div style="font-size:14px;">${mt('toLeader')} ${escapeHtml(tn.name)} ${mt('aboveYou')} — <b>${tn.soldDiff} ${mt('salesW')}</b>. ${mt('catchUp')} 🔥</div>
@@ -242,7 +259,7 @@ export function renderMopTeam(_mopData) {
 
   return `<div class="mop-team-wrap">
     ${banner}
-    <div class="mop-team-top">${nomCard}${placesCard}</div>
+    <div class="mop-team-top">${nomCard}${placesCard}${totalsCard}</div>
     <div class="mop-team-grid">${topSales}${topConv}${topReach}${topSpeed}</div>
   </div>`
 }

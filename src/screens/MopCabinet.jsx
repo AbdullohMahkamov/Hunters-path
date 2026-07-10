@@ -64,12 +64,14 @@ export default function MopCabinet({ onLogout }) {
             </div>
           </div>
           <div className="mop-side-nav">
+            <div className="mop-nav-group">{uz ? 'Shaxsiy' : 'Личное'}</div>
             <button onClick={() => setTab('mine')} className={tab === 'mine' ? 'active' : ''}>
               <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M12 1v22M17 5H9.5a3.5 3.5 0 0 0 0 7h5a3.5 3.5 0 0 1 0 7H6" /></svg><span>{mt('mine')}</span>
             </button>
             <button onClick={() => setTab('stats')} className={tab === 'stats' ? 'active' : ''}>
               <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M3 3v18h18" /><rect x="7" y="10" width="3" height="7" /><rect x="12" y="6" width="3" height="11" /><rect x="17" y="13" width="3" height="4" /></svg><span>{mt('stats')}</span>
             </button>
+            <div className="mop-nav-group sep">{uz ? 'Boʻlim' : 'Отдел'}</div>
             <button onClick={() => setTab('team')} className={tab === 'team' ? 'active' : ''}>
               <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2" /><circle cx="9" cy="7" r="4" /><path d="M23 21v-2a4 4 0 0 0-3-3.87" /></svg><span>{mt('team')}</span>
             </button>
@@ -86,8 +88,8 @@ export default function MopCabinet({ onLogout }) {
               <div className="mop-main-h" style={{ marginBottom: 3 }}>{greet}</div>
               <div className="mop-main-sub" style={{ marginBottom: 0 }}>{greetSub}</div>
             </div>
-            {/* прогресс темпа — между приветствием и призом */}
-            {!empty && !loading && (
+            {/* прогресс темпа — между приветствием и призом (не показываем на «Команде») */}
+            {!empty && !loading && tab !== 'team' && (
               <div style={{ flex: '1 1 260px', minWidth: 240, maxWidth: 470 }} dangerouslySetInnerHTML={{ __html: renderTempoBar(data) }} />
             )}
             {/* розыгрыш — компактный, вровень с приветствием */}
