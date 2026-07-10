@@ -1,8 +1,9 @@
 import React, { useEffect, useRef, useState, useSyncExternalStore } from 'react'
-import { getSnapshot, subscribe } from '../lib/session.js'
+import { getSnapshot, subscribe, orgQ } from '../lib/session.js'
 import { state, save, loadCloud, ensureChats, setLang } from '../lib/appState.js'
 import { applyTheme } from '../lib/theme.js'
 import { installShellStubs } from '../lib/shellStubs.js'
+import { applyLiveDash, applySuspicious } from '../lib/dashRender.js'
 import mapViewHtml from './viewsHtml/mapView.html?raw'
 import dashViewHtml from './viewsHtml/dashView.html?raw'
 import tgViewHtml from './viewsHtml/tgView.html?raw'
@@ -22,6 +23,29 @@ export default function AppShell({ onLogout }) {
   const [settingsOpen, setSettingsOpen] = useState(false)
   const [, force] = useState(0)
   const bootedRef = useRef(false)
+  const dashLoadedRef = useRef(false)
+
+  // renderDashboard — загрузка живых данных дашборда (1:1 по поведению монолита)
+  async function loadDashboard() {
+    if (dashLoadedRef.current) return
+    const note = document.getElementById('dashNote')
+    try {
+      const r = await fetch('/api/dashboard' + orgQ())
+      const d = await r.json()
+      if (d && !d.empty && !d.error && d.totals) {
+        window.__applyLiveDash = applyLiveDash
+        applyLiveDash(d)
+        applySuspicious(d)
+        dashLoadedRef.current = true
+      } else if (d && d.empty) {
+        if (note) note.textContent = '⚪ Живые данные ещё не загружены. Нажми «Обновить из amoCRM» ниже.'
+      } else if (d && d.error) {
+        if (note) note.textContent = '⚠️ ' + d.error + ' ' + (d.detail || '')
+      }
+    } catch (e) {
+      if (note) note.textContent = '⚠️ Нет связи с сервером.'
+    }
+  }
 
   // boot: подтянуть облако, восстановить вкладку, стартовая вкладка по роли
   useEffect(() => {
@@ -51,7 +75,7 @@ export default function AppShell({ onLogout }) {
     setTab(t)
     document.body.classList.toggle('sec-open', t !== 'chat')
     document.body.classList.toggle('chat-open', t === 'chat')
-    if (t === 'dash') { const dt = state.dashTab || 'overview'; window.dashTab && window.dashTab(dt) }
+    if (t === 'dash') { const dt = state.dashTab || 'overview'; window.dashTab && window.dashTab(dt); loadDashboard() }
   }
 
   // роль РОПа: скрыть чувствительные блоки внутри дашборда (applyRole, 1:1 по IDs)
