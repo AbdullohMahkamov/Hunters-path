@@ -61,29 +61,27 @@ export function renderMopEarnings(_mopData) {
         <div style="font-size:12px;color:var(--txt2);margin-top:3px;">${mt('rateOpens')} ${ns.newRate}% → ${mt('salaryW')} <b style="color:var(--green)">${fmtS(ns.newEarn + (e.tempoBonusSum || 0) + (e.topBonus || 0))}</b> 🔥</div>
       </div>` : `<div style="margin-top:11px;padding:13px;background:var(--accent-bg);border-radius:11px;text-align:center;font-size:13px;font-weight:600;color:var(--green);">${mt('maxStep')}</div>`}
     </div>`
-    // «Что тебе сделать» (сценарии) убрано по просьбе.
-    // до следующего бонуса за темп — компактная полоса на всю ширину
-    let bonusCard = ''
-    if (e.nextTempoBonus) {
-      const nb = e.nextTempoBonus
-      bonusCard = `<div class="mop-card" style="margin-top:16px;margin-bottom:0;">
-        <div style="display:flex;align-items:center;gap:16px;flex-wrap:wrap;">
-          <div style="flex:0 0 auto;">
-            <div class="mop-ct" style="margin-bottom:3px;">⚡ ${mt('nextBonus')} +$15</div>
-            <div style="font-size:12px;color:var(--txt3);">${mt('sellMore')} <b>${fmtS(nb.revenueNeeded)}</b> · ${nb.daysLeft} ${mt('daysWord')}</div>
-          </div>
-          <div style="flex:1;min-width:190px;">
-            <div style="display:flex;justify-content:space-between;font-size:12px;margin-bottom:5px;"><span>${nb.pct}% ${mt('by')} ${nb.byDay}${mt('dayShort')}</span><b>${nb.progress}%</b></div>
-            <div style="height:9px;background:var(--bg);border:1px solid var(--line2);border-radius:6px;overflow:hidden;"><div style="height:100%;width:${nb.progress}%;background:var(--gold);"></div></div>
-          </div>
-        </div>
-      </div>`
-    }
-    // Лестница + «Способы заработка» рядом (заработок — узкой колонкой ~340px), бонус — полосой ниже
+    // «Что тебе сделать» (сценарии) убрано; бонус за темп вынесен в шапку (renderTempoBar).
+    // Лестница + «Способы заработка» рядом (50/50)
     out += `<div class="mop-earn-row">${ladderCard}${renderMopEarnWays(me, e)}</div>`
-    out += bonusCard
   }
   return out
+}
+
+// Полоса «до следующего бонуса за темп» — компактная, для шапки (между приветствием и призом).
+export function renderTempoBar(_mopData) {
+  const e = _mopData && _mopData.earnings
+  const nb = e && e.nextTempoBonus
+  if (!nb) return ''
+  const fmtS = (n) => (n || 0).toLocaleString('ru')
+  return `<div style="background:var(--card);border:1px solid var(--line2);border-radius:12px;padding:9px 14px;">
+    <div style="display:flex;justify-content:space-between;align-items:baseline;gap:10px;font-size:11.5px;margin-bottom:5px;">
+      <span style="font-weight:600;">⚡ ${mt('nextBonus')} +$15 · ${nb.pct}% ${mt('by')} ${nb.byDay}${mt('dayShort')}</span>
+      <b>${nb.progress}%</b>
+    </div>
+    <div style="height:8px;background:var(--bg);border:1px solid var(--line2);border-radius:6px;overflow:hidden;"><div style="height:100%;width:${nb.progress}%;background:var(--gold);"></div></div>
+    <div style="font-size:10.5px;color:var(--txt3);margin-top:5px;">${mt('sellMore')} <b>${fmtS(nb.revenueNeeded)}</b> · ${nb.daysLeft} ${mt('daysWord')}</div>
+  </div>`
 }
 
 // «Способы заработка» — из чего складываются деньги МОПа и сколько ещё можно поднять.

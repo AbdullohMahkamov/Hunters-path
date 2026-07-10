@@ -3,6 +3,7 @@ import { mop as mopApi } from '../lib/api.js'
 import { getSnapshot, subscribe } from '../lib/session.js'
 import { mt, getMopLang, subscribeMopLang, toggleMopLang } from '../lib/i18n.js'
 import { escapeHtml } from '../lib/format.js'
+import { renderTempoBar } from '../components/mop/mopRender.js'
 import MopEarnings from '../components/mop/MopEarnings.jsx'
 import MopStats from '../components/mop/MopStats.jsx'
 import MopTeam from '../components/mop/MopTeam.jsx'
@@ -80,19 +81,21 @@ export default function MopCabinet({ onLogout }) {
         </div>
         {/* КОНТЕНТ */}
         <div className="mop-main">
-          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', gap: 16, marginBottom: 22, flexWrap: 'wrap' }}>
-            <div>
+          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 14, marginBottom: 22, flexWrap: 'wrap' }}>
+            <div style={{ flex: '0 0 auto' }}>
               <div className="mop-main-h" style={{ marginBottom: 3 }}>{greet}</div>
               <div className="mop-main-sub" style={{ marginBottom: 0 }}>{greetSub}</div>
             </div>
-            {/* розыгрыш — вверху справа, рядом с приветствием */}
-            <div>
-              <div style={{ display: 'flex', alignItems: 'center', gap: 12, background: 'var(--gold-bg)', border: '1px solid var(--gold)', borderRadius: 14, padding: '12px 16px', maxWidth: 340 }}>
-                <div style={{ fontSize: 30, lineHeight: 1, flex: '0 0 auto' }}>🎁</div>
-                <div>
-                  <div style={{ fontSize: 13, fontWeight: 700, color: 'var(--gold)' }}>{mt('raffleCTA')}</div>
-                  <div style={{ fontSize: 13, color: 'var(--txt)', marginTop: 2 }}><b style={{ color: 'var(--gold)' }}>{mt('specialPrize')}</b></div>
-                </div>
+            {/* прогресс темпа — между приветствием и призом */}
+            {!empty && !loading && (
+              <div style={{ flex: '1 1 260px', minWidth: 240, maxWidth: 470 }} dangerouslySetInnerHTML={{ __html: renderTempoBar(data) }} />
+            )}
+            {/* розыгрыш — компактный, вровень с приветствием */}
+            <div style={{ flex: '0 0 auto', display: 'flex', alignItems: 'center', gap: 10, background: 'var(--gold-bg)', border: '1px solid var(--gold)', borderRadius: 12, padding: '8px 13px', maxWidth: 320 }}>
+              <div style={{ fontSize: 22, lineHeight: 1, flex: '0 0 auto' }}>🎁</div>
+              <div style={{ lineHeight: 1.3 }}>
+                <div style={{ fontSize: 12, fontWeight: 700, color: 'var(--gold)' }}>{mt('raffleCTA')}</div>
+                <div style={{ fontSize: 11.5, color: 'var(--txt)' }}><b style={{ color: 'var(--gold)' }}>{mt('specialPrize')}</b></div>
               </div>
             </div>
           </div>
