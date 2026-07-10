@@ -22,6 +22,10 @@ export const MOP_T = {
     nextBonus: 'До следующего бонуса', bonusProgress: 'выполни', by: 'до', dayShort: 'числа', daysWord: 'дн.',
     raffle: '🎁 Розыгрыш месяца', raffleDesc: 'Закрой план — участвуешь в розыгрыше:', raffleCTA: 'Закрой план на 100% — участвуй в розыгрыше!', rafflePrizeWord: 'Приз', specialPrize: 'Специальный приз 🎉',
     losing: 'Где ты теряешь клиентов', noReach: 'не дозвонился', potentialLost: 'это ~', lostSales: 'потерянных продаж', losingTip: 'Прозвони их — это твои деньги!',
+    ewTitle: 'Как ты зарабатываешь и сколько можешь ещё', ewNow: 'Сейчас за месяц', ewCeiling: 'Потолок месяца', ewCeilingNote: 'при 100% плана и 1 месте',
+    ewSources: 'Источники дохода', ewGuaranteed: 'платится всегда', ewKpiUpTo: 'ставка растёт до', ewAtPlan100: 'при 100% плана',
+    ewTempoEach: 'по $15 каждый', ewCanMore: 'можно ещё', ewTop: 'Топ команды', ewTopGet: 'ты получаешь', ewTopBecome: 'поднимись в топ — заберёшь бонус',
+    ewTopVals: '1 место +1 млн · 2 место +500к', ewRaffleNote: 'закрой план на 100% — участвуешь в розыгрыше',
   },
   uz: {
     cabinet: 'Shaxsiy kabinet', logout: 'Chiqish', mine: 'Mening daromadim', stats: 'Mening statistikam', team: 'Jamoa',
@@ -43,6 +47,10 @@ export const MOP_T = {
     nextBonus: 'Keyingi bonusgacha', bonusProgress: 'bajaring', by: 'gacha', dayShort: '-sana', daysWord: 'kun',
     raffle: '🎁 Oylik o’yin', raffleDesc: 'Rejani yoping — o’yinda qatnashasiz:', raffleCTA: 'Rejani 100% yop — o’yinda qatnash!', rafflePrizeWord: 'Sovrin', specialPrize: 'Maxsus sovrin 🎉',
     losing: 'Mijozlarni qayerda yoʻqotyapsan', noReach: 'aloqa boʻlmadi', potentialLost: 'bu ~', lostSales: 'yoʻqotilgan sotuv', losingTip: 'Ularga qoʻngʻiroq qil — bu sening puling!',
+    ewTitle: 'Qanday va qancha koʻproq ishlab olishing mumkin', ewNow: 'Bu oyda hozir', ewCeiling: 'Oy shifti', ewCeilingNote: '100% reja va 1-oʻrinda',
+    ewSources: 'Daromad manbalari', ewGuaranteed: 'har doim toʻlanadi', ewKpiUpTo: 'stavka oshadi:', ewAtPlan100: '100% rejada',
+    ewTempoEach: 'har biri $15', ewCanMore: 'yana olish mumkin', ewTop: 'Jamoa topi', ewTopGet: 'sen olasan', ewTopBecome: 'topga koʻtaril — bonusni ol',
+    ewTopVals: '1-oʻrin +1 mln · 2-oʻrin +500k', ewRaffleNote: 'rejani 100% yop — oʻyinda qatnash',
   },
 }
 

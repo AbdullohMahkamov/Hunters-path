@@ -42,6 +42,9 @@ export function renderMopEarnings(_mopData) {
 
   let out = `<div class="mop-row3" style="margin-bottom:16px;align-items:stretch;">${heroCard}${planCard}${daysCard}</div>`
 
+  // Способы заработка: из чего складываются деньги и сколько можно ещё поднять
+  if (e) out += renderMopEarnWays(me, e)
+
   if (e) {
     const steps = e.ladder.map((s) => {
       const cur = s.isCurrent, done = s.reached
@@ -88,6 +91,64 @@ export function renderMopEarnings(_mopData) {
     out += `<div class="mop-row2" style="align-items:start;">${ladderCard}<div>${scenCard || ''}${bonusCard}</div></div>`
   }
   return out
+}
+
+// «Способы заработка» — из чего складываются деньги МОПа и сколько ещё можно поднять.
+// Всё считается из реального объекта earnings (бэкенд не меняется).
+function renderMopEarnWays(me, e) {
+  const fmtS = (n) => (n || 0).toLocaleString('ru')
+  const usd = e.usd || 0
+  const bonus15 = Math.round(15 * usd)
+  const maxRate = (e.ladder && e.ladder.length) ? e.ladder[e.ladder.length - 1].rate : e.rate
+  const kpiAt100 = me.plan > 0 ? Math.round(me.plan * maxRate / 100) : e.kpiSum
+  const tempoMax = 3 * bonus15
+  const tempoLeft = Math.max(0, tempoMax - (e.tempoBonusSum || 0))
+  const maxPotential = e.fix + kpiAt100 + tempoMax + 1000000
+  const roleLabel = e.role === 'presales' ? 'Pre-Sales' : 'Sales'
+  const tb = e.tempoBonuses || []
+  const tbKeys = ['by10', 'by20', 'by30']
+  const tempoChips = tb.map((b, i) => `<span style="display:inline-flex;align-items:center;gap:4px;font-size:11px;background:var(--bg);border:1px solid var(--line2);border-radius:999px;padding:3px 9px;">${b.got ? '✅' : '⬜'} ${mt(tbKeys[i])}</span>`).join(' ')
+
+  // строка источника дохода
+  const row = (icon, name, value, note, valColor) => `
+    <div style="display:flex;align-items:flex-start;gap:11px;padding:11px 0;border-top:1px solid var(--line);">
+      <div style="font-size:18px;line-height:1.2;flex:0 0 auto;">${icon}</div>
+      <div style="flex:1;min-width:0;">
+        <div style="display:flex;justify-content:space-between;gap:8px;align-items:baseline;">
+          <span style="font-size:13.5px;font-weight:600;">${name}</span>
+          <b style="font-size:13.5px;white-space:nowrap;color:${valColor || 'var(--txt)'};">${value}</b>
+        </div>
+        ${note ? `<div style="font-size:11.5px;color:var(--txt3);margin-top:3px;line-height:1.45;">${note}</div>` : ''}
+      </div>
+    </div>`
+
+  const kpiNote = me.plan > 0
+    ? `${mt('ewKpiUpTo')} <b>${maxRate}%</b> → <b style="color:var(--green)">${fmtS(kpiAt100)}</b> ${mt('ewAtPlan100')}`
+    : `${mt('ofRevenue')} · ${mt('ewKpiUpTo')} ${maxRate}%`
+  const tempoNote = `${tempoChips}${tempoLeft > 0 ? `<div style="margin-top:5px;">${mt('ewCanMore')} <b style="color:var(--gold)">+${fmtS(tempoLeft)}</b></div>` : ''}`
+  const topValue = e.topBonus > 0 ? `+${fmtS(e.topBonus)}` : ''
+  const topNote = e.topBonus > 0 ? `${mt('ewTopGet')} <b>${e.topLabel}</b> · ${mt('ewTopVals')}` : `${mt('ewTopBecome')} · ${mt('ewTopVals')}`
+
+  return `<div class="mop-card" style="border-color:var(--gold);margin-bottom:16px;">
+    <div class="mop-ct" style="color:var(--gold);">💰 ${mt('ewTitle')}</div>
+    <div style="display:flex;gap:10px;flex-wrap:wrap;margin-bottom:8px;">
+      <div style="flex:1;min-width:135px;background:var(--bg);border:1px solid var(--line2);border-radius:11px;padding:11px 13px;">
+        <div style="font-size:11px;color:var(--txt2);">${mt('ewNow')}</div>
+        <div style="font-size:22px;font-weight:800;">${fmtS(e.total)}</div>
+      </div>
+      <div style="flex:1;min-width:135px;background:var(--gold-bg);border:1px solid var(--gold);border-radius:11px;padding:11px 13px;">
+        <div style="font-size:11px;color:var(--txt2);">${mt('ewCeiling')} 🚀</div>
+        <div style="font-size:22px;font-weight:800;color:var(--gold);">${fmtS(maxPotential)}</div>
+        <div style="font-size:10px;color:var(--txt3);">${mt('ewCeilingNote')}</div>
+      </div>
+    </div>
+    <div style="font-size:11px;color:var(--txt3);text-transform:uppercase;letter-spacing:.3px;margin-top:10px;">${mt('ewSources')}</div>
+    ${row('💵', `${mt('fix')} · ${roleLabel}`, fmtS(e.fix), mt('ewGuaranteed'))}
+    ${row('📈', `${mt('kpi')} ${e.rate}% ${mt('ofRevenue')}`, fmtS(e.kpiSum), kpiNote, 'var(--accent)')}
+    ${row('⚡', `${mt('tempoBonus')} (${mt('ewTempoEach')})`, fmtS(e.tempoBonusSum), tempoNote, 'var(--gold)')}
+    ${row('🏆', mt('ewTop'), topValue, topNote, 'var(--gold)')}
+    ${row('🎁', mt('raffle').replace('🎁 ', ''), '', mt('ewRaffleNote'))}
+  </div>`
 }
 
 // === РАЗДЕЛ 2: МОЯ СТАТИСТИКА (работа) ===
