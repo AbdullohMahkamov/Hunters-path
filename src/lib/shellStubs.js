@@ -36,8 +36,7 @@ export function installShellStubs() {
   // Заглушки загрузки данных / модалок — реальные реализации в следующих этапах.
   // (syncAll/openSuspModal/…/editForecastGoal ставит initDashModals; квесты — initQuests и т.д.)
   const noop = () => { /* раздел переносится в следующем этапе */ }
-  ;['showHint', 'loadActivity', 'askForecastHelp',
-    'toggleAdsets', 'refreshMetaSpend', 'editMargin', 'editAdSpend'].forEach((fn) => {
+  ;['showHint', 'loadActivity', 'askForecastHelp'].forEach((fn) => {
     if (typeof window[fn] !== 'function') window[fn] = noop
   })
   if (typeof window.finView === 'undefined') window.finView = 'month'

@@ -106,6 +106,7 @@ export function applyLiveDash(d) {
   renderPlanFact(d)
   renderForecast(d)
   renderVelocity(d)
+  renderAdsets(d)
   renderSignals(d)
 
   const byConv = d.mopsByConv || []
@@ -439,6 +440,7 @@ export function applySuspicious(d) {
   suspData = fromSync.concat(fromSpeed)
   loadSuspReviewed()
   loadOrgSettings()
+  loadMetaSpend()
 }
 
 async function loadSuspReviewed() {
@@ -670,10 +672,201 @@ async function syncAll() {
   setTimeout(() => { if (lbl) lbl.textContent = 'Обновить'; syncingAll = false }, 2500)
 }
 
+// ===== МАРКЕТИНГ: ИСТОЧНИКИ РЕКЛАМЫ (adset) + ROI/ROAS из Meta =====
+let _adsetsExpanded = false
+let _metaSpend = null
+let _autoMargin = null
+let _autoMarginTried = false
+function toggleAdsets() { _adsetsExpanded = !_adsetsExpanded; renderAdsets(_lastDashData) }
+async function loadMetaSpend() {
+  try {
+    const r = await fetch('/api/meta-ads?action=get')
+    const d = await r.json()
+    if (d && d.ok) { _metaSpend = d; renderAdsets(_lastDashData) }
+  } catch (e) { /* ignore */ }
+}
+async function refreshMetaSpend() {
+  const btn = document.getElementById('metaRefreshBtn')
+  const uz = state.lang === 'uz'
+  if (btn) { btn.disabled = true; btn.textContent = uz ? 'Yuklanmoqda...' : 'Загрузка...' }
+  try {
+    const r = await fetch('/api/meta-ads?action=refresh')
+    const d = await r.json()
+    if (d && d.ok) { _metaSpend = d; renderAdsets(_lastDashData) }
+    else alert((uz ? 'Xatolik: ' : 'Ошибка: ') + ((d && d.error) || '—'))
+  } catch (e) { alert(String(e)) }
+  if (btn) { btn.disabled = false; btn.textContent = uz ? 'Xarajatlarni yangilash' : 'Обновить расходы' }
+}
+function fmtRoi(rev, spend) { if (!spend || spend <= 0) return null; return (rev / spend) }
+function editMargin() {
+  const uz = state.lang === 'uz'
+  const cur = orgSettings.margin != null ? orgSettings.margin : ''
+  const inp = prompt(uz ? 'Sof foyda marjasi (%): sotuvdan necha % foyda qoladi?' : 'Маржа прибыли (%): сколько % прибыли остаётся с продажи?', cur)
+  if (inp === null) return
+  const m = parseFloat(String(inp).replace(/[^0-9.]/g, ''))
+  if (isNaN(m) || m < 0 || m > 100) { alert(uz ? '0 dan 100 gacha son kiriting' : 'Введите число от 0 до 100'); return }
+  orgSettings.margin = m
+  saveOrgSettings({ margin: m })
+  renderAdsets(_lastDashData)
+}
+function editAdSpend() {
+  const uz = state.lang === 'uz'
+  const per = window._dashPeriod || 'month'
+  const isAll = per === 'all'
+  const cur = isAll ? (orgSettings.adSpendAll || '') : (orgSettings.adSpendMonth || '')
+  const label = isAll ? (uz ? 'Reklama xarajati (BUTUN DAVR, soʻm):' : 'Расход на рекламу (ВСЁ ВРЕМЯ, сум):')
+    : (uz ? 'Reklama xarajati (SHU OY, soʻm):' : 'Расход на рекламу (ТЕКУЩИЙ МЕСЯЦ, сум):')
+  const inp = prompt(label, cur)
+  if (inp === null) return
+  const s = parseInt(String(inp).replace(/[^0-9]/g, ''), 10)
+  if (!s || s <= 0) { alert(uz ? 'Nol emas' : 'Введите число больше нуля'); return }
+  if (isAll) { orgSettings.adSpendAll = s; saveOrgSettings({ adSpendAll: s }) }
+  else { orgSettings.adSpendMonth = s; saveOrgSettings({ adSpendMonth: s }) }
+  renderAdsets(_lastDashData)
+}
+function getAdSpendForPeriod(isAll) {
+  const v = isAll ? orgSettings.adSpendAll : orgSettings.adSpendMonth
+  if (v != null && v > 0) return v
+  if (orgSettings.adSpend != null && orgSettings.adSpend > 0) return orgSettings.adSpend
+  return null
+}
+async function autoLoadMargin() {
+  if (_autoMarginTried) return
+  _autoMarginTried = true
+  if (orgSettings.margin != null) return
+  try {
+    const r = await fetch('/api/finance' + orgQ(), { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ session: getSession() }) })
+    const d = await r.json()
+    if (d && d.ok && d.revenue > 0 && d.profit != null) {
+      const m = +(d.profit / d.revenue * 100).toFixed(1)
+      _autoMargin = m
+      renderAdsets(_lastDashData)
+    }
+  } catch (e) { /* ignore */ }
+}
+function getMargin() {
+  if (orgSettings.margin != null) return { val: orgSettings.margin, auto: false }
+  if (_autoMargin != null) return { val: _autoMargin, auto: true }
+  return { val: null, auto: false }
+}
+function renderAdsets(d) {
+  const box = document.getElementById('adsetsChart'); if (!box) return
+  const uz = state.lang === 'uz'
+  const isAdmin = getRole() === 'admin'
+  if (isAdmin && !_autoMarginTried && orgSettings.margin == null) autoLoadMargin()
+  const per = window._dashPeriod || 'month'
+  const isAll = per === 'all'
+  const arrRaw = (d && d.adsets) || []
+  const arr = arrRaw.map((a) => ({
+    name: a.name,
+    leads: isAll ? a.leads : (a.leadsMonth != null ? a.leadsMonth : a.leads),
+    sold: isAll ? a.sold : (a.soldMonth != null ? a.soldMonth : a.sold),
+    revenue: isAll ? a.revenue : (a.revenueMonth != null ? a.revenueMonth : a.revenue),
+    conv: isAll ? a.conv : (a.convMonth != null ? a.convMonth : a.conv),
+    avgCheck: isAll ? a.avgCheck : (a.avgCheckMonth != null ? a.avgCheckMonth : a.avgCheck),
+  })).filter((a) => a.leads > 0 || a.revenue > 0).sort((x, y) => y.revenue - x.revenue)
+  const spendMap = {}
+  if (_metaSpend && _metaSpend.adsets) for (const s of _metaSpend.adsets) spendMap[s.name] = s.spend
+  const hasSpend = _metaSpend && _metaSpend.adsets && _metaSpend.adsets.length
+  if (!arr.length) {
+    box.innerHTML = '<div style="font-size:12px;color:var(--txt3);">' + (uz ? 'Bu davr uchun manba maʼlumoti yoʻq' : 'Нет данных об источниках за этот период') + '</div>'
+    return
+  }
+  let summaryHtml = ''
+  if (isAdmin) {
+    const adRevenue = arr.reduce((s, a) => s + (a.revenue || 0), 0)
+    const adSpend = getAdSpendForPeriod(isAll)
+    const marginInfo = getMargin()
+    const margin = marginInfo.val
+    const roas = (adSpend > 0) ? adRevenue / adSpend : null
+    let roi = null
+    if (adSpend > 0 && margin != null) { const profit = adRevenue * (margin / 100); roi = (profit - adSpend) / adSpend * 100 }
+    const spendTxt = adSpend > 0 ? fmtSum(adSpend) : (uz ? 'kiriting' : 'укажите')
+    const marginSrc = margin == null ? (uz ? 'marjani kiriting' : 'укажите маржу') : (marginInfo.auto ? (uz ? 'moliyadan · sof foyda' : 'из финансов · чистая прибыль') : (uz ? 'sof foyda' : 'чистая прибыль'))
+    const marginLbl = margin != null ? ` (${uz ? 'marja' : 'маржа'} ${String(margin).replace('.', ',')}%) ✏️` : ' ✏️'
+    const perLabel = isAll ? (uz ? 'butun davr' : 'всё время') : (uz ? 'shu oy' : 'текущий месяц')
+    summaryHtml = `<div style="background:var(--card);border:1px solid var(--line2);border-radius:11px;padding:13px;margin-bottom:14px;">
+      <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:10px;">
+        <div style="font-size:12.5px;font-weight:700;">${uz ? 'Reklama qoplanishi' : 'Окупаемость рекламы'} · ${perLabel}</div>
+        <span style="font-size:10px;color:var(--gold);border:1px solid var(--gold);border-radius:6px;padding:1px 6px;">${uz ? 'faqat admin' : 'только админ'}</span>
+      </div>
+      <div style="display:grid;grid-template-columns:repeat(2,1fr);gap:10px;margin-bottom:10px;">
+        <div style="background:var(--bg2);border-radius:9px;padding:9px 11px;cursor:pointer;" onclick="editAdSpend()" title="${uz ? 'Oʻzgartirish' : 'Изменить'}">
+          <div style="font-size:10.5px;color:var(--txt2);">${uz ? 'Reklama xarajati ✏️' : 'Расход на рекламу ✏️'}</div>
+          <div style="font-size:16px;font-weight:700;color:var(--red);">${spendTxt}</div>
+          <div style="font-size:9.5px;color:var(--txt3);">${uz ? 'qoʻlda kiritiladi' : 'вводится вручную'}</div>
+        </div>
+        <div style="background:var(--bg2);border-radius:9px;padding:9px 11px;">
+          <div style="font-size:10.5px;color:var(--txt2);">${uz ? 'Reklamadan tushum' : 'Выручка с рекламы'}</div>
+          <div style="font-size:16px;font-weight:700;color:var(--green);">${fmtSum(adRevenue)}</div>
+          <div style="font-size:9.5px;color:var(--txt3);">${arr.reduce((s, a) => s + (a.sold || 0), 0)} ${uz ? 'sotuv' : 'продаж'}</div>
+        </div>
+      </div>
+      <div style="display:grid;grid-template-columns:repeat(2,1fr);gap:10px;">
+        <div style="background:var(--bg2);border-radius:9px;padding:9px 11px;">
+          <div style="font-size:10.5px;color:var(--txt2);">ROAS ${hintIcon('roas')}</div>
+          <div style="font-size:19px;font-weight:800;color:${roas == null ? 'var(--txt3)' : (roas >= 1 ? 'var(--green)' : 'var(--red)')};">${roas != null ? roas.toFixed(1) + 'x' : '—'}</div>
+          <div style="font-size:9.5px;color:var(--txt3);">${uz ? 'tushum ÷ xarajat' : 'выручка ÷ расход'}</div>
+        </div>
+        <div style="background:var(--bg2);border-radius:9px;padding:9px 11px;cursor:pointer;" onclick="editMargin()" title="${uz ? 'Marjani oʻzgartirish' : 'Изменить маржу'}">
+          <div style="font-size:10.5px;color:var(--txt2);">ROI${marginLbl}</div>
+          <div style="font-size:19px;font-weight:800;color:${roi == null ? 'var(--txt3)' : (roi >= 0 ? 'var(--green)' : 'var(--red)')};">${roi != null ? (roi > 0 ? '+' : '') + Math.round(roi) + '%' : '—'}</div>
+          <div style="font-size:9.5px;color:var(--txt3);">${marginSrc}</div>
+        </div>
+      </div>
+    </div>`
+  }
+  const maxRev = Math.max(1, ...arr.map((a) => a.revenue))
+  const LIMIT = 5
+  const shown = _adsetsExpanded ? arr : arr.slice(0, LIMIT)
+  let html = summaryHtml
+  html += `<div style="display:flex;justify-content:space-between;align-items:center;gap:8px;margin-bottom:10px;flex-wrap:wrap;">
+    <div style="font-size:11px;color:var(--txt3);flex:1;min-width:150px;">${hasSpend ? (uz ? 'Har auditoriya ROI (Meta’dan)' : 'ROI по каждой аудитории (из Meta)') : (uz ? 'Auditoriyalar boʻyicha tushum' : 'Выручка по аудиториям')}</div>
+    ${isAdmin ? `<button id="metaRefreshBtn" onclick="refreshMetaSpend()" style="padding:7px 12px;border-radius:8px;background:var(--accent);border:none;color:#fff;font-size:12px;font-weight:600;cursor:pointer;white-space:nowrap;">${uz ? 'Meta xarajati' : 'Расходы Meta'}</button>` : ''}
+  </div>`
+  html += shown.map((a) => {
+    const spend = spendMap[a.name]
+    const roi = fmtRoi(a.revenue, spend)
+    let roiTag = ''
+    if (hasSpend) {
+      if (spend > 0 && roi != null) {
+        const roiColor = roi >= 2 ? 'var(--green)' : (roi >= 1 ? 'var(--gold)' : 'var(--red)')
+        roiTag = `<span style="font-size:12px;font-weight:700;color:${roiColor};white-space:nowrap;">ROAS ${roi.toFixed(1)}x</span>`
+      } else if (spend > 0) {
+        roiTag = `<span style="font-size:11px;color:var(--red);white-space:nowrap;">${uz ? '0 sotuv' : '0 продаж'}</span>`
+      }
+    }
+    return `
+    <div style="padding:11px 0;border-bottom:1px solid var(--line);">
+      <div style="display:flex;justify-content:space-between;gap:8px;margin-bottom:5px;align-items:center;">
+        <b style="font-size:13px;">${escapeHtml(a.name)}</b>
+        <div style="display:flex;gap:10px;align-items:center;">
+          ${roiTag}
+          <span style="font-size:13px;font-weight:700;color:var(--green);white-space:nowrap;">${fmtSum(a.revenue)}</span>
+        </div>
+      </div>
+      <div style="height:6px;background:var(--card2);border-radius:5px;overflow:hidden;margin-bottom:5px;">
+        <div style="height:100%;width:${Math.round(a.revenue / maxRev * 100)}%;background:var(--accent);border-radius:5px;"></div>
+      </div>
+      <div style="font-size:11.5px;color:var(--txt3);">
+        ${a.leads} ${uz ? 'lid' : 'лидов'} · ${a.sold} ${uz ? 'sotuv' : 'продаж'} · ${uz ? 'konv' : 'конв'}. ${String(a.conv).replace('.', ',')}%${hasSpend && spend > 0 ? ` · ${uz ? 'xarajat' : 'расход'} ${fmtSum(spend)}` : ''}
+      </div>
+    </div>`
+  }).join('')
+  if (arr.length > LIMIT) {
+    const rest = arr.length - LIMIT
+    html += `<button onclick="toggleAdsets()" style="margin-top:12px;width:100%;padding:9px;border-radius:8px;background:var(--card);border:1px solid var(--line2);color:var(--txt2);font-size:12.5px;font-weight:600;cursor:pointer;">
+      ${_adsetsExpanded ? (uz ? 'Yigʻish' : 'Свернуть') : (uz ? `Yana ${rest} ta koʻrsatish` : `Показать ещё ${rest}`)}
+    </button>`
+  }
+  box.innerHTML = html
+}
+
 export function initDashModals() {
   Object.assign(window, {
     openSuspModal, closeSuspModal, toggleSuspHistory, reviewSusp,
     openWorkdaysModal, closeWorkdaysModal, saveWorkdays,
     editForecastGoal, syncAll, saveOrgSettings,
+    toggleAdsets, refreshMetaSpend, editMargin, editAdSpend,
   })
 }
