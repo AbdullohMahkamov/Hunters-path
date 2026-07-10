@@ -127,10 +127,12 @@ export default async function handler(req, res) {
       (cache.mopsBySales || []).forEach(m => { byId[m.id] = { ...m }; });
       (cache.mopsByConv || []).forEach(m => { if (byId[m.id]) { byId[m.id].leads = m.leads; byId[m.id].conv = m.conv; byId[m.id].reachPct = m.reachPct; } });
       speedMops.forEach(m => {
-        if (byId[m.id]) {
-          byId[m.id].medianFirstCallMin = m.medianFirstCallMin;
-          byId[m.id].taskRate = m.taskRate;
-          byId[m.id].reachRate = m.reachRate;
+        // speed-мопы имеют только name (без id) — матчим по имени, т.к. id мопа = имя
+        const key = m.id != null ? m.id : m.name;
+        if (byId[key]) {
+          byId[key].medianFirstCallMin = m.medianFirstCallMin;
+          byId[key].taskRate = m.taskRate;
+          byId[key].reachRate = m.reachRate;
         }
       });
 
