@@ -2653,6 +2653,10 @@ async function loadMopsList(){
         ${crm.map(m=>`<option value="${escapeHtml(m.id||m.name)}" data-name="${escapeHtml(m.name)}">${escapeHtml(m.name)}</option>`).join('')}
       </select>
       <input id="mopNewLogin" placeholder="Логин (напр. komiljon)" style="width:100%;padding:10px;border-radius:9px;border:1px solid var(--line2);background:var(--bg2);color:var(--txt);font-size:14px;margin-bottom:8px;">
+      <select id="mopNewRole" style="width:100%;padding:10px;border-radius:9px;border:1px solid var(--line2);background:var(--bg2);color:var(--txt);font-size:14px;margin-bottom:8px;">
+        <option value="sales">Sales (фикса 2 млн)</option>
+        <option value="presales">Pre-Sales (фикса 1 млн)</option>
+      </select>
       <input id="mopNewPass" placeholder="Пароль" style="width:100%;padding:10px;border-radius:9px;border:1px solid var(--line2);background:var(--bg2);color:var(--txt);font-size:14px;margin-bottom:8px;">
       <input id="mopNewPlan" type="number" placeholder="Личный план (выручка, сум)" style="width:100%;padding:10px;border-radius:9px;border:1px solid var(--line2);background:var(--bg2);color:var(--txt);font-size:14px;margin-bottom:10px;">
       <button onclick="createMopAccount()" style="width:100%;padding:11px;border-radius:9px;background:var(--accent);color:#fff;border:none;font-weight:600;cursor:pointer;">Создать аккаунт</button>
@@ -2666,6 +2670,13 @@ async function loadMopsList(){
           <button onclick="deleteMopAccount('${escapeHtml(a.login)}')" style="padding:6px 10px;border-radius:8px;background:var(--red-bg);color:var(--red);border:none;font-size:12px;cursor:pointer;">Удалить</button>
         </div>
         <div style="display:flex;gap:8px;margin-top:10px;align-items:center;">
+          <span style="font-size:12px;color:var(--txt3);">Роль:</span>
+          <select onchange="setMopRole('${escapeHtml(a.login)}',this.value)" style="flex:1;padding:7px;border-radius:7px;border:1px solid var(--line2);background:var(--bg2);color:var(--txt);font-size:13px;">
+            <option value="sales"${(a.mopRole||'sales')==='sales'?' selected':''}>Sales (2 млн)</option>
+            <option value="presales"${a.mopRole==='presales'?' selected':''}>Pre-Sales (1 млн)</option>
+          </select>
+        </div>
+        <div style="display:flex;gap:8px;margin-top:8px;align-items:center;">
           <span style="font-size:12px;color:var(--txt3);">План:</span>
           <input id="plan_${a.mopId}" type="number" value="${plans[a.mopId]||0}" style="flex:1;padding:7px;border-radius:7px;border:1px solid var(--line2);background:var(--bg2);color:var(--txt);font-size:13px;">
           <button onclick="setMopPlan('${a.mopId}')" style="padding:7px 12px;border-radius:7px;background:var(--card2);border:1px solid var(--line2);color:var(--txt);font-size:12px;cursor:pointer;">Сохранить</button>
@@ -2688,10 +2699,11 @@ async function createMopAccount(){
   const login=document.getElementById('mopNewLogin').value.trim();
   const password=document.getElementById('mopNewPass').value;
   const plan=document.getElementById('mopNewPlan').value;
+  const mopRole=document.getElementById('mopNewRole').value;
   if(!name||!mopId||mopId==='undefined'){alert('Выберите менеджера из списка (если список пуст — нажмите «Обновить из amoCRM» в дашборде)');return;}
   if(!login||!password){alert('Введите логин и пароль');return;}
   const r=await fetch('/api/mop',{method:'POST',headers:{'content-type':'application/json'},
-    body:JSON.stringify({session:SESSION,action:'create',login,password,mopId,name})});
+    body:JSON.stringify({session:SESSION,action:'create',login,password,mopId,name,mopRole})});
   const d=await r.json();
   if(d.ok){
     if(plan)await fetch('/api/mop',{method:'POST',headers:{'content-type':'application/json'},body:JSON.stringify({session:SESSION,action:'set_plan',mopId,plan})});
@@ -2703,6 +2715,9 @@ async function deleteMopAccount(login){
   if(!confirm('Удалить аккаунт '+login+'?'))return;
   await fetch('/api/mop',{method:'POST',headers:{'content-type':'application/json'},body:JSON.stringify({session:SESSION,action:'delete',login})});
   loadMopsList();
+}
+async function setMopRole(login,mopRole){
+  await fetch('/api/mop',{method:'POST',headers:{'content-type':'application/json'},body:JSON.stringify({session:SESSION,action:'set_role',login,mopRole})});
 }
 async function setMopPlan(mopId){
   const plan=document.getElementById('plan_'+mopId).value;
@@ -4870,7 +4885,73 @@ function renderMopMine(){
   if(!me)return '<div class="mop-card">Ваши данные не найдены в CRM.</div>';
   const planPct=me.plan>0?Math.round(me.revenue/me.plan*100):null;
   const fcm=me.firstCallMin!=null?(me.firstCallMin>=60?(Math.round(me.firstCallMin/6)/10+' ч'):me.firstCallMin+' мин'):'—';
-  return `
+  const e=_mopData.earnings;
+  const fmtS=n=>(n||0).toLocaleString('ru');
+  // === БЛОК ЗАРАБОТКА + ЛЕСТНИЦА ===
+  let earnHtml='';
+  if(e){
+    const roleLabel=e.role==='presales'?'Pre-Sales':'Sales';
+    // лестница ступеней
+    const steps=e.ladder.map(s=>{
+      const cur=s.isCurrent, done=s.reached;
+      const icon=cur?'📍':(done?'✅':'⬜');
+      const bg=cur?'var(--accent-bg)':'transparent';
+      const bd=cur?'border:1px solid var(--accent);':'';
+      return `<div style="display:flex;align-items:center;gap:10px;padding:9px 10px;border-radius:9px;background:${bg};${bd}margin-bottom:4px;">
+        <span style="font-size:15px;">${icon}</span>
+        <div style="flex:1;">
+          <div style="font-size:13px;font-weight:${cur?'700':'600'};">${s.pct}% плана · ставка ${s.rate}%</div>
+          <div style="font-size:11px;color:var(--txt3);">выручка ${fmtS(s.targetRevenue)} → зарплата ~${fmtS(s.earnAtStep)}</div>
+        </div>
+      </div>`;
+    }).join('');
+    const ns=e.nextStep;
+    earnHtml=`
+    <div class="mop-card" style="border:1.5px solid var(--accent);">
+      <div style="font-size:13px;color:var(--accent);font-weight:700;text-transform:uppercase;letter-spacing:.4px;margin-bottom:12px;">💵 Мой заработок (${roleLabel})</div>
+      <div style="text-align:center;padding:10px 0 14px;">
+        <div style="font-size:32px;font-weight:800;color:var(--green);">${fmtS(e.total)}</div>
+        <div style="font-size:12px;color:var(--txt3);">сум в этом месяце</div>
+      </div>
+      <div style="display:flex;flex-direction:column;gap:5px;font-size:13px;margin-bottom:8px;">
+        <div style="display:flex;justify-content:space-between;"><span style="color:var(--txt2);">Фикса</span><b>${fmtS(e.fix)}</b></div>
+        <div style="display:flex;justify-content:space-between;"><span style="color:var(--txt2);">KPI (${e.rate}% от выручки)</span><b>${fmtS(e.kpiSum)}</b></div>
+        ${e.tempoBonusSum>0?`<div style="display:flex;justify-content:space-between;"><span style="color:var(--txt2);">Бонусы за темп</span><b style="color:var(--gold)">+${fmtS(e.tempoBonusSum)}</b></div>`:''}
+        ${e.topBonus>0?`<div style="display:flex;justify-content:space-between;"><span style="color:var(--txt2);">${e.topLabel}</span><b style="color:var(--gold)">+${fmtS(e.topBonus)}</b></div>`:''}
+      </div>
+    </div>
+    <div class="mop-card">
+      <div style="font-size:13px;color:var(--txt3);font-weight:600;text-transform:uppercase;letter-spacing:.4px;margin-bottom:12px;">🪜 Лестница заработка</div>
+      ${steps}
+      ${ns?`<div style="margin-top:10px;padding:12px;background:var(--gold-bg);border-radius:10px;border:1px solid var(--gold);">
+        <div style="font-size:13px;font-weight:600;">До ступени ${ns.pct}% осталось продать на <b>${fmtS(ns.revenueNeeded)}</b></div>
+        <div style="font-size:12px;color:var(--txt2);margin-top:3px;">Откроется ставка ${ns.newRate}% → заработок вырастет 🔥</div>
+      </div>`:`<div style="margin-top:10px;padding:12px;background:var(--green-bg,rgba(52,199,89,.12));border-radius:10px;text-align:center;font-size:13px;font-weight:600;color:var(--green);">🏆 Ты на максимальной ступени!</div>`}
+    </div>
+    <div class="mop-card">
+      <div style="font-size:13px;color:var(--txt3);font-weight:600;text-transform:uppercase;letter-spacing:.4px;margin-bottom:10px;">⚡ Бонусы за темп ($15 каждый)</div>
+      ${e.tempoBonuses.map(b=>`<div style="display:flex;align-items:center;gap:9px;padding:6px 0;">
+        <span>${b.got?'✅':(b.possible?'⏳':'❌')}</span>
+        <span style="font-size:13px;flex:1;">${b.label}</span>
+        <b style="font-size:13px;color:${b.got?'var(--green)':'var(--txt3)'};">${b.got?'+$15':'$15'}</b>
+      </div>`).join('')}
+    </div>`;
+    // === СЦЕНАРИИ «ЧТО ТЕБЕ СДЕЛАТЬ» ===
+    if(e.scenarios&&e.scenarios.length){
+      earnHtml+=`<div class="mop-card" style="border:1.5px solid var(--gold);">
+        <div style="font-size:13px;color:var(--gold);font-weight:700;text-transform:uppercase;letter-spacing:.4px;margin-bottom:12px;">🎯 Что тебе сделать</div>
+        ${e.scenarios.map(s=>`<div style="padding:12px;background:var(--card2);border-radius:11px;margin-bottom:9px;">
+          <div style="font-size:14px;font-weight:700;margin-bottom:6px;">${s.icon} ${escapeHtml(s.title)}</div>
+          <div style="font-size:13px;color:var(--txt2);line-height:1.6;">
+            Продать ещё на <b style="color:var(--accent)">${fmtS(s.sellMore)}</b><br>
+            → заработаешь <b style="color:var(--green)">${fmtS(s.willEarn)}</b> <span style="color:var(--gold);font-size:12px;">(+${fmtS(s.delta)})</span>
+            ${s.topBonusNote?`<br><span style="font-size:12px;color:var(--gold)">🎁 ${escapeHtml(s.topBonusNote)}</span>`:''}
+          </div>
+        </div>`).join('')}
+      </div>`;
+    }
+  }
+  return earnHtml+`
     <div class="mop-card">
       <div style="font-size:13px;color:var(--txt3);font-weight:600;text-transform:uppercase;letter-spacing:.4px;margin-bottom:12px;">💰 Мои продажи (месяц)</div>
       <div class="mop-stat-grid">
@@ -4907,9 +4988,10 @@ function renderMopTeam(){
   const rows=team.map(m=>{
     const isMe=String(m.id)===String(meId);
     const medal=m.rank===1?'🥇':m.rank===2?'🥈':m.rank===3?'🥉':m.rank;
+    const topB=m.rank===1?' · 🎁 +1млн':(m.rank===2?' · 🎁 +500к':'');
     return `<div class="mop-rank-row${isMe?' me':''}">
       <div class="mop-rank-num">${medal}</div>
-      <div style="flex:1;"><div style="font-weight:${isMe?'700':'600'};font-size:14px;">${escapeHtml(m.name)}${isMe?' (вы)':''}</div>
+      <div style="flex:1;"><div style="font-weight:${isMe?'700':'600'};font-size:14px;">${escapeHtml(m.name)}${isMe?' (вы)':''}<span style="font-size:11px;color:var(--gold);">${topB}</span></div>
         <div style="font-size:12px;color:var(--txt3);">${m.leads} лидов · дозвон ${m.reachPct}% · конв. ${m.conv}%</div></div>
       <div style="text-align:right;"><div style="font-weight:700;">${m.sold} прод.</div><div style="font-size:12px;color:var(--green);">${fmtSumM(m.revenue)}</div></div>
     </div>`;
