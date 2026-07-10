@@ -84,4 +84,11 @@ const T={
 };
 
 export function tr(key){const o=T[key];if(!o)return key;const v=o[state.lang||'ru'];return v!==undefined?v:o.ru}
+
+// Короткий словарь вкладок/плейсхолдера (I18N из монолита)
+export const I18N = {
+  ru: { tab_map: 'Задачи', tab_dash: 'Дашборд', tab_chat: 'Советник', ph: 'Спросите совета...' },
+  uz: { tab_map: 'Vazifalar', tab_dash: 'Dashboard', tab_chat: 'Maslahatchi', ph: 'Maslahat so‘rang...' },
+}
+export function ti(key) { return (I18N[state.lang || 'ru'] || I18N.ru)[key] }
 export { T }

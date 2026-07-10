@@ -9,6 +9,8 @@ import { initAdminModals } from '../lib/adminModals.js'
 import { initTelegram, loadTelegramChats } from '../lib/telegram.js'
 import { initFinanceTrends } from '../lib/financeTrends.js'
 import { initQuests, renderStages, renderDopQuests } from '../lib/quests.js'
+import { applyI18n } from '../lib/i18nApply.js'
+import { ti } from '../lib/shellI18n.js'
 import mapViewHtml from './viewsHtml/mapView.html?raw'
 import dashViewHtml from './viewsHtml/dashView.html?raw'
 import tgViewHtml from './viewsHtml/tgView.html?raw'
@@ -87,6 +89,7 @@ export default function AppShell({ onLogout }) {
       else start = 'chat'
       bootedRef.current = true
       applyTab(start)
+      setTimeout(() => applyI18n(), 30)
     })()
     return () => { cancelled = true; document.body.classList.remove('shell', 'sec-open', 'chat-open') }
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -147,7 +150,17 @@ export default function AppShell({ onLogout }) {
     applyTab('chat')
   }
 
-  const roleLabel = isRop ? 'РОП' : (role === 'demo' ? 'Демо' : 'Владелец')
+  // смена языка основного приложения (1:1 setLang: перевод статики + перерисовка вьюх)
+  function changeLang(l) {
+    setLang(l)
+    applyI18n()
+    if (window._dashData && typeof window.__applyLiveDash === 'function') window.__applyLiveDash(window._dashData)
+    renderStages(); renderDopQuests(); renderChat()
+    force((n) => n + 1)
+  }
+
+  const uz = state.lang === 'uz'
+  const roleLabel = isRop ? (uz ? 'ROP' : 'РОП') : (role === 'demo' ? 'Demo' : (uz ? 'Egasi' : 'Владелец'))
   const chats = Array.isArray(state.chats) ? state.chats : []
 
   return (
@@ -160,8 +173,8 @@ export default function AppShell({ onLogout }) {
           <div className="h-title">Hunter AI</div>
           <div style={{ flex: 1 }} />
           <div className="lang">
-            <button className={state.lang !== 'uz' ? 'on' : ''} onClick={() => { setLang('ru'); force((n) => n + 1) }}>РУ</button>
-            <button className={state.lang === 'uz' ? 'on' : ''} onClick={() => { setLang('uz'); force((n) => n + 1) }}>UZ</button>
+            <button className={!uz ? 'on' : ''} onClick={() => changeLang('ru')}>РУ</button>
+            <button className={uz ? 'on' : ''} onClick={() => changeLang('uz')}>UZ</button>
           </div>
           <button onClick={onLogout} title="Выйти" style={{ marginLeft: 8, background: 'var(--card)', border: '1px solid var(--line2)', color: 'var(--txt2)', borderRadius: 8, padding: '5px 10px', fontSize: 12.5, cursor: 'pointer', flex: '0 0 auto' }} className="ic-btn">
             <svg className="ic" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" strokeLinejoin="round"><path d="M9 4H5v16h4M16 12H9M13 8l4 4-4 4" /></svg>Выйти
@@ -171,13 +184,13 @@ export default function AppShell({ onLogout }) {
 
       <div className="tabs">
         <button className={'tab' + (tab === 'chat' ? ' active' : '')} onClick={() => applyTab('chat')} style={{ display: isRop ? 'none' : '' }}>
-          <span className="ic-btn"><svg className="ic" width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" strokeLinejoin="round"><path d="M8 10h8M8 14h5" /><path d="M21 12a9 9 0 0 1-9 9 8.7 8.7 0 0 1-4-1l-4 1 1-4a8.7 8.7 0 0 1-1-4 9 9 0 0 1 18 0z" /></svg> <span>Советник</span></span>
+          <span className="ic-btn"><svg className="ic" width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" strokeLinejoin="round"><path d="M8 10h8M8 14h5" /><path d="M21 12a9 9 0 0 1-9 9 8.7 8.7 0 0 1-4-1l-4 1 1-4a8.7 8.7 0 0 1-1-4 9 9 0 0 1 18 0z" /></svg> <span>{ti('tab_chat')}</span></span>
         </button>
         <button className={'tab' + (tab === 'map' ? ' active' : '')} onClick={() => applyTab('map')}>
-          <span className="ic-btn"><svg className="ic" width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" strokeLinejoin="round"><path d="M9 6h11M9 12h11M9 18h11" /><path d="M4 6l1 1 2-2M4 12l1 1 2-2M4 18l1 1 2-2" /></svg> <span>Задачи</span></span>
+          <span className="ic-btn"><svg className="ic" width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" strokeLinejoin="round"><path d="M9 6h11M9 12h11M9 18h11" /><path d="M4 6l1 1 2-2M4 12l1 1 2-2M4 18l1 1 2-2" /></svg> <span>{ti('tab_map')}</span></span>
         </button>
         <button className={'tab' + (tab === 'dash' ? ' active' : '')} onClick={() => applyTab('dash')}>
-          <span className="ic-btn"><svg className="ic" width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" strokeLinejoin="round"><path d="M3 3v18h18" /><rect x="7" y="10" width="3" height="8" /><rect x="12" y="6" width="3" height="12" /><rect x="17" y="13" width="3" height="5" /></svg> <span>Дашборд</span></span>
+          <span className="ic-btn"><svg className="ic" width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" strokeLinejoin="round"><path d="M3 3v18h18" /><rect x="7" y="10" width="3" height="8" /><rect x="12" y="6" width="3" height="12" /><rect x="17" y="13" width="3" height="5" /></svg> <span>{ti('tab_dash')}</span></span>
         </button>
       </div>
 
@@ -206,15 +219,15 @@ export default function AppShell({ onLogout }) {
                 <div className="sec-dropdown-wrap">
                   <button className={'sec-dropdown-btn' + (secOpen ? ' open' : '') + (tab !== 'chat' ? ' active' : '')} onClick={(e) => { e.stopPropagation(); setSecOpen((v) => !v) }}>
                     <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><line x1="3" y1="6" x2="21" y2="6" /><line x1="3" y1="12" x2="21" y2="12" /><line x1="3" y1="18" x2="21" y2="18" /></svg>
-                    <span>Меню</span>
+                    <span>{uz ? 'Menyu' : 'Меню'}</span>
                     <svg className="chev" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><polyline points="6 9 12 15 18 9" /></svg>
                   </button>
                   <div className={'sec-dropdown' + (secOpen ? ' open' : '')} id="secDropdown">
-                    <button className={'menu-item' + (tab === 'dash' ? ' active' : '')} onClick={() => goSection('dash')}><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round"><path d="M3 3v18h18" /><rect x="7" y="10" width="3" height="8" /><rect x="12" y="6" width="3" height="12" /><rect x="17" y="13" width="3" height="5" /></svg>Дашборд</button>
-                    <button className={'menu-item' + (tab === 'map' ? ' active' : '')} onClick={() => goSection('map')}><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round"><path d="M9 11l3 3L22 4" /><path d="M21 12v7a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11" /></svg>Задачи</button>
+                    <button className={'menu-item' + (tab === 'dash' ? ' active' : '')} onClick={() => goSection('dash')}><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round"><path d="M3 3v18h18" /><rect x="7" y="10" width="3" height="8" /><rect x="12" y="6" width="3" height="12" /><rect x="17" y="13" width="3" height="5" /></svg>{uz ? 'Dashboard' : 'Дашборд'}</button>
+                    <button className={'menu-item' + (tab === 'map' ? ' active' : '')} onClick={() => goSection('map')}><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round"><path d="M9 11l3 3L22 4" /><path d="M21 12v7a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11" /></svg>{uz ? 'Vazifalar' : 'Задачи'}</button>
                     <button className={'menu-item' + (tab === 'tg' ? ' active' : '')} onClick={() => goSection('tg')}><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round"><path d="M21 3L3 10l6 2 2 6 3-4 5 4z" /></svg>Telegram</button>
-                    {isAdmin && <button className="menu-item" onClick={() => { setSecOpen(false); window.openClientsModal && window.openClientsModal() }}><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round"><path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2" /><circle cx="9" cy="7" r="4" /><path d="M23 21v-2a4 4 0 0 0-3-3.87M16 3.13a4 4 0 0 1 0 7.75" /></svg>Клиенты</button>}
-                    {isAdmin && <button className="menu-item" onClick={() => { setSecOpen(false); window.openMopsModal && window.openMopsModal() }}><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round"><circle cx="12" cy="8" r="4" /><path d="M4 20a8 8 0 0 1 16 0" /></svg>МОПы (кабинеты)</button>}
+                    {isAdmin && <button className="menu-item" onClick={() => { setSecOpen(false); window.openClientsModal && window.openClientsModal() }}><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round"><path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2" /><circle cx="9" cy="7" r="4" /><path d="M23 21v-2a4 4 0 0 0-3-3.87M16 3.13a4 4 0 0 1 0 7.75" /></svg>{uz ? 'Mijozlar' : 'Клиенты'}</button>}
+                    {isAdmin && <button className="menu-item" onClick={() => { setSecOpen(false); window.openMopsModal && window.openMopsModal() }}><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round"><circle cx="12" cy="8" r="4" /><path d="M4 20a8 8 0 0 1 16 0" /></svg>{uz ? 'MOPlar (kabinetlar)' : 'МОПы (кабинеты)'}</button>}
                   </div>
                 </div>
                 <div className="side-brand" onClick={() => applyTab('chat')} style={{ cursor: 'pointer' }}><div className="side-logo">H</div><span>Hunter AI</span></div>
@@ -222,12 +235,12 @@ export default function AppShell({ onLogout }) {
 
               <button className={'side-chat-home' + (tab === 'chat' ? ' active' : '')} onClick={() => goSection('chat')}>
                 <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M8 10h8M8 14h5" /><path d="M21 12a9 9 0 0 1-9 9 8.7 8.7 0 0 1-4-1l-4 1 1-4a8.7 8.7 0 0 1-1-4 9 9 0 0 1 18 0z" /></svg>
-                <span>Советник</span>
+                <span>{ti('tab_chat')}</span>
               </button>
-              <button className="side-new" onClick={newChat}><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><line x1="12" y1="5" x2="12" y2="19" /><line x1="5" y1="12" x2="19" y2="12" /></svg>Новый чат</button>
+              <button className="side-new" onClick={newChat}><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><line x1="12" y1="5" x2="12" y2="19" /><line x1="5" y1="12" x2="19" y2="12" /></svg>{uz ? 'Yangi chat' : 'Новый чат'}</button>
 
               <div className="side-div" />
-              <div className="side-group-lbl">Недавние чаты</div>
+              <div className="side-group-lbl">{uz ? 'So‘nggi chatlar' : 'Недавние чаты'}</div>
               <div className="side-list" id="sideList">
                 {chats.map((c) => (
                   <button key={c.id} className={'side-item' + (c.id === state.activeChatId ? ' active' : '')} onClick={() => { state.activeChatId = c.id; save(); force((n) => n + 1); applyTab('chat') }} style={{ display: 'block', width: '100%', textAlign: 'left', border: 'none', background: 'none', color: 'inherit', cursor: 'pointer', padding: '7px 10px', borderRadius: 8, fontSize: 13, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
@@ -268,8 +281,8 @@ export default function AppShell({ onLogout }) {
             <div style={{ padding: 18 }}>
               <div style={{ fontSize: 13, fontWeight: 600, color: 'var(--txt2)', marginBottom: 8 }}>Til / Язык</div>
               <div style={{ display: 'flex', gap: 8, marginBottom: 20 }}>
-                <button onClick={() => { setLang('ru'); force((n) => n + 1) }} style={{ flex: 1, padding: 9, borderRadius: 9, border: '1px solid var(--line2)', background: state.lang !== 'uz' ? 'var(--accent-bg)' : 'var(--card)', color: 'var(--txt)', fontSize: 14, fontWeight: 600, cursor: 'pointer' }}>Русский</button>
-                <button onClick={() => { setLang('uz'); force((n) => n + 1) }} style={{ flex: 1, padding: 9, borderRadius: 9, border: '1px solid var(--line2)', background: state.lang === 'uz' ? 'var(--accent-bg)' : 'var(--card)', color: 'var(--txt)', fontSize: 14, fontWeight: 600, cursor: 'pointer' }}>O'zbek</button>
+                <button onClick={() => changeLang('ru')} style={{ flex: 1, padding: 9, borderRadius: 9, border: '1px solid var(--line2)', background: !uz ? 'var(--accent-bg)' : 'var(--card)', color: 'var(--txt)', fontSize: 14, fontWeight: 600, cursor: 'pointer' }}>Русский</button>
+                <button onClick={() => changeLang('uz')} style={{ flex: 1, padding: 9, borderRadius: 9, border: '1px solid var(--line2)', background: uz ? 'var(--accent-bg)' : 'var(--card)', color: 'var(--txt)', fontSize: 14, fontWeight: 600, cursor: 'pointer' }}>O'zbek</button>
               </div>
               <div style={{ fontSize: 13, fontWeight: 600, color: 'var(--txt2)', marginBottom: 8 }}>Hisob / Аккаунт</div>
               <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: 14, padding: '6px 0' }}><span style={{ color: 'var(--txt2)' }}>Роль</span><b>{roleLabel}</b></div>
