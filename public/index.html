@@ -4822,6 +4822,11 @@ function showDemoLogin(){
 let _mopData=null,_mopCurTab='mine';
 async function bootMopCabinet(){
   document.getElementById('loginScreen').style.display='none';
+  // прячем всё основное приложение — МОП видит ТОЛЬКО свой кабинет
+  document.body.classList.remove('shell');
+  const hdr=document.querySelector('header');if(hdr)hdr.style.display='none';
+  const mn=document.querySelector('main');if(mn)mn.style.display='none';
+  const sb=document.getElementById('chatSidebar');if(sb)sb.style.display='none';
   document.getElementById('mopCabinet').style.display='block';
   const nm=window._mopName||'Менеджер';
   document.getElementById('mopHeaderName').textContent=nm;
@@ -5226,6 +5231,12 @@ async function logout(){
   }
   // показываем экран входа (он и так виден по умолчанию)
   document.getElementById('loginScreen').style.display='flex';
+  // отдельная ссылка для МОПов: ?mop=1 → сразу форма входа МОПа, без выбора роли
+  try{
+    if(new URLSearchParams(location.search).get('mop')==='1'){
+      if(typeof showMopLogin==='function')showMopLogin();
+    }
+  }catch(e){}
 })();
 </script>
 </body>
