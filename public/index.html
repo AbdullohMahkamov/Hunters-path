@@ -619,7 +619,7 @@
         style="width:100%;padding:13px 15px;border-radius:11px;border:1px solid var(--line2);background:var(--card);color:var(--txt);font-size:15px;margin-bottom:12px;" />
       <button onclick="mopLoginGo()" style="width:100%;padding:14px;border-radius:11px;background:var(--accent);border:none;color:#fff;font-size:15px;font-weight:600;cursor:pointer;">Войти</button>
       <div id="mopLoginErr" style="color:var(--red);font-size:12.5px;margin-top:10px;text-align:center;display:none;"></div>
-      <button onclick="backToRoles()" style="width:100%;padding:11px;border-radius:11px;background:none;border:none;color:var(--txt2);font-size:13px;cursor:pointer;margin-top:8px;">← Назад</button>
+      <button id="mopBackBtn" onclick="backToRoles()" style="width:100%;padding:11px;border-radius:11px;background:none;border:none;color:var(--txt2);font-size:13px;cursor:pointer;margin-top:8px;">← Назад</button>
     </div>
 
     <!-- Вход в демо по коду -->
@@ -4793,6 +4793,12 @@ function showMopLogin(){
   document.getElementById('roleChoice').style.display='none';
   document.getElementById('mopLogin').style.display='block';
   const e=document.getElementById('mopLoginErr');if(e)e.style.display='none';
+  // если зашли по прямой ссылке ?mop=1 — прячем кнопку «Назад» (МОП не должен видеть выбор роли)
+  try{
+    if(new URLSearchParams(location.search).get('mop')==='1'){
+      const bb=document.getElementById('mopBackBtn');if(bb)bb.style.display='none';
+    }
+  }catch(e2){}
   setTimeout(()=>{const i=document.getElementById('mopLoginInput');if(i)i.focus();},100);
 }
 async function mopLoginGo(){
@@ -4828,10 +4834,11 @@ async function bootMopCabinet(){
   const mn=document.querySelector('main');if(mn)mn.style.display='none';
   const sb=document.getElementById('chatSidebar');if(sb)sb.style.display='none';
   document.getElementById('mopCabinet').style.display='block';
-  const nm=window._mopName||'Менеджер';
+  await loadMopData();
+  // имя из данных кабинета (по совпадению mopId) — источник истины
+  const nm=(_mopData&&_mopData.mopName)||window._mopName||'Менеджер';
   document.getElementById('mopHeaderName').textContent=nm;
   document.getElementById('mopAvatar').textContent=(nm[0]||'М').toUpperCase();
-  await loadMopData();
   mopTab('mine');
 }
 async function loadMopData(){
