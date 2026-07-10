@@ -397,6 +397,17 @@
   .menu-item svg{width:16px;height:16px;color:var(--txt3);flex:0 0 auto;}
   .side-div{border-top:1px solid var(--line);margin:6px 4px 8px;}
   .side-group-lbl{font-size:11px;font-weight:600;color:var(--txt3);text-transform:uppercase;letter-spacing:.5px;padding:2px 10px 6px;}
+  /* Кабинет МОПа */
+  .mop-tab{padding:9px 18px;border-radius:10px;border:1px solid var(--line2);background:var(--card);color:var(--txt2);font-size:14px;font-weight:600;cursor:pointer;font-family:inherit;}
+  .mop-tab.active{background:var(--accent);color:#fff;border-color:var(--accent);}
+  .mop-card{background:var(--card);border:1px solid var(--line);border-radius:14px;padding:16px;margin-bottom:14px;}
+  .mop-stat-grid{display:grid;grid-template-columns:1fr 1fr;gap:10px;}
+  .mop-stat{background:var(--card2);border-radius:11px;padding:13px;}
+  .mop-stat b{font-size:22px;font-weight:700;display:block;}
+  .mop-stat span{font-size:12px;color:var(--txt3);}
+  .mop-rank-row{display:flex;align-items:center;gap:12px;padding:11px 0;border-top:1px solid var(--line);}
+  .mop-rank-row.me{background:var(--accent-bg);margin:0 -16px;padding-left:16px;padding-right:16px;border-radius:8px;border-top:none;}
+  .mop-rank-num{width:26px;height:26px;border-radius:7px;background:var(--card2);display:flex;align-items:center;justify-content:center;font-weight:700;font-size:13px;flex:0 0 auto;}
   /* Меню — выпадашка в верхней панели (без рамки, компактно) */
   .sec-dropdown-wrap{position:relative;}
   .sec-dropdown-btn{display:flex;align-items:center;gap:5px;padding:6px 8px;border-radius:8px;font-size:13px;font-weight:500;
@@ -560,6 +571,25 @@
 <body class="shell">
 
 <!-- ЭКРАН ВХОДА -->
+<!-- КАБИНЕТ МОПа (отдельный экран) -->
+<div id="mopCabinet" style="display:none;position:fixed;inset:0;z-index:400;background:var(--bg2);overflow-y:auto;">
+  <div style="max-width:900px;margin:0 auto;padding:20px 18px 60px;">
+    <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:20px;">
+      <div style="display:flex;align-items:center;gap:10px;">
+        <div style="width:38px;height:38px;border-radius:10px;background:var(--accent);display:flex;align-items:center;justify-content:center;color:#fff;font-weight:700;" id="mopAvatar">М</div>
+        <div><div style="font-size:17px;font-weight:700;" id="mopHeaderName">Менеджер</div><div style="font-size:12px;color:var(--txt3);" id="mopHeaderSub">Личный кабинет</div></div>
+      </div>
+      <button onclick="mopLogout()" style="padding:8px 14px;border-radius:9px;background:var(--card);border:1px solid var(--line2);color:var(--txt2);font-size:13px;cursor:pointer;">Выйти</button>
+    </div>
+    <!-- вкладки -->
+    <div style="display:flex;gap:8px;margin-bottom:18px;">
+      <button id="mopTabMine" onclick="mopTab('mine')" class="mop-tab active">Мои данные</button>
+      <button id="mopTabTeam" onclick="mopTab('team')" class="mop-tab">Команда</button>
+    </div>
+    <div id="mopContent"><div style="text-align:center;color:var(--txt3);padding:40px;">Загрузка...</div></div>
+  </div>
+</div>
+
 <div id="loginScreen" style="position:fixed;inset:0;z-index:500;background:radial-gradient(1200px 600px at 50% -10%, var(--accent-bg) 0%, transparent 55%), linear-gradient(160deg, var(--bg2) 0%, var(--bg) 60%);display:flex;align-items:center;justify-content:center;padding:24px;overflow:hidden;">
   <div style="position:absolute;top:-120px;right:-100px;width:340px;height:340px;border-radius:50%;background:var(--accent);opacity:.10;filter:blur(70px);"></div>
   <div style="position:absolute;bottom:-140px;left:-110px;width:360px;height:360px;border-radius:50%;background:var(--gold);opacity:.08;filter:blur(80px);"></div>
@@ -574,10 +604,22 @@
     <div id="roleChoice">
       <button onclick="chooseAdmin()" style="width:100%;padding:16px;border-radius:12px;background:var(--accent);border:none;color:#fff;font-size:15px;font-weight:600;cursor:pointer;margin-bottom:12px;" class="ic-btn"><svg class="ic" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><path d="M4 8l3 3 5-6 5 6 3-3-2 11H6z"/></svg>Я администратор</button>
       <button onclick="ropLogin()" style="width:100%;padding:16px;border-radius:12px;background:var(--card);border:1px solid var(--line2);color:var(--txt);font-size:15px;font-weight:600;cursor:pointer;" class="ic-btn"><svg class="ic" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><circle cx="9" cy="8" r="3"/><path d="M3 20a6 6 0 0 1 12 0M16 6a3 3 0 0 1 0 6M21 20a6 6 0 0 0-4-5.6"/></svg>Я РОП (руководитель отдела)</button>
-      <div style="font-size:11.5px;color:var(--txt3);margin-top:14px;text-align:center;line-height:1.5;">Админ — полный доступ (чат, дашборд, задачи).<br>РОП — только дашборд и задачи, без пароля.</div>
+      <button onclick="showMopLogin()" style="width:100%;padding:16px;border-radius:12px;background:var(--card);border:1px solid var(--line2);color:var(--txt);font-size:15px;font-weight:600;cursor:pointer;margin-top:12px;" class="ic-btn"><svg class="ic" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="8" r="4"/><path d="M4 20a8 8 0 0 1 16 0"/></svg>Я менеджер (МОП)</button>
+      <div style="font-size:11.5px;color:var(--txt3);margin-top:14px;text-align:center;line-height:1.5;">Админ — полный доступ. РОП — дашборд и задачи.<br>МОП — свой кабинет (свои данные + рейтинг).</div>
       <div style="text-align:center;margin-top:18px;">
         <button onclick="showDemoLogin()" style="background:none;border:none;color:var(--accent);font-size:13px;cursor:pointer;text-decoration:underline;">Войти в демо по коду</button>
       </div>
+    </div>
+
+    <!-- Вход МОПа -->
+    <div id="mopLogin" style="display:none;">
+      <input id="mopLoginInput" type="text" placeholder="Логин" autocomplete="username"
+        style="width:100%;padding:13px 15px;border-radius:11px;border:1px solid var(--line2);background:var(--card);color:var(--txt);font-size:15px;margin-bottom:10px;" />
+      <input id="mopPassInput" type="password" placeholder="Пароль" autocomplete="current-password"
+        style="width:100%;padding:13px 15px;border-radius:11px;border:1px solid var(--line2);background:var(--card);color:var(--txt);font-size:15px;margin-bottom:12px;" />
+      <button onclick="mopLoginGo()" style="width:100%;padding:14px;border-radius:11px;background:var(--accent);border:none;color:#fff;font-size:15px;font-weight:600;cursor:pointer;">Войти</button>
+      <div id="mopLoginErr" style="color:var(--red);font-size:12.5px;margin-top:10px;text-align:center;display:none;"></div>
+      <button onclick="backToRoles()" style="width:100%;padding:11px;border-radius:11px;background:none;border:none;color:var(--txt2);font-size:13px;cursor:pointer;margin-top:8px;">← Назад</button>
     </div>
 
     <!-- Вход в демо по коду -->
@@ -928,6 +970,7 @@
               <button class="menu-item" onclick="goSection('map')"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M9 11l3 3L22 4"/><path d="M21 12v7a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11"/></svg>Задачи</button>
               <button class="menu-item" id="menuTelegramSide" onclick="goSection('tg')"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M21 3L3 10l6 2 2 6 3-4 5 4z"/></svg>Telegram</button>
               <button class="menu-item" id="menuClientsSide" onclick="openClientsModal()" style="display:none;"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M23 21v-2a4 4 0 0 0-3-3.87M16 3.13a4 4 0 0 1 0 7.75"/></svg>Клиенты</button>
+              <button class="menu-item" id="menuMopsSide" onclick="openMopsModal()" style="display:none;"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="8" r="4"/><path d="M4 20a8 8 0 0 1 16 0"/></svg>МОПы (кабинеты)</button>
             </div>
           </div>
           <div class="side-brand" onclick="switchTab('chat')" style="cursor:pointer;"><div class="side-logo">H</div><span>Hunter AI</span></div>
@@ -1079,6 +1122,17 @@
 </div>
 
 <!-- МОДАЛКА: УПРАВЛЕНИЕ КЛИЕНТАМИ (супер-админ) -->
+<div id="mopsOverlay" style="display:none;position:fixed;inset:0;background:rgba(0,0,0,.55);z-index:100;padding:20px;overflow-y:auto;" onclick="if(event.target===this)closeMopsModal()">
+  <div style="max-width:640px;margin:30px auto;background:var(--bg2);border-radius:16px;padding:22px;">
+    <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:18px;">
+      <div style="font-size:18px;font-weight:700;">МОПы — кабинеты</div>
+      <button onclick="closeMopsModal()" style="background:none;border:none;color:var(--txt2);font-size:22px;cursor:pointer;">×</button>
+    </div>
+    <div style="font-size:12.5px;color:var(--txt3);margin-bottom:16px;">Создайте аккаунт менеджеру (логин/пароль) и задайте личный план. МОП зайдёт в свой кабинет и увидит свои данные + рейтинг команды.</div>
+    <div id="mopsList"><div style="color:var(--txt3);font-size:13px;">Загрузка...</div></div>
+  </div>
+</div>
+
 <div id="clientsOverlay" style="display:none;position:fixed;inset:0;background:rgba(0,0,0,.55);z-index:100;padding:20px;overflow-y:auto;" onclick="if(event.target===this)closeClientsModal()">
   <div style="max-width:560px;margin:30px auto;background:var(--bg);border:1px solid var(--line2);border-radius:16px;overflow:hidden;">
     <div style="display:flex;justify-content:space-between;align-items:center;padding:16px 18px;border-bottom:1px solid var(--line);">
@@ -2582,7 +2636,74 @@ async function reviewSusp(id,status){
 
 // ===== УПРАВЛЕНИЕ КЛИЕНТАМИ (супер-админ hunter) =====
 function openClientsModal(){document.getElementById('clientsOverlay').style.display='block';loadClientsList();}
-function closeClientsModal(){document.getElementById('clientsOverlay').style.display='none';document.getElementById('clientForm').style.display='none';}
+function openMopsModal(){goSection('chat');document.getElementById('mopsOverlay').style.display='block';loadMopsList();}
+function closeMopsModal(){document.getElementById('mopsOverlay').style.display='none';}
+async function loadMopsList(){
+  const box=document.getElementById('mopsList');
+  try{
+    const r=await fetch('/api/mop?action=list&session='+encodeURIComponent(SESSION));
+    const d=await r.json();
+    if(!d.ok){box.innerHTML='<div style="color:var(--red);">Ошибка загрузки</div>';return;}
+    const accounts=d.accounts||[],plans=d.plans||{},crm=d.mopsFromCrm||[];
+    // форма создания
+    let html=`<div style="background:var(--card);border:1px solid var(--line2);border-radius:12px;padding:14px;margin-bottom:16px;">
+      <div style="font-size:13px;font-weight:700;margin-bottom:10px;">+ Создать аккаунт МОПу</div>
+      <select id="mopNewId" style="width:100%;padding:10px;border-radius:9px;border:1px solid var(--line2);background:var(--bg2);color:var(--txt);font-size:14px;margin-bottom:8px;">
+        <option value="">— выберите менеджера из CRM —</option>
+        ${crm.map(m=>`<option value="${m.id}" data-name="${escapeHtml(m.name)}">${escapeHtml(m.name)}</option>`).join('')}
+      </select>
+      <input id="mopNewLogin" placeholder="Логин (напр. komiljon)" style="width:100%;padding:10px;border-radius:9px;border:1px solid var(--line2);background:var(--bg2);color:var(--txt);font-size:14px;margin-bottom:8px;">
+      <input id="mopNewPass" placeholder="Пароль" style="width:100%;padding:10px;border-radius:9px;border:1px solid var(--line2);background:var(--bg2);color:var(--txt);font-size:14px;margin-bottom:8px;">
+      <input id="mopNewPlan" type="number" placeholder="Личный план (выручка, сум)" style="width:100%;padding:10px;border-radius:9px;border:1px solid var(--line2);background:var(--bg2);color:var(--txt);font-size:14px;margin-bottom:10px;">
+      <button onclick="createMopAccount()" style="width:100%;padding:11px;border-radius:9px;background:var(--accent);color:#fff;border:none;font-weight:600;cursor:pointer;">Создать аккаунт</button>
+    </div>`;
+    // список существующих
+    if(accounts.length){
+      html+='<div style="font-size:13px;font-weight:700;margin-bottom:8px;">Аккаунты МОПов:</div>';
+      html+=accounts.map(a=>`<div style="background:var(--card);border:1px solid var(--line);border-radius:10px;padding:12px;margin-bottom:8px;">
+        <div style="display:flex;justify-content:space-between;align-items:center;">
+          <div><b style="font-size:14px;">${escapeHtml(a.name||a.login)}</b><div style="font-size:12px;color:var(--txt3);">логин: ${escapeHtml(a.login)}</div></div>
+          <button onclick="deleteMopAccount('${escapeHtml(a.login)}')" style="padding:6px 10px;border-radius:8px;background:var(--red-bg);color:var(--red);border:none;font-size:12px;cursor:pointer;">Удалить</button>
+        </div>
+        <div style="display:flex;gap:8px;margin-top:10px;align-items:center;">
+          <span style="font-size:12px;color:var(--txt3);">План:</span>
+          <input id="plan_${a.mopId}" type="number" value="${plans[a.mopId]||0}" style="flex:1;padding:7px;border-radius:7px;border:1px solid var(--line2);background:var(--bg2);color:var(--txt);font-size:13px;">
+          <button onclick="setMopPlan('${a.mopId}')" style="padding:7px 12px;border-radius:7px;background:var(--card2);border:1px solid var(--line2);color:var(--txt);font-size:12px;cursor:pointer;">Сохранить</button>
+        </div>
+      </div>`).join('');
+    }else{html+='<div style="color:var(--txt3);font-size:13px;text-align:center;padding:10px;">Пока нет аккаунтов МОПов.</div>';}
+    box.innerHTML=html;
+    // автозаполнение логина из имени
+    const sel=document.getElementById('mopNewId');
+    if(sel)sel.onchange=function(){const o=sel.options[sel.selectedIndex];const nm=o.getAttribute('data-name')||'';const lg=document.getElementById('mopNewLogin');if(lg&&!lg.value)lg.value=nm.split(' ')[0].toLowerCase().replace(/[^a-zа-я0-9]/gi,'');};
+  }catch(e){box.innerHTML='<div style="color:var(--red);">Ошибка</div>';}
+}
+async function createMopAccount(){
+  const sel=document.getElementById('mopNewId');
+  const mopId=sel.value;const name=sel.options[sel.selectedIndex]?sel.options[sel.selectedIndex].getAttribute('data-name'):'';
+  const login=document.getElementById('mopNewLogin').value.trim();
+  const password=document.getElementById('mopNewPass').value;
+  const plan=document.getElementById('mopNewPlan').value;
+  if(!mopId||!login||!password){alert('Выберите менеджера, введите логин и пароль');return;}
+  const r=await fetch('/api/mop',{method:'POST',headers:{'content-type':'application/json'},
+    body:JSON.stringify({session:SESSION,action:'create',login,password,mopId,name})});
+  const d=await r.json();
+  if(d.ok){
+    if(plan)await fetch('/api/mop',{method:'POST',headers:{'content-type':'application/json'},body:JSON.stringify({session:SESSION,action:'set_plan',mopId,plan})});
+    loadMopsList();
+  }else{alert(d.error||'Ошибка создания');}
+}
+async function deleteMopAccount(login){
+  if(!confirm('Удалить аккаунт '+login+'?'))return;
+  await fetch('/api/mop',{method:'POST',headers:{'content-type':'application/json'},body:JSON.stringify({session:SESSION,action:'delete',login})});
+  loadMopsList();
+}
+async function setMopPlan(mopId){
+  const plan=document.getElementById('plan_'+mopId).value;
+  const r=await fetch('/api/mop',{method:'POST',headers:{'content-type':'application/json'},body:JSON.stringify({session:SESSION,action:'set_plan',mopId,plan})});
+  const d=await r.json();
+  if(d.ok){const btn=event.target;btn.textContent='✓';setTimeout(()=>btn.textContent='Сохранить',1200);}
+}function closeClientsModal(){document.getElementById('clientsOverlay').style.display='none';document.getElementById('clientForm').style.display='none';}
 async function loadClientsList(){
   const box=document.getElementById('clientsList');
   box.innerHTML='<div style="font-size:12px;color:var(--txt3);">Загрузка...</div>';
@@ -4586,7 +4707,7 @@ function bootApp(){
   // роль/имя в сайдбаре
   const rl=USER_ROLE==='rop'?'РОП':(USER_ROLE==='demo'?'Демо':'Владелец');
   const rs=document.getElementById('userRoleSide');if(rs)rs.textContent=rl;
-  if(USER_ROLE==='admin'){const mc=document.getElementById('menuClientsSide');if(mc)mc.style.display='flex';}
+  if(USER_ROLE==='admin'){const mc=document.getElementById('menuClientsSide');if(mc)mc.style.display='flex';const mm=document.getElementById('menuMopsSide');if(mm)mm.style.display='flex';}
   // восстанавливаем раздел, где был пользователь до F5 (чат/дашборд/задачи/telegram)
   let start;
   if(USER_ROLE==='rop'){start='dash';}
@@ -4664,14 +4785,130 @@ function togglePass(){
 function backToRoles(){
   document.getElementById('adminLogin').style.display='none';
   const dl=document.getElementById('demoLogin');if(dl)dl.style.display='none';
+  const ml=document.getElementById('mopLogin');if(ml)ml.style.display='none';
   document.getElementById('roleChoice').style.display='block';
   document.getElementById('loginError').textContent='';
+}
+function showMopLogin(){
+  document.getElementById('roleChoice').style.display='none';
+  document.getElementById('mopLogin').style.display='block';
+  const e=document.getElementById('mopLoginErr');if(e)e.style.display='none';
+  setTimeout(()=>{const i=document.getElementById('mopLoginInput');if(i)i.focus();},100);
+}
+async function mopLoginGo(){
+  const login=document.getElementById('mopLoginInput').value.trim();
+  const password=document.getElementById('mopPassInput').value;
+  const errEl=document.getElementById('mopLoginErr');
+  if(!login||!password){errEl.textContent='Введите логин и пароль';errEl.style.display='block';return;}
+  errEl.style.display='none';
+  try{
+    const r=await fetch('/api/auth',{method:'POST',headers:{'content-type':'application/json'},
+      body:JSON.stringify({action:'mop',login,password})});
+    const d=await r.json();
+    if(d&&d.ok){
+      SESSION=d.session;localStorage.setItem('hp_session',SESSION);
+      USER_ROLE='mop';USER_ORG=d.org||'';window._mopId=d.mopId;window._mopName=d.mopName;
+      bootMopCabinet();
+    }else{errEl.textContent=(d&&d.error)||'Ошибка входа';errEl.style.display='block';}
+  }catch(e){errEl.textContent='Нет связи с сервером';errEl.style.display='block';}
 }
 function showDemoLogin(){
   document.getElementById('roleChoice').style.display='none';
   document.getElementById('demoLogin').style.display='block';
   document.getElementById('loginError').textContent='';
   setTimeout(()=>{const i=document.getElementById('demoCodeInput');if(i)i.focus();},100);
+}
+// ===== КАБИНЕТ МОПа =====
+let _mopData=null,_mopCurTab='mine';
+async function bootMopCabinet(){
+  document.getElementById('loginScreen').style.display='none';
+  document.getElementById('mopCabinet').style.display='block';
+  const nm=window._mopName||'Менеджер';
+  document.getElementById('mopHeaderName').textContent=nm;
+  document.getElementById('mopAvatar').textContent=(nm[0]||'М').toUpperCase();
+  await loadMopData();
+  mopTab('mine');
+}
+async function loadMopData(){
+  try{
+    const r=await fetch('/api/mop?action=cabinet&session='+encodeURIComponent(SESSION));
+    const d=await r.json();
+    if(d&&d.ok&&!d.empty){_mopData=d;}
+    else{_mopData={empty:true,message:(d&&d.message)||'Данные не загружены'};}
+  }catch(e){_mopData={empty:true,message:'Ошибка загрузки'};}
+}
+function mopTab(tab){
+  _mopCurTab=tab;
+  document.getElementById('mopTabMine').classList.toggle('active',tab==='mine');
+  document.getElementById('mopTabTeam').classList.toggle('active',tab==='team');
+  const box=document.getElementById('mopContent');
+  if(!_mopData||_mopData.empty){box.innerHTML=`<div class="mop-card" style="text-align:center;color:var(--txt3);">${escapeHtml((_mopData&&_mopData.message)||'Данные ещё не загружены. Обратитесь к руководителю.')}</div>`;return;}
+  if(tab==='mine')box.innerHTML=renderMopMine();
+  else box.innerHTML=renderMopTeam();
+}
+function fmtSumM(n){if(n>=1000000)return (n/1000000).toFixed(1).replace('.0','')+'М';if(n>=1000)return Math.round(n/1000)+'k';return String(n||0);}
+function renderMopMine(){
+  const me=_mopData.me;
+  if(!me)return '<div class="mop-card">Ваши данные не найдены в CRM.</div>';
+  const planPct=me.plan>0?Math.round(me.revenue/me.plan*100):null;
+  const fcm=me.firstCallMin!=null?(me.firstCallMin>=60?(Math.round(me.firstCallMin/6)/10+' ч'):me.firstCallMin+' мин'):'—';
+  return `
+    <div class="mop-card">
+      <div style="font-size:13px;color:var(--txt3);font-weight:600;text-transform:uppercase;letter-spacing:.4px;margin-bottom:12px;">💰 Мои продажи (месяц)</div>
+      <div class="mop-stat-grid">
+        <div class="mop-stat"><b style="color:var(--green)">${me.sold}</b><span>продаж</span></div>
+        <div class="mop-stat"><b style="color:var(--green)">${fmtSumM(me.revenue)}</b><span>выручка</span></div>
+      </div>
+    </div>
+    ${me.plan>0?`<div class="mop-card">
+      <div style="font-size:13px;color:var(--txt3);font-weight:600;text-transform:uppercase;letter-spacing:.4px;margin-bottom:12px;">🎯 Мой план</div>
+      <div style="display:flex;justify-content:space-between;align-items:baseline;margin-bottom:8px;"><span style="font-size:14px;">Цель: <b>${fmtSumM(me.plan)}</b></span><span style="font-size:20px;font-weight:700;color:${planPct>=100?'var(--green)':(planPct>=50?'var(--accent)':'var(--gold)')}">${planPct}%</span></div>
+      <div style="height:9px;background:var(--card2);border-radius:5px;overflow:hidden;"><div style="height:100%;width:${Math.min(100,planPct)}%;background:${planPct>=100?'var(--green)':'var(--accent)'};"></div></div>
+      <div style="font-size:12px;color:var(--txt3);margin-top:8px;">${me.revenue<me.plan?'Осталось '+fmtSumM(me.plan-me.revenue)+' до плана':'План выполнен! 🎉'}</div>
+    </div>`:''}
+    <div class="mop-card">
+      <div style="font-size:13px;color:var(--txt3);font-weight:600;text-transform:uppercase;letter-spacing:.4px;margin-bottom:12px;">📊 Моя воронка</div>
+      <div class="mop-stat-grid">
+        <div class="mop-stat"><b>${me.leads}</b><span>лидов</span></div>
+        <div class="mop-stat"><b>${me.reachPct}%</b><span>дозвон</span></div>
+        <div class="mop-stat"><b>${me.sold}</b><span>продаж</span></div>
+        <div class="mop-stat"><b>${me.conv}%</b><span>конверсия</span></div>
+      </div>
+    </div>
+    <div class="mop-card">
+      <div style="font-size:13px;color:var(--txt3);font-weight:600;text-transform:uppercase;letter-spacing:.4px;margin-bottom:12px;">⏱️ Моя дисциплина</div>
+      <div class="mop-stat-grid">
+        <div class="mop-stat"><b>${fcm}</b><span>скорость 1-го звонка</span></div>
+        <div class="mop-stat"><b>${me.taskRate!=null?me.taskRate+'%':'—'}</b><span>задачи выполнены</span></div>
+      </div>
+    </div>`;
+}
+function renderMopTeam(){
+  const team=_mopData.team||[];
+  const meId=_mopData.me?_mopData.me.id:null;
+  const rows=team.map(m=>{
+    const isMe=String(m.id)===String(meId);
+    const medal=m.rank===1?'🥇':m.rank===2?'🥈':m.rank===3?'🥉':m.rank;
+    return `<div class="mop-rank-row${isMe?' me':''}">
+      <div class="mop-rank-num">${medal}</div>
+      <div style="flex:1;"><div style="font-weight:${isMe?'700':'600'};font-size:14px;">${escapeHtml(m.name)}${isMe?' (вы)':''}</div>
+        <div style="font-size:12px;color:var(--txt3);">${m.leads} лидов · дозвон ${m.reachPct}% · конв. ${m.conv}%</div></div>
+      <div style="text-align:right;"><div style="font-weight:700;">${m.sold} прод.</div><div style="font-size:12px;color:var(--green);">${fmtSumM(m.revenue)}</div></div>
+    </div>`;
+  }).join('');
+  const tn=_mopData.toNext;
+  return `
+    ${tn?`<div class="mop-card" style="background:var(--accent-bg);border-color:var(--accent);">
+      <div style="font-size:14px;">До ${escapeHtml(tn.name)} (выше вас) — <b>${tn.soldDiff} ${tn.soldDiff===1?'продажа':'продаж'}</b>. Догоняй! 🔥</div>
+    </div>`:(_mopData.me&&_mopData.me.rank===1?`<div class="mop-card" style="background:var(--accent-bg);border-color:var(--accent);"><div style="font-size:14px;">Вы №1 в команде! 🏆 Держите planку.</div></div>`:'')}
+    <div class="mop-card">
+      <div style="font-size:13px;color:var(--txt3);font-weight:600;text-transform:uppercase;letter-spacing:.4px;margin-bottom:6px;">🏆 Рейтинг команды</div>
+      ${rows}
+    </div>`;
+}
+function mopLogout(){
+  fetch('/api/auth',{method:'POST',headers:{'content-type':'application/json'},body:JSON.stringify({action:'logout',session:SESSION})});
+  localStorage.removeItem('hp_session');location.reload();
 }
 async function demoLoginGo(){
   const code=document.getElementById('demoCodeInput').value.trim();
@@ -4972,6 +5209,12 @@ async function logout(){
       const d=await r.json();
       if(d&&d.ok){
         USER_ROLE=d.role||'';USER_ORG=d.org||'';
+        // МОП — отдельный кабинет, не основное приложение
+        if(USER_ROLE==='mop'){
+          window._mopId=d.mopId;window._mopName=d.mopName;
+          bootMopCabinet();
+          return;
+        }
         await loadCloud();
         bootApp();
         return;
