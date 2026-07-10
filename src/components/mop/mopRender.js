@@ -162,26 +162,100 @@ export function renderMopStats(_mopData) {
   return `<div class="mop-row3" style="align-items:start;">${cards.join('')}</div>`
 }
 
-// === РАЗДЕЛ 3: КОМАНДА (рейтинг) ===
+// === РАЗДЕЛ 3: КОМАНДА (рейтинг + метрики) ===
 export function renderMopTeam(_mopData) {
   const team = _mopData.team || []
-  const meId = _mopData.me ? _mopData.me.id : null
+  const me = _mopData.me
+  const meId = me ? me.id : null
+  const fmtMin = (n) => n == null ? '—' : (n >= 60 ? (Math.round(n / 6) / 10 + ' ' + mt('hour')) : n + ' ' + mt('min'))
+  const avgCheck = (m) => m.sold > 0 ? Math.round(m.revenue / m.sold) : 0
+
+  // ── строки рейтинга (обогащённые: + средний чек и скорость 1-го звонка) ──
   const rows = team.map((m) => {
     const isMe = String(m.id) === String(meId)
     const medal = m.rank === 1 ? '🥇' : m.rank === 2 ? '🥈' : m.rank === 3 ? '🥉' : m.rank
     const topB = m.rank === 1 ? ' · 🎁 +1млн' : (m.rank === 2 ? ' · 🎁 +500к' : '')
+    const extra = `${m.sold > 0 ? ` · ${mt('tmAvgCheck')} ${fmtSumM(avgCheck(m))}` : ''}${m.firstCallMin != null ? ` · ${mt('firstCall')} ${fmtMin(m.firstCallMin)}` : ''}`
     return `<div class="mop-rank-row${isMe ? ' me' : ''}">
       <div class="mop-rank-num">${medal}</div>
-      <div style="flex:1;"><div style="font-weight:${isMe ? '700' : '600'};font-size:14px;">${escapeHtml(m.name)}${isMe ? ' ' + mt('you') : ''}<span style="font-size:11px;color:var(--gold);">${topB}</span></div>
-        <div style="font-size:12px;color:var(--txt3);">${m.leads} ${mt('leads')} · ${mt('reach')} ${m.reachPct}% · ${mt('conv')} ${m.conv}%</div></div>
+      <div style="flex:1;min-width:0;"><div style="font-weight:${isMe ? '700' : '600'};font-size:14px;">${escapeHtml(m.name)}${isMe ? ' ' + mt('you') : ''}<span style="font-size:11px;color:var(--gold);">${topB}</span></div>
+        <div style="font-size:12px;color:var(--txt3);">${m.leads} ${mt('leads')} · ${mt('reach')} ${m.reachPct}% · ${mt('conv')} ${m.conv}%${extra}</div></div>
       <div style="text-align:right;"><div style="font-weight:700;">${m.sold} ${mt('salesW')}</div><div style="font-size:12px;color:var(--green);">${fmtSumM(m.revenue)}</div></div>
     </div>`
   }).join('')
+
+  // ── Итоги команды ──
+  const totSold = team.reduce((s, m) => s + (m.sold || 0), 0)
+  const totRev = team.reduce((s, m) => s + (m.revenue || 0), 0)
+  const totLeads = team.reduce((s, m) => s + (m.leads || 0), 0)
+  const avgConv = totLeads > 0 ? +(totSold / totLeads * 100).toFixed(1) : 0
+  const tile = (v, l, color) => `<div style="background:var(--bg);border:1px solid var(--line2);border-radius:11px;padding:11px 12px;">
+    <div style="font-size:20px;font-weight:800;${color ? `color:${color};` : ''}">${v}</div><div style="font-size:11px;color:var(--txt3);">${l}</div></div>`
+  const totalsCard = `<div class="mop-card">
+    <div class="mop-ct">📊 ${mt('tmTotals')}</div>
+    <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(120px,1fr));gap:10px;">
+      ${tile(totSold, mt('salesW'), 'var(--accent)')}
+      ${tile(fmtSumM(totRev), mt('revW'), 'var(--green)')}
+      ${tile(avgConv + '%', mt('tmConvAvg'))}
+      ${tile(totLeads, mt('leads'))}
+    </div>
+  </div>`
+
+  // ── Кто в чём лучший (номинации) ──
+  const best = (fn, higher) => {
+    let b = null
+    team.forEach((m) => { const v = fn(m); if (v == null) return; if (b == null || (higher ? v > fn(b) : v < fn(b))) b = m })
+    return b
+  }
+  const noms = []
+  const bc = best(avgCheck, true); if (bc && avgCheck(bc) > 0) noms.push(['💰', mt('tmAvgCheck'), bc, fmtSumM(avgCheck(bc))])
+  const br = best((m) => m.reachPct, true); if (br) noms.push(['📞', mt('reach'), br, br.reachPct + '%'])
+  const bcv = best((m) => m.conv, true); if (bcv) noms.push(['🎯', mt('conv'), bcv, bcv.conv + '%'])
+  const bs = best((m) => m.firstCallMin, false); if (bs) noms.push(['⚡', mt('firstCall'), bs, fmtMin(bs.firstCallMin)])
+  const nomCard = noms.length ? `<div class="mop-card">
+    <div class="mop-ct">🏅 ${mt('tmBest')}</div>
+    <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(150px,1fr));gap:10px;">
+      ${noms.map(([ic, lbl, m, val]) => { const isMe = String(m.id) === String(meId); return `<div style="background:var(--bg);border:1px solid ${isMe ? 'var(--gold)' : 'var(--line2)'};border-radius:11px;padding:10px 12px;">
+        <div style="font-size:11px;color:var(--txt3);">${ic} ${lbl}</div>
+        <div style="font-size:14px;font-weight:700;margin-top:2px;">${escapeHtml(m.name)}${isMe ? ' ' + mt('you') : ''}</div>
+        <div style="font-size:13px;color:var(--gold);font-weight:700;">${val}</div>
+      </div>` }).join('')}
+    </div>
+  </div>` : ''
+
+  // ── Твои места по метрикам ──
+  let placesCard = ''
+  if (me) {
+    const rankBy = (fn, higher) => {
+      const arr = team.filter((m) => fn(m) != null).slice().sort((a, b) => higher ? fn(b) - fn(a) : fn(a) - fn(b))
+      const i = arr.findIndex((m) => String(m.id) === String(meId))
+      return i >= 0 ? i + 1 : null
+    }
+    const places = [
+      [mt('salesW'), rankBy((m) => m.sold, true)],
+      [mt('conv'), rankBy((m) => m.conv, true)],
+      [mt('tmAvgCheck'), rankBy((m) => avgCheck(m), true)],
+      [mt('reach'), rankBy((m) => m.reachPct, true)],
+      [mt('firstCall'), rankBy((m) => m.firstCallMin, false)],
+    ].filter((p) => p[1] != null)
+    placesCard = `<div class="mop-card">
+      <div class="mop-ct">📌 ${mt('tmYourPlaces')}</div>
+      <div style="display:flex;flex-wrap:wrap;gap:8px;">
+        ${places.map(([lbl, r]) => { const col = r === 1 ? 'var(--green)' : (r <= 3 ? 'var(--gold)' : 'var(--txt2)'); return `<span style="display:inline-flex;align-items:center;gap:6px;background:var(--bg);border:1px solid var(--line2);border-radius:999px;padding:5px 11px;font-size:12.5px;"><b style="color:${col};">№${r}</b> ${lbl}</span>` }).join('')}
+      </div>
+    </div>`
+  }
+
   const tn = _mopData.toNext
-  return `<div class="mop-team-wrap">
-    ${tn ? `<div class="mop-card" style="background:var(--accent-bg);border-color:var(--accent);">
+  const banner = tn ? `<div class="mop-card" style="background:var(--accent-bg);border-color:var(--accent);">
       <div style="font-size:14px;">${mt('toLeader')} ${escapeHtml(tn.name)} ${mt('aboveYou')} — <b>${tn.soldDiff} ${mt('salesW')}</b>. ${mt('catchUp')} 🔥</div>
-    </div>` : (_mopData.me && _mopData.me.rank === 1 ? `<div class="mop-card" style="background:var(--accent-bg);border-color:var(--accent);"><div style="font-size:14px;">${mt('first')}</div></div>` : '')}
+    </div>` : (me && me.rank === 1 ? `<div class="mop-card" style="background:var(--accent-bg);border-color:var(--accent);"><div style="font-size:14px;">${mt('first')}</div></div>` : '')
+
+  return `<div class="mop-team-wrap">
+    ${banner}
+    ${totalsCard}
+    ${placesCard}
+    ${nomCard}
     <div class="mop-card">
       <div class="mop-ct">🏆 ${mt('rankTitle')}</div>
       ${rows}

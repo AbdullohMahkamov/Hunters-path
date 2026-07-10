@@ -26,6 +26,8 @@ export const MOP_T = {
     ewSources: 'Источники дохода', ewGuaranteed: 'платится всегда', ewKpiUpTo: 'ставка растёт до', ewAtPlan100: 'при 100% плана',
     ewTempoEach: 'по $15 каждый', ewCanMore: 'можно ещё', ewTop: 'Топ команды', ewTopGet: 'ты получаешь', ewTopBecome: 'поднимись в топ — заберёшь бонус',
     ewTopVals: '1 место +1 млн · 2 место +500к', ewRaffleNote: 'закрой план на 100% — участвуешь в розыгрыше',
+    tmTotals: 'Итоги команды', tmConvAvg: 'ср. конверсия', tmBest: 'Кто в чём лучший', tmAvgCheck: 'ср. чек',
+    tmYourPlaces: 'Твои места по метрикам', tmTasks: 'задачи',
   },
   uz: {
     cabinet: 'Shaxsiy kabinet', logout: 'Chiqish', mine: 'Mening daromadim', stats: 'Mening statistikam', team: 'Jamoa',
@@ -51,6 +53,8 @@ export const MOP_T = {
     ewSources: 'Daromad manbalari', ewGuaranteed: 'har doim toʻlanadi', ewKpiUpTo: 'stavka oshadi:', ewAtPlan100: '100% rejada',
     ewTempoEach: 'har biri $15', ewCanMore: 'yana olish mumkin', ewTop: 'Jamoa topi', ewTopGet: 'sen olasan', ewTopBecome: 'topga koʻtaril — bonusni ol',
     ewTopVals: '1-oʻrin +1 mln · 2-oʻrin +500k', ewRaffleNote: 'rejani 100% yop — oʻyinda qatnash',
+    tmTotals: 'Jamoa natijalari', tmConvAvg: 'oʻrt. konversiya', tmBest: 'Kim nimada zoʻr', tmAvgCheck: 'oʻrt. chek',
+    tmYourPlaces: 'Metrikalar boʻyicha oʻringiz', tmTasks: 'vazifalar',
   },
 }
 
