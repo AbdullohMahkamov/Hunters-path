@@ -17,6 +17,13 @@ export default async function handler(req, res) {
     }catch(e){ return null; }
   }
 
+  // МОП НЕ имеет доступа к общему дашборду (только свой кабинет через /api/mop)
+  const session = (req.query && req.query.session) || (req.body && req.body.session);
+  if (session) {
+    const sinfo = await getKey(`session:${session}`);
+    if (sinfo && sinfo.role === "mop") { res.status(403).json({ error: "Недоступно для этой роли" }); return; }
+  }
+
   try {
     const dash = await getKey(K("dashboard"));
     const speed = await getKey(K("speed"));
