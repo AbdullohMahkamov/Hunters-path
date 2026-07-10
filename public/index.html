@@ -654,12 +654,21 @@
     <!-- Шаг 1: выбор роли -->
     <div id="roleChoice">
       <button onclick="chooseAdmin()" style="width:100%;padding:16px;border-radius:12px;background:var(--accent);border:none;color:#fff;font-size:15px;font-weight:600;cursor:pointer;margin-bottom:12px;" class="ic-btn"><svg class="ic" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><path d="M4 8l3 3 5-6 5 6 3-3-2 11H6z"/></svg>Я администратор</button>
-      <button onclick="ropLogin()" style="width:100%;padding:16px;border-radius:12px;background:var(--card);border:1px solid var(--line2);color:var(--txt);font-size:15px;font-weight:600;cursor:pointer;" class="ic-btn"><svg class="ic" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><circle cx="9" cy="8" r="3"/><path d="M3 20a6 6 0 0 1 12 0M16 6a3 3 0 0 1 0 6M21 20a6 6 0 0 0-4-5.6"/></svg>Я РОП (руководитель отдела)</button>
+      <button onclick="showRopLogin()" style="width:100%;padding:16px;border-radius:12px;background:var(--card);border:1px solid var(--line2);color:var(--txt);font-size:15px;font-weight:600;cursor:pointer;" class="ic-btn"><svg class="ic" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><circle cx="9" cy="8" r="3"/><path d="M3 20a6 6 0 0 1 12 0M16 6a3 3 0 0 1 0 6M21 20a6 6 0 0 0-4-5.6"/></svg>Я РОП (руководитель отдела)</button>
       <button onclick="showMopLogin()" style="width:100%;padding:16px;border-radius:12px;background:var(--card);border:1px solid var(--line2);color:var(--txt);font-size:15px;font-weight:600;cursor:pointer;margin-top:12px;" class="ic-btn"><svg class="ic" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="8" r="4"/><path d="M4 20a8 8 0 0 1 16 0"/></svg>Я менеджер (МОП)</button>
       <div style="font-size:11.5px;color:var(--txt3);margin-top:14px;text-align:center;line-height:1.5;">Админ — полный доступ. РОП — дашборд и задачи.<br>МОП — свой кабинет (свои данные + рейтинг).</div>
       <div style="text-align:center;margin-top:18px;">
         <button onclick="showDemoLogin()" style="background:none;border:none;color:var(--accent);font-size:13px;cursor:pointer;text-decoration:underline;">Войти в демо по коду</button>
       </div>
+    </div>
+
+    <!-- Вход РОПа по коду -->
+    <div id="ropLogin" style="display:none;">
+      <input id="ropCodeInput" type="password" inputmode="numeric" placeholder="Код доступа РОПа"
+        style="width:100%;padding:13px 15px;border-radius:11px;border:1px solid var(--line2);background:var(--card);color:var(--txt);font-size:15px;margin-bottom:12px;text-align:center;letter-spacing:2px;" />
+      <button onclick="ropLogin()" style="width:100%;padding:14px;border-radius:11px;background:var(--accent);border:none;color:#fff;font-size:15px;font-weight:600;cursor:pointer;">Войти</button>
+      <div id="ropLoginErr" style="color:var(--red);font-size:12.5px;margin-top:10px;text-align:center;display:none;"></div>
+      <button onclick="backToRoles()" style="width:100%;padding:11px;border-radius:11px;background:none;border:none;color:var(--txt2);font-size:13px;cursor:pointer;margin-top:8px;">← Назад</button>
     </div>
 
     <!-- Вход МОПа -->
@@ -4875,6 +4884,7 @@ function backToRoles(){
   document.getElementById('adminLogin').style.display='none';
   const dl=document.getElementById('demoLogin');if(dl)dl.style.display='none';
   const ml=document.getElementById('mopLogin');if(ml)ml.style.display='none';
+  const rl=document.getElementById('ropLogin');if(rl)rl.style.display='none';
   document.getElementById('roleChoice').style.display='block';
   document.getElementById('loginError').textContent='';
 }
@@ -5414,12 +5424,20 @@ function parseGoalSum(txt){
   return Math.round(best);
 }
 
+function showRopLogin(){
+  document.getElementById('roleChoice').style.display='none';
+  document.getElementById('ropLogin').style.display='block';
+  const e=document.getElementById('ropLoginErr');if(e)e.style.display='none';
+  setTimeout(()=>{const i=document.getElementById('ropCodeInput');if(i)i.focus();},100);
+}
 async function ropLogin(){
-  const errEl=document.getElementById('loginError');
-  errEl.textContent='';
+  const code=document.getElementById('ropCodeInput').value.trim();
+  const errEl=document.getElementById('ropLoginErr');
+  if(!code){errEl.textContent='Введите код';errEl.style.display='block';return;}
+  errEl.style.display='none';
   try{
     const r=await fetch('/api/auth',{method:'POST',headers:{'content-type':'application/json'},
-      body:JSON.stringify({action:'rop'})});
+      body:JSON.stringify({action:'rop',code})});
     const d=await r.json();
     if(d&&d.ok){
       SESSION=d.session;localStorage.setItem('hp_session',SESSION);
@@ -5427,9 +5445,9 @@ async function ropLogin(){
       await loadCloud();
       bootApp();
     }else{
-      errEl.textContent=(d&&d.error)||'Ошибка входа';
+      errEl.textContent=(d&&d.error)||'Неверный код';errEl.style.display='block';
     }
-  }catch(e){errEl.textContent='Нет связи с сервером';}
+  }catch(e){errEl.textContent='Нет связи с сервером';errEl.style.display='block';}
 }
 
 // ===== ВХОД =====
