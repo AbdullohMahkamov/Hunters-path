@@ -30,6 +30,8 @@ export const MOP_T = {
     tmYourPlaces: 'Ваши места по метрикам', tmTasks: 'задачи', tmNorms: 'Нормы',
     planTips: 'Топ-5 советов, чтобы закрыть план', pcs: 'шт',
     today: 'Сегодня', noSalesToday: 'сегодня продаж пока нет',
+    changePass: 'Сменить пароль', curPass: 'Текущий пароль', newPass: 'Новый пароль', repeatPass: 'Повторите новый пароль',
+    save: 'Сохранить', cancel: 'Отмена', passChanged: 'Пароль изменён', passMismatch: 'Пароли не совпадают', passTooShort: 'Минимум 4 символа',
   },
   uz: {
     cabinet: 'Shaxsiy kabinet', logout: 'Chiqish', mine: 'Mening daromadim', stats: 'Mening statistikam', team: 'Jamoa',
@@ -59,6 +61,8 @@ export const MOP_T = {
     tmYourPlaces: 'Metrikalar boʻyicha oʻringiz', tmTasks: 'vazifalar', tmNorms: 'Normalar',
     planTips: 'Rejani yopish uchun 5 ta maslahat', pcs: 'ta',
     today: 'Bugun', noSalesToday: 'bugun hali sotuv yoʻq',
+    changePass: 'Parolni almashtirish', curPass: 'Joriy parol', newPass: 'Yangi parol', repeatPass: 'Yangi parolni takrorlang',
+    save: 'Saqlash', cancel: 'Bekor qilish', passChanged: 'Parol oʻzgartirildi', passMismatch: 'Parollar mos kelmadi', passTooShort: 'Kamida 4 ta belgi',
   },
 }
 

@@ -410,6 +410,7 @@
   .mop-side-foot{margin-top:auto;display:flex;flex-direction:column;gap:7px;}
   .mop-side-foot button{padding:9px 11px;border-radius:9px;border:1px solid var(--line2);background:var(--card);color:var(--txt2);font-size:13px;cursor:pointer;font-family:inherit;text-align:left;display:flex;align-items:center;gap:8px;font-weight:600;}
   .mop-side-foot button svg{width:16px;height:16px;flex:0 0 auto;}
+  .mop-side-foot .mop-foot-pass{color:var(--txt);border-color:var(--line2);}
   .mop-side-foot .mop-foot-lang{color:var(--accent);border-color:var(--accent);background:var(--accent-bg);}
   .mop-side-foot .mop-foot-logout{color:var(--red);border-color:var(--red);background:var(--red-bg);}
   .mop-main{flex:1;min-width:0;padding:26px 40px 50px;overflow-y:auto;}

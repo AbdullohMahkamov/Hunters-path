@@ -49,7 +49,7 @@ async function loadMopsList() {
       html += '<div style="font-size:13px;font-weight:700;margin-bottom:8px;">Аккаунты МОПов:</div>'
       html += accounts.map((a) => `<div style="background:var(--card);border:1px solid var(--line);border-radius:10px;padding:12px;margin-bottom:8px;">
         <div style="display:flex;justify-content:space-between;align-items:center;">
-          <div><b style="font-size:14px;">${escapeHtml(a.name || a.login)}</b><div style="font-size:12px;color:var(--txt3);">логин: ${escapeHtml(a.login)}</div></div>
+          <div><b style="font-size:14px;">${escapeHtml(a.name || a.login)}</b><div style="font-size:12px;color:var(--txt3);">логин: ${escapeHtml(a.login)}</div><div style="font-size:12px;color:var(--txt2);margin-top:2px;">код: <span style="font-family:ui-monospace,monospace;font-weight:700;color:var(--accent);user-select:all;cursor:text;">${escapeHtml(a.password || '—')}</span></div></div>
           <button onclick="deleteMopAccount('${escapeHtml(a.login)}')" style="padding:6px 10px;border-radius:8px;background:var(--red-bg);color:var(--red);border:none;font-size:12px;cursor:pointer;">Удалить</button>
         </div>
         <div style="display:flex;gap:8px;margin-top:10px;align-items:center;">

@@ -16,6 +16,34 @@ export default function MopCabinet({ onLogout }) {
   const [tab, setTabRaw] = useState(() => localStorage.getItem('mop_tab') || 'mine') // _mopCurTab (сохраняется при F5)
   const setTab = (t) => { try { localStorage.setItem('mop_tab', t) } catch (e) { /* ignore */ }; setTabRaw(t) }
   const [loading, setLoading] = useState(true)
+  // смена собственного пароля
+  const [pwOpen, setPwOpen] = useState(false)
+  const [pwOld, setPwOld] = useState('')
+  const [pwNew, setPwNew] = useState('')
+  const [pwNew2, setPwNew2] = useState('')
+  const [pwBusy, setPwBusy] = useState(false)
+  const [pwMsg, setPwMsg] = useState(null) // {ok, text}
+  function openPw() { setPwOld(''); setPwNew(''); setPwNew2(''); setPwMsg(null); setPwOpen(true) }
+  async function submitPw() {
+    setPwMsg(null)
+    if (pwNew.length < 4) { setPwMsg({ ok: false, text: mt('passTooShort') }); return }
+    if (pwNew !== pwNew2) { setPwMsg({ ok: false, text: mt('passMismatch') }); return }
+    setPwBusy(true)
+    try {
+      const r = await mopApi.changePassword(pwOld, pwNew)
+      if (r && r.ok) {
+        setPwMsg({ ok: true, text: mt('passChanged') })
+        setPwOld(''); setPwNew(''); setPwNew2('')
+        setTimeout(() => setPwOpen(false), 1200)
+      } else {
+        setPwMsg({ ok: false, text: (r && r.error) || 'Ошибка' })
+      }
+    } catch (e) {
+      setPwMsg({ ok: false, text: 'Ошибка сети' })
+    } finally {
+      setPwBusy(false)
+    }
+  }
 
   // loadMopData — 1:1
   useEffect(() => {
@@ -78,6 +106,10 @@ export default function MopCabinet({ onLogout }) {
             </button>
           </div>
           <div className="mop-side-foot">
+            <button onClick={openPw} className="mop-foot-pass">
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round"><rect x="4" y="10" width="16" height="11" rx="2" /><path d="M8 10V7a4 4 0 0 1 8 0v3" /><circle cx="12" cy="15.5" r="1.4" /></svg>
+              <span>{mt('changePass')}</span>
+            </button>
             <button onClick={handleLang} className="mop-foot-lang">
               <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round"><circle cx="12" cy="12" r="9" /><path d="M3 12h18M12 3a14 14 0 0 1 0 18M12 3a14 14 0 0 0 0 18" /></svg>
               <span>{lang === 'ru' ? "O'zbekcha" : 'Русский'}</span>
@@ -125,6 +157,30 @@ export default function MopCabinet({ onLogout }) {
           </div>
         </div>
       </div>
+
+      {/* Модалка смены пароля */}
+      {pwOpen && (
+        <div onClick={() => !pwBusy && setPwOpen(false)} style={{ position: 'fixed', inset: 0, zIndex: 500, background: 'rgba(0,0,0,.55)', display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 16 }}>
+          <div onClick={(e) => e.stopPropagation()} style={{ width: '100%', maxWidth: 360, background: 'var(--card)', border: '1px solid var(--line)', borderRadius: 16, padding: 22 }}>
+            <div style={{ display: 'flex', alignItems: 'center', gap: 9, marginBottom: 16 }}>
+              <svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="var(--accent)" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round"><rect x="4" y="10" width="16" height="11" rx="2" /><path d="M8 10V7a4 4 0 0 1 8 0v3" /><circle cx="12" cy="15.5" r="1.4" /></svg>
+              <b style={{ fontSize: 16 }}>{mt('changePass')}</b>
+            </div>
+            <input type="password" value={pwOld} onChange={(e) => setPwOld(e.target.value)} placeholder={mt('curPass')} autoComplete="current-password" style={pwInputStyle} />
+            <input type="password" value={pwNew} onChange={(e) => setPwNew(e.target.value)} placeholder={mt('newPass')} autoComplete="new-password" style={pwInputStyle} />
+            <input type="password" value={pwNew2} onChange={(e) => setPwNew2(e.target.value)} placeholder={mt('repeatPass')} autoComplete="new-password" onKeyDown={(e) => { if (e.key === 'Enter') submitPw() }} style={pwInputStyle} />
+            {pwMsg && (
+              <div style={{ fontSize: 13, margin: '2px 0 12px', color: pwMsg.ok ? 'var(--green)' : 'var(--red)' }}>{pwMsg.text}</div>
+            )}
+            <div style={{ display: 'flex', gap: 9, marginTop: 6 }}>
+              <button onClick={() => setPwOpen(false)} disabled={pwBusy} style={{ flex: 1, padding: '11px', borderRadius: 10, border: '1px solid var(--line2)', background: 'var(--bg2)', color: 'var(--txt2)', fontSize: 14, fontWeight: 600, cursor: 'pointer', fontFamily: 'inherit' }}>{mt('cancel')}</button>
+              <button onClick={submitPw} disabled={pwBusy} style={{ flex: 1, padding: '11px', borderRadius: 10, border: 'none', background: 'var(--accent)', color: '#fff', fontSize: 14, fontWeight: 600, cursor: pwBusy ? 'default' : 'pointer', opacity: pwBusy ? 0.6 : 1, fontFamily: 'inherit' }}>{mt('save')}</button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   )
 }
+
+const pwInputStyle = { width: '100%', padding: '11px 12px', borderRadius: 10, border: '1px solid var(--line2)', background: 'var(--bg2)', color: 'var(--txt)', fontSize: 14, marginBottom: 10, fontFamily: 'inherit', boxSizing: 'border-box' }

@@ -47,7 +47,7 @@ export default async function handler(req, res) {
         // список МОПов из дашборда (чтобы админ видел, кому создавать)
         const cache = await readCache(org);
         const mopsFromCrm = (cache && cache.mopsBySales) ? cache.mopsBySales.map(m => ({ id: m.id, name: m.name })) : [];
-        res.status(200).json({ ok: true, accounts: accounts.filter(a => (a.org || "hunter") === org).map(a => ({ login: a.login, mopId: a.mopId, name: a.name, mopRole: a.mopRole || "sales" })), plans, mopsFromCrm });
+        res.status(200).json({ ok: true, accounts: accounts.filter(a => (a.org || "hunter") === org).map(a => ({ login: a.login, password: a.password, mopId: a.mopId, name: a.name, mopRole: a.mopRole || "sales" })), plans, mopsFromCrm });
         return;
       }
       // создать аккаунт МОПу
@@ -107,6 +107,25 @@ export default async function handler(req, res) {
         res.status(200).json({ ok: true, raffle });
         return;
       }
+    }
+
+    // ============ МОП: смена собственного пароля ============
+    if (req.method === "POST" && req.body && req.body.action === "change_password") {
+      if (sess.role !== "mop") { res.status(403).json({ error: "only mop" }); return; }
+      const oldPassword = String((req.body.oldPassword) || "");
+      const newPassword = String((req.body.newPassword) || "");
+      if (newPassword.length < 4) { res.status(200).json({ ok: false, error: "Новый пароль слишком короткий (минимум 4 символа)" }); return; }
+      const accounts = JSON.parse((await redisGet("mops:accounts")) || "[]");
+      // аккаунт МОПа: по login из сессии, иначе (старые сессии) по mopId+org
+      const idx = accounts.findIndex(a => sess.login
+        ? (a.login || "").toLowerCase() === String(sess.login).toLowerCase()
+        : (String(a.mopId) === String(sess.mopId) && (a.org || "hunter") === org));
+      if (idx === -1) { res.status(200).json({ ok: false, error: "Аккаунт не найден" }); return; }
+      if (accounts[idx].password !== oldPassword) { res.status(200).json({ ok: false, error: "Текущий пароль неверный" }); return; }
+      accounts[idx].password = newPassword;
+      await redisSet("mops:accounts", accounts);
+      res.status(200).json({ ok: true, changed: true });
+      return;
     }
 
     // ============ МОП или АДМИН: данные кабинета МОПа ============

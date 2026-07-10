@@ -54,6 +54,8 @@ export const mop = {
     postJSON('/api/mop', { session: getSession(), action: 'set_plan', mopId, plan }).then((r) => r.json()),
   setRaffle: (prize) =>
     postJSON('/api/mop', { session: getSession(), action: 'set_raffle', prize }).then((r) => r.json()),
+  changePassword: (oldPassword, newPassword) =>
+    postJSON('/api/mop', { session: getSession(), action: 'change_password', oldPassword, newPassword }).then((r) => r.json()),
 }
 
 // ===== DEMO ACCOUNTS (admin panel) =====

@@ -119,7 +119,7 @@ export default async function handler(req, res) {
         return;
       }
       const sessToken = crypto.randomBytes(24).toString("hex");
-      const info = { role: "mop", org: m.org || "hunter", mopId: m.mopId, mopName: m.name };
+      const info = { role: "mop", org: m.org || "hunter", mopId: m.mopId, mopName: m.name, login: m.login };
       await redisSet(redisUrl, redisToken, `session:${sessToken}`, JSON.stringify(info), 30 * 24 * 3600);
       res.status(200).json({ ok: true, session: sessToken, ...info });
       return;
