@@ -408,6 +408,13 @@
   .mop-rank-row{display:flex;align-items:center;gap:12px;padding:11px 0;border-top:1px solid var(--line);}
   .mop-rank-row.me{background:var(--accent-bg);margin:0 -16px;padding-left:16px;padding-right:16px;border-radius:8px;border-top:none;}
   .mop-rank-num{width:26px;height:26px;border-radius:7px;background:var(--card2);display:flex;align-items:center;justify-content:center;font-weight:700;font-size:13px;flex:0 0 auto;}
+  /* Широкая сетка кабинета под десктоп: колонки на большом экране, одна на телефоне */
+  .mop-grid{display:grid;grid-template-columns:repeat(3,1fr);gap:14px;align-items:start;}
+  .mop-grid .mop-card{margin-bottom:0;}
+  .mop-grid .mop-col-wide{grid-column:span 1;}
+  @media(max-width:1100px){.mop-grid{grid-template-columns:repeat(2,1fr);}}
+  @media(max-width:680px){.mop-grid{grid-template-columns:1fr;}}
+  .mop-team-wrap{max-width:760px;margin:0 auto;}
   /* Меню — выпадашка в верхней панели (без рамки, компактно) */
   .sec-dropdown-wrap{position:relative;}
   .sec-dropdown-btn{display:flex;align-items:center;gap:5px;padding:6px 8px;border-radius:8px;font-size:13px;font-weight:500;
@@ -573,7 +580,7 @@
 <!-- ЭКРАН ВХОДА -->
 <!-- КАБИНЕТ МОПа (отдельный экран) -->
 <div id="mopCabinet" style="display:none;position:fixed;inset:0;z-index:400;background:var(--bg2);overflow-y:auto;">
-  <div style="max-width:900px;margin:0 auto;padding:20px 18px 60px;">
+  <div style="max-width:1280px;margin:0 auto;padding:24px 28px 60px;">
     <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:20px;">
       <div style="display:flex;align-items:center;gap:10px;">
         <div style="width:38px;height:38px;border-radius:10px;background:var(--accent);display:flex;align-items:center;justify-content:center;color:#fff;font-weight:700;" id="mopAvatar">М</div>
@@ -5006,7 +5013,7 @@ function renderMopMine(){
       ${steps}
       ${ns?`<div style="margin-top:10px;padding:12px;background:var(--gold-bg);border-radius:10px;border:1px solid var(--gold);">
         <div style="font-size:13px;font-weight:600;">${mt('toStep')} ${ns.pct}% ${mt('sellOn')} <b>${fmtS(ns.revenueNeeded)}</b></div>
-        <div style="font-size:12px;color:var(--txt2);margin-top:3px;">${mt('rateOpens')} ${ns.newRate}% → ${mt('willGrow')}</div>
+        <div style="font-size:12px;color:var(--txt2);margin-top:3px;">${mt('rateOpens')} ${ns.newRate}% → ${mt('salaryW')} <b style="color:var(--green)">${fmtS(ns.newEarn)}</b> 🔥</div>
       </div>`:`<div style="margin-top:10px;padding:12px;background:var(--green-bg,rgba(52,199,89,.12));border-radius:10px;text-align:center;font-size:13px;font-weight:600;color:var(--green);">${mt('maxStep')}</div>`}
     </div>
     <div class="mop-card">
@@ -5071,7 +5078,7 @@ function renderMopMine(){
       </div>`;
     }
   }
-  return earnHtml+`
+  return `<div class="mop-grid">`+earnHtml+`
     <div class="mop-card">
       <div style="font-size:13px;color:var(--txt3);font-weight:600;text-transform:uppercase;letter-spacing:.4px;margin-bottom:12px;">💰 ${mt('mySales')}</div>
       <div class="mop-stat-grid">
@@ -5100,7 +5107,7 @@ function renderMopMine(){
         <div class="mop-stat"><b>${fcm}</b><span>${mt('firstCall')}</span></div>
         <div class="mop-stat"><b>${me.taskRate!=null?me.taskRate+'%':'—'}</b><span>${mt('tasks')}</span></div>
       </div>
-    </div>`;
+    </div></div>`;
 }
 function renderMopTeam(){
   const team=_mopData.team||[];
@@ -5117,14 +5124,15 @@ function renderMopTeam(){
     </div>`;
   }).join('');
   const tn=_mopData.toNext;
-  return `
+  return `<div class="mop-team-wrap">
     ${tn?`<div class="mop-card" style="background:var(--accent-bg);border-color:var(--accent);">
       <div style="font-size:14px;">${mt('toLeader')} ${escapeHtml(tn.name)} ${mt('aboveYou')} — <b>${tn.soldDiff} ${mt('salesW')}</b>. ${mt('catchUp')} 🔥</div>
     </div>`:(_mopData.me&&_mopData.me.rank===1?`<div class="mop-card" style="background:var(--accent-bg);border-color:var(--accent);"><div style="font-size:14px;">${mt('first')}</div></div>`:'')}
     <div class="mop-card">
       <div style="font-size:13px;color:var(--txt3);font-weight:600;text-transform:uppercase;letter-spacing:.4px;margin-bottom:6px;">🏆 ${mt('rankTitle')}</div>
       ${rows}
-    </div>`;
+    </div>
+  </div>`;
 }
 function mopLogout(){
   fetch('/api/auth',{method:'POST',headers:{'content-type':'application/json'},body:JSON.stringify({action:'logout',session:SESSION})});
