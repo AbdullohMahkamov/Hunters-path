@@ -90,6 +90,23 @@ export default async function handler(req, res) {
         res.status(200).json({ ok: true, saved: true });
         return;
       }
+      // задать приз розыгрыша месяца
+      if (req.method === "POST" && req.body && req.body.action === "set_raffle") {
+        const { prize } = req.body;
+        if (prize && String(prize).trim()) {
+          await redisSet(`mops:raffle:${org}`, JSON.stringify({ prize: String(prize).trim(), setAt: Math.floor(Date.now() / 1000) }));
+        } else {
+          await redisSet(`mops:raffle:${org}`, JSON.stringify(null));
+        }
+        res.status(200).json({ ok: true });
+        return;
+      }
+      // получить приз розыгрыша (для формы админа)
+      if (req.query && req.query.action === "get_raffle") {
+        const raffle = JSON.parse((await redisGet(`mops:raffle:${org}`)) || "null");
+        res.status(200).json({ ok: true, raffle });
+        return;
+      }
     }
 
     // ============ МОП или АДМИН: данные кабинета МОПа ============
@@ -256,11 +273,61 @@ export default async function handler(req, res) {
         }
         earnings.scenarios = scenarios;
         earnings.currentTotal = currentTotal;
+
+        // === ДНИ ДО КОНЦА МЕСЯЦА + ТЕМП В ДЕНЬ ===
+        const y = now.getUTCFullYear(), mo = now.getUTCMonth();
+        const daysInMonth = new Date(Date.UTC(y, mo + 1, 0)).getUTCDate();
+        // рабочие дни (пн-сб по умолчанию), оставшиеся
+        let workLeft = 0;
+        for (let dd = day + 1; dd <= daysInMonth; dd++) {
+          const dow = new Date(Date.UTC(y, mo, dd)).getUTCDay(); // 0=вс
+          if (dow !== 0) workLeft++;
+        }
+        const gapToPlan = Math.max(0, plan - revenue);
+        earnings.daysInfo = {
+          workLeft,
+          perDayNeeded: workLeft > 0 ? Math.round(gapToPlan / workLeft) : gapToPlan,
+          gapToPlan,
+        };
+
+        // === ПРОГРЕСС ДО СЛЕДУЮЩЕГО БОНУСА ЗА ТЕМП ===
+        // ближайший невыполненный бонус
+        let nextTempoBonus = null;
+        const tempoTargets = [
+          { pct: 33, byDay: 10, got: planPct >= 33 && day <= 10 },
+          { pct: 66, byDay: 20, got: planPct >= 66 && day <= 20 },
+          { pct: 100, byDay: daysInMonth, got: planPct >= 100 },
+        ];
+        for (const tt of tempoTargets) {
+          if (!tt.got && day <= tt.byDay) {
+            const targetRev = Math.round(plan * tt.pct / 100);
+            nextTempoBonus = {
+              pct: tt.pct, byDay: tt.byDay,
+              revenueNeeded: Math.max(0, targetRev - revenue),
+              progress: targetRev > 0 ? Math.min(100, Math.round(revenue / targetRev * 100)) : 0,
+              daysLeft: tt.byDay - day,
+            };
+            break;
+          }
+        }
+        earnings.nextTempoBonus = nextTempoBonus;
+
+        // === ГДЕ ТЕРЯЕШЬ КЛИЕНТОВ (зависшие/недозвон) ===
+        const mopRaw = (cache.mopsByConv || []).find(m => String(m.id) === String(mopId)) || (cache.mopsBySales || []).find(m => String(m.id) === String(mopId));
+        const noContactCount = (mopRaw && mopRaw.noContact != null) ? mopRaw.noContact : Math.max(0, (me.leads || 0) - Math.round((me.leads || 0) * (me.reachPct || 0) / 100));
+        earnings.losing = {
+          noContact: noContactCount,
+          // прикидка потерянных продаж: недозвон × конверсия
+          potentialSales: me.conv > 0 ? Math.round(noContactCount * me.conv / 100) : 0,
+        };
       }
+
+      // === РОЗЫГРЫШ ПОДАРКА (задаёт админ) ===
+      const raffle = JSON.parse((await redisGet(`mops:raffle:${org}`)) || "null");
 
       res.status(200).json({
         ok: true,
-        me, team, toNext, earnings,
+        me, team, toNext, earnings, raffle,
         period: cache.period,
         updatedAt: cache.updatedAt,
         mopName: (me && me.name) || sess.mopName || "",
