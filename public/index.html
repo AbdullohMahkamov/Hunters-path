@@ -397,24 +397,53 @@
   .menu-item svg{width:16px;height:16px;color:var(--txt3);flex:0 0 auto;}
   .side-div{border-top:1px solid var(--line);margin:6px 4px 8px;}
   .side-group-lbl{font-size:11px;font-weight:600;color:var(--txt3);text-transform:uppercase;letter-spacing:.5px;padding:2px 10px 6px;}
-  /* Кабинет МОПа */
-  .mop-tab{padding:9px 18px;border-radius:10px;border:1px solid var(--line2);background:var(--card);color:var(--txt2);font-size:14px;font-weight:600;cursor:pointer;font-family:inherit;}
+  /* Кабинет МОПа — в стиле админки (те же токены: --card, --line, --radius, шрифт) */
+  .mop-tab{padding:8px 16px;border-radius:999px;border:1px solid var(--line2);background:var(--card);color:var(--txt2);font-size:13px;font-weight:600;cursor:pointer;font-family:inherit;}
   .mop-tab.active{background:var(--accent);color:#fff;border-color:var(--accent);}
-  .mop-card{background:var(--card);border:1px solid var(--line);border-radius:14px;padding:16px;margin-bottom:14px;}
+  .mop-card{background:var(--card);border:1px solid var(--line);border-radius:14px;padding:16px 18px;margin-bottom:16px;}
+  .mop-ct{font-size:12px;font-weight:700;color:var(--txt3);text-transform:uppercase;letter-spacing:.4px;margin-bottom:13px;}
   .mop-stat-grid{display:grid;grid-template-columns:1fr 1fr;gap:10px;}
-  .mop-stat{background:var(--card2);border-radius:11px;padding:13px;}
+  .mop-stat{background:var(--bg);border:1px solid var(--line2);border-radius:11px;padding:13px;}
   .mop-stat b{font-size:22px;font-weight:700;display:block;}
   .mop-stat span{font-size:12px;color:var(--txt3);}
   .mop-rank-row{display:flex;align-items:center;gap:12px;padding:11px 0;border-top:1px solid var(--line);}
-  .mop-rank-row.me{background:var(--accent-bg);margin:0 -16px;padding-left:16px;padding-right:16px;border-radius:8px;border-top:none;}
-  .mop-rank-num{width:26px;height:26px;border-radius:7px;background:var(--card2);display:flex;align-items:center;justify-content:center;font-weight:700;font-size:13px;flex:0 0 auto;}
-  /* Широкая сетка кабинета под десктоп: колонки на большом экране, одна на телефоне */
-  .mop-grid{display:grid;grid-template-columns:repeat(3,1fr);gap:14px;align-items:start;}
-  .mop-grid .mop-card{margin-bottom:0;}
-  .mop-grid .mop-col-wide{grid-column:span 1;}
-  @media(max-width:1100px){.mop-grid{grid-template-columns:repeat(2,1fr);}}
-  @media(max-width:680px){.mop-grid{grid-template-columns:1fr;}}
-  .mop-team-wrap{max-width:760px;margin:0 auto;}
+  .mop-rank-row.me{background:var(--accent-bg);margin:0 -18px;padding-left:18px;padding-right:18px;border-radius:8px;border-top:none;}
+  .mop-rank-num{width:26px;height:26px;border-radius:7px;background:var(--bg);border:1px solid var(--line2);display:flex;align-items:center;justify-content:center;font-weight:700;font-size:13px;flex:0 0 auto;}
+  /* десктоп-раскладка: сайдбар + контент */
+  .mop-shell{display:flex;min-height:100vh;}
+  .mop-side{width:230px;flex:0 0 230px;background:var(--sidebar);border-right:1px solid var(--line);display:flex;flex-direction:column;padding:20px 14px;box-sizing:border-box;}
+  .mop-side-prof{display:flex;align-items:center;gap:10px;margin-bottom:22px;padding:0 4px;}
+  .mop-side-nav{display:flex;flex-direction:column;gap:3px;}
+  .mop-side-nav button{display:flex;align-items:center;gap:10px;padding:10px 12px;border-radius:10px;border:none;background:transparent;color:var(--txt2);font-size:14px;font-weight:600;cursor:pointer;text-align:left;font-family:inherit;}
+  .mop-side-nav button:hover{background:var(--card);}
+  .mop-side-nav button.active{background:var(--accent);color:#fff;}
+  .mop-side-nav button svg{width:17px;height:17px;flex:0 0 auto;}
+  .mop-side-foot{margin-top:auto;display:flex;flex-direction:column;gap:7px;}
+  .mop-side-foot button{padding:9px 11px;border-radius:9px;border:1px solid var(--line2);background:var(--card);color:var(--txt2);font-size:13px;cursor:pointer;font-family:inherit;text-align:left;}
+  .mop-main{flex:1;padding:26px 32px 50px;overflow-y:auto;max-width:1080px;}
+  .mop-main-h{font-size:21px;font-weight:700;margin:0 0 3px;}
+  .mop-main-sub{font-size:13px;color:var(--txt3);margin-bottom:22px;}
+  .mop-hero{background:var(--card);border:1px solid var(--line);border-radius:16px;padding:22px 24px;margin-bottom:16px;display:flex;justify-content:space-between;align-items:center;gap:20px;flex-wrap:wrap;}
+  .mop-hero-big{font-size:34px;font-weight:800;color:var(--green);letter-spacing:-.5px;line-height:1;}
+  .mop-hero-lbl{font-size:12px;font-weight:700;color:var(--txt3);text-transform:uppercase;letter-spacing:.4px;margin-bottom:8px;}
+  .mop-hero-break{display:flex;gap:22px;}
+  .mop-hero-break div{text-align:right;}
+  .mop-hero-break b{font-size:16px;font-weight:700;display:block;}
+  .mop-hero-break span{font-size:11px;color:var(--txt3);}
+  .mop-row2{display:grid;grid-template-columns:1fr 1fr;gap:16px;}
+  .mop-row3{display:grid;grid-template-columns:1fr 1fr 1fr;gap:16px;}
+  .mop-row2 .mop-card,.mop-row3 .mop-card{margin-bottom:0;}
+  @media(max-width:920px){
+    .mop-side{width:200px;flex-basis:200px;}
+    .mop-row2,.mop-row3{grid-template-columns:1fr;}
+  }
+  @media(max-width:680px){
+    .mop-shell{flex-direction:column;}
+    .mop-side{width:100%;flex-basis:auto;flex-direction:row;flex-wrap:wrap;border-right:none;border-bottom:1px solid var(--line);}
+    .mop-side-foot{margin-top:0;flex-direction:row;}
+    .mop-main{padding:18px 16px 40px;}
+  }
+  .mop-team-wrap{max-width:720px;}
   /* Меню — выпадашка в верхней панели (без рамки, компактно) */
   .sec-dropdown-wrap{position:relative;}
   .sec-dropdown-btn{display:flex;align-items:center;gap:5px;padding:6px 8px;border-radius:8px;font-size:13px;font-weight:500;
@@ -578,25 +607,30 @@
 <body class="shell">
 
 <!-- ЭКРАН ВХОДА -->
-<!-- КАБИНЕТ МОПа (отдельный экран) -->
-<div id="mopCabinet" style="display:none;position:fixed;inset:0;z-index:400;background:var(--bg2);overflow-y:auto;">
-  <div style="max-width:1280px;margin:0 auto;padding:24px 28px 60px;">
-    <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:20px;">
-      <div style="display:flex;align-items:center;gap:10px;">
-        <div style="width:38px;height:38px;border-radius:10px;background:var(--accent);display:flex;align-items:center;justify-content:center;color:#fff;font-weight:700;" id="mopAvatar">М</div>
-        <div><div style="font-size:17px;font-weight:700;" id="mopHeaderName">Менеджер</div><div style="font-size:12px;color:var(--txt3);" id="mopHeaderSub">Личный кабинет</div></div>
+<!-- КАБИНЕТ МОПа (отдельный экран, стиль админки) -->
+<div id="mopCabinet" style="display:none;position:fixed;inset:0;z-index:400;background:var(--bg);overflow-y:auto;">
+  <div class="mop-shell">
+    <!-- САЙДБАР -->
+    <div class="mop-side">
+      <div class="mop-side-prof">
+        <div style="width:40px;height:40px;border-radius:11px;background:var(--accent);display:flex;align-items:center;justify-content:center;color:#fff;font-weight:700;font-size:17px;" id="mopAvatar">М</div>
+        <div><div style="font-size:14px;font-weight:700;" id="mopHeaderName">Менеджер</div><div style="font-size:12px;color:var(--txt3);" id="mopHeaderSub">Личный кабинет</div></div>
       </div>
-      <div style="display:flex;align-items:center;gap:8px;">
-        <button id="mopLangBtn" onclick="toggleMopLang()" style="padding:8px 12px;border-radius:9px;background:var(--card);border:1px solid var(--line2);color:var(--txt2);font-size:13px;cursor:pointer;font-weight:600;">UZ</button>
-        <button id="mopLogoutBtn" onclick="mopLogout()" style="padding:8px 14px;border-radius:9px;background:var(--card);border:1px solid var(--line2);color:var(--txt2);font-size:13px;cursor:pointer;">Выйти</button>
+      <div class="mop-side-nav">
+        <button id="mopTabMine" onclick="mopTab('mine')" class="active"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="3" width="7" height="9"/><rect x="14" y="3" width="7" height="5"/><rect x="14" y="12" width="7" height="9"/><rect x="3" y="16" width="7" height="5"/></svg><span>Мои данные</span></button>
+        <button id="mopTabTeam" onclick="mopTab('team')"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M23 21v-2a4 4 0 0 0-3-3.87"/></svg><span>Команда</span></button>
+      </div>
+      <div class="mop-side-foot">
+        <button id="mopLangBtn" onclick="toggleMopLang()">🌐 O'zbekcha</button>
+        <button id="mopLogoutBtn" onclick="mopLogout()">Выйти</button>
       </div>
     </div>
-    <!-- вкладки -->
-    <div style="display:flex;gap:8px;margin-bottom:18px;">
-      <button id="mopTabMine" onclick="mopTab('mine')" class="mop-tab active">Мои данные</button>
-      <button id="mopTabTeam" onclick="mopTab('team')" class="mop-tab">Команда</button>
+    <!-- КОНТЕНТ -->
+    <div class="mop-main">
+      <div class="mop-main-h" id="mopGreet">Кабинет</div>
+      <div class="mop-main-sub" id="mopGreetSub">Твои данные за месяц</div>
+      <div id="mopContent"><div style="text-align:center;color:var(--txt3);padding:40px;">Загрузка...</div></div>
     </div>
-    <div id="mopContent"><div style="text-align:center;color:var(--txt3);padding:40px;">Загрузка...</div></div>
   </div>
 </div>
 
@@ -4923,11 +4957,14 @@ function mt(k){return (MOP_T[_mopLang]&&MOP_T[_mopLang][k])||MOP_T.ru[k]||k;}
 function toggleMopLang(){
   _mopLang=_mopLang==='ru'?'uz':'ru';
   localStorage.setItem('mop_lang',_mopLang);
-  const btn=document.getElementById('mopLangBtn');if(btn)btn.textContent=_mopLang==='ru'?'UZ':'RU';
+  const btn=document.getElementById('mopLangBtn');if(btn)btn.textContent=_mopLang==='ru'?"🌐 O'zbekcha":'🌐 Русский';
   const lo=document.getElementById('mopLogoutBtn');if(lo)lo.textContent=mt('logout');
   const sub=document.getElementById('mopHeaderSub');if(sub)sub.textContent=mt('cabinet');
-  const tm=document.getElementById('mopTabMine');if(tm)tm.textContent=mt('mine');
-  const tt=document.getElementById('mopTabTeam');if(tt)tt.textContent=mt('team');
+  const tm=document.getElementById('mopTabMine');if(tm)tm.querySelector('span').textContent=mt('mine');
+  const tt=document.getElementById('mopTabTeam');if(tt)tt.querySelector('span').textContent=mt('team');
+  const nm=(_mopData&&_mopData.mopName)||window._mopName||'';
+  const gr=document.getElementById('mopGreet');if(gr)gr.textContent=(_mopLang==='uz'?'Salom':'Привет')+', '+nm+' 👋';
+  const grs=document.getElementById('mopGreetSub');if(grs)grs.textContent=_mopCurTab==='team'?mt('rankTitle'):(_mopLang==='uz'?'Bu oydagi maʼlumotlaring':'Твои данные за этот месяц');
   mopTab(_mopCurTab);
 }
 async function bootMopCabinet(){
@@ -4940,15 +4977,16 @@ async function bootMopCabinet(){
   document.getElementById('mopCabinet').style.display='block';
   await loadMopData();
   // применяем язык (ru/uz)
-  const btn=document.getElementById('mopLangBtn');if(btn)btn.textContent=_mopLang==='ru'?'UZ':'RU';
+  const btn=document.getElementById('mopLangBtn');if(btn)btn.textContent=_mopLang==='ru'?"🌐 O'zbekcha":'🌐 Русский';
   const lo=document.getElementById('mopLogoutBtn');if(lo)lo.textContent=mt('logout');
   const sub=document.getElementById('mopHeaderSub');if(sub)sub.textContent=mt('cabinet');
-  const tm=document.getElementById('mopTabMine');if(tm)tm.textContent=mt('mine');
-  const tt=document.getElementById('mopTabTeam');if(tt)tt.textContent=mt('team');
+  const tm=document.getElementById('mopTabMine');if(tm&&tm.querySelector('span'))tm.querySelector('span').textContent=mt('mine');
+  const tt=document.getElementById('mopTabTeam');if(tt&&tt.querySelector('span'))tt.querySelector('span').textContent=mt('team');
   // имя из данных кабинета (по совпадению mopId) — источник истины
   const nm=(_mopData&&_mopData.mopName)||window._mopName||'Менеджер';
   document.getElementById('mopHeaderName').textContent=nm;
   document.getElementById('mopAvatar').textContent=(nm[0]||'М').toUpperCase();
+  const gr=document.getElementById('mopGreet');if(gr)gr.textContent=(_mopLang==='uz'?'Salom':'Привет')+', '+nm+' 👋';
   mopTab('mine');
 }
 async function loadMopData(){
@@ -4961,8 +4999,11 @@ async function loadMopData(){
 }
 function mopTab(tab){
   _mopCurTab=tab;
-  document.getElementById('mopTabMine').classList.toggle('active',tab==='mine');
-  document.getElementById('mopTabTeam').classList.toggle('active',tab==='team');
+  const tm=document.getElementById('mopTabMine'),tt=document.getElementById('mopTabTeam');
+  if(tm)tm.classList.toggle('active',tab==='mine');
+  if(tt)tt.classList.toggle('active',tab==='team');
+  const grs=document.getElementById('mopGreetSub');
+  if(grs)grs.textContent=tab==='team'?mt('rankTitle'):(_mopLang==='uz'?'Bu oydagi maʼlumotlaring':'Твои данные за этот месяц');
   const box=document.getElementById('mopContent');
   if(!_mopData||_mopData.empty){box.innerHTML=`<div class="mop-card" style="text-align:center;color:var(--txt3);">${escapeHtml((_mopData&&_mopData.message)||mt('noData'))}</div>`;return;}
   if(tab==='mine')box.innerHTML=renderMopMine();
@@ -4976,138 +5017,119 @@ function renderMopMine(){
   const fcm=me.firstCallMin!=null?(me.firstCallMin>=60?(Math.round(me.firstCallMin/6)/10+' '+mt('hour')):me.firstCallMin+' '+mt('min')):'—';
   const e=_mopData.earnings;
   const fmtS=n=>(n||0).toLocaleString('ru');
-  // === БЛОК ЗАРАБОТКА + ЛЕСТНИЦА ===
-  let earnHtml='';
+  let out='';
+  // === ГЕРОЙ: ЗАРАБОТОК ===
   if(e){
     const roleLabel=e.role==='presales'?'Pre-Sales':'Sales';
+    out+=`<div class="mop-hero">
+      <div>
+        <div class="mop-hero-lbl">💵 ${mt('earnings')} · ${roleLabel}</div>
+        <div class="mop-hero-big">${fmtS(e.total)}</div>
+        <div style="font-size:12px;color:var(--txt3);margin-top:5px;">${mt('sumMonth')}</div>
+      </div>
+      <div class="mop-hero-break">
+        <div><span>${mt('fix')}</span><b>${fmtS(e.fix)}</b></div>
+        <div><span>${mt('kpi')} ${e.rate}%</span><b>${fmtS(e.kpiSum)}</b></div>
+        ${e.tempoBonusSum>0?`<div><span>${mt('tempoBonus')}</span><b style="color:var(--gold)">+${fmtS(e.tempoBonusSum)}</b></div>`:''}
+        ${e.topBonus>0?`<div><span>${e.topLabel}</span><b style="color:var(--gold)">+${fmtS(e.topBonus)}</b></div>`:''}
+      </div>
+    </div>`;
+    // === ЛЕСТНИЦА + СЦЕНАРИИ (2 колонки) ===
     const steps=e.ladder.map(s=>{
-      const cur=s.isCurrent, done=s.reached;
+      const cur=s.isCurrent,done=s.reached;
       const icon=cur?'📍':(done?'✅':'⬜');
-      const bg=cur?'var(--accent-bg)':'transparent';
-      const bd=cur?'border:1px solid var(--accent);':'';
-      return `<div style="display:flex;align-items:center;gap:10px;padding:9px 10px;border-radius:9px;background:${bg};${bd}margin-bottom:4px;">
-        <span style="font-size:15px;">${icon}</span>
-        <div style="flex:1;">
-          <div style="font-size:13px;font-weight:${cur?'700':'600'};">${s.pct}% ${mt('plan')} · ${mt('rate')} ${s.rate}%</div>
-          <div style="font-size:11px;color:var(--txt3);">${mt('revenueW')} ${fmtS(s.targetRevenue)} → ${mt('salaryW')} ~${fmtS(s.earnAtStep)}</div>
-        </div>
+      return `<div style="display:flex;align-items:center;gap:11px;padding:10px 11px;border-radius:10px;${cur?'background:var(--accent-bg);border:1px solid var(--accent);':''}margin-bottom:5px;">
+        <span style="font-size:14px;">${icon}</span>
+        <div style="flex:1;"><div style="font-size:13px;font-weight:${cur?'700':'600'};">${s.pct}% ${mt('plan')} · ${mt('rate')} ${s.rate}%</div>
+        <div style="font-size:11px;color:var(--txt3);">${mt('revenueW')} ${fmtS(s.targetRevenue)} → ${mt('salaryW')} ~${fmtS(s.earnAtStep)}</div></div>
       </div>`;
     }).join('');
     const ns=e.nextStep;
-    earnHtml=`
-    <div class="mop-card" style="border:1.5px solid var(--accent);">
-      <div style="font-size:13px;color:var(--accent);font-weight:700;text-transform:uppercase;letter-spacing:.4px;margin-bottom:12px;">💵 ${mt('earnings')} (${roleLabel})</div>
-      <div style="text-align:center;padding:10px 0 14px;">
-        <div style="font-size:32px;font-weight:800;color:var(--green);">${fmtS(e.total)}</div>
-        <div style="font-size:12px;color:var(--txt3);">${mt('sumMonth')}</div>
-      </div>
-      <div style="display:flex;flex-direction:column;gap:5px;font-size:13px;margin-bottom:8px;">
-        <div style="display:flex;justify-content:space-between;"><span style="color:var(--txt2);">${mt('fix')}</span><b>${fmtS(e.fix)}</b></div>
-        <div style="display:flex;justify-content:space-between;"><span style="color:var(--txt2);">${mt('kpi')} (${e.rate}% ${mt('ofRevenue')})</span><b>${fmtS(e.kpiSum)}</b></div>
-        ${e.tempoBonusSum>0?`<div style="display:flex;justify-content:space-between;"><span style="color:var(--txt2);">${mt('tempoBonus')}</span><b style="color:var(--gold)">+${fmtS(e.tempoBonusSum)}</b></div>`:''}
-        ${e.topBonus>0?`<div style="display:flex;justify-content:space-between;"><span style="color:var(--txt2);">${e.topLabel}</span><b style="color:var(--gold)">+${fmtS(e.topBonus)}</b></div>`:''}
-      </div>
-    </div>
-    <div class="mop-card">
-      <div style="font-size:13px;color:var(--txt3);font-weight:600;text-transform:uppercase;letter-spacing:.4px;margin-bottom:12px;">🪜 ${mt('ladder')}</div>
+    const ladderCard=`<div class="mop-card">
+      <div class="mop-ct">🪜 ${mt('ladder')}</div>
       ${steps}
-      ${ns?`<div style="margin-top:10px;padding:12px;background:var(--gold-bg);border-radius:10px;border:1px solid var(--gold);">
+      ${ns?`<div style="margin-top:9px;padding:12px;background:var(--gold-bg);border-radius:10px;border:1px solid var(--gold);">
         <div style="font-size:13px;font-weight:600;">${mt('toStep')} ${ns.pct}% ${mt('sellOn')} <b>${fmtS(ns.revenueNeeded)}</b></div>
         <div style="font-size:12px;color:var(--txt2);margin-top:3px;">${mt('rateOpens')} ${ns.newRate}% → ${mt('salaryW')} <b style="color:var(--green)">${fmtS(ns.newEarn)}</b> 🔥</div>
-      </div>`:`<div style="margin-top:10px;padding:12px;background:var(--green-bg,rgba(52,199,89,.12));border-radius:10px;text-align:center;font-size:13px;font-weight:600;color:var(--green);">${mt('maxStep')}</div>`}
-    </div>
-    <div class="mop-card">
-      <div style="font-size:13px;color:var(--txt3);font-weight:600;text-transform:uppercase;letter-spacing:.4px;margin-bottom:10px;">⚡ ${mt('tempoTitle')}</div>
-      ${e.tempoBonuses.map((b,i)=>`<div style="display:flex;align-items:center;gap:9px;padding:6px 0;">
-        <span>${b.got?'✅':(b.possible?'⏳':'❌')}</span>
-        <span style="font-size:13px;flex:1;">${[mt('by10'),mt('by20'),mt('by30')][i]}</span>
-        <b style="font-size:13px;color:${b.got?'var(--green)':'var(--txt3)'};">${b.got?'+$15':'$15'}</b>
-      </div>`).join('')}
+      </div>`:`<div style="margin-top:9px;padding:12px;background:var(--accent-bg);border-radius:10px;text-align:center;font-size:13px;font-weight:600;color:var(--green);">${mt('maxStep')}</div>`}
     </div>`;
+    let scenCard='';
     if(e.scenarios&&e.scenarios.length){
-      earnHtml+=`<div class="mop-card" style="border:1.5px solid var(--gold);">
-        <div style="font-size:13px;color:var(--gold);font-weight:700;text-transform:uppercase;letter-spacing:.4px;margin-bottom:12px;">🎯 ${mt('whatToDo')}</div>
+      scenCard=`<div class="mop-card" style="border-color:var(--gold);">
+        <div class="mop-ct" style="color:var(--gold);">🎯 ${mt('whatToDo')}</div>
         ${e.scenarios.map(s=>{
           let title=s.title;
           if(s.kind==='plan100')title=mt('closePlan');
           else if(s.kind==='step')title=`${mt('reachStep')} ${s.pct}% ${mt('planWord')}`;
           else if(s.kind==='first')title=`${mt('takeFirst')} ${s.leaderName})`;
-          return `<div style="padding:12px;background:var(--card2);border-radius:11px;margin-bottom:9px;">
-          <div style="font-size:14px;font-weight:700;margin-bottom:6px;">${s.icon} ${escapeHtml(title)}</div>
-          <div style="font-size:13px;color:var(--txt2);line-height:1.6;">
-            ${mt('sellMore')} <b style="color:var(--accent)">${fmtS(s.sellMore)}</b><br>
-            → ${mt('willEarn')} <b style="color:var(--green)">${fmtS(s.willEarn)}</b> <span style="color:var(--gold);font-size:12px;">(+${fmtS(s.delta)})</span>
-            ${s.topBonusNote?`<br><span style="font-size:12px;color:var(--gold)">🎁 ${mt('forFirst')}</span>`:''}
-          </div>
-        </div>`;}).join('')}
+          return `<div style="padding:12px;background:var(--bg);border:1px solid var(--line2);border-radius:11px;margin-bottom:8px;">
+            <div style="font-size:14px;font-weight:700;margin-bottom:5px;">${s.icon} ${escapeHtml(title)}</div>
+            <div style="font-size:13px;color:var(--txt2);line-height:1.6;">${mt('sellMore')} <b style="color:var(--accent)">${fmtS(s.sellMore)}</b> → ${mt('willEarn')} <b style="color:var(--green)">${fmtS(s.willEarn)}</b> <span style="color:var(--gold);font-size:12px;">(+${fmtS(s.delta)})</span>${s.topBonusNote?`<br><span style="font-size:12px;color:var(--gold)">🎁 ${mt('forFirst')}</span>`:''}</div>
+          </div>`;}).join('')}
       </div>`;
     }
-    // === ОСТАЛОСЬ ДНЕЙ + ТЕМП В ДЕНЬ ===
+    out+=`<div class="mop-row2" style="margin-bottom:16px;">${ladderCard}${scenCard||'<div></div>'}</div>`;
+    // === 3 КОМПАКТНЫХ: дни / бонус / розыгрыш ===
+    let c1='',c2='',c3='';
     if(e.daysInfo&&e.daysInfo.gapToPlan>0){
-      earnHtml+=`<div class="mop-card" style="background:var(--accent-bg);border:1px solid var(--accent);">
-        <div style="display:flex;justify-content:space-between;align-items:center;">
-          <div><div style="font-size:13px;color:var(--txt2);">${mt('daysLeft')}</div><div style="font-size:24px;font-weight:800;color:var(--accent);">${e.daysInfo.workLeft}</div></div>
-          <div style="text-align:right;"><div style="font-size:13px;color:var(--txt2);">${mt('perDay')}</div><div style="font-size:18px;font-weight:700;color:var(--green);">${fmtS(e.daysInfo.perDayNeeded)}</div><div style="font-size:11px;color:var(--txt3);">${mt('perDayEnd')}</div></div>
-        </div>
-      </div>`;
+      c1=`<div class="mop-card"><div class="mop-ct">📅 ${mt('daysLeft')}</div>
+        <div style="font-size:30px;font-weight:800;color:var(--accent);line-height:1;">${e.daysInfo.workLeft}</div>
+        <div style="font-size:12px;color:var(--txt2);margin-top:6px;">${mt('perDay')} <b style="color:var(--green)">${fmtS(e.daysInfo.perDayNeeded)}</b> ${mt('perDayEnd')}</div></div>`;
     }
-    // === ПРОГРЕСС ДО СЛЕДУЮЩЕГО БОНУСА ===
     if(e.nextTempoBonus){
       const nb=e.nextTempoBonus;
-      earnHtml+=`<div class="mop-card">
-        <div style="font-size:13px;color:var(--txt3);font-weight:600;text-transform:uppercase;letter-spacing:.4px;margin-bottom:10px;">⚡ ${mt('nextBonus')} +$15</div>
-        <div style="display:flex;justify-content:space-between;font-size:13px;margin-bottom:6px;"><span>${mt('bonusProgress')} ${nb.pct}% ${mt('by')} ${nb.byDay}${mt('dayShort')}</span><b>${nb.progress}%</b></div>
-        <div style="height:9px;background:var(--card2);border-radius:5px;overflow:hidden;margin-bottom:6px;"><div style="height:100%;width:${nb.progress}%;background:var(--gold);"></div></div>
-        <div style="font-size:12px;color:var(--txt3);">${mt('sellMore')} <b>${fmtS(nb.revenueNeeded)}</b> · ${mt('by')} ${nb.daysLeft} ${mt('daysWord')}</div>
-      </div>`;
+      c2=`<div class="mop-card"><div class="mop-ct">⚡ ${mt('nextBonus')} +$15</div>
+        <div style="display:flex;justify-content:space-between;font-size:13px;margin-bottom:7px;"><span>${nb.pct}% ${mt('by')} ${nb.byDay}${mt('dayShort')}</span><b>${nb.progress}%</b></div>
+        <div style="height:9px;background:var(--bg);border:1px solid var(--line2);border-radius:6px;overflow:hidden;"><div style="height:100%;width:${nb.progress}%;background:var(--gold);"></div></div>
+        <div style="font-size:12px;color:var(--txt3);margin-top:7px;">${mt('sellMore')} <b>${fmtS(nb.revenueNeeded)}</b> · ${nb.daysLeft} ${mt('daysWord')}</div></div>`;
     }
-    // === РОЗЫГРЫШ ===
     if(_mopData.raffle&&_mopData.raffle.prize){
-      earnHtml+=`<div class="mop-card" style="border:1px solid var(--gold);background:var(--gold-bg);">
-        <div style="font-size:14px;font-weight:700;margin-bottom:4px;">${mt('raffle')}</div>
-        <div style="font-size:13px;color:var(--txt2);">${mt('raffleDesc')} <b style="color:var(--gold)">${escapeHtml(_mopData.raffle.prize)}</b></div>
-      </div>`;
+      c3=`<div class="mop-card" style="border-color:var(--gold);"><div class="mop-ct" style="color:var(--gold);">🎁 ${mt('raffle')}</div>
+        <div style="font-size:13px;color:var(--txt2);">${mt('raffleDesc')}</div>
+        <div style="font-size:17px;font-weight:700;color:var(--gold);margin-top:5px;">${escapeHtml(_mopData.raffle.prize)}</div></div>`;
     }
-    // === ГДЕ ТЕРЯЕШЬ КЛИЕНТОВ ===
-    if(e.losing&&e.losing.noContact>0){
-      earnHtml+=`<div class="mop-card" style="border:1px solid var(--red);">
-        <div style="font-size:13px;color:var(--red);font-weight:700;text-transform:uppercase;letter-spacing:.4px;margin-bottom:8px;">📉 ${mt('losing')}</div>
-        <div style="font-size:14px;"><b style="font-size:20px;color:var(--red);">${e.losing.noContact}</b> ${mt('noReach')}</div>
-        ${e.losing.potentialSales>0?`<div style="font-size:13px;color:var(--txt2);margin-top:4px;">${mt('potentialLost')}${e.losing.potentialSales} ${mt('lostSales')}</div>`:''}
-        <div style="font-size:13px;color:var(--gold);margin-top:8px;font-weight:600;">${mt('losingTip')}</div>
-      </div>`;
-    }
+    const compact=[c1,c2,c3].filter(Boolean);
+    if(compact.length)out+=`<div class="mop-row3" style="margin-bottom:16px;">${compact.join('')}</div>`;
   }
-  return `<div class="mop-grid">`+earnHtml+`
-    <div class="mop-card">
-      <div style="font-size:13px;color:var(--txt3);font-weight:600;text-transform:uppercase;letter-spacing:.4px;margin-bottom:12px;">💰 ${mt('mySales')}</div>
-      <div class="mop-stat-grid">
-        <div class="mop-stat"><b style="color:var(--green)">${me.sold}</b><span>${mt('salesW')}</span></div>
-        <div class="mop-stat"><b style="color:var(--green)">${fmtSumM(me.revenue)}</b><span>${mt('revW')}</span></div>
-      </div>
+  // === ВОРОНКА + ПОТЕРИ (2 колонки) ===
+  const funnelCard=`<div class="mop-card">
+    <div class="mop-ct">📊 ${mt('myFunnel')}</div>
+    <div class="mop-stat-grid">
+      <div class="mop-stat"><b>${me.leads}</b><span>${mt('leads')}</span></div>
+      <div class="mop-stat"><b>${me.reachPct}%</b><span>${mt('reach')}</span></div>
+      <div class="mop-stat"><b>${me.sold}</b><span>${mt('salesW')}</span></div>
+      <div class="mop-stat"><b>${me.conv}%</b><span>${mt('conv')}</span></div>
     </div>
-    ${me.plan>0?`<div class="mop-card">
-      <div style="font-size:13px;color:var(--txt3);font-weight:600;text-transform:uppercase;letter-spacing:.4px;margin-bottom:12px;">🎯 ${mt('myPlan')}</div>
+  </div>`;
+  let losingCard='<div></div>';
+  if(e&&e.losing&&e.losing.noContact>0){
+    losingCard=`<div class="mop-card" style="border-color:var(--red);">
+      <div class="mop-ct" style="color:var(--red);">📉 ${mt('losing')}</div>
+      <div style="font-size:14px;"><b style="font-size:30px;color:var(--red);">${e.losing.noContact}</b> ${mt('noReach')}</div>
+      ${e.losing.potentialSales>0?`<div style="font-size:13px;color:var(--txt2);margin-top:5px;">${mt('potentialLost')}${e.losing.potentialSales} ${mt('lostSales')}</div>`:''}
+      <div style="font-size:13px;color:var(--gold);margin-top:9px;font-weight:600;">${mt('losingTip')}</div>
+    </div>`;
+  }
+  out+=`<div class="mop-row2" style="margin-bottom:16px;">${funnelCard}${losingCard}</div>`;
+  // === ПЛАН + ДИСЦИПЛИНА (2 колонки) ===
+  let planCard='<div></div>';
+  if(me.plan>0){
+    planCard=`<div class="mop-card">
+      <div class="mop-ct">🎯 ${mt('myPlan')}</div>
       <div style="display:flex;justify-content:space-between;align-items:baseline;margin-bottom:8px;"><span style="font-size:14px;">${mt('goal')}: <b>${fmtSumM(me.plan)}</b></span><span style="font-size:20px;font-weight:700;color:${planPct>=100?'var(--green)':(planPct>=50?'var(--accent)':'var(--gold)')}">${planPct}%</span></div>
-      <div style="height:9px;background:var(--card2);border-radius:5px;overflow:hidden;"><div style="height:100%;width:${Math.min(100,planPct)}%;background:${planPct>=100?'var(--green)':'var(--accent)'};"></div></div>
+      <div style="height:9px;background:var(--bg);border:1px solid var(--line2);border-radius:6px;overflow:hidden;"><div style="height:100%;width:${Math.min(100,planPct)}%;background:${planPct>=100?'var(--green)':'var(--accent)'};"></div></div>
       <div style="font-size:12px;color:var(--txt3);margin-top:8px;">${me.revenue<me.plan?mt('leftToPlan')+' '+fmtSumM(me.plan-me.revenue)+' '+mt('toPlan'):mt('planDone')}</div>
-    </div>`:''}
-    <div class="mop-card">
-      <div style="font-size:13px;color:var(--txt3);font-weight:600;text-transform:uppercase;letter-spacing:.4px;margin-bottom:12px;">📊 ${mt('myFunnel')}</div>
-      <div class="mop-stat-grid">
-        <div class="mop-stat"><b>${me.leads}</b><span>${mt('leads')}</span></div>
-        <div class="mop-stat"><b>${me.reachPct}%</b><span>${mt('reach')}</span></div>
-        <div class="mop-stat"><b>${me.sold}</b><span>${mt('salesW')}</span></div>
-        <div class="mop-stat"><b>${me.conv}%</b><span>${mt('conv')}</span></div>
-      </div>
+    </div>`;
+  }
+  const discCard=`<div class="mop-card">
+    <div class="mop-ct">⏱️ ${mt('myDiscipline')}</div>
+    <div class="mop-stat-grid">
+      <div class="mop-stat"><b>${fcm}</b><span>${mt('firstCall')}</span></div>
+      <div class="mop-stat"><b>${me.taskRate!=null?me.taskRate+'%':'—'}</b><span>${mt('tasks')}</span></div>
     </div>
-    <div class="mop-card">
-      <div style="font-size:13px;color:var(--txt3);font-weight:600;text-transform:uppercase;letter-spacing:.4px;margin-bottom:12px;">⏱️ ${mt('myDiscipline')}</div>
-      <div class="mop-stat-grid">
-        <div class="mop-stat"><b>${fcm}</b><span>${mt('firstCall')}</span></div>
-        <div class="mop-stat"><b>${me.taskRate!=null?me.taskRate+'%':'—'}</b><span>${mt('tasks')}</span></div>
-      </div>
-    </div></div>`;
+  </div>`;
+  out+=`<div class="mop-row2">${planCard}${discCard}</div>`;
+  return out;
 }
 function renderMopTeam(){
   const team=_mopData.team||[];
@@ -5129,7 +5151,7 @@ function renderMopTeam(){
       <div style="font-size:14px;">${mt('toLeader')} ${escapeHtml(tn.name)} ${mt('aboveYou')} — <b>${tn.soldDiff} ${mt('salesW')}</b>. ${mt('catchUp')} 🔥</div>
     </div>`:(_mopData.me&&_mopData.me.rank===1?`<div class="mop-card" style="background:var(--accent-bg);border-color:var(--accent);"><div style="font-size:14px;">${mt('first')}</div></div>`:'')}
     <div class="mop-card">
-      <div style="font-size:13px;color:var(--txt3);font-weight:600;text-transform:uppercase;letter-spacing:.4px;margin-bottom:6px;">🏆 ${mt('rankTitle')}</div>
+      <div class="mop-ct">🏆 ${mt('rankTitle')}</div>
       ${rows}
     </div>
   </div>`;
