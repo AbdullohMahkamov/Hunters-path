@@ -66,7 +66,7 @@ export function renderMopEarnings(_mopData) {
     let bonusCard = ''
     if (e.nextTempoBonus) {
       const nb = e.nextTempoBonus
-      bonusCard = `<div class="mop-card" style="margin-top:0;margin-bottom:16px;">
+      bonusCard = `<div class="mop-card" style="margin-top:16px;margin-bottom:0;">
         <div style="display:flex;align-items:center;gap:16px;flex-wrap:wrap;">
           <div style="flex:0 0 auto;">
             <div class="mop-ct" style="margin-bottom:3px;">⚡ ${mt('nextBonus')} +$15</div>
@@ -79,10 +79,9 @@ export function renderMopEarnings(_mopData) {
         </div>
       </div>`
     }
-    out += ladderCard
+    // Лестница + «Способы заработка» рядом (заработок — узкой колонкой ~340px), бонус — полосой ниже
+    out += `<div class="mop-earn-row">${ladderCard}${renderMopEarnWays(me, e)}</div>`
     out += bonusCard
-    // «Способы заработка» — в самом низу секции
-    out += renderMopEarnWays(me, e)
   }
   return out
 }
@@ -100,18 +99,18 @@ function renderMopEarnWays(me, e) {
   const roleLabel = e.role === 'presales' ? 'Pre-Sales' : 'Sales'
   const tb = e.tempoBonuses || []
   const tbKeys = ['by10', 'by20', 'by30']
-  const tempoChips = tb.map((b, i) => `<span style="display:inline-flex;align-items:center;gap:4px;font-size:11px;background:var(--bg);border:1px solid var(--line2);border-radius:999px;padding:3px 9px;">${b.got ? '✅' : '⬜'} ${mt(tbKeys[i])}</span>`).join(' ')
+  const tempoChips = tb.map((b, i) => `<span style="display:inline-flex;align-items:center;gap:3px;font-size:10.5px;background:var(--bg);border:1px solid var(--line2);border-radius:999px;padding:2px 7px;margin:2px 3px 0 0;">${b.got ? '✅' : '⬜'} ${mt(tbKeys[i])}</span>`).join('')
 
-  // строка источника дохода
+  // строка источника дохода (компактная)
   const row = (icon, name, value, note, valColor) => `
-    <div style="display:flex;align-items:flex-start;gap:11px;padding:11px 0;border-top:1px solid var(--line);">
-      <div style="font-size:18px;line-height:1.2;flex:0 0 auto;">${icon}</div>
+    <div style="display:flex;align-items:flex-start;gap:9px;padding:9px 0;border-top:1px solid var(--line);">
+      <div style="font-size:15px;line-height:1.2;flex:0 0 auto;">${icon}</div>
       <div style="flex:1;min-width:0;">
         <div style="display:flex;justify-content:space-between;gap:8px;align-items:baseline;">
-          <span style="font-size:13.5px;font-weight:600;">${name}</span>
-          <b style="font-size:13.5px;white-space:nowrap;color:${valColor || 'var(--txt)'};">${value}</b>
+          <span style="font-size:12.5px;font-weight:600;">${name}</span>
+          <b style="font-size:12.5px;white-space:nowrap;color:${valColor || 'var(--txt)'};">${value}</b>
         </div>
-        ${note ? `<div style="font-size:11.5px;color:var(--txt3);margin-top:3px;line-height:1.45;">${note}</div>` : ''}
+        ${note ? `<div style="font-size:11px;color:var(--txt3);margin-top:2px;line-height:1.4;">${note}</div>` : ''}
       </div>
     </div>`
 
@@ -122,8 +121,8 @@ function renderMopEarnWays(me, e) {
   const topValue = e.topBonus > 0 ? `+${fmtS(e.topBonus)}` : ''
   const topNote = e.topBonus > 0 ? `${mt('ewTopGet')} <b>${e.topLabel}</b> · ${mt('ewTopVals')}` : `${mt('ewTopBecome')} · ${mt('ewTopVals')}`
 
-  return `<div class="mop-card" style="border-color:var(--gold);margin-top:0;margin-bottom:0;">
-    <div class="mop-ct" style="color:var(--gold);">💰 ${mt('ewTitle')}</div>
+  return `<div class="mop-card" style="border-color:var(--gold);margin:0;padding:15px 16px;">
+    <div class="mop-ct" style="color:var(--gold);margin-bottom:8px;">💰 ${mt('ewTitle')}</div>
     ${row('💵', `${mt('fix')} · ${roleLabel}`, fmtS(e.fix), mt('ewGuaranteed'))}
     ${row('📈', `${mt('kpi')} ${e.rate}% ${mt('ofRevenue')}`, fmtS(e.kpiSum), kpiNote, 'var(--accent)')}
     ${row('⚡', `${mt('tempoBonus')} (${mt('ewTempoEach')})`, fmtS(e.tempoBonusSum), tempoNote, 'var(--gold)')}
