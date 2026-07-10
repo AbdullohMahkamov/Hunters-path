@@ -2650,7 +2650,7 @@ async function loadMopsList(){
       <div style="font-size:13px;font-weight:700;margin-bottom:10px;">+ Создать аккаунт МОПу</div>
       <select id="mopNewId" style="width:100%;padding:10px;border-radius:9px;border:1px solid var(--line2);background:var(--bg2);color:var(--txt);font-size:14px;margin-bottom:8px;">
         <option value="">— выберите менеджера из CRM —</option>
-        ${crm.map(m=>`<option value="${m.id}" data-name="${escapeHtml(m.name)}">${escapeHtml(m.name)}</option>`).join('')}
+        ${crm.map(m=>`<option value="${escapeHtml(m.id||m.name)}" data-name="${escapeHtml(m.name)}">${escapeHtml(m.name)}</option>`).join('')}
       </select>
       <input id="mopNewLogin" placeholder="Логин (напр. komiljon)" style="width:100%;padding:10px;border-radius:9px;border:1px solid var(--line2);background:var(--bg2);color:var(--txt);font-size:14px;margin-bottom:8px;">
       <input id="mopNewPass" placeholder="Пароль" style="width:100%;padding:10px;border-radius:9px;border:1px solid var(--line2);background:var(--bg2);color:var(--txt);font-size:14px;margin-bottom:8px;">
@@ -2680,17 +2680,23 @@ async function loadMopsList(){
 }
 async function createMopAccount(){
   const sel=document.getElementById('mopNewId');
-  const mopId=sel.value;const name=sel.options[sel.selectedIndex]?sel.options[sel.selectedIndex].getAttribute('data-name'):'';
+  const opt=sel.options[sel.selectedIndex];
+  const name=opt?(opt.getAttribute('data-name')||''):'';
+  // id берём из value; если пусто/undefined — используем имя (id МОПа = имя)
+  let mopId=sel.value;
+  if(!mopId||mopId==='undefined'||mopId==='')mopId=name;
   const login=document.getElementById('mopNewLogin').value.trim();
   const password=document.getElementById('mopNewPass').value;
   const plan=document.getElementById('mopNewPlan').value;
-  if(!mopId||!login||!password){alert('Выберите менеджера, введите логин и пароль');return;}
+  if(!name||!mopId||mopId==='undefined'){alert('Выберите менеджера из списка (если список пуст — нажмите «Обновить из amoCRM» в дашборде)');return;}
+  if(!login||!password){alert('Введите логин и пароль');return;}
   const r=await fetch('/api/mop',{method:'POST',headers:{'content-type':'application/json'},
     body:JSON.stringify({session:SESSION,action:'create',login,password,mopId,name})});
   const d=await r.json();
   if(d.ok){
     if(plan)await fetch('/api/mop',{method:'POST',headers:{'content-type':'application/json'},body:JSON.stringify({session:SESSION,action:'set_plan',mopId,plan})});
     loadMopsList();
+    alert('Аккаунт создан для: '+name);
   }else{alert(d.error||'Ошибка создания');}
 }
 async function deleteMopAccount(login){
