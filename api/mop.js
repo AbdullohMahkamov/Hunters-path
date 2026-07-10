@@ -211,11 +211,16 @@ export default async function handler(req, res) {
         const nextStep = ladderView.find(s => !s.reached) || null;
         let toNextStep = null;
         if (nextStep) {
+          // заработок при достижении следующей ступени (на её целевой выручке)
+          const targetRev = nextStep.targetRevenue;
+          const kpiAtNext = Math.round(targetRev * nextStep.rate / 100);
+          const earnAtNext = fix + kpiAtNext;
           toNextStep = {
             pct: nextStep.pct,
             revenueNeeded: Math.max(0, nextStep.targetRevenue - revenue),
             newRate: nextStep.rate,
-            extraPerMonth: Math.round((revenue) * (nextStep.rate - rate) / 100), // прирост KPI на текущей выручке
+            newEarn: earnAtNext,
+            extraPerMonth: Math.round((revenue) * (nextStep.rate - rate) / 100),
           };
         }
 
