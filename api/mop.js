@@ -230,7 +230,7 @@ export default async function handler(req, res) {
           const need = plan - revenue;
           const at = earnAt(plan);
           scenarios.push({
-            title: "Закрыть план на 100%", icon: "🎯",
+            kind: "plan100", title: "Закрыть план на 100%", icon: "🎯",
             sellMore: need, willEarn: at.total + topBonus, delta: (at.total + topBonus) - currentTotal, rate: at.rate,
           });
         }
@@ -239,19 +239,18 @@ export default async function handler(req, res) {
           const targetRev = Math.round(plan * nextStep.pct / 100);
           const at = earnAt(targetRev);
           scenarios.push({
-            title: `Выйти на ${nextStep.pct}% плана`, icon: "📈",
+            kind: "step", pct: nextStep.pct, title: `Выйти на ${nextStep.pct}% плана`, icon: "📈",
             sellMore: Math.max(0, targetRev - revenue), willEarn: at.total + topBonus, delta: (at.total + topBonus) - currentTotal, rate: at.rate,
           });
         }
         // сценарий: забрать 1 место (если не первый)
         if (me.rank > 1) {
           const leader = team[0];
-          // сколько выручки нужно, чтобы обогнать лидера (по выручке, +1 сум)
           const needRev = Math.max(0, (leader.revenue || 0) - revenue + 1);
           const targetRev = revenue + needRev;
           const at = earnAt(targetRev);
           scenarios.push({
-            title: `Забрать 1 место (обойти ${leader.name})`, icon: "🥇",
+            kind: "first", leaderName: leader.name, title: `Забрать 1 место (обойти ${leader.name})`, icon: "🥇",
             sellMore: needRev, willEarn: at.total + 1000000, delta: (at.total + 1000000) - currentTotal, rate: at.rate, topBonusNote: "+1 млн за 1 место",
           });
         }
