@@ -15,10 +15,13 @@ const store = {
 }
 
 const listeners = new Set()
-function emit() { listeners.forEach((fn) => fn(getSnapshot())) }
+// Кешированный снапшот — стабильная ссылка для useSyncExternalStore (иначе бесконечный ре-рендер).
+// Пересоздаём объект только при реальном изменении (в emit).
+let snapshot = { ...store }
+function emit() { snapshot = { ...store }; listeners.forEach((fn) => fn(snapshot)) }
 
 export function subscribe(fn) { listeners.add(fn); return () => listeners.delete(fn) }
-export function getSnapshot() { return { ...store } }
+export function getSnapshot() { return snapshot }
 
 export function getSession() { return store.session }
 export function getRole() { return store.role }
