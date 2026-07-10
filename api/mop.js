@@ -271,6 +271,6 @@ export default async function handler(req, res) {
 
     res.status(400).json({ error: "unknown action or no access" });
   } catch (e) {
-    res.status(500).json({ error: "mop failed", detail: String(e).slice(0, 300) });
+    res.status(200).json({ ok: false, empty: true, message: "Ошибка сервера: " + String(e).slice(0, 200) });
   }
 }
