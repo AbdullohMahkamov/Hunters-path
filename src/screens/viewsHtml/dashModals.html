@@ -1,0 +1,41 @@
+<!-- МОДАЛКА: НАСТРОЙКА РАБОЧИХ ДНЕЙ -->
+<div id="workdaysOverlay" style="display:none;position:fixed;inset:0;background:rgba(0,0,0,.55);z-index:100;padding:20px;overflow-y:auto;" onclick="if(event.target===this)closeWorkdaysModal()">
+  <div style="max-width:420px;margin:40px auto;background:var(--bg);border:1px solid var(--line2);border-radius:16px;overflow:hidden;">
+    <div style="display:flex;justify-content:space-between;align-items:center;padding:16px 18px;border-bottom:1px solid var(--line);">
+      <div style="font-size:16px;font-weight:700;" id="wdTitle">Рабочие дни</div>
+      <button onclick="closeWorkdaysModal()" style="width:30px;height:30px;border-radius:8px;background:var(--card);border:1px solid var(--line2);color:var(--txt);font-size:16px;cursor:pointer;">✕</button>
+    </div>
+    <div style="padding:16px 18px;">
+      <div style="font-size:12.5px;color:var(--txt2);margin-bottom:12px;" id="wdHint">Отметьте рабочие дни — прогноз будет учитывать только их.</div>
+      <div id="wdDays" style="display:flex;flex-direction:column;gap:8px;"></div>
+      <div style="border-top:1px solid var(--line);margin:16px 0 12px;"></div>
+      <div style="font-size:12.5px;color:var(--txt2);margin-bottom:10px;" id="whHint">Рабочее время — по нему считается скорость первого звонка (ночь и выходные не штрафуют менеджеров).</div>
+      <div style="display:flex;align-items:center;gap:10px;">
+        <div style="flex:1;">
+          <div style="font-size:11.5px;color:var(--txt3);margin-bottom:4px;">Начало</div>
+          <input type="time" id="whStart" value="10:00" style="width:100%;padding:9px;border-radius:9px;border:1px solid var(--line2);background:var(--card);color:var(--txt);font-size:14px;font-family:inherit;">
+        </div>
+        <div style="color:var(--txt3);margin-top:16px;">—</div>
+        <div style="flex:1;">
+          <div style="font-size:11.5px;color:var(--txt3);margin-bottom:4px;">Конец</div>
+          <input type="time" id="whEnd" value="20:00" style="width:100%;padding:9px;border-radius:9px;border:1px solid var(--line2);background:var(--card);color:var(--txt);font-size:14px;font-family:inherit;">
+        </div>
+      </div>
+      <button onclick="saveWorkdays()" id="wdSaveBtn" style="width:100%;margin-top:16px;padding:11px;border-radius:9px;background:var(--accent);border:none;color:#fff;font-size:13.5px;font-weight:600;cursor:pointer;">Сохранить</button>
+    </div>
+  </div>
+</div>
+
+<!-- МОДАЛЬНОЕ ОКНО: ПОДОЗРИТЕЛЬНЫЕ -->
+<div id="suspOverlay" style="display:none;position:fixed;inset:0;background:rgba(0,0,0,.55);z-index:100;padding:20px;overflow-y:auto;" onclick="if(event.target===this)closeSuspModal()">
+  <div style="max-width:640px;margin:24px auto;background:var(--bg);border:1px solid var(--line2);border-radius:16px;overflow:hidden;">
+    <div style="display:flex;justify-content:space-between;align-items:center;padding:16px 18px;border-bottom:1px solid var(--line);">
+      <div style="font-size:16px;font-weight:700;" id="suspModalTitle">Подозрительные действия</div>
+      <div style="display:flex;gap:8px;align-items:center;">
+        <button onclick="toggleSuspHistory()" id="suspHistBtn" style="padding:6px 12px;border-radius:8px;background:var(--card);border:1px solid var(--line2);color:var(--txt2);font-size:12.5px;cursor:pointer;">История</button>
+        <button onclick="closeSuspModal()" style="width:30px;height:30px;border-radius:8px;background:var(--card);border:1px solid var(--line2);color:var(--txt);font-size:16px;cursor:pointer;">✕</button>
+      </div>
+    </div>
+    <div id="suspModalBody" style="padding:14px 18px;max-height:70vh;overflow-y:auto;"></div>
+  </div>
+</div>

@@ -3,7 +3,7 @@ import { getSnapshot, subscribe, orgQ } from '../lib/session.js'
 import { state, save, loadCloud, ensureChats, setLang } from '../lib/appState.js'
 import { applyTheme } from '../lib/theme.js'
 import { installShellStubs } from '../lib/shellStubs.js'
-import { applyLiveDash, applySuspicious } from '../lib/dashRender.js'
+import { applyLiveDash, applySuspicious, initDashModals } from '../lib/dashRender.js'
 import { initChat, renderChat, scrollChatBottom } from '../lib/chat.js'
 import { initAdminModals } from '../lib/adminModals.js'
 import { initTelegram, loadTelegramChats } from '../lib/telegram.js'
@@ -16,6 +16,7 @@ import chatMainInnerHtml from './viewsHtml/chatMainInner.html?raw'
 import askModeHtml from './viewsHtml/askModeModal.html?raw'
 import adminModalsHtml from './viewsHtml/adminModals.html?raw'
 import genOverlayHtml from './viewsHtml/genOverlay.html?raw'
+import dashModalsHtml from './viewsHtml/dashModals.html?raw'
 
 // Backbone основного приложения (админ/РОП/демо) — 1:1 shell-хром монолита.
 // Тяжёлые вьюхи (дашборд/telegram/задачи) смонтированы дословными скелетами;
@@ -67,6 +68,8 @@ export default function AppShell({ onLogout }) {
       initTelegram()
       initFinanceTrends()
       initQuests()
+      initDashModals()
+      window.__reloadDashboard = () => { dashLoadedRef.current = false; return loadDashboard() }
       // мосты для императивных модулей (чат/скелеты) → React
       window.__forceShellRender = () => force((n) => n + 1)
       window.__switchToChat = () => applyTab('chat')
@@ -251,6 +254,7 @@ export default function AppShell({ onLogout }) {
         <div dangerouslySetInnerHTML={{ __html: askModeHtml }} />
         <div dangerouslySetInnerHTML={{ __html: adminModalsHtml }} />
         <div dangerouslySetInnerHTML={{ __html: genOverlayHtml }} />
+        <div dangerouslySetInnerHTML={{ __html: dashModalsHtml }} />
       </main>
 
       {/* НАСТРОЙКИ */}

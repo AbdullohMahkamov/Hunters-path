@@ -3,6 +3,7 @@
 // Раздел «Маркетинг» (renderAdsets, meta-ads) переносится позже — здесь не вызывается.
 import { state, getGoal } from './appState.js'
 import { getSession, getRole, orgQ } from './session.js'
+// getRole используется в reviewSusp (by: роль ревьюера)
 import { escapeHtml } from './format.js'
 
 // orgSettings — дефолт 1:1 из монолита; loadOrgSettings подтягивает сохранённые.
@@ -489,4 +490,190 @@ export function setDashPeriodReal(per) {
   // динамика реагирует на период (месяц/всё время)
   const trendsGrp = document.getElementById('dg-trends')
   if (trendsGrp && trendsGrp.style.display !== 'none' && typeof window.renderTrendsPeriod === 'function') window.renderTrendsPeriod()
+}
+
+// ===== НАСТРОЙКИ ОРГАНИЗАЦИИ =====
+async function saveOrgSettings(partial) {
+  try {
+    await fetch('/api/user-data', { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ action: 'settings-set', session: getSession(), settings: partial }) })
+  } catch (e) { /* ignore */ }
+}
+function editForecastGoal() {
+  const uz = state.lang === 'uz'
+  const cur = orgSettings.goal || getGoal()
+  const inp = prompt(uz ? 'Oylik maqsad (summa, soʻm):' : 'Цель по выручке на месяц (сум):', cur)
+  if (inp === null) return
+  const cleaned = parseInt(String(inp).replace(/[^0-9]/g, ''), 10)
+  if (!cleaned || cleaned <= 0) { alert(uz ? 'Nol emas, masalan 250000000' : 'Введите число больше нуля, например 250000000'); return }
+  orgSettings.goal = cleaned
+  state.goal = cleaned; save()
+  saveOrgSettings({ goal: cleaned })
+  renderForecast(_lastDashData)
+}
+
+// ===== МОДАЛКА: ПОДОЗРИТЕЛЬНЫЕ =====
+const AMO_BASE = 'https://huntercademy.amocrm.ru/leads/detail/'
+let suspCatFilter = null
+let suspHistoryMode = false
+function fmtSuspSum(n) { return n ? new Intl.NumberFormat('ru-RU').format(n) + ' сум' : 'нет бюджета' }
+function fmtSuspDate(unix) { if (!unix) return ''; const d = new Date(unix * 1000); return d.toLocaleDateString('ru-RU') }
+function openSuspModal(cat) { suspCatFilter = cat || null; suspHistoryMode = false; document.getElementById('suspOverlay').style.display = 'block'; renderSuspModal() }
+function closeSuspModal() { document.getElementById('suspOverlay').style.display = 'none' }
+function toggleSuspHistory() { suspHistoryMode = !suspHistoryMode; renderSuspModal() }
+function renderSuspModal() {
+  const body = document.getElementById('suspModalBody')
+  const title = document.getElementById('suspModalTitle')
+  const histBtn = document.getElementById('suspHistBtn')
+  if (!body) return
+  if (suspHistoryMode) {
+    title.textContent = 'История проверок'
+    histBtn.textContent = '← Назад'
+    const hist = Object.entries(suspReviewed).map(([id, v]) => ({ id, ...v })).sort((a, b) => (b.at || 0) - (a.at || 0))
+    if (!hist.length) { body.innerHTML = '<div style="font-size:13px;color:var(--txt3);padding:20px;text-align:center;">История пуста</div>'; return }
+    body.innerHTML = hist.map((h) => {
+      const dd = h.deal || {}
+      const stColor = h.status === 'checked' ? 'var(--green)' : 'var(--txt3)'
+      const stText = h.status === 'checked' ? 'Проверено' : 'Отклонено'
+      return `<div style="padding:12px 0;border-bottom:1px solid var(--line);">
+        <div style="display:flex;justify-content:space-between;gap:8px;">
+          <b style="font-size:13.5px;">${escapeHtml(dd.name || ('Сделка ' + h.id))}</b>
+          <span style="font-size:11.5px;color:${stColor};font-weight:600;white-space:nowrap;">${stText}</span>
+        </div>
+        <div style="font-size:12px;color:var(--txt3);margin-top:3px;">${fmtSuspSum(dd.price)} · ${escapeHtml(dd.responsible || '')} · ${fmtSuspDate(dd.closed_at || dd.created_at)}</div>
+        ${h.note ? `<div style="font-size:12.5px;color:var(--txt2);margin-top:6px;background:var(--card);border-radius:8px;padding:8px 10px;">📝 ${escapeHtml(h.note)}</div>` : ''}
+        <div style="font-size:10.5px;color:var(--txt3);margin-top:4px;">${new Date(h.at).toLocaleString('ru-RU')}</div>
+      </div>`
+    }).join('')
+    return
+  }
+  title.textContent = 'Подозрительные действия'
+  histBtn.textContent = 'История'
+  const active = suspData.filter((s) => !suspReviewed[s.id])
+  if (!active.length) {
+    body.innerHTML = '<div style="font-size:13px;color:var(--txt3);padding:20px;text-align:center;">Нет активных подозрительных действий 👍<br><span style="font-size:11.5px;">Проверенные — в «Истории»</span></div>'
+    return
+  }
+  const cats = [
+    { key: 'money', title: '💰 По продажам и деньгам' },
+    { key: 'calls', title: '📞 По звонкам и активности' },
+    { key: 'funnel', title: '🔀 По воронке' },
+    { key: 'tasks', title: '✓ По задачам' },
+  ]
+  const showCats = suspCatFilter ? cats.filter((c) => c.key === suspCatFilter) : cats
+  if (suspCatFilter) { const cinfo = cats.find((c) => c.key === suspCatFilter); if (cinfo) title.textContent = cinfo.title }
+  let html = ''
+  let totalShown = 0
+  for (const c of showCats) {
+    const items = active.filter((s) => (s.cat || 'money') === c.key)
+    if (!items.length) continue
+    totalShown += items.length
+    if (!suspCatFilter) html += `<div style="font-size:12px;font-weight:700;color:var(--txt2);text-transform:uppercase;letter-spacing:.3px;margin:16px 0 6px;">${c.title} <span style="color:var(--red);">(${items.length})</span></div>`
+    html += items.map((s) => suspCardHtml(s)).join('')
+  }
+  if (!totalShown) { body.innerHTML = '<div style="font-size:13px;color:var(--txt3);padding:20px;text-align:center;">В этой категории нет активных 👍</div>'; return }
+  body.innerHTML = html
+}
+function suspCardHtml(s) {
+  const priceStr = s.price == null ? '' : `<span style="font-size:13px;font-weight:700;color:var(--red);white-space:nowrap;">${fmtSuspSum(s.price)}</span>`
+  const amoLink = String(s.id).match(/^\d+$/) ? `<a href="${AMO_BASE}${s.id}" target="_blank" style="display:inline-block;margin-top:8px;font-size:12.5px;color:var(--accent);text-decoration:none;">Открыть в amoCRM →</a>` : (s.leadId ? `<a href="${AMO_BASE}${s.leadId}" target="_blank" style="display:inline-block;margin-top:8px;font-size:12.5px;color:var(--accent);text-decoration:none;">Открыть сделку →</a>` : '')
+  return `<div style="padding:14px 0;border-bottom:1px solid var(--line);" id="susp-${s.id}">
+    <div style="display:flex;justify-content:space-between;gap:8px;">
+      <b style="font-size:13.5px;">${escapeHtml(s.name || ('Сделка ' + s.id))}</b>
+      ${priceStr}
+    </div>
+    ${s.label ? `<div style="font-size:11px;color:var(--gold);margin-top:2px;">${escapeHtml(s.label)}</div>` : ''}
+    <div style="font-size:12px;color:var(--txt3);margin-top:3px;">${escapeHtml(s.responsible || '')} · ${fmtSuspDate(s.closed_at || s.created_at)}</div>
+    ${amoLink}
+    <div style="margin-top:10px;">
+      <textarea id="note-${s.id}" placeholder="Примечание (что выяснилось)..." style="width:100%;box-sizing:border-box;padding:8px 10px;border-radius:8px;border:1px solid var(--line2);background:var(--card);color:var(--txt);font-size:12.5px;resize:vertical;min-height:38px;"></textarea>
+    </div>
+    <div style="display:flex;gap:8px;margin-top:8px;">
+      <button onclick="reviewSusp('${s.id}','checked')" style="flex:1;padding:9px;border-radius:8px;background:var(--green);border:none;color:#fff;font-size:12.5px;font-weight:600;cursor:pointer;">Проверено</button>
+      <button onclick="reviewSusp('${s.id}','rejected')" style="flex:1;padding:9px;border-radius:8px;background:var(--card);border:1px solid var(--line2);color:var(--txt2);font-size:12.5px;font-weight:600;cursor:pointer;">Отклонить</button>
+    </div>
+  </div>`
+}
+async function reviewSusp(id, status) {
+  const note = (document.getElementById('note-' + id) || {}).value || ''
+  const deal = suspData.find((s) => String(s.id) === String(id)) || null
+  suspReviewed[id] = { status, note, at: Date.now(), by: getRole(), deal }
+  const row = document.getElementById('susp-' + id); if (row) row.style.display = 'none'
+  updateSuspCount(); renderSuspModal()
+  try {
+    await fetch('/api/user-data', { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ action: 'susp-review', session: getSession(), dealId: id, status, note, deal }) })
+  } catch (e) { /* ignore */ }
+}
+
+// ===== МОДАЛКА: РАБОЧИЕ ДНИ =====
+const DAY_NAMES_RU = ['Воскресенье', 'Понедельник', 'Вторник', 'Среда', 'Четверг', 'Пятница', 'Суббота']
+const DAY_NAMES_UZ = ['Yakshanba', 'Dushanba', 'Seshanba', 'Chorshanba', 'Payshanba', 'Juma', 'Shanba']
+const DAY_ORDER = [1, 2, 3, 4, 5, 6, 0]
+function openWorkdaysModal() {
+  const uz = state.lang === 'uz'
+  document.getElementById('wdTitle').textContent = uz ? 'Ish kunlari' : 'Рабочие дни'
+  document.getElementById('wdHint').textContent = uz ? 'Ish kunlarini belgilang — prognoz faqat shularni hisobga oladi.' : 'Отметьте рабочие дни — прогноз будет учитывать только их.'
+  document.getElementById('wdSaveBtn').textContent = uz ? 'Saqlash' : 'Сохранить'
+  const names = uz ? DAY_NAMES_UZ : DAY_NAMES_RU
+  const wd = orgSettings.workdays || []
+  document.getElementById('wdDays').innerHTML = DAY_ORDER.map((dn) => `
+    <label style="display:flex;align-items:center;gap:10px;padding:9px 12px;border-radius:9px;border:1px solid var(--line2);background:var(--card);cursor:pointer;font-size:13.5px;">
+      <input type="checkbox" value="${dn}" ${wd.includes(dn) ? 'checked' : ''} style="width:17px;height:17px;cursor:pointer;accent-color:var(--accent);">
+      <span>${names[dn]}</span>
+    </label>`).join('')
+  document.getElementById('whStart').value = orgSettings.workStart || '10:00'
+  document.getElementById('whEnd').value = orgSettings.workEnd || '20:00'
+  document.getElementById('workdaysOverlay').style.display = 'block'
+}
+function closeWorkdaysModal() { document.getElementById('workdaysOverlay').style.display = 'none' }
+async function saveWorkdays() {
+  const checks = document.querySelectorAll('#wdDays input[type=checkbox]:checked')
+  const days = Array.from(checks).map((c) => parseInt(c.value, 10))
+  if (!days.length) { alert(state.lang === 'uz' ? 'Kamida bitta kun tanlang' : 'Выберите хотя бы один день'); return }
+  orgSettings.workdays = days
+  const ws = document.getElementById('whStart').value || '10:00'
+  const we = document.getElementById('whEnd').value || '20:00'
+  orgSettings.workStart = ws; orgSettings.workEnd = we
+  await saveOrgSettings({ workdays: days, workStart: ws, workEnd: we })
+  closeWorkdaysModal()
+  renderForecast(_lastDashData)
+}
+
+// ===== СИНХРОНИЗАЦИЯ С amoCRM =====
+let syncingAll = false
+async function syncAll() {
+  if (syncingAll) return
+  syncingAll = true
+  const icon = document.getElementById('dashSyncIcon')
+  const lbl = document.getElementById('topSyncLbl')
+  if (icon) icon.classList.add('spinning')
+  if (lbl) lbl.textContent = 'Обновляю...'
+  try {
+    const r = await fetch('/api/sync' + orgQ())
+    const d = await r.json()
+    if (d && d.ok && typeof window.__reloadDashboard === 'function') await window.__reloadDashboard()
+    if (lbl) lbl.textContent = 'Дисциплина...'
+    const r2 = await fetch('/api/sync-speed' + orgQ())
+    const d2 = await r2.json()
+    if (d2 && d2.ok) {
+      renderDiscipline(d2)
+      if (window._dashData) { window._dashData.speed = d2; renderSignals(window._dashData) }
+      if (d2.suspicious2) {
+        const fromSync = suspData.filter((s) => ['money', 'tasks'].includes(s.cat) || s.type === 'same_day_sale' || s.type === 'wrong_number_abuse')
+        suspData = fromSync.concat(d2.suspicious2); updateSuspCount()
+      }
+    }
+    if (lbl) lbl.textContent = 'Готово ✓'
+  } catch (e) {
+    if (lbl) lbl.textContent = 'Нет связи'
+  }
+  if (icon) icon.classList.remove('spinning')
+  setTimeout(() => { if (lbl) lbl.textContent = 'Обновить'; syncingAll = false }, 2500)
+}
+
+export function initDashModals() {
+  Object.assign(window, {
+    openSuspModal, closeSuspModal, toggleSuspHistory, reviewSusp,
+    openWorkdaysModal, closeWorkdaysModal, saveWorkdays,
+    editForecastGoal, syncAll, saveOrgSettings,
+  })
 }

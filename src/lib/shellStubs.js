@@ -5,7 +5,7 @@
 // По мере переноса каждая заглушка заменяется реальной реализацией.
 
 import { setDashPeriodReal, setDiscPeriodReal } from './dashRender.js'
-import { state, getGoal, save } from './appState.js'
+import { state, save } from './appState.js'
 
 let installed = false
 
@@ -33,25 +33,11 @@ export function installShellStubs() {
     ['act-month', 'act-today'].forEach((id) => { const el = document.getElementById(id); if (el) el.classList.toggle('on', id === 'act-' + per) })
   }
 
-  // editForecastGoal — изменить цель месяца (prompt → state.goal → перерисовка прогноза)
-  window.editForecastGoal = function () {
-    const uz = state.lang === 'uz'
-    const cur = getGoal() || ''
-    const inp = window.prompt(uz ? 'Oylik maqsad (soʻm):' : 'Цель на месяц (сум):', String(cur))
-    if (inp == null) return
-    const n = parseInt(String(inp).replace(/[^0-9]/g, ''), 10)
-    if (!n || n <= 0) return
-    state.goal = n; save()
-    if (window._dashData && typeof window.__applyLiveDash === 'function') window.__applyLiveDash(window._dashData)
-  }
-
   // Заглушки загрузки данных / модалок — реальные реализации в следующих этапах.
+  // (syncAll/openSuspModal/…/editForecastGoal ставит initDashModals; квесты — initQuests и т.д.)
   const noop = () => { /* раздел переносится в следующем этапе */ }
-  ;['syncAll', 'openWorkdaysModal', 'closeWorkdaysModal', 'saveWorkdays', 'showHint',
-    'loadActivity', 'openSuspModal', 'closeSuspModal', 'toggleSuspHistory',
-    'askForecastHelp',
-    'openGenerator', 'askNext', 'resetHunt', 'toggleAdsets', 'refreshMetaSpend',
-    'editMargin', 'editAdSpend'].forEach((fn) => {
+  ;['showHint', 'loadActivity', 'askForecastHelp',
+    'toggleAdsets', 'refreshMetaSpend', 'editMargin', 'editAdSpend'].forEach((fn) => {
     if (typeof window[fn] !== 'function') window[fn] = noop
   })
   if (typeof window.finView === 'undefined') window.finView = 'month'
