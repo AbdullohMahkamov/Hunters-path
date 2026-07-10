@@ -135,7 +135,9 @@ export default async function handler(req, res) {
         me, team, toNext,
         period: cache.period,
         updatedAt: cache.updatedAt,
-        mopName: sess.mopName || (me && me.name) || "",
+        // имя берём по совпадению mopId (источник истины), а не из сессии
+        mopName: (me && me.name) || sess.mopName || "",
+        mopId,
       });
       return;
     }
