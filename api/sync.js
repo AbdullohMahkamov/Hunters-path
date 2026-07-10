@@ -471,6 +471,7 @@ export default async function handler(req, res) {
 
     // МОПы: конверсия + дозвон + топ по продажам
     const mops = Object.entries(byMop).map(([name, v]) => ({
+      id: name,        // идентификатор МОПа = его имя (МОПы уникальны по имени в этой системе)
       name,
       leads: v.leads,
       sold: v.sold,
