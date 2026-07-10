@@ -1,0 +1,176 @@
+    <!-- под-вкладки дашборда -->
+    <div class="dtabs">
+      <button class="dtab on" id="dtab-overview" onclick="dashTab('overview')">Обзор</button>
+      <button class="dtab" id="dtab-trends" onclick="dashTab('trends')">Динамика</button>
+      <button class="dtab" id="dtab-marketing" onclick="dashTab('marketing')">Маркетинг</button>
+      <button class="dtab" id="dtab-sales" onclick="dashTab('sales')">Продажи</button>
+      <span style="width:1px;background:var(--line2);margin:6px 4px;"></span>
+      <button class="dtab dtab-fin" id="dtab-finance" onclick="dashTab('finance')">Финансы</button>
+      <button id="dashSyncBtn" onclick="syncAll()" title="Обновить данные из amoCRM" style="margin-left:auto;align-self:center;display:flex;align-items:center;gap:6px;padding:6px 13px 6px 11px;border-radius:18px;background:var(--card);border:1px solid var(--line2);color:var(--txt);font-size:12.5px;font-weight:600;cursor:pointer;font-family:inherit;">
+        <svg id="dashSyncIcon" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 12a9 9 0 1 1-3-6.7L21 8M21 3v5h-5"/></svg>
+        <span id="topSyncLbl">Обновить</span>
+      </button>
+    </div>
+
+    <!-- РАЗДЕЛ: ОБЗОР -->
+    <div class="dgroup" id="dg-overview">
+      <div id="signalsBox"></div>
+
+      <!-- СЕГОДНЯ: пульс дня -->
+      <div class="block" id="todayBlock" style="margin-bottom:14px;">
+        <div class="dsect" id="todayLbl" style="margin-top:0;"><svg class="ic" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="9"/><path d="M12 7v5l3 2"/></svg> Сегодня</div>
+        <div class="dash-grid" style="grid-template-columns:repeat(3,1fr);margin-bottom:0;">
+          <div class="dcard"><div class="dl" id="tdLeadsLbl">Новые обработанные лиды</div><div class="dv" id="tdLeads">—</div></div>
+          <div class="dcard"><div class="dl" id="tdSoldLbl">Сегодняшние продажи</div><div class="dv" id="tdSold" style="color:var(--accent);">—</div></div>
+          <div class="dcard"><div class="dl" id="tdRevLbl">Сегодняшняя выручка</div><div class="dv" id="tdRev" style="color:var(--green);">—</div></div>
+        </div>
+      </div>
+
+      <div style="display:flex;gap:6px;margin-bottom:14px;">
+        <button class="perbtn on" id="per-month" onclick="setDashPeriod('month')">Текущий месяц</button>
+        <button class="perbtn" id="per-all" onclick="setDashPeriod('all')">Всё время</button>
+      </div>
+
+      <!-- ПРОГНОЗ МЕСЯЦА -->
+      <div class="block" id="forecastBlock" style="margin-bottom:16px;">
+        <div style="display:flex;justify-content:space-between;align-items:center;gap:10px;margin-bottom:2px;">
+          <div class="dsect" id="fcLbl" style="margin:0;"><svg class="ic" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><path d="M3 3v18h18M7 14l4-4 4 4 4-6"/></svg> Прогноз месяца</div>
+          <button onclick="openWorkdaysModal()" title="Настроить рабочие дни" style="width:30px;height:30px;border-radius:8px;background:var(--card);border:1px solid var(--line2);color:var(--txt2);cursor:pointer;display:flex;align-items:center;justify-content:center;flex:0 0 auto;"><svg class="ic" width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 1 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 1 1-2.83-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 1 1 2.83-2.83l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 1 1 2.83 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z"/></svg></button>
+        </div>
+        <div id="forecastChart"><div style="font-size:12px;color:var(--txt3);padding:6px 0;">Загрузка...</div></div>
+      </div>
+
+      <div class="dash-grid" id="ovKpiGrid" style="grid-template-columns:repeat(3,1fr);">
+        <div class="dcard"><div class="dl" id="ovSoldLbl">Продаж</div><div class="dv" id="kpiSold" style="color:var(--accent);">—</div><div class="dh" id="kpiSoldH">из плана 141</div></div>
+        <div class="dcard"><div class="dl">Конверсия команды<span class="hint" onclick="showHint('conv',event)">?</span></div><div class="dv" id="kpiConv" style="color:var(--accent);">—</div><div class="dh" id="ovConvH">лид → продажа</div></div>
+        <div class="dcard"><div class="dl">Средний чек<span class="hint" onclick="showHint('check',event)">?</span></div><div class="dv" id="kpiCheck">—</div><div class="dh" id="ovCheckH">выручка ÷ продажи</div></div>
+      </div>
+
+      <!-- сумма продаж за период -->
+      <div class="block" style="margin-top:16px;">
+        <div class="dsect" id="ovSalesSumLbl">Сумма продаж (текущий месяц)</div>
+        <div id="overviewSalesSum"><div style="font-size:12px;color:var(--txt3);padding:10px;">Загрузка...</div></div>
+      </div>
+    </div>
+
+    <!-- РАЗДЕЛ: ДИНАМИКА (тренды во времени) -->
+    <div class="dgroup" id="dg-trends" style="display:none;">
+      <div style="display:flex;gap:6px;margin-bottom:14px;">
+        <button class="perbtn on" id="tr-per-month" onclick="setDashPeriod('month')">Текущий месяц</button>
+        <button class="perbtn" id="tr-per-all" onclick="setDashPeriod('all')">Всё время</button>
+      </div>
+      <div id="trendsBox"><div style="font-size:12px;color:var(--txt3);padding:14px;">Загрузка динамики...</div></div>
+    </div>
+
+    <!-- РАЗДЕЛ: ФИНАНСЫ (из Google Sheets) -->
+    <div class="dgroup" id="dg-finance" style="display:none;">
+      <div id="finReminder" style="display:flex;align-items:flex-start;gap:10px;background:var(--gold-bg,rgba(212,175,55,.1));border:1px solid var(--gold,#d4af37);border-radius:11px;padding:11px 14px;margin-bottom:14px;">
+        <svg class="ic" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="var(--gold,#d4af37)" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" style="flex:0 0 auto;margin-top:1px;"><circle cx="12" cy="12" r="9"/><path d="M12 8v4M12 16h.01"/></svg>
+        <div style="font-size:12.5px;line-height:1.5;color:var(--txt);">
+          <b>Финансы не обновляются автоматически</b> — чтобы не тратить лишнее на ИИ-чтение таблицы.
+          Данные показываются из сохранённой копии. <b>Нужны свежие цифры? Нажмите «Обновить».</b>
+        </div>
+      </div>
+      <div style="display:flex;gap:8px;align-items:center;margin-bottom:14px;flex-wrap:wrap;">
+        <select id="finMonth" onchange="finView='month';loadFinance()"
+          style="flex:1;min-width:130px;padding:9px 12px;border-radius:9px;border:1px solid var(--line2);background:var(--card);color:var(--txt);font-size:13px;">
+        </select>
+        <button id="finYearBtn" onclick="finView='year';loadFinance()" style="padding:9px 15px;border-radius:9px;background:var(--card);border:1px solid var(--line2);color:var(--txt2);font-size:13px;font-weight:600;cursor:pointer;">Год</button>
+        <button onclick="loadFinance(true)" title="Обновить из таблицы" style="padding:9px 14px;border-radius:9px;background:var(--gold,#d4af37);border:none;color:#1a1400;font-size:13px;font-weight:600;cursor:pointer;display:flex;align-items:center;gap:6px;"><svg class="ic" width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M21 12a9 9 0 1 1-3-6.7L21 8M21 3v5h-5"/></svg>Обновить</button>
+      </div>
+      <div id="financeBox"><div style="font-size:12px;color:var(--txt3);padding:14px;">Укажите лист месяца и нажмите «Показать», либо оставьте пустым для первого листа.</div></div>
+    </div>
+
+    <!-- РАЗДЕЛ: МАРКЕТИНГ (верх воронки — привлечение) -->
+    <div class="dgroup" id="dg-marketing" style="display:none;">
+      <div style="display:flex;gap:6px;margin-bottom:14px;">
+        <button class="perbtn on" id="mk-per-month" onclick="setDashPeriod('month')">Текущий месяц</button>
+        <button class="perbtn" id="mk-per-all" onclick="setDashPeriod('all')">Всё время</button>
+      </div>
+      <div class="dash-grid">
+        <div class="dcard"><div class="dl" id="mkLeadsLbl">Лидов за месяц</div><div class="dv" id="mkLeads">—</div><div class="dh">привлечено</div></div>
+        <div class="dcard"><div class="dl">Потеря до контакта<span class="hint" onclick="showHint('reach',event)">?</span></div><div class="dv" id="mkNoContact" style="color:var(--red);">—</div><div class="dh">умерли без разговора</div></div>
+      </div>
+      <div class="block">
+        <div class="dsect" id="secProb"><svg class="ic" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><path d="M12 3s6 7 6 11a6 6 0 0 1-12 0c0-4 6-11 6-11z"/></svg> Куда утекают лиды<span class="hint" onclick="showHint('problems',event)">?</span></div>
+        <div id="problemsChart"></div>
+      </div>
+      <div class="block" id="adsetsBlock">
+        <div class="dsect" id="secAdsets"><svg class="ic" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><path d="M3 3v18h18M18 9l-5 5-3-3-4 4"/></svg> Источники рекламы (аудитории)<span class="hint" onclick="showHint('adsets',event)">?</span></div>
+        <div id="adsetsChart"><div style="font-size:12px;color:var(--txt3);">Загрузка...</div></div>
+      </div>
+    </div>
+
+    <!-- РАЗДЕЛ: ПРОДАЖИ (низ воронки — обработка) -->
+    <div class="dgroup" id="dg-sales" style="display:none;">
+
+      <div class="two-col">
+        <div class="block">
+          <div class="dsect" id="secActivity">Активность менеджеров<span class="hint" onclick="showHint('activity',event)">?</span></div>
+          <div style="display:flex;gap:6px;align-items:center;margin-bottom:12px;flex-wrap:wrap;">
+            <button class="perbtn on" id="act-month" onclick="setActPeriod('month')">Месяц</button>
+            <button class="perbtn" id="act-today" onclick="setActPeriod('today')">Сегодня</button>
+            <input type="date" id="actDate" onchange="setActPeriod('day')" style="padding:6px 8px;border-radius:8px;border:1px solid var(--line2);background:var(--bg);color:var(--txt);font-size:12px;" />
+            <button onclick="loadActivity(true)" title="Обновить" style="padding:6px 9px;border-radius:8px;background:var(--bg);border:1px solid var(--line2);color:var(--txt2);font-size:12px;cursor:pointer;"><svg class="ic" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><path d="M21 12a9 9 0 1 1-3-6.7L21 8M21 3v5h-5"/></svg></button>
+          </div>
+          <div id="activityChart"><div style="font-size:12px;color:var(--txt3);">Загрузка активности...</div></div>
+        </div>
+        <div class="block">
+          <div class="dsect" id="secDisc"><svg class="ic" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><path d="M13 2L4 14h7l-1 8 9-12h-7z"/></svg> Дисциплина менеджеров<span class="hint" onclick="showHint('early',event)">?</span></div>
+          <div style="display:flex;gap:6px;margin-bottom:12px;">
+            <button class="perbtn on" id="disc-per-month" onclick="setDiscPeriod('month')">За месяц</button>
+            <button class="perbtn" id="disc-per-today" onclick="setDiscPeriod('today')">За сегодня</button>
+          </div>
+          <div id="disciplineChart"><div style="font-size:12px;color:var(--txt3);">Нажмите «Обновить дисциплину» — это подробный расчёт по звонкам и задачам, идёт 20-40 секунд.</div></div>
+        </div>
+      </div>
+
+      <div class="two-col">
+        <div class="block">
+          <div class="dsect" id="secPlanFact"><svg class="ic" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><path d="M9 6h11M9 12h11M9 18h11"/><path d="M4 6l1 1 2-2M4 12l1 1 2-2M4 18l1 1 2-2"/></svg> План / Факт по менеджерам</div>
+          <div id="planFactChart"></div>
+        </div>
+        <div class="block">
+          <div class="dsect" id="secTop"><svg class="ic" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><path d="M8 4h8v5a4 4 0 0 1-8 0zM8 6H5v1a3 3 0 0 0 3 3M16 6h3v1a3 3 0 0 1-3 3M9 20h6M12 13v4"/></svg> Топ по продажам</div>
+          <div id="topSalesChart"></div>
+        </div>
+      </div>
+
+      <div class="block">
+        <div class="dsect" id="secMop"><svg class="ic" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="9"/><circle cx="12" cy="12" r="5"/><circle cx="12" cy="12" r="1"/></svg> Конверсия и дозвон<span class="hint" onclick="showHint('reach',event)">?</span></div>
+        <div id="mopChart"></div>
+      </div>
+
+      <div class="block" id="velocityBlock">
+        <div class="dsect" id="secVelocity"><svg class="ic" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><path d="M12 2v4M12 18v4M2 12h4M18 12h4M5 5l2.5 2.5M16.5 16.5 19 19M19 5l-2.5 2.5M7.5 16.5 5 19"/></svg> Скорость воронки<span class="hint" onclick="showHint('velocity',event)">?</span></div>
+        <div id="velocityChart"><div style="font-size:12px;color:var(--txt3);">Загрузка...</div></div>
+      </div>
+
+      <div class="block" id="suspBlock">
+        <div style="display:flex;justify-content:space-between;align-items:center;gap:10px;">
+          <div class="dsect" id="secSusp" style="margin:0;"><svg class="ic" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><path d="M12 9v4M12 17h.01M10.3 3.9 1.8 18a2 2 0 0 0 1.7 3h17a2 2 0 0 0 1.7-3L13.7 3.9a2 2 0 0 0-3.4 0z"/></svg> Подозрительные действия</div>
+          <span id="suspCount" style="background:var(--red-bg);color:var(--red);font-weight:700;font-size:13px;padding:3px 10px;border-radius:20px;">0</span>
+        </div>
+        <div style="font-size:11.5px;color:var(--txt3);margin:6px 0 12px;">Нажми на категорию, чтобы проверить сделки.</div>
+        <div class="two-col" style="gap:10px;">
+          <div class="susp-tile" onclick="openSuspModal('money')">
+            <div class="susp-tile-t">💰 По продажам и деньгам</div>
+            <span class="susp-tile-n" id="suspN-money">0</span>
+          </div>
+          <div class="susp-tile" onclick="openSuspModal('calls')">
+            <div class="susp-tile-t">📞 По звонкам и активности</div>
+            <span class="susp-tile-n" id="suspN-calls">0</span>
+          </div>
+          <div class="susp-tile" onclick="openSuspModal('funnel')">
+            <div class="susp-tile-t">🔀 По воронке</div>
+            <span class="susp-tile-n" id="suspN-funnel">0</span>
+          </div>
+          <div class="susp-tile" onclick="openSuspModal('tasks')">
+            <div class="susp-tile-t">✓ По задачам</div>
+            <span class="susp-tile-n" id="suspN-tasks">0</span>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <div style="font-size:11px;color:var(--txt3);margin-top:8px;line-height:1.5;" id="dashNote">Данные обновляются автоматически каждую ночь. Кнопка «Обновить» сверху — для ручного обновления.</div>
