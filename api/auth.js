@@ -101,6 +101,30 @@ export default async function handler(req, res) {
       return;
     }
 
+    // Вход МОПа: логин/пароль из реестра mops:accounts (создаёт админ).
+    // Роль "mop", привязан к своему amoCRM mopId. Видит только свой кабинет.
+    if (action === "mop") {
+      const login = String((req.body && req.body.login) || "").trim().toLowerCase();
+      const pass = String((req.body && req.body.password) || "");
+      const accounts = (await (async () => {
+        try {
+          const r = await fetch(`${redisUrl}/get/mops:accounts`, { headers: { Authorization: `Bearer ${redisToken}` } });
+          const d = await r.json();
+          return d && d.result != null ? JSON.parse(d.result) : [];
+        } catch (e) { return []; }
+      })());
+      const m = accounts.find(x => (x.login || "").toLowerCase() === login);
+      if (!m || m.password !== pass) {
+        res.status(200).json({ ok: false, error: "Неверный логин или пароль" });
+        return;
+      }
+      const sessToken = crypto.randomBytes(24).toString("hex");
+      const info = { role: "mop", org: m.org || "hunter", mopId: m.mopId, mopName: m.name };
+      await redisSet(redisUrl, redisToken, `session:${sessToken}`, JSON.stringify(info), 30 * 24 * 3600);
+      res.status(200).json({ ok: true, session: sessToken, ...info });
+      return;
+    }
+
     // Вход РОПа — без пароля
     if (action === "rop") {
       const sessToken = crypto.randomBytes(24).toString("hex");
