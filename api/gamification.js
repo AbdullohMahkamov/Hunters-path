@@ -68,6 +68,7 @@ function defaultConfig() {
     taskGoal: 70,             // задачи за сегодня ≥ X% → балл
     dozvonCoef: 0.6,          // цель дозвона = взято_лидов × коэффициент (округл. вверх)
     freezeTime: "16:00",      // после этого времени (МСК) новые лиды не увеличивают цель дозвона
+    stickerCashback: 20,      // если из кейса выпал стикер/смайлик (ценность 0) → вернуть N баллов
     salesRewards: [           // продажи за месяц → бесплатные открытия кейса (3 порога)
       { sales: 5000000, opens: 1 },
       { sales: 10000000, opens: 3 },
@@ -110,6 +111,7 @@ function normalizeConfig(c) {
   if (!c.taskGoal || c.taskGoal < 1) c.taskGoal = d.taskGoal;
   if (!c.dozvonCoef || c.dozvonCoef <= 0) c.dozvonCoef = d.dozvonCoef;
   if (!c.freezeTime) c.freezeTime = d.freezeTime;
+  if (c.stickerCashback == null || c.stickerCashback < 0) c.stickerCashback = d.stickerCashback;
   if (!Array.isArray(c.salesRewards)) c.salesRewards = d.salesRewards;
   c.case = c.case || d.case;
   c.case.price = c.case.price || d.case.price;
@@ -414,8 +416,9 @@ export default async function handler(req, res) {
         const { mopId } = req.body || {};
         if (!mopId) { res.status(200).json({ ok: false, error: "no mopId" }); return; }
         const st = await getMopState(org, mopId);
-        st.bonus = (st.bonus || 0) - balanceOf(st); // текущий баланс → 0
-        st.freeOpens = 0;                            // и бесплатные открытия обнуляем
+        st.spent = (st.carry || 0) + (st.earnedMonth || 0); // спишем всё заработанное → баланс 0
+        st.bonus = 0;                                        // бонус тоже 0
+        st.freeOpens = 0;                                    // и бесплатные открытия
         await saveMopState(org, mopId, st);
         res.status(200).json({ ok: true, balance: balanceOf(st) });
         return;
@@ -504,19 +507,22 @@ export default async function handler(req, res) {
         st.spent = (st.spent || 0) + price;
       }
       const prizeItem = pickCasePrize(cfg.case.items); // рандом ТОЛЬКО на сервере
+      // стикер/смайлик (ценность 0) → кэшбек баллами
+      const cashback = ((prizeItem.value || 0) <= 0) ? (cfg.stickerCashback || 0) : 0;
+      if (cashback > 0) st.bonus = (st.bonus || 0) + cashback;
       const won = {
         id: "cs" + Date.now() + Math.floor(Math.random() * 1000),
-        type: "case", name: prizeItem.name, value: prizeItem.value || 0, image: prizeItem.image || "",
-        status: "pending", wonAt: new Date().toISOString(),
+        type: "case", name: prizeItem.name, value: prizeItem.value || 0, image: prizeItem.image || "", cashback,
+        status: cashback > 0 ? "cashback" : "pending", wonAt: new Date().toISOString(),
       };
       st.inventory = st.inventory || [];
-      st.inventory.unshift(won);
+      if (cashback <= 0) st.inventory.unshift(won); // стикеры (кэшбек) в инвентарь не кладём — он ими забивался
       st.caseHistory = st.caseHistory || [];
       st.caseHistory.unshift({ name: won.name, at: won.wonAt });
       if (st.caseHistory.length > 50) st.caseHistory = st.caseHistory.slice(0, 50);
       await saveMopState(org, mopId, st);
       await pushDrop(org, { who: sess.mopName || mopId, name: won.name, value: won.value, image: won.image, type: "case", at: won.wonAt });
-      res.status(200).json({ ok: true, prize: { name: won.name, value: won.value, image: won.image }, balance: balanceOf(st), opensLeft: Math.max(0, perDay - st.opensToday), freeOpens: st.freeOpens || 0 });
+      res.status(200).json({ ok: true, prize: { name: won.name, value: won.value, image: won.image, cashback }, balance: balanceOf(st), opensLeft: Math.max(0, perDay - st.opensToday), freeOpens: st.freeOpens || 0 });
       return;
     }
 

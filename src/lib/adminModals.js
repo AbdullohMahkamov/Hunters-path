@@ -286,6 +286,7 @@ function collectCurrentGamiTab() {
     if ($('g_task_goal')) c.taskGoal = Math.max(1, gnum('g_task_goal'))
     if ($('g_dozvon_coef')) { const v = parseFloat(gv('g_dozvon_coef')); c.dozvonCoef = (isNaN(v) || v <= 0) ? 0.6 : v }
     if ($('g_freeze')) c.freezeTime = gv('g_freeze') || '16:00'
+    if ($('g_cashback')) c.stickerCashback = Math.max(0, gnum('g_cashback'))
     const sr = []
     ;(c.salesRewards || []).forEach((_, i) => { if ($('g_sr_sales_' + i)) sr.push({ sales: gnum('g_sr_sales_' + i), opens: Math.max(0, gnum('g_sr_opens_' + i)) }) })
     if (sr.length) c.salesRewards = sr
@@ -342,6 +343,7 @@ function renderGamiTab() {
       fld('Заморозка знаменателя дозвона (МСК)', `<input id="g_freeze" type="time" value="${c.freezeTime || '16:00'}" style="width:100%;padding:7px 9px;border-radius:8px;border:1px solid var(--line2);background:var(--bg2);color:var(--txt);font-size:13px;">`) +
       fld('Цена кейса (баллы)', num('g_case_price', c.case.price)) +
       fld('Открытий кейса в день', num('g_case_perday', c.case.perDay != null ? c.case.perDay : 2)) +
+      fld('Кэшбек за стикер (ценность 0)', num('g_cashback', c.stickerCashback != null ? c.stickerCashback : 20)) +
       '</div>' +
       '<div style="font-size:12.5px;font-weight:700;margin:16px 0 8px;">Бесплатные открытия за продажи (за сегодня)</div>' +
       '<div style="display:grid;grid-template-columns:1fr 1fr;gap:6px;font-size:11px;color:var(--txt3);margin-bottom:5px;"><span>Продажи за день ≥ (сум)</span><span>Бесплатных открытий</span></div>' +

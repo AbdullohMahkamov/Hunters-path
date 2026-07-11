@@ -489,6 +489,7 @@ export default function MopProgress({ view = 'levels' }) {
             <h3 className="gami-modal-name">{result.name}</h3>
             {result.caption ? <div className="gami-modal-cap">{result.caption}</div> : null}
             {result.value ? <div className="gami-modal-val">{fmtVal(result.value)}</div> : null}
+            {result.cashback > 0 ? <div className="gami-modal-cashback"><Ic n="coin" size={16} color="var(--gold)" /> +{result.cashback} {getMopLang() === 'uz' ? 'ball keshbek' : 'баллов кэшбек'}</div> : null}
             <button className="gami-open-btn gami-open-btn--lg" style={{ marginTop: 20 }} onClick={() => setResult(null)}>{mt('gTake')}</button>
           </div>
         </div>

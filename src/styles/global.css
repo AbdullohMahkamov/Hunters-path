@@ -594,6 +594,7 @@
   .gami-modal-name{font-size:23px;font-weight:800;position:relative;text-wrap:balance;line-height:1.08;}
   .gami-modal-cap{font-size:14px;font-weight:600;color:var(--rc,var(--accent));margin-top:6px;position:relative;font-style:italic;}
   .gami-modal-val{font-size:14px;color:var(--rc,var(--gold));font-weight:700;margin-top:7px;position:relative;}
+  .gami-modal-cashback{display:inline-flex;align-items:center;gap:6px;margin-top:10px;padding:5px 13px;border-radius:999px;background:var(--gold-bg);color:var(--gold);font-weight:800;font-size:14px;position:relative;}
   @media (max-width:600px){.gami-rules-grid{grid-template-columns:1fr;}}
   .mop-main{flex:1;min-width:0;padding:26px 40px 50px;overflow-y:auto;}
   .mop-main-inner{max-width:1500px;}
