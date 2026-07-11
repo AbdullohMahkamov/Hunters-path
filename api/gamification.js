@@ -504,5 +504,10 @@ async function recalcAll(org) {
       await pushDrop(org, { who: a.name || a.mopId, name: lp.name, value: lp.value, image: lp.image, type: "level", level: st.level, at: lp.wonAt });
     }
   }
-  return { updated, leveled, month: mkey, casePrice: cfg.case.price, perDay: cfg.case.perDay, dailyPlanTarget: cfg.dailyPlanTarget };
+  const chanceSum = (cfg.case.items || []).reduce((s, it) => s + (Number(it.chance) || 0), 0);
+  return {
+    updated, leveled, month: mkey, casePrice: cfg.case.price, perDay: cfg.case.perDay, dailyPlanTarget: cfg.dailyPlanTarget,
+    chanceSum: Math.round(chanceSum * 100) / 100,
+    caseItems: (cfg.case.items || []).map(it => ({ n: it.name, chance: it.chance, value: it.value })),
+  };
 }
