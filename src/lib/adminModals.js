@@ -255,7 +255,7 @@ async function loadGamiConfig() {
 }
 
 function renderGamiTabs() {
-  const tabs = [['settings', 'Настройки'], ['case', 'Кейс'], ['levels', 'Уровни'], ['inventory', 'Инвентарь']]
+  const tabs = [['settings', 'Настройки'], ['case', 'Кейс'], ['levels', 'Уровни'], ['balances', 'Баллы'], ['inventory', 'Инвентарь']]
   const wrap = $('gamiTabs'); if (!wrap) return
   wrap.innerHTML = tabs.map(([k, t]) => `<button onclick="gamiSwitchTab('${k}')" style="padding:8px 14px;border-radius:9px;border:1px solid ${window._gamiTab === k ? 'var(--accent)' : 'var(--line2)'};background:${window._gamiTab === k ? 'var(--accent-bg)' : 'var(--card)'};color:${window._gamiTab === k ? 'var(--accent)' : 'var(--txt2)'};font-size:13px;font-weight:600;cursor:pointer;">${t}</button>`).join('')
 }
@@ -269,6 +269,7 @@ function collectCurrentGamiTab() {
     c.points = { reach: gnum('g_p_reach'), fastCall: gnum('g_p_fast'), taskDone: gnum('g_p_task'), noOverdueDay: gnum('g_p_day') }
     if ($('g_case_price')) c.case.price = gnum('g_case_price')
     if ($('g_case_perday')) c.case.perDay = Math.max(1, gnum('g_case_perday'))
+    if ($('g_case_img')) c.case.image = gv('g_case_img').trim()
   } else if (window._gamiTab === 'case') {
     const items = []
     ;(c.case.items || []).forEach((_, i) => {
@@ -305,8 +306,11 @@ function renderGamiTab() {
       fld('Баллы за день без просрочек', num('g_p_day', c.points.noOverdueDay)) +
       fld('Цена кейса (баллы)', num('g_case_price', c.case.price)) +
       fld('Открытий кейса в день', num('g_case_perday', c.case.perDay != null ? c.case.perDay : 2)) +
-      '</div>' + saveBtn +
-      '<button onclick="resetGami()" style="margin-top:9px;width:100%;padding:9px;border-radius:9px;background:transparent;border:1px solid var(--line2);color:var(--txt3);font-size:12.5px;cursor:pointer;">Сбросить к стандартным</button>'
+      '</div>' +
+      fld('URL фото кейса (если пусто — рисуем лут-кейс)', `<input id="g_case_img" value="${(c.case.image || '').replace(/"/g, '&quot;')}" placeholder="https://…" style="width:100%;padding:8px 9px;border-radius:8px;border:1px solid var(--line2);background:var(--bg2);color:var(--txt);font-size:13px;">`) +
+      saveBtn +
+      '<button onclick="resetEconomy()" style="margin-top:9px;width:100%;padding:10px;border-radius:9px;background:var(--gold-bg);border:1px solid var(--gold);color:var(--gold);font-size:13px;font-weight:600;cursor:pointer;">Сбросить экономику к стандартной (призы и фото сохранятся)</button>' +
+      '<button onclick="resetGami()" style="margin-top:8px;width:100%;padding:9px;border-radius:9px;background:transparent;border:1px solid var(--line2);color:var(--txt3);font-size:12.5px;cursor:pointer;">Сбросить ВСЁ к стандартному (сотрёт призы/фото)</button>'
   } else if (t === 'case') {
     const rows = (c.case.items || []).map((it, i) =>
       `<div style="border:1px solid var(--line);border-radius:10px;padding:9px;margin-bottom:8px;background:var(--card);">
@@ -347,6 +351,9 @@ function renderGamiTab() {
       '<div style="overflow-x:auto;"><table style="border-collapse:collapse;min-width:1000px;"><thead><tr>' +
       th('#') + th('Название') + th('Дозвон %') + th('Конв. %') + th('Задачи %') + th('Звонок ≤мин') + th('План %') + th('Название приза') + th('Стоим. приза') + th('Фото приза (URL)') +
       '</tr></thead><tbody>' + rows + '</tbody></table></div>' + saveBtn
+  } else if (t === 'balances') {
+    body.innerHTML = '<div style="font-size:12.5px;color:var(--txt3);margin-bottom:12px;">Начисли баллы вручную (например, для бонуса или теста). Можно и списать — введи отрицательное число.</div><div id="g_bal_list"><div style="color:var(--txt3);font-size:13px;">Загрузка...</div></div>'
+    loadGamiBalances()
   } else if (t === 'inventory') {
     body.innerHTML = '<div id="g_inv_list"><div style="color:var(--txt3);font-size:13px;">Загрузка...</div></div>'
     loadGamiInventory()
@@ -372,12 +379,54 @@ async function saveGami() {
   } catch (e) { alert(String(e)) }
 }
 
+async function resetEconomy() {
+  if (!confirm('Сбросить баллы, цену кейса и лимит открытий к стандартным? Призы, уровни и фото останутся.')) return
+  try {
+    const r = await fetch('/api/gamification', { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ session: getSession(), action: 'reset_economy' }) })
+    const d = await r.json()
+    if (d.ok) { window._gamiCfg = d.config; renderGamiTab(); alert('Экономика сброшена: цена ' + d.config.case.price + ', ' + d.config.case.perDay + '/день') } else alert('Ошибка: ' + (d.error || '—'))
+  } catch (e) { alert(String(e)) }
+}
+
 async function resetGami() {
   if (!confirm('Сбросить все настройки геймификации к стандартным? Текущие призы/уровни/баллы будут заменены.')) return
   try {
     const r = await fetch('/api/gamification', { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ session: getSession(), action: 'reset_config' }) })
     const d = await r.json()
     if (d.ok) { window._gamiCfg = d.config; renderGamiTab(); alert('Сброшено к стандартным') } else alert('Ошибка: ' + (d.error || '—'))
+  } catch (e) { alert(String(e)) }
+}
+
+async function loadGamiBalances() {
+  const box = $('g_bal_list'); if (!box) return
+  try {
+    const r = await fetch('/api/gamification?action=list_balances&session=' + encodeURIComponent(getSession()))
+    const d = await r.json()
+    if (!d.ok) { box.innerHTML = '<div style="color:var(--red);">' + (d.error || 'Ошибка') + '</div>'; return }
+    const list = d.balances || []
+    if (!list.length) { box.innerHTML = '<div style="color:var(--txt3);font-size:13px;text-align:center;padding:14px;">Нет аккаунтов МОПов.</div>'; return }
+    box.innerHTML = list.map((b) => {
+      const mid = String(b.mopId)
+      const midJs = mid.replace(/'/g, "\\'")
+      return `<div style="display:flex;align-items:center;gap:9px;padding:10px 12px;border:1px solid var(--line);border-radius:10px;margin-bottom:8px;background:var(--card);">
+        <div style="flex:1;min-width:0;">
+          <b style="font-size:13.5px;">${escapeHtml(b.mopName || mid)}</b>
+          <div style="font-size:12px;color:var(--txt3);">Баланс: <b style="color:var(--gold);">${(b.balance || 0).toLocaleString('ru-RU')}</b> балл.${b.bonus ? ` · бонус ${b.bonus.toLocaleString('ru-RU')}` : ''}</div>
+        </div>
+        <input id="g_grant_${mid}" type="number" placeholder="напр. 5000" style="width:100px;padding:8px 9px;border-radius:8px;border:1px solid var(--line2);background:var(--bg2);color:var(--txt);font-size:13px;">
+        <button onclick="grantPoints('${midJs}')" style="padding:8px 13px;border-radius:8px;background:var(--accent);border:none;color:#fff;font-size:12.5px;font-weight:600;cursor:pointer;white-space:nowrap;">Начислить</button>
+      </div>`
+    }).join('')
+  } catch (e) { box.innerHTML = '<div style="color:var(--red);">' + String(e) + '</div>' }
+}
+async function grantPoints(mopId) {
+  const el = $('g_grant_' + mopId)
+  const amt = el ? parseInt(el.value, 10) : 0
+  if (!amt) { alert('Введите число баллов'); return }
+  try {
+    const r = await fetch('/api/gamification', { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ session: getSession(), action: 'grant_points', mopId, amount: amt }) })
+    const d = await r.json()
+    if (d.ok) { loadGamiBalances() } else alert('Ошибка: ' + (d.error || '—'))
   } catch (e) { alert(String(e)) }
 }
 
@@ -417,6 +466,6 @@ export function initAdminModals() {
   Object.assign(window, {
     openMopsModal, closeMopsModal, loadMopsList, createMopAccount, deleteMopAccount, setMopRole, saveRaffle, setMopPlan,
     openClientsModal, closeClientsModal, loadClientsList, deleteClient, openClientForm, cInput, probeClient, onPipeChange, saveClient,
-    openGamiModal, closeGamiModal, gamiSwitchTab, saveGami, addCaseItem, removeCaseItem, gamiCaseSum, gamiDeliver, resetGami,
+    openGamiModal, closeGamiModal, gamiSwitchTab, saveGami, addCaseItem, removeCaseItem, gamiCaseSum, gamiDeliver, resetGami, resetEconomy, loadGamiBalances, grantPoints,
   })
 }

@@ -62,10 +62,11 @@ function defaultConfig() {
     enabled: true,
     // баллы подобраны так, чтобы активный МОП за день набирал заметно больше цены кейса
     // (типичный день ≈ 2500–3500 баллов) → баллов хватает на 1–2 открытия в день.
-    points: { reach: 50, fastCall: 40, taskDone: 25, noOverdueDay: 150 },
+    points: { reach: 60, fastCall: 40, taskDone: 30, noOverdueDay: 200 },
     case: {
-      price: 1000,       // по карману на каждый день (настраивается)
+      price: 800,        // по карману на каждый день (настраивается)
       perDay: 2,         // сколько раз в день можно открыть (настраивается)
+      image: "",         // URL фото кейса (если пусто — рисуем лут-кейс)
       items: [
         { name: "Стикер / кола / чипсы", chance: 30, value: 10000 },
         { name: "Кофе / обед", chance: 25, value: 25000 },
@@ -152,7 +153,7 @@ function earnedPoints(m, cfg) {
 
 // ─────────────────────────── СОСТОЯНИЕ МОПА ───────────────────────────
 function emptyState() {
-  return { level: 0, lastLevelMonth: "", carry: 0, earnedMonth: 0, pointsMonth: "", spent: 0, opensDay: "", opensToday: 0, inventory: [], levelHistory: [], caseHistory: [] };
+  return { level: 0, lastLevelMonth: "", carry: 0, earnedMonth: 0, pointsMonth: "", spent: 0, bonus: 0, opensDay: "", opensToday: 0, inventory: [], levelHistory: [], caseHistory: [] };
 }
 async function getMopState(org, mopId) {
   const raw = await redisGet(`gamification:mop:${org}:${mopId}`);
@@ -162,7 +163,7 @@ async function getMopState(org, mopId) {
 async function saveMopState(org, mopId, st) {
   await redisSet(`gamification:mop:${org}:${mopId}`, st);
 }
-function balanceOf(st) { return Math.max(0, (st.carry || 0) + (st.earnedMonth || 0) - (st.spent || 0)); }
+function balanceOf(st) { return Math.max(0, (st.carry || 0) + (st.earnedMonth || 0) + (st.bonus || 0) - (st.spent || 0)); }
 
 // Лента живых дропов отдела (для «forcedrop»-тикера).
 async function getDrops(org) {
@@ -257,6 +258,18 @@ export default async function handler(req, res) {
         return;
       }
 
+      // сброс только экономики (баллы/цена/лимит) — призы, уровни и фото сохраняются
+      if (action === "reset_economy") {
+        const def = defaultConfig();
+        cfg.points = def.points;
+        cfg.case.price = def.case.price;
+        cfg.case.perDay = def.case.perDay;
+        cfg.updatedAt = new Date().toISOString();
+        await redisSet(`gamification:config:${org}`, cfg);
+        res.status(200).json({ ok: true, config: cfg });
+        return;
+      }
+
       if (req.method === "POST" && action === "set_config") {
         const incoming = req.body && req.body.config;
         if (!incoming) { res.status(400).json({ error: "no config" }); return; }
@@ -281,6 +294,30 @@ export default async function handler(req, res) {
         }
         list.sort((x, y) => (x.status === y.status ? 0 : x.status === "pending" ? -1 : 1) || (new Date(y.wonAt) - new Date(x.wonAt)));
         res.status(200).json({ ok: true, inventory: list });
+        return;
+      }
+
+      // список балансов всех МОПов
+      if (action === "list_balances") {
+        const accounts = JSON.parse((await redisGet("mops:accounts")) || "[]").filter(a => (a.org || "hunter") === org);
+        const balances = [];
+        for (const a of accounts) {
+          const st = await getMopState(org, a.mopId);
+          balances.push({ mopId: a.mopId, mopName: a.name || a.login, balance: balanceOf(st), bonus: st.bonus || 0, earnedMonth: st.earnedMonth || 0, level: st.level || 0 });
+        }
+        res.status(200).json({ ok: true, balances });
+        return;
+      }
+
+      // начислить (или списать, если отрицательное) баллы МОПу
+      if (req.method === "POST" && action === "grant_points") {
+        const { mopId, amount } = req.body || {};
+        const amt = parseInt(amount, 10) || 0;
+        if (!mopId || !amt) { res.status(200).json({ ok: false, error: "Укажите МОПа и число баллов" }); return; }
+        const st = await getMopState(org, mopId);
+        st.bonus = (st.bonus || 0) + amt;
+        await saveMopState(org, mopId, st);
+        res.status(200).json({ ok: true, balance: balanceOf(st) });
         return;
       }
 
@@ -310,7 +347,7 @@ export default async function handler(req, res) {
         await saveMopState(org, mopId, st);
         if ((st.level || 0) > before) {
           const lp = st.inventory[0];
-          await pushDrop(org, { who: sess.mopName || mopId, name: lp.name, value: lp.value, type: "level", level: st.level, at: lp.wonAt });
+          await pushDrop(org, { who: sess.mopName || mopId, name: lp.name, value: lp.value, image: lp.image, type: "level", level: st.level, at: lp.wonAt });
         }
       }
       const recentDrops = await getDrops(org);
@@ -348,7 +385,7 @@ export default async function handler(req, res) {
       st.caseHistory.unshift({ name: won.name, at: won.wonAt });
       if (st.caseHistory.length > 50) st.caseHistory = st.caseHistory.slice(0, 50);
       await saveMopState(org, mopId, st);
-      await pushDrop(org, { who: sess.mopName || mopId, name: won.name, value: won.value, type: "case", at: won.wonAt });
+      await pushDrop(org, { who: sess.mopName || mopId, name: won.name, value: won.value, image: won.image, type: "case", at: won.wonAt });
       res.status(200).json({ ok: true, prize: { name: won.name, value: won.value, image: won.image }, balance: balanceOf(st), opensLeft: Math.max(0, perDay - st.opensToday) });
       return;
     }
@@ -386,7 +423,7 @@ function buildStatePayload(st, m, cfg) {
     earnedMonth: st.earnedMonth || 0,
     progress, metCount, normsCount: progress.length,
     levels: cfg.levels.map((l, i) => ({ n: i + 1, name: l.name, prizeName: l.prizeName, prizeValue: l.prizeValue, prizeImage: l.prizeImage || "", done: (i + 1) <= level, current: (i + 1) === level })),
-    case: { price: cfg.case.price, items: cfg.case.items, perDay },
+    case: { price: cfg.case.price, items: cfg.case.items, perDay, image: cfg.case.image || "" },
     opensToday, opensLeft: Math.max(0, perDay - opensToday),
     points: cfg.points,
     inventory: st.inventory || [],
@@ -413,7 +450,7 @@ async function recalcAll(org) {
     if ((st.level || 0) > before) {
       leveled++;
       const lp = st.inventory[0];
-      await pushDrop(org, { who: a.name || a.mopId, name: lp.name, value: lp.value, type: "level", level: st.level, at: lp.wonAt });
+      await pushDrop(org, { who: a.name || a.mopId, name: lp.name, value: lp.value, image: lp.image, type: "level", level: st.level, at: lp.wonAt });
     }
   }
   return { updated, leveled, month: mkey };

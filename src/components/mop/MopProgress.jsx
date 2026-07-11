@@ -148,7 +148,7 @@ export default function MopProgress({ view = 'levels' }) {
     for (let i = 0; i < LEN; i++) arr.push(i === WIN ? { name: r.prize.name, value: r.prize.value } : (items[Math.floor(Math.random() * items.length)] || { name: '' }))
     setStrip(arr)
 
-    const PITCH = 108 // ячейка 96 + gap 12
+    const PITCH = 118 // ячейка 106 + gap 12
     requestAnimationFrame(() => {
       const track = trackRef.current
       if (!track) return
@@ -175,7 +175,7 @@ export default function MopProgress({ view = 'levels' }) {
     }, reduce ? 400 : 5200)
   }
 
-  const drops = (st.recentDrops && st.recentDrops.length) ? st.recentDrops : (st.case.items || []).map((it) => ({ name: it.name, value: it.value }))
+  const drops = (st.recentDrops && st.recentDrops.length) ? st.recentDrops : (st.case.items || []).map((it) => ({ name: it.name, value: it.value, image: it.image }))
 
   return (
     <div className="gami-wrap">
@@ -187,12 +187,9 @@ export default function MopProgress({ view = 'levels' }) {
             {[...drops, ...drops].map((d, i) => {
               const r = rarityOf(d.value)
               return (
-                <div className="gami-ticker-item" style={{ '--rc': r.c }} key={i}>
-                  <PrizeVisual item={d} size={d.image ? 30 : 18} />
-                  <div style={{ minWidth: 0 }}>
-                    <div className="gami-ti-name">{d.name}</div>
-                    {d.who ? <div className="gami-ti-who">{d.who}</div> : null}
-                  </div>
+                <div className="gami-ticker-item" style={{ '--rc': r.c }} key={i} title={d.who ? `${d.name} — ${d.who}` : d.name}>
+                  <div className="gami-ti-vis"><PrizeVisual item={d} size={40} /></div>
+                  <div className="gami-ti-name">{d.name}</div>
                 </div>
               )
             })}
@@ -274,20 +271,26 @@ export default function MopProgress({ view = 'levels' }) {
         <div className="gami-arena-head">
           <div className="gami-chest">
             <div className="gami-rays" />
-            <svg className="gami-chest-svg" viewBox="0 0 120 96" fill="none" xmlns="http://www.w3.org/2000/svg">
-              <defs>
-                <linearGradient id="gchG" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stopColor="#ffe08a" /><stop offset="1" stopColor="#d6931f" /></linearGradient>
-                <linearGradient id="gchW" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stopColor="#c07f2e" /><stop offset="1" stopColor="#7e4c18" /></linearGradient>
-              </defs>
-              <ellipse cx="60" cy="90" rx="42" ry="5" fill="#000" opacity=".28" />
-              <rect x="16" y="50" width="88" height="38" rx="6" fill="url(#gchW)" stroke="#f2b134" strokeWidth="2" />
-              <path d="M16 52 V44 C16 27 104 27 104 44 V52 Z" fill="url(#gchW)" stroke="#f2b134" strokeWidth="2" />
-              <rect x="14" y="48" width="92" height="8" rx="2" fill="url(#gchG)" stroke="#a9741f" strokeWidth="1" />
-              <rect x="52" y="30" width="16" height="58" rx="3" fill="url(#gchG)" stroke="#a9741f" strokeWidth="1" />
-              <rect x="53" y="56" width="14" height="14" rx="3" fill="#3a2a10" stroke="#f2b134" strokeWidth="1.6" />
-              <circle cx="60" cy="62" r="2.4" fill="#ffe08a" /><rect x="59" y="63" width="2" height="4" fill="#ffe08a" />
-              <circle cx="22" cy="82" r="2" fill="#ffe08a" /><circle cx="98" cy="82" r="2" fill="#ffe08a" />
-            </svg>
+            {st.case.image
+              ? <img className="gami-case-photo" src={st.case.image} alt="" />
+              : (
+                <svg className="gami-chest-svg" viewBox="0 0 120 100" fill="none" xmlns="http://www.w3.org/2000/svg">
+                  <ellipse cx="60" cy="93" rx="42" ry="5" fill="#000" opacity=".25" />
+                  <rect x="20" y="42" width="80" height="46" rx="9" fill="#26304d" />
+                  <rect x="24" y="46" width="12" height="38" rx="3" fill="#31456e" />
+                  <rect x="84" y="46" width="12" height="38" rx="3" fill="#31456e" />
+                  <rect x="20" y="58" width="80" height="9" fill="#f2b134" />
+                  <rect x="20" y="58" width="80" height="3" fill="#ffd772" />
+                  <rect x="15" y="32" width="90" height="15" rx="6" fill="#33406a" />
+                  <rect x="15" y="32" width="90" height="4" rx="2" fill="#4a5f92" />
+                  <rect x="22" y="45" width="76" height="3" rx="1.5" fill="#8fd0ff" opacity=".9" />
+                  <rect x="20" y="42" width="80" height="46" rx="9" fill="none" stroke="#3b9eff" strokeWidth="1.4" opacity=".5" />
+                  <circle cx="60" cy="63" r="10" fill="#1a2138" />
+                  <circle cx="60" cy="63" r="10" fill="none" stroke="#f2b134" strokeWidth="2" />
+                  <circle cx="60" cy="63" r="4.5" fill="none" stroke="#ffd772" strokeWidth="2" />
+                  <circle cx="60" cy="63" r="1.6" fill="#ffd772" />
+                </svg>
+              )}
           </div>
           <div className="gami-arena-title">{mt('gCase')}</div>
           <div className="gami-arena-price"><Ic n="coin" size={16} color="var(--gold)" />{fmtN(st.case.price)} {mt('gPts')}</div>
