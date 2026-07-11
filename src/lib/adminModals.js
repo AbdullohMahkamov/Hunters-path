@@ -303,21 +303,22 @@ function renderGamiTab() {
   const num = (id, val, w) => `<input id="${id}" type="number" value="${val != null ? val : 0}" style="width:${w || '100%'};padding:8px 9px;border-radius:8px;border:1px solid var(--line2);background:var(--bg2);color:var(--txt);font-size:13px;">`
   const saveBtn = '<button onclick="saveGami()" style="margin-top:16px;width:100%;padding:11px;border-radius:9px;background:var(--accent);border:none;color:#fff;font-weight:600;font-size:14px;cursor:pointer;">Сохранить</button>'
   const fld = (lbl, ctrl) => `<div style="margin-bottom:11px;"><div style="font-size:12px;color:var(--txt3);margin-bottom:5px;">${lbl}</div>${ctrl}</div>`
+  const hintLvl = '<span style="display:block;font-weight:400;font-size:10.5px;color:var(--accent);margin-top:3px;">↔ эта метрика есть и в уровнях (раздел «Уровни»)</span>'
 
   if (t === 'settings') {
     body.innerHTML =
       `<label style="display:flex;align-items:center;gap:9px;font-size:14px;font-weight:600;margin-bottom:18px;cursor:pointer;"><input type="checkbox" id="g_enabled" ${c.enabled ? 'checked' : ''} style="width:18px;height:18px;"> Геймификация включена</label>` +
       '<div style="display:grid;grid-template-columns:1fr 1fr;gap:0 14px;">' +
       fld('Баллы за дозвон (дневной)', num('g_p_reach', c.points.reach)) +
-      fld('Дозвон ≥ % за день', num('g_reach_goal', c.reachGoal != null ? c.reachGoal : 60)) +
+      fld('Дозвон ≥ % за день' + hintLvl, num('g_reach_goal', c.reachGoal != null ? c.reachGoal : 60)) +
       fld('Баллы за дневной план', num('g_p_dplan', c.points.dailyPlan != null ? c.points.dailyPlan : 250)) +
-      fld('Дневной план продаж (сум)', num('g_dplan_target', c.dailyPlanTarget != null ? c.dailyPlanTarget : 3000000)) +
+      fld('Дневной план продаж (сум)' + hintLvl, num('g_dplan_target', c.dailyPlanTarget != null ? c.dailyPlanTarget : 3000000)) +
       fld('Баллы за дневную конверсию', num('g_p_dconv', c.points.dailyConv != null ? c.points.dailyConv : 150)) +
-      fld('Конверсия ≥ % за день', num('g_conv_goal', c.convGoal != null ? c.convGoal : 3)) +
+      fld('Конверсия ≥ % за день' + hintLvl, num('g_conv_goal', c.convGoal != null ? c.convGoal : 3)) +
       fld('Баллы за 1-й звонок (дневной)', num('g_p_fast', c.points.fastCall)) +
-      fld('1-й звонок ≤ мин (после лида)', num('g_first_max', c.firstCallMax != null ? c.firstCallMax : 30)) +
+      fld('1-й звонок ≤ мин (после лида)' + hintLvl, num('g_first_max', c.firstCallMax != null ? c.firstCallMax : 30)) +
       fld('Баллы за задачи (дневной)', num('g_p_task', c.points.taskDone)) +
-      fld('Задачи ≥ % за день', num('g_task_goal', c.taskGoal != null ? c.taskGoal : 70)) +
+      fld('Задачи ≥ % за день' + hintLvl, num('g_task_goal', c.taskGoal != null ? c.taskGoal : 70)) +
       fld('Цена кейса (баллы)', num('g_case_price', c.case.price)) +
       fld('Открытий кейса в день', num('g_case_perday', c.case.perDay != null ? c.case.perDay : 2)) +
       '</div>' +
@@ -326,8 +327,7 @@ function renderGamiTab() {
       (c.salesRewards || []).map((tier, i) => `<div style="display:grid;grid-template-columns:1fr 1fr;gap:8px;margin-bottom:7px;">${num('g_sr_sales_' + i, tier.sales)}${num('g_sr_opens_' + i, tier.opens)}</div>`).join('') +
       fld('URL фото кейса (если пусто — рисуем лут-кейс)', `<input id="g_case_img" value="${(c.case.image || '').replace(/"/g, '&quot;')}" placeholder="https://…" style="width:100%;padding:8px 9px;border-radius:8px;border:1px solid var(--line2);background:var(--bg2);color:var(--txt);font-size:13px;">`) +
       saveBtn +
-      '<button onclick="resetEconomy()" style="margin-top:9px;width:100%;padding:10px;border-radius:9px;background:var(--gold-bg);border:1px solid var(--gold);color:var(--gold);font-size:13px;font-weight:600;cursor:pointer;">Сбросить экономику к стандартной (призы и фото сохранятся)</button>' +
-      '<button onclick="resetGami()" style="margin-top:8px;width:100%;padding:9px;border-radius:9px;background:transparent;border:1px solid var(--line2);color:var(--txt3);font-size:12.5px;cursor:pointer;">Сбросить ВСЁ к стандартному (сотрёт призы/фото)</button>'
+      '<button onclick="resetEconomy()" style="margin-top:9px;width:100%;padding:10px;border-radius:9px;background:var(--gold-bg);border:1px solid var(--gold);color:var(--gold);font-size:13px;font-weight:600;cursor:pointer;">Сбросить экономику к стандартной (призы и фото сохранятся)</button>'
   } else if (t === 'case') {
     const rows = (c.case.items || []).map((it, i) =>
       `<div style="border:1px solid var(--line);border-radius:10px;padding:9px;margin-bottom:8px;background:var(--card);">
