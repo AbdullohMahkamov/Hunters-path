@@ -146,6 +146,7 @@ function mopMetrics(mopId, cache, speed, plans) {
   const plan = (plans && plans[mopId]) || 0;
   return {
     // нормируемые метрики (для уровней) — из тех же источников, что видит МОП в кабинете
+    leadsMonth: byConv && byConv.leads != null ? byConv.leads : ((bySales && bySales.leads) || 0), // лиды за месяц — для оценки типичного дня
     reachPct: byConv && byConv.reachPct != null ? byConv.reachPct : (bySales && bySales.reachPct) || 0,
     conv: byConv && byConv.conv != null ? byConv.conv : (bySales && bySales.conv) || 0,
     taskRate: sp && sp.taskRate != null ? sp.taskRate : 0,
@@ -544,6 +545,9 @@ function buildStatePayload(st, m, cfg) {
     salesRewards: cfg.salesRewards || [],
     firstCallMax: cfg.firstCallMax || 30,
     taskGoal: cfg.taskGoal || 70,
+    dozvonCoef: cfg.dozvonCoef || 0.6,
+    freezeTime: cfg.freezeTime || "16:00",
+    maxPoints: (cfg.points.reach || 0) + (cfg.points.fastCall || 0) + (cfg.points.taskDone || 0) + (cfg.points.dailyPlan || 0),
     earn: m ? (() => {
       const coef = cfg.dozvonCoef || 0.6;
       const callSla = cfg.firstCallMax || 30;
@@ -552,13 +556,17 @@ function buildStatePayload(st, m, cfg) {
       const denom = st.dozvonDenom || 0;
       const dozvonGoal = Math.ceil(denom * coef);
       const reached = m.todayReached || 0;
+      // оценка типичного дня: месячные лиды / прошедшие рабочие дни (fallback 20)
+      const wdp = workDaysPassed(nowTk());
+      const estLeads = wdp > 0 && (m.leadsMonth || 0) > 0 ? Math.round(m.leadsMonth / wdp) : 20;
+      const estGoal = Math.ceil(estLeads * coef);
       const callWithin = (m.firstCallTimesDay || []).filter(t => t != null && t <= callSla).length;
       const leads = m.leadsToday || 0;
       const tDone = m.tasksDoneToday || 0, tTotal = m.tasksTotalToday || 0;
       const taskPct = tTotal > 0 ? Math.round(tDone / tTotal * 100) : 0;
       const rev = m.revenueToday || 0;
       return {
-        dozvon: { done: dozvonGoal > 0 && reached >= dozvonGoal, x: reached, y: dozvonGoal, denom, frozen: !!st.dozvonFrozen, remain: Math.max(0, dozvonGoal - reached), pts: cfg.points.reach || 0 },
+        dozvon: { done: dozvonGoal > 0 && reached >= dozvonGoal, x: reached, y: dozvonGoal, denom, frozen: !!st.dozvonFrozen, remain: Math.max(0, dozvonGoal - reached), est: estGoal, estLeads, pts: cfg.points.reach || 0 },
         speed: { done: leads > 0 && callWithin >= leads, x: callWithin, y: leads, sla: callSla, remain: Math.max(0, leads - callWithin), pts: cfg.points.fastCall || 0 },
         task: { done: tTotal > 0 && taskPct >= taskGoalPct, x: tDone, y: tTotal, goalPct: taskGoalPct, remain: Math.max(0, Math.ceil(tTotal * taskGoalPct / 100) - tDone), pts: cfg.points.taskDone || 0 },
         plan: { done: rev >= tgt, cur: rev, target: tgt, remain: Math.max(0, tgt - rev), pts: cfg.points.dailyPlan || 0 },

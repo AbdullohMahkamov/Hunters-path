@@ -398,33 +398,41 @@ export default function MopProgress({ view = 'levels' }) {
             const rows = [
               {
                 g: e.dozvon, label: uz ? 'Aloqa (dozvon)' : 'Дозвон',
-                counter: `${e.dozvon.x} / ${e.dozvon.y}`, pct: pctOf(e.dozvon.x, e.dozvon.y),
-                action: e.dozvon.done ? doneTxt : (e.dozvon.y <= 0 ? (uz ? 'Lidlarni ishga oling' : 'Начните брать лиды в работу') : (uz ? `Yana ${e.dozvon.remain} ta lidga qoʻngʻiroq qiling` : `Дозвонитесь ещё до ${e.dozvon.remain} лидов`)),
+                idle: e.dozvon.y <= 0, counter: e.dozvon.y > 0 ? `${e.dozvon.x} / ${e.dozvon.y}` : `0 / ~${e.dozvon.est}`, pct: pctOf(e.dozvon.x, e.dozvon.y),
+                action: e.dozvon.done ? doneTxt
+                  : (e.dozvon.y > 0 ? (uz ? `Yana ${e.dozvon.remain} ta lidga qoʻngʻiroq qiling` : `Дозвонитесь ещё до ${e.dozvon.remain} лидов`)
+                    : (uz ? `Odatda ~${e.dozvon.estLeads} lid → ${e.dozvon.est} dozvon kerak` : `Обычно ~${e.dozvon.estLeads} лидов → нужно ${e.dozvon.est} дозвонов`)),
               },
               {
                 g: e.speed, label: uz ? '1-qoʻngʻiroq tezligi' : 'Скорость 1-го звонка',
-                counter: `${e.speed.x} / ${e.speed.y}`, pct: pctOf(e.speed.x, e.speed.y),
-                action: e.speed.done ? doneTxt : (e.speed.y <= 0 ? (uz ? 'Bugun yangi lid yoʻq' : 'Пока нет новых лидов') : (uz ? `Yana ${e.speed.remain} lidni ${e.speed.sla} daqiqada oling` : `Возьмите ещё ${e.speed.remain} лидов за ${e.speed.sla} мин`)),
+                idle: e.speed.y <= 0, counter: e.speed.y > 0 ? `${e.speed.x} / ${e.speed.y}` : '—', pct: pctOf(e.speed.x, e.speed.y),
+                action: e.speed.done ? doneTxt
+                  : (e.speed.y > 0 ? (uz ? `Yana ${e.speed.remain} lidni ${e.speed.sla} daqiqada oling` : `Возьмите ещё ${e.speed.remain} лидов за ${e.speed.sla} мин`)
+                    : (uz ? `Lid kelishi bilan ${e.speed.sla} daqiqada oling` : `Берите за ${e.speed.sla} мин по мере поступления`)),
               },
               {
                 g: e.task, label: uz ? 'Vazifalar' : 'Задачи',
-                counter: `${e.task.x} / ${e.task.y}`, pct: pctOf(e.task.x, e.task.y),
-                action: e.task.done ? doneTxt : (e.task.y <= 0 ? (uz ? 'Bugun vazifa yoʻq' : 'Нет задач на сегодня') : (uz ? `Yana ${e.task.remain} ta vazifa bajaring` : `Выполните ещё ${e.task.remain} задач`)),
+                idle: (e.task.x || 0) <= 0, counter: e.task.y > 0 ? `${e.task.x} / ${e.task.y}` : '0 / —', pct: pctOf(e.task.x, e.task.y),
+                action: e.task.done ? doneTxt
+                  : ((e.task.x || 0) <= 0 ? (e.task.y > 0 ? (uz ? `${e.task.y} ta vazifa kutmoqda` : `${e.task.y} задач ждут`) : (uz ? 'Vazifa qoʻying va bajaring' : 'Ставьте и закрывайте задачи'))
+                    : (uz ? `Yana ${e.task.remain} ta vazifa bajaring` : `Выполните ещё ${e.task.remain} задач`)),
               },
               {
                 g: e.plan, label: uz ? 'Reja' : 'План',
-                counter: `${fmtVal(e.plan.cur) || '0'} / ${fmtVal(e.plan.target)}`, pct: pctOf(e.plan.cur, e.plan.target),
-                action: e.plan.done ? doneTxt : (uz ? `Yana ${fmtVal(e.plan.remain)} ga soting` : `Продайте ещё на ${fmtVal(e.plan.remain)}`),
+                idle: (e.plan.cur || 0) <= 0, counter: `${fmtVal(e.plan.cur) || '0'} / ${fmtVal(e.plan.target)}`, pct: pctOf(e.plan.cur, e.plan.target),
+                action: e.plan.done ? doneTxt
+                  : (uz ? `Yana ${fmtVal(e.plan.remain)} ga soting` : `Продайте ещё на ${fmtVal(e.plan.remain)}`),
               },
             ]
             return (
               <div className="gami-checklist">
+                <div className="gami-maxrow">{uz ? 'Bugun maksimal' : 'Сегодня максимум'}: <b>{fmtN(st.maxPoints || 0)} {uz ? 'ball' : 'баллов'}</b></div>
                 {rows.map((row, i) => (
-                  <div key={i} className={'gami-goal daily ' + (row.g.done ? 'done' : 'fail')}>
-                    <span className="gami-goal-ic">{row.g.done ? <Ic n="check" size={13} /> : <Ic n="cross" size={13} />}</span>
+                  <div key={i} className={'gami-goal daily ' + (row.g.done ? 'done' : row.idle ? 'idle' : 'fail')}>
+                    <span className="gami-goal-ic">{row.g.done ? <Ic n="check" size={13} /> : row.idle ? <Ic n="dot" size={13} /> : <Ic n="cross" size={13} />}</span>
                     <div className="gami-goal-body">
-                      <div className="gami-goal-lbl"><span className="gami-goal-name">{row.label}</span><span className="gami-goal-sub">{row.counter}</span></div>
-                      <div className="gami-goal-bar"><i style={{ width: row.pct + '%' }} /></div>
+                      <div className="gami-goal-lbl"><span className="gami-goal-name">{row.label}</span>{row.counter ? <span className="gami-goal-sub">{row.counter}</span> : null}</div>
+                      <div className="gami-goal-bar"><i style={{ width: (row.idle ? 0 : row.pct) + '%' }} /></div>
                       <div className="gami-goal-action">{row.action}</div>
                     </div>
                     <span className="gami-goal-pts">+{row.g.pts}</span>

@@ -563,8 +563,11 @@
   .gami-goal-bar i{display:block;height:100%;border-radius:5px;transition:width .4s;}
   .gami-goal.done .gami-goal-bar i{background:linear-gradient(90deg,var(--green),color-mix(in srgb,var(--green) 60%,#fff));box-shadow:0 0 8px color-mix(in srgb,var(--green) 60%,transparent);}
   .gami-goal.fail .gami-goal-bar i{background:linear-gradient(90deg,var(--red),color-mix(in srgb,var(--red) 60%,#fff));box-shadow:0 0 8px color-mix(in srgb,var(--red) 55%,transparent);}
+  .gami-maxrow{font-size:13px;color:var(--txt2);margin-bottom:4px;}
+  .gami-maxrow b{color:var(--gold);font-size:15px;font-variant-numeric:tabular-nums;}
   .gami-goal-action{font-size:12px;font-weight:600;color:var(--accent);margin-top:5px;}
   .gami-goal.done .gami-goal-action{color:var(--green);}
+  .gami-goal.idle .gami-goal-action{color:var(--txt2);font-weight:500;}
   .gami-goal-pts{font-weight:800;font-size:16px;flex:0 0 auto;font-variant-numeric:tabular-nums;}
   .gami-goal.done .gami-goal-pts{color:var(--green);}
   .gami-goal.fail .gami-goal-pts,.gami-goal.idle .gami-goal-pts{color:var(--txt3);}
