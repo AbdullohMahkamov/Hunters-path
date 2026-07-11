@@ -287,12 +287,13 @@ export default async function handler(req, res) {
       if (req.method === "POST" && action === "set_config") {
         const incoming = req.body && req.body.config;
         if (!incoming) { res.status(400).json({ error: "no config" }); return; }
-        // валидация суммы шансов кейса = 100
-        if (incoming.case && Array.isArray(incoming.case.items)) {
-          const sum = incoming.case.items.reduce((s, it) => s + (Number(it.chance) || 0), 0);
-          if (Math.round(sum) !== 100) { res.status(200).json({ ok: false, error: `Сумма шансов кейса = ${sum}%, должна быть 100%` }); return; }
-        }
         const norm = normalizeConfig(Object.assign({}, cfg, incoming));
+        // авто-нормализация шансов кейса к 100% — чтобы сохранение (цена/лимит/и т.д.) НИКОГДА не блокировалось
+        if (norm.case && Array.isArray(norm.case.items) && norm.case.items.length) {
+          const sum = norm.case.items.reduce((s, it) => s + (Number(it.chance) || 0), 0);
+          if (sum <= 0) { const eq = Math.round(10000 / norm.case.items.length) / 100; norm.case.items.forEach(it => { it.chance = eq; }); }
+          else if (Math.round(sum) !== 100) { norm.case.items.forEach(it => { it.chance = Math.round((Number(it.chance) || 0) / sum * 10000) / 100; }); }
+        }
         norm.updatedAt = new Date().toISOString();
         await redisSet(`gamification:config:${org}`, norm);
         res.status(200).json({ ok: true, config: norm });
@@ -502,5 +503,5 @@ async function recalcAll(org) {
       await pushDrop(org, { who: a.name || a.mopId, name: lp.name, value: lp.value, image: lp.image, type: "level", level: st.level, at: lp.wonAt });
     }
   }
-  return { updated, leveled, month: mkey };
+  return { updated, leveled, month: mkey, casePrice: cfg.case.price, perDay: cfg.case.perDay, dailyPlanTarget: cfg.dailyPlanTarget };
 }

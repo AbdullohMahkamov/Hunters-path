@@ -144,44 +144,37 @@ export default function MopProgress({ view = 'levels' }) {
     if (!r || !r.ok) { setSpinning(false); setMsg((r && r.error) || 'Ошибка'); return }
 
     const items = st.case.items || []
-    const LEN = 84, WIN = 74 // длиннее лента → дольше проносятся предметы
+    const LEN = 60, WIN = 50
     const arr = []
     for (let i = 0; i < LEN; i++) arr.push(i === WIN ? { name: r.prize.name, value: r.prize.value, image: r.prize.image } : (items[Math.floor(Math.random() * items.length)] || { name: '' }))
     setStrip(arr)
 
     const PITCH = 118 // ячейка 106 + gap 12
-    const SPIN = 6.0 // сек — основная фаза с сильным замедлением
+    const SPIN = 6.2 // одна плавная фаза с затянутым замедлением в конце (интрига)
     // ждём, пока React отрендерит новую ленту (двойной rAF), затем стартуем прокрутку
     requestAnimationFrame(() => requestAnimationFrame(() => {
       const track = trackRef.current
       if (!track) return
       const vp = track.parentElement
       const center = vp.clientWidth / 2
-      const jitter = (Math.random() * 2 - 1) * 22
+      const jitter = (Math.random() * 2 - 1) * 24
       const target = WIN * PITCH + PITCH / 2 - center + jitter
-      const overshoot = target + PITCH * 0.34 // проскакиваем чуть дальше приза
       track.style.transition = 'none'
       track.style.transform = 'translateX(0)'
-      track.classList.add('spinning')
       void track.offsetWidth // форс-рефлоу
       requestAnimationFrame(() => {
-        track.style.transition = `transform ${SPIN}s cubic-bezier(.045,.75,.12,1)`
-        track.style.transform = `translateX(${-overshoot}px)`
-      })
-      // фаза доводки — назад точно на приз (лёгкий «клик» на место)
-      setTimeout(() => {
-        track.style.transition = 'transform .8s cubic-bezier(.3,1.3,.55,1)'
+        // хвост безье очень пологий (0.06) → в конце еле-еле доползает до приза
+        track.style.transition = `transform ${SPIN}s cubic-bezier(.14,.66,.06,1)`
         track.style.transform = `translateX(${-target}px)`
-      }, SPIN * 1000)
-      // подсветка выпавшей ячейки + снимаем «разгон»
-      setTimeout(() => { track.classList.remove('spinning'); const c = track.children[WIN]; if (c) c.classList.add('landed') }, SPIN * 1000 + 820)
+      })
+      setTimeout(() => { const c = track.children[WIN]; if (c) c.classList.add('landed') }, SPIN * 1000 + 60)
     }))
     setTimeout(async () => {
       setResult(r.prize); setSpinning(false)
       const rr = rarityOf(r.prize.value)
       if (RANK[rr.key] >= 3) setTimeout(() => burst(rr.c), 80) // epic/legendary
       await load()
-    }, SPIN * 1000 + 1150)
+    }, SPIN * 1000 + 380)
   }
 
   const drops = (st.recentDrops && st.recentDrops.length) ? st.recentDrops : (st.case.items || []).map((it) => ({ name: it.name, value: it.value, image: it.image }))
