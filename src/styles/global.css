@@ -531,7 +531,7 @@
   .gami-node-top{display:flex;align-items:center;justify-content:space-between;gap:8px;margin-bottom:8px;}
   .gami-node-top .gami-node-badge{margin-bottom:0;}
   .gami-node-thumb{display:grid;place-items:center;}
-  @media (prefers-reduced-motion:reduce){.gami-rays,.gami-chest-svg,.gami-case-photo,.gami-ticker-track{animation:none!important;}}
+  @media (prefers-reduced-motion:reduce){.gami-rays,.gami-chest-svg,.gami-case-photo{animation:none!important;}}
   .gami-rules{margin-top:14px;border-top:1px solid var(--line);padding-top:12px;}
   .gami-rules-h{font-size:11px;text-transform:uppercase;letter-spacing:.4px;color:var(--txt3);margin-bottom:9px;}
   .gami-rules-grid{display:grid;grid-template-columns:1fr 1fr;gap:8px 16px;}

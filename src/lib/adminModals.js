@@ -266,7 +266,8 @@ function collectCurrentGamiTab() {
   const c = window._gamiCfg; if (!c) return
   if (window._gamiTab === 'settings') {
     const en = $('g_enabled'); if (en) c.enabled = en.checked
-    c.points = { reach: gnum('g_p_reach'), fastCall: gnum('g_p_fast'), taskDone: gnum('g_p_task'), noOverdueDay: gnum('g_p_day') }
+    c.points = { reach: gnum('g_p_reach'), fastCall: gnum('g_p_fast'), taskDone: gnum('g_p_task'), dailyPlan: gnum('g_p_dplan'), dailyConv: gnum('g_p_dconv') }
+    if ($('g_dplan_target')) c.dailyPlanTarget = gnum('g_dplan_target')
     if ($('g_case_price')) c.case.price = gnum('g_case_price')
     if ($('g_case_perday')) c.case.perDay = Math.max(1, gnum('g_case_perday'))
     if ($('g_case_img')) c.case.image = gv('g_case_img').trim()
@@ -303,7 +304,9 @@ function renderGamiTab() {
       fld('Баллы за дозвон (>40 сек)', num('g_p_reach', c.points.reach)) +
       fld('Баллы за 1-й звонок < 15 мин', num('g_p_fast', c.points.fastCall)) +
       fld('Баллы за выполненную задачу', num('g_p_task', c.points.taskDone)) +
-      fld('Баллы за день без просрочек', num('g_p_day', c.points.noOverdueDay)) +
+      fld('Баллы за закрытый дневной план', num('g_p_dplan', c.points.dailyPlan != null ? c.points.dailyPlan : 250)) +
+      fld('Баллы за дневную конверсию (по уровню)', num('g_p_dconv', c.points.dailyConv != null ? c.points.dailyConv : 150)) +
+      fld('Дневной план продаж (сум)', num('g_dplan_target', c.dailyPlanTarget != null ? c.dailyPlanTarget : 3000000)) +
       fld('Цена кейса (баллы)', num('g_case_price', c.case.price)) +
       fld('Открытий кейса в день', num('g_case_perday', c.case.perDay != null ? c.case.perDay : 2)) +
       '</div>' +

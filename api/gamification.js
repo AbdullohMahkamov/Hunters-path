@@ -62,7 +62,8 @@ function defaultConfig() {
     enabled: true,
     // баллы подобраны так, чтобы активный МОП за день набирал заметно больше цены кейса
     // (типичный день ≈ 2500–3500 баллов) → баллов хватает на 1–2 открытия в день.
-    points: { reach: 60, fastCall: 40, taskDone: 30, noOverdueDay: 200 },
+    points: { reach: 60, fastCall: 40, taskDone: 30, dailyPlan: 250, dailyConv: 150 },
+    dailyPlanTarget: 3000000, // дневной план продаж (сум) для бонуса «закрыл дневной план»
     case: {
       price: 800,        // по карману на каждый день (настраивается)
       perDay: 2,         // сколько раз в день можно открыть (настраивается)
@@ -95,6 +96,7 @@ async function getConfig(org) {
 function normalizeConfig(c) {
   const d = defaultConfig();
   c.points = Object.assign({}, d.points, c.points || {});
+  if (!c.dailyPlanTarget || c.dailyPlanTarget < 1) c.dailyPlanTarget = d.dailyPlanTarget;
   c.case = c.case || d.case;
   c.case.price = c.case.price || d.case.price;
   if (c.case.perDay == null || c.case.perDay < 1) c.case.perDay = d.case.perDay;
@@ -136,24 +138,26 @@ function mopMetrics(mopId, cache, speed, plans) {
     fastFirstCalls: sp && sp.fastFirstCalls != null ? sp.fastFirstCalls : 0,
     tasksDone: sp && sp.tasksDone != null ? sp.tasksDone : 0,
     tasksDonePct: sp && sp.tasksDonePct != null ? sp.tasksDonePct : 0,
+    revenueToday: (bySales && bySales.revenueToday) || 0,
     revenue, plan,
   };
 }
-// Начислено баллов за ТЕКУЩИЙ месяц (чистая функция от агрегатов → идемпотентно).
-function earnedPoints(m, cfg) {
+// Начислено баллов за ТЕКУЩИЙ месяц. reach/fast/task — из месячных агрегатов;
+// dailyPlan/dailyConv — из счётчиков дней (накапливаются раз в день при выполнении).
+function earnedPoints(m, cfg, st) {
   const p = cfg.points;
-  const cleanDays = Math.round(workDaysPassed(nowTk()) * (m.tasksDonePct || 0) / 100);
   return Math.round(
-    p.reach * (m.reached || 0) +
-    p.fastCall * (m.fastFirstCalls || 0) +
-    p.taskDone * (m.tasksDone || 0) +
-    p.noOverdueDay * cleanDays
+    (p.reach || 0) * (m.reached || 0) +
+    (p.fastCall || 0) * (m.fastFirstCalls || 0) +
+    (p.taskDone || 0) * (m.tasksDone || 0) +
+    (p.dailyPlan || 0) * ((st && st.planDaysMonth) || 0) +
+    (p.dailyConv || 0) * ((st && st.convDaysMonth) || 0)
   );
 }
 
 // ─────────────────────────── СОСТОЯНИЕ МОПА ───────────────────────────
 function emptyState() {
-  return { level: 0, lastLevelMonth: "", carry: 0, earnedMonth: 0, pointsMonth: "", spent: 0, bonus: 0, opensDay: "", opensToday: 0, inventory: [], levelHistory: [], caseHistory: [] };
+  return { level: 0, lastLevelMonth: "", carry: 0, earnedMonth: 0, pointsMonth: "", spent: 0, bonus: 0, opensDay: "", opensToday: 0, dailyDay: "", planDaysMonth: 0, convDaysMonth: 0, todayPlanAwarded: false, todayConvAwarded: false, inventory: [], levelHistory: [], caseHistory: [] };
 }
 async function getMopState(org, mopId) {
   const raw = await redisGet(`gamification:mop:${org}:${mopId}`);
@@ -193,9 +197,19 @@ function recomputeMop(st, m, cfg, mkey) {
   if (st.pointsMonth && st.pointsMonth !== mkey) {
     st.carry = (st.carry || 0) + (st.earnedMonth || 0);
     st.spent = 0; // списания привязаны к месячному балансу; переносим только заработанное
+    st.planDaysMonth = 0; st.convDaysMonth = 0; st.dailyDay = ""; st.todayPlanAwarded = false; st.todayConvAwarded = false;
   }
   st.pointsMonth = mkey;
-  st.earnedMonth = earnedPoints(m, cfg);
+
+  // дневные достижения — раз в день при выполнении (накапливаем за месяц)
+  const today = dateKey(nowTk());
+  if (st.dailyDay !== today) { st.dailyDay = today; st.todayPlanAwarded = false; st.todayConvAwarded = false; }
+  if (!st.todayPlanAwarded && (m.revenueToday || 0) >= (cfg.dailyPlanTarget || 3000000)) { st.planDaysMonth = (st.planDaysMonth || 0) + 1; st.todayPlanAwarded = true; }
+  const lvIdx = Math.min(11, Math.max(0, (st.level || 1) - 1));
+  const convTarget = (cfg.levels[lvIdx] && cfg.levels[lvIdx].conv) || 3;
+  if (!st.todayConvAwarded && (m.conv || 0) >= convTarget) { st.convDaysMonth = (st.convDaysMonth || 0) + 1; st.todayConvAwarded = true; }
+
+  st.earnedMonth = earnedPoints(m, cfg, st);
 
   // 2) уровень: макс +1 за календарный месяц, только вверх
   if ((st.level || 0) < 12 && st.lastLevelMonth !== mkey) {
@@ -448,6 +462,7 @@ function buildStatePayload(st, m, cfg) {
     case: { price: cfg.case.price, items: cfg.case.items, perDay, image: cfg.case.image || "" },
     opensToday, opensLeft: Math.max(0, perDay - opensToday),
     points: cfg.points,
+    dailyPlanTarget: cfg.dailyPlanTarget || 3000000,
     inventory: st.inventory || [],
     caseHistory: st.caseHistory || [],
   };

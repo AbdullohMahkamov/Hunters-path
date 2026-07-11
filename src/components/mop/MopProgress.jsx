@@ -142,14 +142,14 @@ export default function MopProgress({ view = 'levels' }) {
     if (!r || !r.ok) { setSpinning(false); setMsg((r && r.error) || 'Ошибка'); return }
 
     const items = st.case.items || []
-    const reduce = matchMedia('(prefers-reduced-motion: reduce)').matches
-    const LEN = reduce ? 10 : 56, WIN = reduce ? 5 : 48
+    const LEN = 56, WIN = 48
     const arr = []
-    for (let i = 0; i < LEN; i++) arr.push(i === WIN ? { name: r.prize.name, value: r.prize.value } : (items[Math.floor(Math.random() * items.length)] || { name: '' }))
+    for (let i = 0; i < LEN; i++) arr.push(i === WIN ? { name: r.prize.name, value: r.prize.value, image: r.prize.image } : (items[Math.floor(Math.random() * items.length)] || { name: '' }))
     setStrip(arr)
 
     const PITCH = 118 // ячейка 106 + gap 12
-    requestAnimationFrame(() => {
+    // ждём, пока React отрендерит новую ленту (двойной rAF), затем стартуем прокрутку
+    requestAnimationFrame(() => requestAnimationFrame(() => {
       const track = trackRef.current
       if (!track) return
       const vp = track.parentElement
@@ -158,24 +158,25 @@ export default function MopProgress({ view = 'levels' }) {
       const target = WIN * PITCH + PITCH / 2 - center + jitter
       track.style.transition = 'none'
       track.style.transform = 'translateX(0)'
-      void track.offsetWidth
-      if (reduce) { track.style.transform = `translateX(${-target}px)` }
-      else {
-        requestAnimationFrame(() => {
-          track.style.transition = 'transform 5s cubic-bezier(.12,.62,.15,1)'
-          track.style.transform = `translateX(${-target}px)`
-        })
-      }
-    })
+      void track.offsetWidth // форс-рефлоу
+      requestAnimationFrame(() => {
+        track.style.transition = 'transform 5s cubic-bezier(.12,.62,.15,1)'
+        track.style.transform = `translateX(${-target}px)`
+      })
+    }))
     setTimeout(async () => {
       setResult(r.prize); setSpinning(false)
       const rr = rarityOf(r.prize.value)
       if (RANK[rr.key] >= 3) setTimeout(() => burst(rr.c), 80) // epic/legendary
       await load()
-    }, reduce ? 400 : 5200)
+    }, 5200)
   }
 
   const drops = (st.recentDrops && st.recentDrops.length) ? st.recentDrops : (st.case.items || []).map((it) => ({ name: it.name, value: it.value, image: it.image }))
+  // повторяем до заполнения ширины, чтобы прокрутка была бесшовной и без пустот
+  const dropsBase = []
+  if (drops.length) { while (dropsBase.length < 16) dropsBase.push(...drops) }
+  const tickerDur = Math.max(18, dropsBase.length * 2.6) // сек — скорость от числа плиток
 
   return (
     <div className="gami-wrap">
@@ -183,8 +184,8 @@ export default function MopProgress({ view = 'levels' }) {
       {view === 'cases' && drops.length > 0 && (
         <div className="gami-ticker">
           <div className="gami-ticker-lbl"><span className="gami-live-dot" />{mt('gLiveDrops')}</div>
-          <div className="gami-ticker-vp"><div className="gami-ticker-track">
-            {[...drops, ...drops].map((d, i) => {
+          <div className="gami-ticker-vp"><div className="gami-ticker-track" style={{ animationDuration: tickerDur + 's' }}>
+            {[...dropsBase, ...dropsBase].map((d, i) => {
               const r = rarityOf(d.value)
               return (
                 <div className="gami-ticker-item" style={{ '--rc': r.c }} key={i} title={d.who ? `${d.name} — ${d.who}` : d.name}>
@@ -325,7 +326,8 @@ export default function MopProgress({ view = 'levels' }) {
             <span><b>+{st.points.reach}</b> {mt('gRuleReach')}</span>
             <span><b>+{st.points.fastCall}</b> {mt('gRuleFast')}</span>
             <span><b>+{st.points.taskDone}</b> {mt('gRuleTask')}</span>
-            <span><b>+{st.points.noOverdueDay}</b> {mt('gRuleDay')}</span>
+            <span><b>+{st.points.dailyPlan}</b> {mt('gRulePlan')}{st.dailyPlanTarget ? ` (${fmtVal(st.dailyPlanTarget)})` : ''}</span>
+            <span><b>+{st.points.dailyConv}</b> {mt('gRuleConv')}</span>
           </div>
         </div>
       </div>
