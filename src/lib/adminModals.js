@@ -250,14 +250,27 @@ async function loadGamiConfig() {
     const d = await r.json()
     if (!d.ok) { if (body) body.innerHTML = '<div style="color:var(--red);">' + (d.error || 'Ошибка') + '</div>'; return }
     window._gamiCfg = d.config
-    renderGamiTabs(); renderGamiTab()
+    renderGamiTabs(); renderGamiTab(); refreshGamiPending()
   } catch (e) { if (body) body.innerHTML = '<div style="color:var(--red);">' + String(e) + '</div>' }
 }
 
 function renderGamiTabs() {
   const tabs = [['settings', 'Настройки'], ['case', 'Кейс'], ['levels', 'Уровни'], ['balances', 'Баллы'], ['inventory', 'Инвентарь']]
   const wrap = $('gamiTabs'); if (!wrap) return
-  wrap.innerHTML = tabs.map(([k, t]) => `<button onclick="gamiSwitchTab('${k}')" style="padding:8px 14px;border-radius:9px;border:1px solid ${window._gamiTab === k ? 'var(--accent)' : 'var(--line2)'};background:${window._gamiTab === k ? 'var(--accent-bg)' : 'var(--card)'};color:${window._gamiTab === k ? 'var(--accent)' : 'var(--txt2)'};font-size:13px;font-weight:600;cursor:pointer;">${t}</button>`).join('')
+  wrap.innerHTML = tabs.map(([k, t]) => {
+    const pend = window._gamiPending || 0
+    const badge = (k === 'inventory' && pend > 0)
+      ? `<span style="position:absolute;top:-7px;right:-7px;min-width:18px;height:18px;padding:0 4px;border-radius:9px;background:var(--red);color:#fff;font-size:11px;font-weight:700;display:inline-flex;align-items:center;justify-content:center;box-shadow:0 1px 4px rgba(0,0,0,.3);">${pend}</span>`
+      : ''
+    return `<button onclick="gamiSwitchTab('${k}')" style="position:relative;padding:8px 14px;border-radius:9px;border:1px solid ${window._gamiTab === k ? 'var(--accent)' : 'var(--line2)'};background:${window._gamiTab === k ? 'var(--accent-bg)' : 'var(--card)'};color:${window._gamiTab === k ? 'var(--accent)' : 'var(--txt2)'};font-size:13px;font-weight:600;cursor:pointer;">${t}${badge}</button>`
+  }).join('')
+}
+async function refreshGamiPending() {
+  try {
+    const r = await fetch('/api/gamification?action=list_inventory&session=' + encodeURIComponent(getSession()))
+    const d = await r.json()
+    if (d.ok) { window._gamiPending = (d.inventory || []).filter(x => x.status !== 'delivered').length; renderGamiTabs() }
+  } catch (e) { /* ignore */ }
 }
 
 function gamiSwitchTab(t) { collectCurrentGamiTab(); window._gamiTab = t; renderGamiTabs(); renderGamiTab() }
@@ -302,23 +315,31 @@ function renderGamiTab() {
   const inp = (id, val, w) => `<input id="${id}" value="${val != null ? String(val).replace(/"/g, '&quot;') : ''}" style="width:${w || '100%'};padding:8px 9px;border-radius:8px;border:1px solid var(--line2);background:var(--bg2);color:var(--txt);font-size:13px;">`
   const num = (id, val, w) => `<input id="${id}" type="number" value="${val != null ? val : 0}" style="width:${w || '100%'};padding:8px 9px;border-radius:8px;border:1px solid var(--line2);background:var(--bg2);color:var(--txt);font-size:13px;">`
   const saveBtn = '<button onclick="saveGami()" style="margin-top:16px;width:100%;padding:11px;border-radius:9px;background:var(--accent);border:none;color:#fff;font-weight:600;font-size:14px;cursor:pointer;">Сохранить</button>'
-  const fld = (lbl, ctrl) => `<div style="margin-bottom:11px;"><div style="font-size:12px;color:var(--txt3);margin-bottom:5px;">${lbl}</div>${ctrl}</div>`
-  const hintLvl = '<span style="display:block;font-weight:400;font-size:10.5px;color:var(--accent);margin-top:3px;">↔ эта метрика есть и в уровнях (раздел «Уровни»)</span>'
+  // подпись выровнена по высоте (min-height), опц. подсказка в 1 строку
+  const fld = (lbl, ctrl, hint) => `<div style="margin-bottom:11px;"><div style="font-size:12px;color:var(--txt3);margin-bottom:5px;min-height:30px;">${lbl}${hint ? `<span style="display:block;font-size:10.5px;color:var(--accent);margin-top:2px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;">${hint}</span>` : ''}</div>${ctrl}</div>`
+  // диапазон норматива по 12 уровням (для подсказки); lower=true → «меньше лучше» (звонок)
+  const lvRange = (key, unit, lower) => {
+    const vals = (c.levels || []).map(l => l && l[key]).filter(v => v != null)
+    if (!vals.length) return ''
+    const mn = Math.min(...vals), mx = Math.max(...vals)
+    const a = lower ? mx : mn, b = lower ? mn : mx
+    return `По уровням: <b style="color:var(--accent);">${a}${b !== a ? '–' + b : ''}${unit}</b>`
+  }
 
   if (t === 'settings') {
     body.innerHTML =
       `<label style="display:flex;align-items:center;gap:9px;font-size:14px;font-weight:600;margin-bottom:18px;cursor:pointer;"><input type="checkbox" id="g_enabled" ${c.enabled ? 'checked' : ''} style="width:18px;height:18px;"> Геймификация включена</label>` +
       '<div style="display:grid;grid-template-columns:1fr 1fr;gap:0 14px;">' +
       fld('Баллы за дозвон (дневной)', num('g_p_reach', c.points.reach)) +
-      fld('Дозвон ≥ % за день' + hintLvl, num('g_reach_goal', c.reachGoal != null ? c.reachGoal : 60)) +
+      fld('Дозвон ≥ % за день', num('g_reach_goal', c.reachGoal != null ? c.reachGoal : 60), lvRange('reach', '%')) +
       fld('Баллы за дневной план', num('g_p_dplan', c.points.dailyPlan != null ? c.points.dailyPlan : 250)) +
-      fld('Дневной план продаж (сум)' + hintLvl, num('g_dplan_target', c.dailyPlanTarget != null ? c.dailyPlanTarget : 3000000)) +
+      fld('Дневной план продаж (сум)', num('g_dplan_target', c.dailyPlanTarget != null ? c.dailyPlanTarget : 3000000), lvRange('plan', '%')) +
       fld('Баллы за дневную конверсию', num('g_p_dconv', c.points.dailyConv != null ? c.points.dailyConv : 150)) +
-      fld('Конверсия ≥ % за день' + hintLvl, num('g_conv_goal', c.convGoal != null ? c.convGoal : 3)) +
+      fld('Конверсия ≥ % за день', num('g_conv_goal', c.convGoal != null ? c.convGoal : 3), lvRange('conv', '%')) +
       fld('Баллы за 1-й звонок (дневной)', num('g_p_fast', c.points.fastCall)) +
-      fld('1-й звонок ≤ мин (после лида)' + hintLvl, num('g_first_max', c.firstCallMax != null ? c.firstCallMax : 30)) +
+      fld('1-й звонок ≤ мин (после лида)', num('g_first_max', c.firstCallMax != null ? c.firstCallMax : 30), lvRange('call', ' мин', true)) +
       fld('Баллы за задачи (дневной)', num('g_p_task', c.points.taskDone)) +
-      fld('Задачи ≥ % за день' + hintLvl, num('g_task_goal', c.taskGoal != null ? c.taskGoal : 70)) +
+      fld('Задачи ≥ % за день', num('g_task_goal', c.taskGoal != null ? c.taskGoal : 70), lvRange('tasks', '%')) +
       fld('Цена кейса (баллы)', num('g_case_price', c.case.price)) +
       fld('Открытий кейса в день', num('g_case_perday', c.case.perDay != null ? c.case.perDay : 2)) +
       '</div>' +
@@ -494,7 +515,7 @@ async function loadGamiInventory() {
 }
 async function gamiDeliver(mopId, itemId) {
   await fetch('/api/gamification', { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ session: getSession(), action: 'mark_delivered', mopId, itemId }) })
-  loadGamiInventory()
+  loadGamiInventory(); refreshGamiPending()
 }
 
 let _inited = false
