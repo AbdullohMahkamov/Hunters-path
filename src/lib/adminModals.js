@@ -344,8 +344,8 @@ function renderGamiTab() {
       fld('Цена кейса (баллы)', num('g_case_price', c.case.price)) +
       fld('Открытий кейса в день', num('g_case_perday', c.case.perDay != null ? c.case.perDay : 2)) +
       '</div>' +
-      '<div style="font-size:12.5px;font-weight:700;margin:16px 0 8px;">Бесплатные открытия за продажи (за месяц)</div>' +
-      '<div style="display:grid;grid-template-columns:1fr 1fr;gap:6px;font-size:11px;color:var(--txt3);margin-bottom:5px;"><span>Продажи ≥ (сум)</span><span>Бесплатных открытий</span></div>' +
+      '<div style="font-size:12.5px;font-weight:700;margin:16px 0 8px;">Бесплатные открытия за продажи (за сегодня)</div>' +
+      '<div style="display:grid;grid-template-columns:1fr 1fr;gap:6px;font-size:11px;color:var(--txt3);margin-bottom:5px;"><span>Продажи за день ≥ (сум)</span><span>Бесплатных открытий</span></div>' +
       (c.salesRewards || []).map((tier, i) => `<div style="display:grid;grid-template-columns:1fr 1fr;gap:8px;margin-bottom:7px;">${num('g_sr_sales_' + i, tier.sales)}${num('g_sr_opens_' + i, tier.opens)}</div>`).join('') +
       fld('URL фото кейса (если пусто — рисуем лут-кейс)', `<input id="g_case_img" value="${(c.case.image || '').replace(/"/g, '&quot;')}" placeholder="https://…" style="width:100%;padding:8px 9px;border-radius:8px;border:1px solid var(--line2);background:var(--bg2);color:var(--txt);font-size:13px;">`) +
       saveBtn +

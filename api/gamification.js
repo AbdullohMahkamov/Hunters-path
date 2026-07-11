@@ -177,7 +177,7 @@ function earnedPoints(m, cfg, st) {
 
 // ─────────────────────────── СОСТОЯНИЕ МОПА ───────────────────────────
 function emptyState() {
-  return { level: 0, lastLevelMonth: "", carry: 0, earnedMonth: 0, earnedDays: 0, earnedToday: 0, pointsMonth: "", spent: 0, bonus: 0, opensDay: "", opensToday: 0, dailyDay: "", planDaysMonth: 0, convDaysMonth: 0, callDaysMonth: 0, taskDaysMonth: 0, reachDaysMonth: 0, todayPlanAwarded: false, todayConvAwarded: false, todayCallAwarded: false, todayTaskAwarded: false, todayReachAwarded: false, freeOpens: 0, salesClaimedMonth: "", salesClaimedTiers: [], inventory: [], levelHistory: [], caseHistory: [] };
+  return { level: 0, lastLevelMonth: "", carry: 0, earnedMonth: 0, earnedDays: 0, earnedToday: 0, pointsMonth: "", spent: 0, bonus: 0, opensDay: "", opensToday: 0, dailyDay: "", planDaysMonth: 0, convDaysMonth: 0, callDaysMonth: 0, taskDaysMonth: 0, reachDaysMonth: 0, todayPlanAwarded: false, todayConvAwarded: false, todayCallAwarded: false, todayTaskAwarded: false, todayReachAwarded: false, freeOpens: 0, salesClaimedDay: "", salesClaimedTiers: [], inventory: [], levelHistory: [], caseHistory: [] };
 }
 async function getMopState(org, mopId) {
   const raw = await redisGet(`gamification:mop:${org}:${mopId}`);
@@ -222,7 +222,6 @@ function recomputeMop(st, m, cfg, mkey) {
     st.earnedDays = 0; st.earnedToday = 0; st.dailyDay = "";
     st.planDaysMonth = 0; st.convDaysMonth = 0; st.callDaysMonth = 0; st.taskDaysMonth = 0; st.reachDaysMonth = 0;
     st.todayPlanAwarded = false; st.todayConvAwarded = false; st.todayCallAwarded = false; st.todayTaskAwarded = false; st.todayReachAwarded = false;
-    st.salesClaimedMonth = mkey; st.salesClaimedTiers = [];
   }
   st.pointsMonth = mkey;
   // смена дня → банкуем вчерашний заработок, обнуляем сегодня
@@ -255,11 +254,11 @@ function recomputeMop(st, m, cfg, mkey) {
     (taskMet ? (p.taskDone || 0) : 0)
   );
   st.earnedMonth = (st.earnedDays || 0) + (st.earnedToday || 0);
-  // ПРОДАЖИ ЗА МЕСЯЦ → бесплатные открытия кейса (3 порога, раз за месяц)
-  if (st.salesClaimedMonth !== mkey) { st.salesClaimedMonth = mkey; st.salesClaimedTiers = []; }
-  const monthRev = m.revenue || 0;
+  // ПРОДАЖИ ЗА СЕГОДНЯ → бесплатные открытия кейса (3 порога, сброс каждый день)
+  if (st.salesClaimedDay !== today) { st.salesClaimedDay = today; st.salesClaimedTiers = []; }
+  const dayRev = m.revenueToday || 0;
   (cfg.salesRewards || []).forEach((tier, i) => {
-    if (monthRev >= (tier.sales || 0) && !(st.salesClaimedTiers || []).includes(i)) {
+    if (dayRev >= (tier.sales || 0) && !(st.salesClaimedTiers || []).includes(i)) {
       st.freeOpens = (st.freeOpens || 0) + (tier.opens || 0);
       st.salesClaimedTiers = st.salesClaimedTiers || [];
       st.salesClaimedTiers.push(i);
