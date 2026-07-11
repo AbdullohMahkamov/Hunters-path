@@ -304,7 +304,7 @@
   /* Sidebar */
   .chat-sidebar{width:256px;flex:0 0 auto;background:var(--sidebar);border-right:1px solid var(--line);
     display:flex;flex-direction:column;padding:8px;overflow:hidden;transition:transform .25s;}
-  .side-nav{display:flex;align-items:center;gap:2px;padding:4px 4px 10px;}
+  .side-nav{display:flex;align-items:center;gap:2px;padding:10px 4px 16px;}
   .side-nav-ic{width:30px;height:30px;border-radius:8px;border:none;background:transparent;color:var(--txt2);
     display:flex;align-items:center;justify-content:center;cursor:pointer;flex:0 0 auto;}
   .side-nav-ic:hover{background:var(--card2);}
