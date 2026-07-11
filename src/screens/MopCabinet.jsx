@@ -72,7 +72,8 @@ export default function MopCabinet({ onLogout }) {
   let greetSub
   if (tab === 'team') greetSub = mt('rankTitle')
   else if (tab === 'stats') greetSub = uz ? 'Ishingiz koʻrsatkichlari' : 'Показатели твоей работы'
-  else if (tab === 'progress') greetSub = uz ? 'Darajangiz, ballaringiz va sovrinlar' : 'Твой уровень, баллы и призы'
+  else if (tab === 'levels' || tab === 'progress') greetSub = uz ? 'Darajangiz va oylik progress' : 'Твой уровень и прогресс месяца'
+  else if (tab === 'cases') greetSub = uz ? 'Ballar, keyslar va sovrinlar' : 'Баллы, кейсы и призы'
   else greetSub = uz ? 'Daromad va maqsadlaringiz' : 'Твой заработок и цели'
 
   function handleLang() {
@@ -102,8 +103,11 @@ export default function MopCabinet({ onLogout }) {
             <button onClick={() => setTab('stats')} className={tab === 'stats' ? 'active' : ''}>
               <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M3 3v18h18" /><rect x="7" y="10" width="3" height="7" /><rect x="12" y="6" width="3" height="11" /><rect x="17" y="13" width="3" height="4" /></svg><span>{mt('stats')}</span>
             </button>
-            <button onClick={() => setTab('progress')} className={tab === 'progress' ? 'active' : ''}>
-              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M12 2l2.5 4.5L20 8l-4 4 1 6-5-3-5 3 1-6-4-4 5.5-1.5z" /></svg><span>{mt('progress')}</span>
+            <button onClick={() => setTab('levels')} className={tab === 'levels' || tab === 'progress' ? 'active' : ''}>
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M12 2l2.5 4.5L20 8l-4 4 1 6-5-3-5 3 1-6-4-4 5.5-1.5z" /></svg><span>{mt('gLevelsTab')}</span>
+            </button>
+            <button onClick={() => setTab('cases')} className={tab === 'cases' ? 'active' : ''}>
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M3 8l9-4 9 4-9 4-9-4z" /><path d="M3 8v8l9 4 9-4V8" /><path d="M12 12v8" /></svg><span>{mt('gCasesTab')}</span>
             </button>
             <div className="mop-nav-group sep">{uz ? 'Boʻlim' : 'Отдел'}</div>
             <button onClick={() => setTab('team')} className={tab === 'team' ? 'active' : ''}>
@@ -133,11 +137,11 @@ export default function MopCabinet({ onLogout }) {
               <div className="mop-main-sub" style={{ marginBottom: 0 }}>{greetSub}</div>
             </div>
             {/* прогресс темпа — между приветствием и призом (не показываем на «Команде»/«Прогрессе») */}
-            {!empty && !loading && tab !== 'team' && tab !== 'progress' && (
+            {!empty && !loading && tab !== 'team' && tab !== 'progress' && tab !== 'levels' && tab !== 'cases' && (
               <div style={{ flex: '1 1 400px', minWidth: 240 }} dangerouslySetInnerHTML={{ __html: renderTempoBar(data) }} />
             )}
-            {/* розыгрыш — компактный, вровень с приветствием (не показываем на «Команде»/«Прогрессе») */}
-            {tab !== 'team' && tab !== 'progress' && (
+            {/* розыгрыш — компактный, вровень с приветствием (не показываем на «Команде»/«Уровнях»/«Кейсах») */}
+            {tab !== 'team' && tab !== 'progress' && tab !== 'levels' && tab !== 'cases' && (
               <div style={{ flex: '0 0 auto', display: 'flex', alignItems: 'center', gap: 10, background: 'var(--gold-bg)', border: '1px solid var(--gold)', borderRadius: 12, padding: '8px 13px', maxWidth: 320 }}>
                 <svg viewBox="0 0 24 24" width="22" height="22" fill="none" stroke="var(--gold)" strokeWidth="1.7" strokeLinecap="round" strokeLinejoin="round" style={{ flex: '0 0 auto' }}><path d="M4 11h16v9a1 1 0 0 1-1 1H5a1 1 0 0 1-1-1z" /><path d="M3 7h18v4H3z" /><path d="M12 7v14" /><path d="M12 7S10.5 3 8 4s4 3 4 3zM12 7s1.5-4 4-3-4 3-4 3z" /></svg>
                 <div style={{ lineHeight: 1.3 }}>
@@ -148,8 +152,10 @@ export default function MopCabinet({ onLogout }) {
             )}
           </div>
           <div id="mopContent">
-            {tab === 'progress' ? (
-              <MopProgress />
+            {tab === 'levels' || tab === 'progress' ? (
+              <MopProgress view="levels" />
+            ) : tab === 'cases' ? (
+              <MopProgress view="cases" />
             ) : loading ? (
               <div style={{ textAlign: 'center', color: 'var(--txt3)', padding: 40 }}>Загрузка...</div>
             ) : empty ? (

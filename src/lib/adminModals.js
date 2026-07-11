@@ -268,6 +268,7 @@ function collectCurrentGamiTab() {
     const en = $('g_enabled'); if (en) c.enabled = en.checked
     c.points = { reach: gnum('g_p_reach'), fastCall: gnum('g_p_fast'), taskDone: gnum('g_p_task'), noOverdueDay: gnum('g_p_day') }
     if ($('g_case_price')) c.case.price = gnum('g_case_price')
+    if ($('g_case_perday')) c.case.perDay = Math.max(1, gnum('g_case_perday'))
   } else if (window._gamiTab === 'case') {
     const items = []
     ;(c.case.items || []).forEach((_, i) => {
@@ -303,6 +304,7 @@ function renderGamiTab() {
       fld('Баллы за выполненную задачу', num('g_p_task', c.points.taskDone)) +
       fld('Баллы за день без просрочек', num('g_p_day', c.points.noOverdueDay)) +
       fld('Цена кейса (баллы)', num('g_case_price', c.case.price)) +
+      fld('Открытий кейса в день', num('g_case_perday', c.case.perDay != null ? c.case.perDay : 2)) +
       '</div>' + saveBtn
   } else if (t === 'case') {
     const rows = (c.case.items || []).map((it, i) =>

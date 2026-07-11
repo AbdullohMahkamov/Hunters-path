@@ -60,9 +60,12 @@ const LEVEL_PRIZES = [
 function defaultConfig() {
   return {
     enabled: true,
-    points: { reach: 50, fastCall: 30, taskDone: 20, noOverdueDay: 100 },
+    // баллы подобраны так, чтобы активный МОП за день набирал заметно больше цены кейса
+    // (типичный день ≈ 2500–3500 баллов) → баллов хватает на 1–2 открытия в день.
+    points: { reach: 50, fastCall: 40, taskDone: 25, noOverdueDay: 150 },
     case: {
-      price: 5000,
+      price: 1000,       // по карману на каждый день (настраивается)
+      perDay: 2,         // сколько раз в день можно открыть (настраивается)
       items: [
         { name: "Стикер / кола / чипсы", chance: 30, value: 10000 },
         { name: "Кофе / обед", chance: 25, value: 25000 },
@@ -93,6 +96,7 @@ function normalizeConfig(c) {
   c.points = Object.assign({}, d.points, c.points || {});
   c.case = c.case || d.case;
   c.case.price = c.case.price || d.case.price;
+  if (c.case.perDay == null || c.case.perDay < 1) c.case.perDay = d.case.perDay;
   if (!Array.isArray(c.case.items) || !c.case.items.length) c.case.items = d.case.items;
   if (!Array.isArray(c.levels) || c.levels.length !== 12) c.levels = d.levels;
   if (typeof c.enabled !== "boolean") c.enabled = true;
@@ -103,6 +107,7 @@ function normalizeConfig(c) {
 // Дата в поясе Ташкента (UTC+5), как в остальном коде.
 function nowTk() { return new Date(Date.now() + 5 * 3600 * 1000); }
 function monthKey(d) { return `${d.getUTCFullYear()}-${String(d.getUTCMonth() + 1).padStart(2, "0")}`; }
+function dateKey(d) { return `${d.getUTCFullYear()}-${String(d.getUTCMonth() + 1).padStart(2, "0")}-${String(d.getUTCDate()).padStart(2, "0")}`; }
 function workDaysPassed(d) {
   const y = d.getUTCFullYear(), mo = d.getUTCMonth(), day = d.getUTCDate();
   let wd = 0;
@@ -147,7 +152,7 @@ function earnedPoints(m, cfg) {
 
 // ─────────────────────────── СОСТОЯНИЕ МОПА ───────────────────────────
 function emptyState() {
-  return { level: 0, lastLevelMonth: "", carry: 0, earnedMonth: 0, pointsMonth: "", spent: 0, inventory: [], levelHistory: [], caseHistory: [] };
+  return { level: 0, lastLevelMonth: "", carry: 0, earnedMonth: 0, pointsMonth: "", spent: 0, opensDay: "", opensToday: 0, inventory: [], levelHistory: [], caseHistory: [] };
 }
 async function getMopState(org, mopId) {
   const raw = await redisGet(`gamification:mop:${org}:${mopId}`);
@@ -316,7 +321,13 @@ export default async function handler(req, res) {
       let st = await getMopState(org, mopId);
       if (m) st = recomputeMop(st, m, cfg, monthKey(nowTk()));
       const price = cfg.case.price;
+      // дневной лимит открытий
+      const today = dateKey(nowTk());
+      if (st.opensDay !== today) { st.opensDay = today; st.opensToday = 0; }
+      const perDay = cfg.case.perDay || 2;
+      if ((st.opensToday || 0) >= perDay) { res.status(200).json({ ok: false, error: "Лимит на сегодня исчерпан" }); return; }
       if (balanceOf(st) < price) { res.status(200).json({ ok: false, error: "Недостаточно баллов" }); return; }
+      st.opensToday = (st.opensToday || 0) + 1;
       st.spent = (st.spent || 0) + price;
       const prizeItem = pickCasePrize(cfg.case.items); // рандом ТОЛЬКО на сервере
       const won = {
@@ -331,7 +342,7 @@ export default async function handler(req, res) {
       if (st.caseHistory.length > 50) st.caseHistory = st.caseHistory.slice(0, 50);
       await saveMopState(org, mopId, st);
       await pushDrop(org, { who: sess.mopName || mopId, name: won.name, value: won.value, type: "case", at: won.wonAt });
-      res.status(200).json({ ok: true, prize: { name: won.name, value: won.value }, balance: balanceOf(st) });
+      res.status(200).json({ ok: true, prize: { name: won.name, value: won.value }, balance: balanceOf(st), opensLeft: Math.max(0, perDay - st.opensToday) });
       return;
     }
 
@@ -354,6 +365,9 @@ function buildStatePayload(st, m, cfg) {
     { key: "plan", fact: m.planPct, norm: norms.plan, met: m.planPct >= norms.plan, unit: "%", higher: true },
   ] : [];
   const metCount = progress.filter(p => p.met).length;
+  const today = dateKey(nowTk());
+  const perDay = cfg.case.perDay || 2;
+  const opensToday = st.opensDay === today ? (st.opensToday || 0) : 0;
   return {
     enabled: true,
     level,
@@ -365,7 +379,8 @@ function buildStatePayload(st, m, cfg) {
     earnedMonth: st.earnedMonth || 0,
     progress, metCount, normsCount: progress.length,
     levels: cfg.levels.map((l, i) => ({ n: i + 1, name: l.name, prizeName: l.prizeName, prizeValue: l.prizeValue, done: (i + 1) <= level, current: (i + 1) === level })),
-    case: { price: cfg.case.price, items: cfg.case.items },
+    case: { price: cfg.case.price, items: cfg.case.items, perDay },
+    opensToday, opensLeft: Math.max(0, perDay - opensToday),
     points: cfg.points,
     inventory: st.inventory || [],
     caseHistory: st.caseHistory || [],

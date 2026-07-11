@@ -40,6 +40,7 @@ export const MOP_T = {
     gMax: 'Максимальный уровень!', gEarnedMonth: 'начислено за месяц', gHowEarn: 'Как копить баллы', gLevelUp: 'Новый уровень!',
     gRuleReach: 'за каждый дозвон', gRuleFast: 'за 1-й звонок < 15 мин', gRuleTask: 'за выполненную задачу', gRuleDay: 'за день без просрочек',
     gReward: 'Награда за уровень', gCasePool: 'Что внутри', gChance: 'шанс', gLiveDrops: 'Живые дропы', gOpenNow: 'Крутить кейс',
+    gLevelsTab: 'Уровни', gCasesTab: 'Кейсы', gLimitToday: 'Открытий сегодня', gLimitReached: 'Лимит на сегодня исчерпан', gLeftToday: 'осталось сегодня',
   },
   uz: {
     cabinet: 'Shaxsiy kabinet', logout: 'Chiqish', mine: 'Mening daromadim', stats: 'Mening statistikam', team: 'Jamoa',
@@ -79,6 +80,7 @@ export const MOP_T = {
     gMax: 'Eng yuqori daraja!', gEarnedMonth: 'shu oyda hisoblandi', gHowEarn: 'Ball qanday yigʻiladi', gLevelUp: 'Yangi daraja!',
     gRuleReach: 'har bir aloqa uchun', gRuleFast: '1-qoʻngʻiroq < 15 daq uchun', gRuleTask: 'bajarilgan vazifa uchun', gRuleDay: 'kechikishsiz kun uchun',
     gReward: 'Daraja sovrini', gCasePool: 'Ichida nima bor', gChance: 'ehtimol', gLiveDrops: 'Jonli droplar', gOpenNow: 'Keysni aylantirish',
+    gLevelsTab: 'Darajalar', gCasesTab: 'Keyslar', gLimitToday: 'Bugungi ochishlar', gLimitReached: 'Bugungi limit tugadi', gLeftToday: 'bugun qoldi',
   },
 }
 

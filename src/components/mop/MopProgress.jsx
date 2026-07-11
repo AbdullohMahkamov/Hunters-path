@@ -38,7 +38,7 @@ function Ic({ n, size = 16, color, style }) {
 
 const METRIC_KEY = { reach: 'gReach', conv: 'gConv', tasks: 'gTasks', call: 'gCall', plan: 'gPlan' }
 
-export default function MopProgress() {
+export default function MopProgress({ view = 'levels' }) {
   useSyncExternalStore(subscribeMopLang, getMopLang, getMopLang) // перерисовка при смене языка
   const [st, setSt] = useState(null)
   const [loading, setLoading] = useState(true)
@@ -85,11 +85,12 @@ export default function MopProgress() {
   if (loading) return <div className="mop-card" style={{ textAlign: 'center', color: 'var(--txt3)', padding: 30 }}>…</div>
   if (!st || st.enabled === false) return null
 
-  const canOpen = st.balance >= st.case.price && !spinning
+  const noOpensLeft = st.opensLeft != null && st.opensLeft <= 0
+  const canOpen = st.balance >= st.case.price && !spinning && !noOpensLeft
   const pct = st.metCount != null && st.normsCount ? Math.round(st.metCount / st.normsCount * 100) : 0
 
   async function openCase() {
-    if (spinning || st.balance < st.case.price) return
+    if (spinning || st.balance < st.case.price || noOpensLeft) return
     setSpinning(true); setResult(null); setMsg('')
     let r
     try { r = await gami.openCase() } catch (e) { r = { ok: false, error: 'Ошибка сети' } }
@@ -134,7 +135,7 @@ export default function MopProgress() {
   return (
     <div className="gami-wrap">
       {/* ── ЖИВАЯ ЛЕНТА ДРОПОВ ── */}
-      {drops.length > 0 && (
+      {view === 'cases' && drops.length > 0 && (
         <div className="gami-ticker">
           <div className="gami-ticker-lbl"><span className="gami-live-dot" />{mt('gLiveDrops')}</div>
           <div className="gami-ticker-vp"><div className="gami-ticker-track">
@@ -169,7 +170,7 @@ export default function MopProgress() {
       </div>
 
       {/* ── ПРОГРЕСС ТЕКУЩЕГО МЕСЯЦА ── */}
-      {st.progress && st.progress.length > 0 && (
+      {view === 'levels' && st.progress && st.progress.length > 0 && (
         <div className="mop-card">
           <div className="mop-ct" style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'baseline' }}>
             <span>{mt('gMonthProg')}{st.nextLevelName ? ` → ${st.nextLevelName}` : ''}</span>
@@ -199,6 +200,7 @@ export default function MopProgress() {
       )}
 
       {/* ── КАРТА УРОВНЕЙ ── */}
+      {view === 'levels' && (
       <div className="mop-card">
         <div className="mop-ct">{mt('gMap')}</div>
         <div className="gami-levelmap">
@@ -216,8 +218,10 @@ export default function MopProgress() {
           })}
         </div>
       </div>
+      )}
 
       {/* ── АРЕНА КЕЙСА ── */}
+      {view === 'cases' && (
       <div className="gami-arena">
         <div className="gami-arena-head">
           <div className="gami-chest">
@@ -239,6 +243,9 @@ export default function MopProgress() {
           </div>
           <div className="gami-arena-title">{mt('gCase')}</div>
           <div className="gami-arena-price"><Ic n="coin" size={16} color="var(--gold)" />{fmtN(st.case.price)} {mt('gPts')}</div>
+          {st.case.perDay != null && (
+            <div className="gami-arena-limit">{mt('gLimitToday')}: <b>{st.opensToday || 0}/{st.case.perDay}</b></div>
+          )}
         </div>
         <div className="gami-reel-vp">
           <div className="gami-marker" />
@@ -257,7 +264,7 @@ export default function MopProgress() {
         </div>
         <button className="gami-open-btn" disabled={!canOpen} onClick={openCase}>
           {spinning ? '…' : mt('gOpen')}
-          {!spinning && st.balance < st.case.price && <small>{mt('gNotEnough')}</small>}
+          {!spinning && (noOpensLeft ? <small>{mt('gLimitReached')}</small> : st.balance < st.case.price ? <small>{mt('gNotEnough')}</small> : null)}
         </button>
         {msg && <div className="gami-msg">{msg}</div>}
         {/* как копить баллы */}
@@ -271,8 +278,10 @@ export default function MopProgress() {
           </div>
         </div>
       </div>
+      )}
 
       {/* ── ИНВЕНТАРЬ ── */}
+      {view === 'cases' && (
       <div className="mop-card">
         <div className="mop-ct">{mt('gInv')}</div>
         {(!st.inventory || !st.inventory.length)
@@ -290,6 +299,7 @@ export default function MopProgress() {
             ))}
           </div>}
       </div>
+      )}
 
       {/* ── РЕЗУЛЬТАТ ОТКРЫТИЯ ── */}
       {result && (
