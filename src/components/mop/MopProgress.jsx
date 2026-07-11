@@ -465,9 +465,11 @@ export default function MopProgress({ view = 'levels' }) {
                   <div className="gami-inv-vis"><PrizeVisual item={it} size={it.image ? 42 : 26} /></div>
                   <div style={{ flex: 1, minWidth: 0 }}>
                     <div className="gami-inv-name">{it.name}{it.type === 'level' ? ` · ${mt('gLevel')} ${it.level}` : ''}</div>
-                    {it.value ? <div className="gami-inv-val">{fmtVal(it.value)}</div> : null}
+                    {it.cashback ? <div className="gami-inv-val" style={{ color: 'var(--gold)' }}>+{it.cashback} {mt('gPts')} {mt('gToAccount')}</div> : it.value ? <div className="gami-inv-val">{fmtVal(it.value)}</div> : null}
                   </div>
-                  <span className={'gami-status ' + (it.status === 'delivered' ? 'done' : 'pend')}>{it.status === 'delivered' ? mt('gDelivered') : mt('gPending')}</span>
+                  {it.status === 'cashback'
+                    ? <span className="gami-status done">+{it.cashback}</span>
+                    : <span className={'gami-status ' + (it.status === 'delivered' ? 'done' : 'pend')}>{it.status === 'delivered' ? mt('gDelivered') : mt('gPending')}</span>}
                 </div>
               ))}
             </div>

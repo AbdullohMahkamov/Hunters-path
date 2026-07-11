@@ -516,7 +516,7 @@ export default async function handler(req, res) {
         status: cashback > 0 ? "cashback" : "pending", wonAt: new Date().toISOString(),
       };
       st.inventory = st.inventory || [];
-      if (cashback <= 0) st.inventory.unshift(won); // стикеры (кэшбек) в инвентарь не кладём — он ими забивался
+      st.inventory.unshift(won); // всё в инвентарь; стикеры — со статусом "cashback" (не требуют выдачи)
       st.caseHistory = st.caseHistory || [];
       st.caseHistory.unshift({ name: won.name, at: won.wonAt });
       if (st.caseHistory.length > 50) st.caseHistory = st.caseHistory.slice(0, 50);

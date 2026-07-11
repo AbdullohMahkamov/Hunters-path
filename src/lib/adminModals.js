@@ -270,7 +270,7 @@ async function refreshGamiPending() {
   try {
     const r = await fetch('/api/gamification?action=list_inventory&session=' + encodeURIComponent(getSession()))
     const d = await r.json()
-    if (d.ok) { window._gamiPending = (d.inventory || []).filter(x => x.status !== 'delivered').length; renderGamiTabs() }
+    if (d.ok) { window._gamiPending = (d.inventory || []).filter(x => x.status !== 'delivered' && x.status !== 'cashback').length; renderGamiTabs() }
   } catch (e) { /* ignore */ }
 }
 
@@ -509,17 +509,20 @@ async function loadGamiInventory() {
     const list = d.inventory || []
     if (!list.length) { box.innerHTML = '<div style="color:var(--txt3);font-size:13px;text-align:center;padding:14px;">Пока нет выигранных призов.</div>'; return }
     box.innerHTML = list.map((it) => {
-      const pend = it.status !== 'delivered'
-      const val = it.value ? ` · ${(it.value).toLocaleString('ru-RU')}` : ''
-      const tag = it.type === 'level' ? `Ур. ${it.level}` : 'Кейс'
+      const isCashback = it.status === 'cashback'
+      const pend = !isCashback && it.status !== 'delivered'
+      const val = isCashback ? ` · +${it.cashback} балл. на счёт` : (it.value ? ` · ${(it.value).toLocaleString('ru-RU')}` : '')
+      const tag = it.type === 'level' ? `Ур. ${it.level}` : (isCashback ? 'Кэшбек' : 'Кейс')
       return `<div style="display:flex;align-items:center;gap:11px;padding:10px 12px;border:1px solid var(--line);border-radius:10px;margin-bottom:8px;background:var(--card);">
         <div style="flex:1;min-width:0;">
           <div style="font-size:13.5px;font-weight:600;">${escapeHtml(it.mopName || it.mopId)} <span style="color:var(--txt3);font-weight:500;">— ${escapeHtml(it.name)}${val}</span></div>
           <div style="font-size:11px;color:var(--txt3);margin-top:2px;">${tag} · ${new Date(it.wonAt).toLocaleDateString('ru-RU')}</div>
         </div>
-        ${pend
-          ? `<button onclick="gamiDeliver('${escapeHtml(String(it.mopId))}','${it.id}')" style="padding:7px 13px;border-radius:8px;background:var(--accent);border:none;color:#fff;font-size:12.5px;font-weight:600;cursor:pointer;white-space:nowrap;">Выдано</button>`
-          : '<span style="font-size:11px;font-weight:700;text-transform:uppercase;color:var(--green);background:var(--green-bg);padding:4px 10px;border-radius:999px;">Выдано</span>'}
+        ${isCashback
+          ? `<span style="font-size:11px;font-weight:700;color:var(--gold);background:var(--gold-bg);padding:4px 10px;border-radius:999px;white-space:nowrap;">+${it.cashback} на счёт</span>`
+          : pend
+            ? `<button onclick="gamiDeliver('${escapeHtml(String(it.mopId))}','${it.id}')" style="padding:7px 13px;border-radius:8px;background:var(--accent);border:none;color:#fff;font-size:12.5px;font-weight:600;cursor:pointer;white-space:nowrap;">Выдано</button>`
+            : '<span style="font-size:11px;font-weight:700;text-transform:uppercase;color:var(--green);background:var(--green-bg);padding:4px 10px;border-radius:999px;">Выдано</span>'}
       </div>`
     }).join('')
   } catch (e) { box.innerHTML = '<div style="color:var(--red);">' + String(e) + '</div>' }

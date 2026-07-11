@@ -42,7 +42,7 @@ export const MOP_T = {
     gRulePlan: 'Дневной план', gRuleConv: 'Дневная конверсия',
     gReward: 'Награда за уровень', gCasePool: 'Что внутри', gChance: 'шанс', gLiveDrops: 'Живые дропы', gOpenNow: 'Крутить кейс',
     gLevelsTab: 'Уровни', gCasesTab: 'Кейсы', gLimitToday: 'Открытий сегодня', gLimitReached: 'Лимит на сегодня исчерпан', gLeftToday: 'осталось сегодня',
-    gFreeOpens: 'Бесплатных', gOpenFree: 'Открыть бесплатно', gMore: 'Показать ещё',
+    gFreeOpens: 'Бесплатных', gOpenFree: 'Открыть бесплатно', gMore: 'Показать ещё', gToAccount: 'на счёт',
   },
   uz: {
     cabinet: 'Shaxsiy kabinet', logout: 'Chiqish', mine: 'Mening daromadim', stats: 'Mening statistikam', team: 'Jamoa',
@@ -84,7 +84,7 @@ export const MOP_T = {
     gRulePlan: 'Kunlik reja', gRuleConv: 'Kunlik konversiya (daraja boʻyicha)',
     gReward: 'Daraja sovrini', gCasePool: 'Ichida nima bor', gChance: 'ehtimol', gLiveDrops: 'Jonli droplar', gOpenNow: 'Keysni aylantirish',
     gLevelsTab: 'Darajalar', gCasesTab: 'Keyslar', gLimitToday: 'Bugungi ochishlar', gLimitReached: 'Bugungi limit tugadi', gLeftToday: 'bugun qoldi',
-    gFreeOpens: 'Bepul', gOpenFree: 'Bepul ochish', gMore: 'Yana koʻrsatish',
+    gFreeOpens: 'Bepul', gOpenFree: 'Bepul ochish', gMore: 'Yana koʻrsatish', gToAccount: 'hisobga',
   },
 }
 
