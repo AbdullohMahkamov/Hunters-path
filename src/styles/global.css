@@ -574,6 +574,8 @@
   .gami-inv-vis .gami-art{width:34px;height:34px;filter:none;}
   .gami-inv-name{font-size:13.5px;font-weight:600;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;}
   .gami-inv-val{font-size:11.5px;font-weight:700;color:var(--rc);}
+  .gami-more-btn{width:100%;margin-top:10px;padding:11px;border-radius:10px;border:1px solid var(--line2);background:var(--card2);color:var(--txt2);font-size:13px;font-weight:600;cursor:pointer;font-family:inherit;transition:filter .15s;}
+  .gami-more-btn:hover{filter:brightness(1.08);color:var(--txt);}
   .gami-status{font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:.3px;padding:3px 9px;border-radius:999px;white-space:nowrap;flex:0 0 auto;}
   .gami-status.pend{background:var(--gold-bg);color:var(--gold);}
   .gami-status.done{background:var(--green-bg);color:var(--green);}

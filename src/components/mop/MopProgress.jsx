@@ -148,6 +148,7 @@ export default function MopProgress({ view = 'levels' }) {
   const [strip, setStrip] = useState([])
   const [result, setResult] = useState(null)
   const [msg, setMsg] = useState('')
+  const [invShown, setInvShown] = useState(10)
   const trackRef = useRef(null)
   const confRef = useRef(null)
 
@@ -392,6 +393,7 @@ export default function MopProgress({ view = 'levels' }) {
           {st.earn ? (() => {
             const e = st.earn
             const dailyRows = [
+              { g: e.reach, label: mt('gRuleReach'), cur: (e.reach.cur || 0) + '%', tgt: '≥ ' + e.reach.target + '%', pct: e.reach.target ? Math.min(100, Math.round((e.reach.cur || 0) / e.reach.target * 100)) : 0, days: e.reach.days },
               { g: e.dailyPlan, label: mt('gRulePlan'), cur: (fmtVal(e.dailyPlan.cur || 0) || '0'), tgt: fmtVal(e.dailyPlan.target), pct: e.dailyPlan.target ? Math.min(100, Math.round((e.dailyPlan.cur || 0) / e.dailyPlan.target * 100)) : 0, days: e.dailyPlan.days },
               { g: e.dailyConv, label: mt('gRuleConv'), cur: (e.dailyConv.cur || 0) + '%', tgt: e.dailyConv.target + '%', pct: e.dailyConv.target ? Math.min(100, Math.round((e.dailyConv.cur || 0) / e.dailyConv.target * 100)) : 0, days: e.dailyConv.days },
               { g: e.dailyCall, label: mt('gRuleFast'), cur: e.dailyCall.cur != null ? e.dailyCall.cur + ' ' + mt('min') : '—', tgt: '≤ ' + e.dailyCall.target + ' ' + mt('min'), pct: (e.dailyCall.cur != null && e.dailyCall.cur > 0) ? Math.min(100, Math.round(e.dailyCall.target / e.dailyCall.cur * 100)) : (e.dailyCall.done ? 100 : 0), days: e.dailyCall.days },
@@ -409,13 +411,6 @@ export default function MopProgress({ view = 'levels' }) {
                     <span className="gami-goal-pts">+{row.g.pts}</span>
                   </div>
                 ))}
-                <div className={'gami-goal ' + (e.reach.count > 0 ? 'done' : 'idle')}>
-                  <span className="gami-goal-ic">{e.reach.count > 0 ? <Ic n="check" size={13} /> : <Ic n="dot" size={13} />}</span>
-                  <div className="gami-goal-body">
-                    <div className="gami-goal-lbl"><span className="gami-goal-name">{mt('gRuleReach')}</span><span className="gami-goal-sub">{e.reach.count} × +{e.reach.pts}</span></div>
-                  </div>
-                  <span className="gami-goal-pts">+{fmtN(e.reach.count * e.reach.pts)}</span>
-                </div>
               </div>
             )
           })() : (
@@ -437,18 +432,23 @@ export default function MopProgress({ view = 'levels' }) {
         <div className="mop-ct">{mt('gInv')}</div>
         {(!st.inventory || !st.inventory.length)
           ? <div style={{ color: 'var(--txt3)', fontSize: 13, padding: '4px 0' }}>{mt('gEmptyInv')}</div>
-          : <div className="gami-inv">
-            {st.inventory.map((it) => (
-              <div key={it.id} className="gami-inv-item" style={{ '--rc': rarityOf(it.value, it.name).c }}>
-                <div className="gami-inv-vis"><PrizeVisual item={it} size={it.image ? 42 : 26} /></div>
-                <div style={{ flex: 1, minWidth: 0 }}>
-                  <div className="gami-inv-name">{it.name}{it.type === 'level' ? ` · ${mt('gLevel')} ${it.level}` : ''}</div>
-                  {it.value ? <div className="gami-inv-val">{fmtVal(it.value)}</div> : null}
+          : <>
+            <div className="gami-inv">
+              {st.inventory.slice(0, invShown).map((it) => (
+                <div key={it.id} className="gami-inv-item" style={{ '--rc': rarityOf(it.value, it.name).c }}>
+                  <div className="gami-inv-vis"><PrizeVisual item={it} size={it.image ? 42 : 26} /></div>
+                  <div style={{ flex: 1, minWidth: 0 }}>
+                    <div className="gami-inv-name">{it.name}{it.type === 'level' ? ` · ${mt('gLevel')} ${it.level}` : ''}</div>
+                    {it.value ? <div className="gami-inv-val">{fmtVal(it.value)}</div> : null}
+                  </div>
+                  <span className={'gami-status ' + (it.status === 'delivered' ? 'done' : 'pend')}>{it.status === 'delivered' ? mt('gDelivered') : mt('gPending')}</span>
                 </div>
-                <span className={'gami-status ' + (it.status === 'delivered' ? 'done' : 'pend')}>{it.status === 'delivered' ? mt('gDelivered') : mt('gPending')}</span>
-              </div>
-            ))}
-          </div>}
+              ))}
+            </div>
+            {st.inventory.length > invShown && (
+              <button className="gami-more-btn" onClick={() => setInvShown(invShown + 10)}>{mt('gMore')} ({st.inventory.length - invShown})</button>
+            )}
+          </>}
       </div>
       )}
 

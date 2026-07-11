@@ -270,6 +270,8 @@ function collectCurrentGamiTab() {
     if ($('g_dplan_target')) c.dailyPlanTarget = gnum('g_dplan_target')
     if ($('g_first_max')) c.firstCallMax = Math.max(1, gnum('g_first_max'))
     if ($('g_task_goal')) c.taskGoal = Math.max(1, gnum('g_task_goal'))
+    if ($('g_conv_goal')) c.convGoal = Math.max(0, gnum('g_conv_goal'))
+    if ($('g_reach_goal')) c.reachGoal = Math.max(0, gnum('g_reach_goal'))
     const sr = []
     ;(c.salesRewards || []).forEach((_, i) => { if ($('g_sr_sales_' + i)) sr.push({ sales: gnum('g_sr_sales_' + i), opens: Math.max(0, gnum('g_sr_opens_' + i)) }) })
     if (sr.length) c.salesRewards = sr
@@ -306,10 +308,12 @@ function renderGamiTab() {
     body.innerHTML =
       `<label style="display:flex;align-items:center;gap:9px;font-size:14px;font-weight:600;margin-bottom:18px;cursor:pointer;"><input type="checkbox" id="g_enabled" ${c.enabled ? 'checked' : ''} style="width:18px;height:18px;"> Геймификация включена</label>` +
       '<div style="display:grid;grid-template-columns:1fr 1fr;gap:0 14px;">' +
-      fld('Баллы за дозвон (за каждый)', num('g_p_reach', c.points.reach)) +
+      fld('Баллы за дозвон (дневной)', num('g_p_reach', c.points.reach)) +
+      fld('Дозвон ≥ % за день', num('g_reach_goal', c.reachGoal != null ? c.reachGoal : 60)) +
       fld('Баллы за дневной план', num('g_p_dplan', c.points.dailyPlan != null ? c.points.dailyPlan : 250)) +
       fld('Дневной план продаж (сум)', num('g_dplan_target', c.dailyPlanTarget != null ? c.dailyPlanTarget : 3000000)) +
-      fld('Баллы за конверсию (норма из уровня)', num('g_p_dconv', c.points.dailyConv != null ? c.points.dailyConv : 150)) +
+      fld('Баллы за дневную конверсию', num('g_p_dconv', c.points.dailyConv != null ? c.points.dailyConv : 150)) +
+      fld('Конверсия ≥ % за день', num('g_conv_goal', c.convGoal != null ? c.convGoal : 3)) +
       fld('Баллы за 1-й звонок (дневной)', num('g_p_fast', c.points.fastCall)) +
       fld('1-й звонок ≤ мин (после лида)', num('g_first_max', c.firstCallMax != null ? c.firstCallMax : 30)) +
       fld('Баллы за задачи (дневной)', num('g_p_task', c.points.taskDone)) +

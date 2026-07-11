@@ -38,11 +38,11 @@ export const MOP_T = {
     gLocked: 'Уровень в этом месяце уже взят — так держать!', gNewbie: 'Новичок', gEmptyInv: 'Пока ничего не выиграно', gPrize: 'Приз',
     gMet: 'нормативов выполнено', gReach: 'Дозвон', gConv: 'Конверсия', gTasks: 'Задачи', gCall: '1-й звонок', gPlan: 'План',
     gMax: 'Максимальный уровень!', gEarnedMonth: 'начислено за месяц', gHowEarn: 'Как копить баллы', gLevelUp: 'Новый уровень!',
-    gRuleReach: 'За каждый дозвон', gRuleFast: '1-й звонок (после лида)', gRuleTask: 'Задачи за день',
-    gRulePlan: 'Дневной план', gRuleConv: 'Дневная конверсия (по уровню)',
+    gRuleReach: 'Дозвон за день', gRuleFast: '1-й звонок (после лида)', gRuleTask: 'Задачи за день',
+    gRulePlan: 'Дневной план', gRuleConv: 'Дневная конверсия',
     gReward: 'Награда за уровень', gCasePool: 'Что внутри', gChance: 'шанс', gLiveDrops: 'Живые дропы', gOpenNow: 'Крутить кейс',
     gLevelsTab: 'Уровни', gCasesTab: 'Кейсы', gLimitToday: 'Открытий сегодня', gLimitReached: 'Лимит на сегодня исчерпан', gLeftToday: 'осталось сегодня',
-    gFreeOpens: 'Бесплатных', gOpenFree: 'Открыть бесплатно',
+    gFreeOpens: 'Бесплатных', gOpenFree: 'Открыть бесплатно', gMore: 'Показать ещё',
   },
   uz: {
     cabinet: 'Shaxsiy kabinet', logout: 'Chiqish', mine: 'Mening daromadim', stats: 'Mening statistikam', team: 'Jamoa',
@@ -80,11 +80,11 @@ export const MOP_T = {
     gLocked: 'Bu oy daraja allaqachon olindi — shunday davom eting!', gNewbie: 'Yangi', gEmptyInv: 'Hozircha hech narsa yutilmagan', gPrize: 'Sovrin',
     gMet: 'ta normativ bajarildi', gReach: 'Aloqa', gConv: 'Konversiya', gTasks: 'Vazifalar', gCall: '1-qoʻngʻiroq', gPlan: 'Reja',
     gMax: 'Eng yuqori daraja!', gEarnedMonth: 'shu oyda hisoblandi', gHowEarn: 'Ball qanday yigʻiladi', gLevelUp: 'Yangi daraja!',
-    gRuleReach: 'Har bir aloqa uchun', gRuleFast: '1-qoʻngʻiroq (lid biriktirilgach)', gRuleTask: 'Kunlik vazifalar',
+    gRuleReach: 'Kunlik aloqa', gRuleFast: '1-qoʻngʻiroq (lid biriktirilgach)', gRuleTask: 'Kunlik vazifalar',
     gRulePlan: 'Kunlik reja', gRuleConv: 'Kunlik konversiya (daraja boʻyicha)',
     gReward: 'Daraja sovrini', gCasePool: 'Ichida nima bor', gChance: 'ehtimol', gLiveDrops: 'Jonli droplar', gOpenNow: 'Keysni aylantirish',
     gLevelsTab: 'Darajalar', gCasesTab: 'Keyslar', gLimitToday: 'Bugungi ochishlar', gLimitReached: 'Bugungi limit tugadi', gLeftToday: 'bugun qoldi',
-    gFreeOpens: 'Bepul', gOpenFree: 'Bepul ochish',
+    gFreeOpens: 'Bepul', gOpenFree: 'Bepul ochish', gMore: 'Yana koʻrsatish',
   },
 }
 
