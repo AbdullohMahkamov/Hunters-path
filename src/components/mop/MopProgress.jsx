@@ -33,6 +33,51 @@ const rarityOf = (v, name) => {
   }
   return RARITY.find((r) => (v || 0) >= r.min) || RARITY[RARITY.length - 1]
 }
+// Прикольная подпись под дропом (узбекский, пара слов) по категории приза.
+const CAPTIONS = {
+  money: [
+    'Choʻntak toʻldi, endi mazza qiling!',
+    'Pul tushdi — bugun sizniki kun!',
+    'Omad kulib boqdi, sizni tabriklaymiz!',
+    'Zoʻr! Bu pulni aql bilan ishlating!',
+    'Byudjet oʻsdi, shu ruhda davom eting!',
+  ],
+  snack: [
+    'Gazak tayyor, choy damlashni unutmang!',
+    'Mazza qiling, buni siz zabt etdingiz!',
+    'Kichik, lekin qorinni xursand qiladi!',
+    'Shirinlik vaqti — kayfiyat balandga koʻtarildi!',
+    'Tanaffusda yeng, keyin yana zabt eting!',
+  ],
+  sticker: [
+    'Kichik, lekin kayfiyatni koʻtaradigan zoʻr sovgʻa!',
+    'Kolleksiyaga qoʻshildi — keyingisi kattaroq boʻladi!',
+    'Boshlanishi yaxshi, katta yutuqlar hali oldinda!',
+    'Mayli, bugun shu — ertaga jekpot sizniki!',
+    'Kulgu kafolatlangan, endi jamoaga ulashing buni!',
+  ],
+  tech: [
+    'Voy, texnika! Bu haqiqiy daraja, tabriklaymiz!',
+    'Katta yutuq — mehnatingiz behuda ketmadi, zoʻr!',
+    'Ura, gadjet qoʻlda! Buni halol ishlab oldingiz!',
+    'Zoʻr sovgʻa, hasadchilar koʻpayadi endi!',
+  ],
+  def: [
+    'Zoʻr drop! Omad siz bilan, davom eting!',
+    'Tabriklaymiz, bu sovgʻani halol yutib oldingiz!',
+    'Omad kulib boqdi — keyingisi yanada zoʻr!',
+  ],
+}
+function prizeCaption(name, value) {
+  const s = (name || '').toLowerCase()
+  let key = 'def'
+  if (MONEY_RE.test(s)) key = 'money'
+  else if (SNACK_RE.test(s)) key = 'snack'
+  else if (/стикер|наклей/.test(s)) key = 'sticker'
+  else if (/airpods|наушник|iphone|смартфон|redmi|ipad|час|колонка|jbl|playstation|ps5|клав|мыш|пауэрбанк|power/.test(s)) key = 'tech'
+  const arr = CAPTIONS[key]
+  return arr[Math.floor(Math.random() * arr.length)]
+}
 
 const ICONS = {
   coin: '<circle cx="12" cy="12" r="9"/><path d="M12 8v8M9.5 10a2.5 2 0 0 1 5 0M9.5 14a2.5 2 0 0 0 5 0"/>',
@@ -181,7 +226,7 @@ export default function MopProgress({ view = 'levels' }) {
       setTimeout(() => { const c = track.children[WIN]; if (c) c.classList.add('landed') }, SPIN * 1000 + 60)
     }))
     setTimeout(async () => {
-      setResult(r.prize); setSpinning(false)
+      setResult({ ...r.prize, caption: prizeCaption(r.prize.name, r.prize.value) }); setSpinning(false)
       const rr = rarityOf(r.prize.value, r.prize.name)
       if ((r.prize.value || 0) >= 25000) setTimeout(() => burst(rr.c), 80) // конфетти на дорогих дропах
       await load()
@@ -413,6 +458,7 @@ export default function MopProgress({ view = 'levels' }) {
             <div className="gami-modal-lbl">{mt('gWon')}</div>
             <div className="gami-modal-ic"><PrizeVisual item={result} size={result.image ? 130 : 62} className="gami-photo-lg" /></div>
             <h3 className="gami-modal-name">{result.name}</h3>
+            {result.caption ? <div className="gami-modal-cap">{result.caption}</div> : null}
             {result.value ? <div className="gami-modal-val">{fmtVal(result.value)}</div> : null}
             <button className="gami-open-btn gami-open-btn--lg" style={{ marginTop: 20 }} onClick={() => setResult(null)}>{mt('gTake')}</button>
           </div>

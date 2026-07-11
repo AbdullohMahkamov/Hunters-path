@@ -123,6 +123,7 @@ function mopMetrics(mopId, cache, speed, plans) {
   const bySales = (cache.mopsBySales || []).find(m => String(m.id) === String(mopId));
   const byConv = (cache.mopsByConv || []).find(m => String(m.id) === String(mopId));
   const sp = ((speed && speed.mops) || []).find(m => String(m.id != null ? m.id : m.name) === String(mopId));
+  const spDay = ((speed && speed.mopsDay) || []).find(m => String(m.id != null ? m.id : m.name) === String(mopId));
   if (!bySales && !byConv) return null;
   const revenue = (bySales && bySales.revenue) || 0;
   const plan = (plans && plans[mopId]) || 0;
@@ -138,6 +139,10 @@ function mopMetrics(mopId, cache, speed, plans) {
     fastFirstCalls: sp && sp.fastFirstCalls != null ? sp.fastFirstCalls : 0,
     tasksDone: sp && sp.tasksDone != null ? sp.tasksDone : 0,
     tasksDonePct: sp && sp.tasksDonePct != null ? sp.tasksDonePct : 0,
+    // сегодняшние счётчики (для ежедневного заработка)
+    todayReached: spDay && spDay.reached != null ? spDay.reached : 0,
+    todayFast: spDay && spDay.fastFirstCalls != null ? spDay.fastFirstCalls : 0,
+    todayTasks: spDay && spDay.tasksDone != null ? spDay.tasksDone : 0,
     revenueToday: (bySales && bySales.revenueToday) || 0,
     revenue, plan,
   };
@@ -157,7 +162,7 @@ function earnedPoints(m, cfg, st) {
 
 // ─────────────────────────── СОСТОЯНИЕ МОПА ───────────────────────────
 function emptyState() {
-  return { level: 0, lastLevelMonth: "", carry: 0, earnedMonth: 0, pointsMonth: "", spent: 0, bonus: 0, opensDay: "", opensToday: 0, dailyDay: "", planDaysMonth: 0, convDaysMonth: 0, todayPlanAwarded: false, todayConvAwarded: false, inventory: [], levelHistory: [], caseHistory: [] };
+  return { level: 0, lastLevelMonth: "", carry: 0, earnedMonth: 0, earnedDays: 0, earnedToday: 0, pointsMonth: "", spent: 0, bonus: 0, opensDay: "", opensToday: 0, dailyDay: "", planDaysMonth: 0, convDaysMonth: 0, todayPlanAwarded: false, todayConvAwarded: false, inventory: [], levelHistory: [], caseHistory: [] };
 }
 async function getMopState(org, mopId) {
   const raw = await redisGet(`gamification:mop:${org}:${mopId}`);
@@ -193,23 +198,39 @@ function metricsMeetNorms(m, norms) {
 }
 // Пересчёт баллов + попытка поднять уровень для одного МОПа. Идемпотентно в пределах месяца.
 function recomputeMop(st, m, cfg, mkey) {
-  // 1) баллы: банкуем прошлый месяц в carry при смене месяца, затем считаем текущий
+  // ЕЖЕДНЕВНАЯ модель: считаем заработок за СЕГОДНЯ и банкуем по дням.
+  const today = dateKey(nowTk());
+  // смена месяца → весь месяц в carry, сброс
   if (st.pointsMonth && st.pointsMonth !== mkey) {
-    st.carry = (st.carry || 0) + (st.earnedMonth || 0);
-    st.spent = 0; // списания привязаны к месячному балансу; переносим только заработанное
-    st.planDaysMonth = 0; st.convDaysMonth = 0; st.dailyDay = ""; st.todayPlanAwarded = false; st.todayConvAwarded = false;
+    st.carry = (st.carry || 0) + (st.earnedDays || 0) + (st.earnedToday || 0);
+    st.spent = 0;
+    st.earnedDays = 0; st.earnedToday = 0; st.dailyDay = "";
+    st.planDaysMonth = 0; st.convDaysMonth = 0; st.todayPlanAwarded = false; st.todayConvAwarded = false;
   }
   st.pointsMonth = mkey;
-
-  // дневные достижения — раз в день при выполнении (накапливаем за месяц)
-  const today = dateKey(nowTk());
-  if (st.dailyDay !== today) { st.dailyDay = today; st.todayPlanAwarded = false; st.todayConvAwarded = false; }
-  if (!st.todayPlanAwarded && (m.revenueToday || 0) >= (cfg.dailyPlanTarget || 3000000)) { st.planDaysMonth = (st.planDaysMonth || 0) + 1; st.todayPlanAwarded = true; }
+  // смена дня → банкуем вчерашний заработок, обнуляем сегодня
+  if (st.dailyDay !== today) {
+    st.earnedDays = (st.earnedDays || 0) + (st.earnedToday || 0);
+    st.earnedToday = 0; st.dailyDay = today;
+    st.todayPlanAwarded = false; st.todayConvAwarded = false;
+  }
+  // дневные цели: план продаж и конверсия по уровню
+  const planMet = (m.revenueToday || 0) >= (cfg.dailyPlanTarget || 3000000);
   const lvIdx = Math.min(11, Math.max(0, (st.level || 1) - 1));
   const convTarget = (cfg.levels[lvIdx] && cfg.levels[lvIdx].conv) || 3;
-  if (!st.todayConvAwarded && (m.conv || 0) >= convTarget) { st.convDaysMonth = (st.convDaysMonth || 0) + 1; st.todayConvAwarded = true; }
-
-  st.earnedMonth = earnedPoints(m, cfg, st);
+  const convMet = (m.conv || 0) >= convTarget;
+  if (planMet && !st.todayPlanAwarded) { st.planDaysMonth = (st.planDaysMonth || 0) + 1; st.todayPlanAwarded = true; }
+  if (convMet && !st.todayConvAwarded) { st.convDaysMonth = (st.convDaysMonth || 0) + 1; st.todayConvAwarded = true; }
+  // заработок за СЕГОДНЯ (пересчитывается каждый вызов из сегодняшних данных)
+  const p = cfg.points;
+  st.earnedToday = Math.round(
+    (p.reach || 0) * (m.todayReached || 0) +
+    (p.fastCall || 0) * (m.todayFast || 0) +
+    (p.taskDone || 0) * (m.todayTasks || 0) +
+    (planMet ? (p.dailyPlan || 0) : 0) +
+    (convMet ? (p.dailyConv || 0) : 0)
+  );
+  st.earnedMonth = (st.earnedDays || 0) + (st.earnedToday || 0);
 
   // 2) уровень: макс +1 за календарный месяц, только вверх
   if ((st.level || 0) < 12 && st.lastLevelMonth !== mkey) {
@@ -470,9 +491,9 @@ function buildStatePayload(st, m, cfg) {
       const convNorm = (cfg.levels[lvIdx] && cfg.levels[lvIdx].conv) || 3;
       const tgt = cfg.dailyPlanTarget || 3000000;
       return {
-        reach: { count: m.reached || 0, pts: cfg.points.reach || 0 },
-        fast: { count: m.fastFirstCalls || 0, pts: cfg.points.fastCall || 0 },
-        task: { count: m.tasksDone || 0, pts: cfg.points.taskDone || 0 },
+        reach: { count: m.todayReached || 0, pts: cfg.points.reach || 0 },
+        fast: { count: m.todayFast || 0, pts: cfg.points.fastCall || 0 },
+        task: { count: m.todayTasks || 0, pts: cfg.points.taskDone || 0 },
         dailyPlan: { done: (m.revenueToday || 0) >= tgt, today: m.revenueToday || 0, target: tgt, pts: cfg.points.dailyPlan || 0, daysMonth: st.planDaysMonth || 0 },
         dailyConv: { done: (m.conv || 0) >= convNorm, conv: m.conv || 0, target: convNorm, pts: cfg.points.dailyConv || 0, daysMonth: st.convDaysMonth || 0 },
       };

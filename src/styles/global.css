@@ -582,6 +582,7 @@
   .gami-modal-lbl{font-size:11px;text-transform:uppercase;letter-spacing:.28em;color:var(--rc,var(--accent));position:relative;font-weight:700;}
   .gami-modal-ic{margin:16px auto 8px;color:var(--rc,var(--accent));position:relative;filter:drop-shadow(0 8px 20px color-mix(in srgb,var(--rc,var(--accent)) 60%,transparent));}
   .gami-modal-name{font-size:23px;font-weight:800;position:relative;text-wrap:balance;line-height:1.08;}
+  .gami-modal-cap{font-size:14px;font-weight:600;color:var(--rc,var(--accent));margin-top:6px;position:relative;font-style:italic;}
   .gami-modal-val{font-size:14px;color:var(--rc,var(--gold));font-weight:700;margin-top:7px;position:relative;}
   @media (max-width:600px){.gami-rules-grid{grid-template-columns:1fr;}}
   .mop-main{flex:1;min-width:0;padding:26px 40px 50px;overflow-y:auto;}
