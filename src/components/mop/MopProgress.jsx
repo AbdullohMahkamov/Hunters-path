@@ -129,8 +129,30 @@ export default function MopProgress() {
     }, reduce ? 400 : 5200)
   }
 
+  const drops = (st.recentDrops && st.recentDrops.length) ? st.recentDrops : (st.case.items || []).map((it) => ({ name: it.name, value: it.value }))
+
   return (
     <div className="gami-wrap">
+      {/* ── ЖИВАЯ ЛЕНТА ДРОПОВ ── */}
+      {drops.length > 0 && (
+        <div className="gami-ticker">
+          <div className="gami-ticker-lbl"><span className="gami-live-dot" />{mt('gLiveDrops')}</div>
+          <div className="gami-ticker-vp"><div className="gami-ticker-track">
+            {[...drops, ...drops].map((d, i) => {
+              const r = rarityOf(d.value)
+              return (
+                <div className="gami-ticker-item" style={{ '--rc': r.c }} key={i}>
+                  <Ic n={/бонус|ваучер|000/i.test(d.name) ? 'coin' : 'gift'} size={18} color={r.c} />
+                  <div style={{ minWidth: 0 }}>
+                    <div className="gami-ti-name">{d.name}</div>
+                    {d.who ? <div className="gami-ti-who">{d.who}</div> : null}
+                  </div>
+                </div>
+              )
+            })}
+          </div></div>
+        </div>
+      )}
       {/* ── ШАПКА: уровень + баллы ── */}
       <div className="mop-card gami-hero">
         <div className="gami-rank">
@@ -195,11 +217,28 @@ export default function MopProgress() {
         </div>
       </div>
 
-      {/* ── КЕЙС + РУЛЕТКА ── */}
-      <div className="mop-card gami-case">
-        <div className="mop-ct" style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'baseline' }}>
-          <span>{mt('gCase')}</span>
-          <span className="gami-case-price"><Ic n="coin" size={14} color="var(--gold)" />{fmtN(st.case.price)} {mt('gPts')}</span>
+      {/* ── АРЕНА КЕЙСА ── */}
+      <div className="gami-arena">
+        <div className="gami-arena-head">
+          <div className="gami-chest">
+            <div className="gami-rays" />
+            <svg className="gami-chest-svg" viewBox="0 0 120 96" fill="none" xmlns="http://www.w3.org/2000/svg">
+              <defs>
+                <linearGradient id="gchG" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stopColor="#ffe08a" /><stop offset="1" stopColor="#d6931f" /></linearGradient>
+                <linearGradient id="gchW" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stopColor="#c07f2e" /><stop offset="1" stopColor="#7e4c18" /></linearGradient>
+              </defs>
+              <ellipse cx="60" cy="90" rx="42" ry="5" fill="#000" opacity=".28" />
+              <rect x="16" y="50" width="88" height="38" rx="6" fill="url(#gchW)" stroke="#f2b134" strokeWidth="2" />
+              <path d="M16 52 V44 C16 27 104 27 104 44 V52 Z" fill="url(#gchW)" stroke="#f2b134" strokeWidth="2" />
+              <rect x="14" y="48" width="92" height="8" rx="2" fill="url(#gchG)" stroke="#a9741f" strokeWidth="1" />
+              <rect x="52" y="30" width="16" height="58" rx="3" fill="url(#gchG)" stroke="#a9741f" strokeWidth="1" />
+              <rect x="53" y="56" width="14" height="14" rx="3" fill="#3a2a10" stroke="#f2b134" strokeWidth="1.6" />
+              <circle cx="60" cy="62" r="2.4" fill="#ffe08a" /><rect x="59" y="63" width="2" height="4" fill="#ffe08a" />
+              <circle cx="22" cy="82" r="2" fill="#ffe08a" /><circle cx="98" cy="82" r="2" fill="#ffe08a" />
+            </svg>
+          </div>
+          <div className="gami-arena-title">{mt('gCase')}</div>
+          <div className="gami-arena-price"><Ic n="coin" size={16} color="var(--gold)" />{fmtN(st.case.price)} {mt('gPts')}</div>
         </div>
         <div className="gami-reel-vp">
           <div className="gami-marker" />

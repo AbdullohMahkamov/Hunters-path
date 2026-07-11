@@ -158,6 +158,18 @@ async function saveMopState(org, mopId, st) {
   await redisSet(`gamification:mop:${org}:${mopId}`, st);
 }
 function balanceOf(st) { return Math.max(0, (st.carry || 0) + (st.earnedMonth || 0) - (st.spent || 0)); }
+
+// Лента живых дропов отдела (для «forcedrop»-тикера).
+async function getDrops(org) {
+  const raw = await redisGet(`gamification:drops:${org}`);
+  if (raw) { try { return JSON.parse(raw); } catch (e) { /* ignore */ } }
+  return [];
+}
+async function pushDrop(org, entry) {
+  const arr = await getDrops(org);
+  arr.unshift(entry);
+  await redisSet(`gamification:drops:${org}`, arr.slice(0, 30));
+}
 function bandNormsForLevel(cfg, level) {
   const idx = Math.min(12, Math.max(1, level)) - 1;
   return cfg.levels[idx];
@@ -280,8 +292,17 @@ export default async function handler(req, res) {
       const plans = JSON.parse((await redisGet(`mops:plans:${org}`)) || "{}");
       const m = mopMetrics(mopId, cache, speed, plans);
       let st = await getMopState(org, mopId);
-      if (m) { st = recomputeMop(st, m, cfg, monthKey(nowTk())); await saveMopState(org, mopId, st); }
-      res.status(200).json({ ok: true, ...buildStatePayload(st, m, cfg) });
+      if (m) {
+        const before = st.level || 0;
+        st = recomputeMop(st, m, cfg, monthKey(nowTk()));
+        await saveMopState(org, mopId, st);
+        if ((st.level || 0) > before) {
+          const lp = st.inventory[0];
+          await pushDrop(org, { who: sess.mopName || mopId, name: lp.name, value: lp.value, type: "level", level: st.level, at: lp.wonAt });
+        }
+      }
+      const recentDrops = await getDrops(org);
+      res.status(200).json({ ok: true, ...buildStatePayload(st, m, cfg), recentDrops });
       return;
     }
 
@@ -309,6 +330,7 @@ export default async function handler(req, res) {
       st.caseHistory.unshift({ name: won.name, at: won.wonAt });
       if (st.caseHistory.length > 50) st.caseHistory = st.caseHistory.slice(0, 50);
       await saveMopState(org, mopId, st);
+      await pushDrop(org, { who: sess.mopName || mopId, name: won.name, value: won.value, type: "case", at: won.wonAt });
       res.status(200).json({ ok: true, prize: { name: won.name, value: won.value }, balance: balanceOf(st) });
       return;
     }
@@ -366,7 +388,11 @@ async function recalcAll(org) {
     st = recomputeMop(st, m, cfg, mkey);
     await saveMopState(org, a.mopId, st);
     updated++;
-    if ((st.level || 0) > before) leveled++;
+    if ((st.level || 0) > before) {
+      leveled++;
+      const lp = st.inventory[0];
+      await pushDrop(org, { who: a.name || a.mopId, name: lp.name, value: lp.value, type: "level", level: st.level, at: lp.wonAt });
+    }
   }
   return { updated, leveled, month: mkey };
 }

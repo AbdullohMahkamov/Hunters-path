@@ -483,6 +483,39 @@
   .gami-open-btn--lg{font-size:16px;padding:15px;}
   .gami-open-btn small{display:block;font-size:10.5px;font-weight:600;letter-spacing:0;text-transform:none;opacity:.9;margin-top:3px;}
   .gami-msg{color:var(--red);font-size:13px;margin-top:8px;text-align:center;}
+
+  /* Живая лента дропов */
+  .gami-ticker{display:flex;align-items:stretch;border:1px solid var(--line);border-radius:12px;background:var(--bg2);overflow:hidden;}
+  .gami-ticker-lbl{flex:0 0 auto;display:flex;align-items:center;gap:8px;padding:0 14px;font-size:10.5px;font-weight:700;text-transform:uppercase;letter-spacing:.14em;color:var(--txt3);background:var(--card);border-right:1px solid var(--line);white-space:nowrap;}
+  .gami-live-dot{width:7px;height:7px;border-radius:50%;background:var(--green);box-shadow:0 0 8px var(--green);animation:gami-pulse 1.6s infinite;}
+  @keyframes gami-pulse{50%{opacity:.35}}
+  .gami-ticker-vp{flex:1;min-width:0;overflow:hidden;-webkit-mask:linear-gradient(90deg,transparent,#000 5%,#000 95%,transparent);mask:linear-gradient(90deg,transparent,#000 5%,#000 95%,transparent);}
+  .gami-ticker-track{display:flex;gap:8px;padding:8px;width:max-content;animation:gami-scroll 45s linear infinite;}
+  .gami-ticker:hover .gami-ticker-track{animation-play-state:paused;}
+  @keyframes gami-scroll{to{transform:translateX(-50%)}}
+  .gami-ticker-item{flex:0 0 auto;display:flex;align-items:center;gap:8px;padding:6px 12px 6px 9px;border-radius:9px;border:1px solid color-mix(in srgb,var(--rc) 30%,var(--line));border-left:3px solid var(--rc);background:linear-gradient(180deg,var(--card2),color-mix(in srgb,var(--rc) 14%,var(--card2)));}
+  .gami-ticker-item svg{filter:drop-shadow(0 0 5px color-mix(in srgb,var(--rc) 55%,transparent));}
+  .gami-ti-name{font-size:12px;font-weight:600;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;max-width:150px;}
+  .gami-ti-who{font-size:10.5px;color:var(--txt3);white-space:nowrap;}
+
+  /* Арена кейса */
+  .gami-arena{position:relative;overflow:hidden;border-radius:18px;padding:24px 22px;border:1px solid var(--line2);
+    background:
+      radial-gradient(560px 280px at 50% -12%,color-mix(in srgb,var(--gold) 20%,transparent),transparent 62%),
+      radial-gradient(520px 320px at 108% 8%,color-mix(in srgb,var(--accent) 22%,transparent),transparent 58%),
+      radial-gradient(520px 320px at -8% 12%,color-mix(in srgb,#a274ff 20%,transparent),transparent 58%),
+      linear-gradient(180deg,var(--card),var(--bg));}
+  .gami-arena-head{position:relative;display:flex;flex-direction:column;align-items:center;text-align:center;margin-bottom:18px;}
+  .gami-chest{position:relative;width:170px;height:130px;display:grid;place-items:center;}
+  .gami-rays{position:absolute;inset:-30px;background:repeating-conic-gradient(from 0deg at 50% 56%,transparent 0 8deg,color-mix(in srgb,var(--gold) 26%,transparent) 8deg 16deg);
+    -webkit-mask:radial-gradient(closest-side,#000 6%,rgba(0,0,0,.5) 34%,transparent 72%);mask:radial-gradient(closest-side,#000 6%,rgba(0,0,0,.5) 34%,transparent 72%);
+    opacity:.55;animation:gami-rays-spin 22s linear infinite;}
+  @keyframes gami-rays-spin{to{transform:rotate(360deg)}}
+  .gami-chest-svg{position:relative;width:150px;height:auto;filter:drop-shadow(0 12px 26px color-mix(in srgb,var(--gold) 50%,transparent));animation:gami-float 4.5s ease-in-out infinite;}
+  @keyframes gami-float{0%,100%{transform:translateY(0)}50%{transform:translateY(-7px)}}
+  .gami-arena-title{margin-top:6px;font-size:20px;font-weight:800;text-transform:uppercase;letter-spacing:.05em;}
+  .gami-arena-price{margin-top:7px;display:inline-flex;align-items:center;gap:7px;padding:6px 14px;border-radius:999px;border:1px solid var(--gold);background:var(--gold-bg);color:var(--gold);font-weight:800;font-size:14px;font-variant-numeric:tabular-nums;box-shadow:0 6px 18px -8px var(--gold);}
+  @media (prefers-reduced-motion:reduce){.gami-rays,.gami-chest-svg,.gami-ticker-track{animation:none!important;}}
   .gami-rules{margin-top:14px;border-top:1px solid var(--line);padding-top:12px;}
   .gami-rules-h{font-size:11px;text-transform:uppercase;letter-spacing:.4px;color:var(--txt3);margin-bottom:9px;}
   .gami-rules-grid{display:grid;grid-template-columns:1fr 1fr;gap:8px 16px;}
