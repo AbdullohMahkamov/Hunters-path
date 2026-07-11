@@ -31,9 +31,52 @@ const ICONS = {
   chev: '<path d="M6 9l6 6 6-6"/>',
   bolt: '<path d="M13 2 4 14h7l-1 8 9-12h-7z"/>',
   rank: '<path d="M12 2l2.5 4.5L20 8l-4 4 1 6-5-3-5 3 1-6-4-4 5.5-1.5z"/>',
+  phone: '<rect x="7" y="2" width="10" height="20" rx="2.5"/><path d="M11 18h2"/>',
+  tablet: '<rect x="5" y="2" width="14" height="20" rx="2.5"/><path d="M11 18h2"/>',
+  headphone: '<path d="M4 14v-2a8 8 0 0 1 16 0v2"/><rect x="3" y="14" width="4" height="6" rx="1.4"/><rect x="17" y="14" width="4" height="6" rx="1.4"/>',
+  airpods: '<path d="M9 3v10a3 3 0 0 1-6 0 3 3 0 0 1 3-3h3z"/><path d="M15 3v10a3 3 0 0 0 6 0 3 3 0 0 0-3-3h-3z"/>',
+  watch: '<rect x="7" y="6" width="10" height="12" rx="3"/><path d="M9 6l1-3h4l1 3M9 18l1 3h4l1-3"/>',
+  speaker: '<rect x="6" y="2" width="12" height="20" rx="2.5"/><circle cx="12" cy="15" r="3.5"/><circle cx="12" cy="6" r="1"/>',
+  gamepad: '<path d="M7 8h10a5 5 0 0 1 5 5 4 4 0 0 1-7 2.5L13 14h-2l-2 1.5A4 4 0 0 1 2 13a5 5 0 0 1 5-5z"/><path d="M6.5 11v2M5.5 12h2M15.5 11.5h.01M17.5 13.5h.01"/>',
+  keyboard: '<rect x="2" y="6" width="20" height="12" rx="2"/><path d="M6 10h.01M10 10h.01M14 10h.01M18 10h.01M7 14h10"/>',
+  mug: '<path d="M4 6h12v8a4 4 0 0 1-4 4H8a4 4 0 0 1-4-4z"/><path d="M16 8h2.5a2.5 2.5 0 0 1 0 5H16"/>',
+  cap: '<path d="M3 15a9 9 0 0 1 18 0z"/><path d="M12 15a6 6 0 0 1 9-3"/>',
+  sticker: '<path d="M14.5 3H6a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h6l8-8V5a2 2 0 0 0-2-2z"/><path d="M13 21v-6a1 1 0 0 1 1-1h6"/>',
+  snack: '<path d="M6 8h12l-1.2 12.2A2 2 0 0 1 14.8 22H9.2a2 2 0 0 1-2-1.8z"/><path d="M8 8V5a4 4 0 0 1 8 0v3"/>',
+  play: '<circle cx="12" cy="12" r="9"/><path d="M10 8.5l6 3.5-6 3.5z"/>',
+  battery: '<rect x="3" y="8" width="16" height="9" rx="2"/><path d="M21 11v3M8 10l-1 2h2l-1 2"/>',
+  cert: '<rect x="4" y="4" width="16" height="13" rx="2"/><path d="M8 20l2-3M16 20l-2-3M9 9h6M9 12h4"/>',
+}
+function pickIcon(name) {
+  const s = (name || '').toLowerCase()
+  if (/бонус|ваучер|сум|000/.test(s)) return 'coin'
+  if (/airpods/.test(s)) return 'airpods'
+  if (/наушник/.test(s)) return 'headphone'
+  if (/iphone|смартфон|redmi|телефон/.test(s)) return 'phone'
+  if (/ipad|планшет/.test(s)) return 'tablet'
+  if (/playstation|ps5|консоль/.test(s)) return 'gamepad'
+  if (/час/.test(s)) return 'watch'
+  if (/колонка|jbl|bluetooth/.test(s)) return 'speaker'
+  if (/клав|мыш/.test(s)) return 'keyboard'
+  if (/кружк/.test(s)) return 'mug'
+  if (/кепк|шоппер/.test(s)) return 'cap'
+  if (/стикер/.test(s)) return 'sticker'
+  if (/кола|чипс|шоколад|кофе|энергетик|обед|снек/.test(s)) return 'snack'
+  if (/подписк|spotify|netflix|youtube/.test(s)) return 'play'
+  if (/пауэрбанк|power/.test(s)) return 'battery'
+  if (/сертификат|мерч|поездк|набор/.test(s)) return 'cert'
+  return 'gift'
 }
 function Ic({ n, size = 16, color, style }) {
   return <svg width={size} height={size} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.7" strokeLinecap="round" strokeLinejoin="round" style={{ color, flex: '0 0 auto', ...style }} dangerouslySetInnerHTML={{ __html: ICONS[n] || '' }} />
+}
+// Визуал приза: живое фото (если задан URL) или контурная иллюстрация по категории.
+function PrizeVisual({ item, size = 30, className }) {
+  const r = rarityOf(item && item.value)
+  if (item && item.image) {
+    return <img src={item.image} alt={item.name || ''} loading="lazy" className={'gami-photo ' + (className || '')} style={{ '--rc': r.c, width: size, height: size }} />
+  }
+  return <Ic n={pickIcon(item && item.name)} size={size} color={r.c} />
 }
 
 const METRIC_KEY = { reach: 'gReach', conv: 'gConv', tasks: 'gTasks', call: 'gCall', plan: 'gPlan' }
@@ -143,7 +186,7 @@ export default function MopProgress({ view = 'levels' }) {
               const r = rarityOf(d.value)
               return (
                 <div className="gami-ticker-item" style={{ '--rc': r.c }} key={i}>
-                  <Ic n={/бонус|ваучер|000/i.test(d.name) ? 'coin' : 'gift'} size={18} color={r.c} />
+                  <PrizeVisual item={d} size={d.image ? 30 : 18} />
                   <div style={{ minWidth: 0 }}>
                     <div className="gami-ti-name">{d.name}</div>
                     {d.who ? <div className="gami-ti-who">{d.who}</div> : null}
@@ -209,10 +252,13 @@ export default function MopProgress({ view = 'levels' }) {
             const milestone = l.n % 3 === 0
             return (
               <div key={l.n} className={'gami-node' + (l.done ? ' done' : '') + (l.current ? ' current' : '') + (milestone ? ' milestone' : '')} style={{ '--rc': pr.c }}>
-                <div className="gami-node-badge">{l.done ? <Ic n="check" size={16} /> : (l.current ? l.n : <Ic n="lock" size={14} />)}</div>
+                <div className="gami-node-top">
+                  <div className="gami-node-badge">{l.done ? <Ic n="check" size={16} /> : (l.current ? l.n : <Ic n="lock" size={14} />)}</div>
+                  <div className="gami-node-thumb"><PrizeVisual item={{ name: l.prizeName, value: l.prizeValue, image: l.prizeImage }} size={l.prizeImage ? 40 : 26} /></div>
+                </div>
                 <div className="gami-node-lv">{mt('gLevel')} {l.n}</div>
                 <div className="gami-node-name">{l.name}</div>
-                <div className="gami-node-prize"><Ic n="gift" size={12} color="var(--rc)" /> {l.prizeName}</div>
+                <div className="gami-node-prize">{l.prizeName}</div>
               </div>
             )
           })}
@@ -254,7 +300,7 @@ export default function MopProgress({ view = 'levels' }) {
               const r = rarityOf(it.value)
               return (
                 <div className="gami-cell" key={i} style={{ '--rc': r.c }}>
-                  <Ic n={/бонус|ваучер|000/i.test(it.name) ? 'coin' : 'gift'} size={30} color={r.c} />
+                  <div className="gami-cell-vis"><PrizeVisual item={it} size={it.image ? 56 : 34} /></div>
                   <span className="gami-cell-n">{it.name}</span>
                   {it.value ? <span className="gami-cell-v">{fmtVal(it.value)}</span> : null}
                 </div>
@@ -289,7 +335,7 @@ export default function MopProgress({ view = 'levels' }) {
           : <div className="gami-inv">
             {st.inventory.map((it) => (
               <div key={it.id} className="gami-inv-item">
-                <Ic n={it.type === 'level' ? 'rank' : 'gift'} size={20} color={it.type === 'level' ? 'var(--gold)' : 'var(--accent)'} />
+                <PrizeVisual item={it} size={it.image ? 40 : 24} />
                 <div style={{ flex: 1, minWidth: 0 }}>
                   <div className="gami-inv-name">{it.name}{it.type === 'level' ? ` · ${mt('gLevel')} ${it.level}` : ''}</div>
                   {it.value ? <div className="gami-inv-val">{fmtVal(it.value)}</div> : null}
@@ -308,7 +354,7 @@ export default function MopProgress({ view = 'levels' }) {
             <canvas ref={confRef} className="gami-conf" />
             <div className="gami-modal-glow" />
             <div className="gami-modal-lbl">{mt('gWon')}</div>
-            <div className="gami-modal-ic"><Ic n={/бонус|ваучер|000/i.test(result.name) ? 'coin' : 'gift'} size={62} color="var(--rc)" /></div>
+            <div className="gami-modal-ic"><PrizeVisual item={result} size={result.image ? 130 : 62} className="gami-photo-lg" /></div>
             <h3 className="gami-modal-name">{result.name}</h3>
             {result.value ? <div className="gami-modal-val">{fmtVal(result.value)}</div> : null}
             <button className="gami-open-btn gami-open-btn--lg" style={{ marginTop: 20 }} onClick={() => setResult(null)}>{mt('gTake')}</button>

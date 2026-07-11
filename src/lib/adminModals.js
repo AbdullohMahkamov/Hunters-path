@@ -273,7 +273,7 @@ function collectCurrentGamiTab() {
     const items = []
     ;(c.case.items || []).forEach((_, i) => {
       if (!$('g_ci_name_' + i)) return
-      items.push({ name: gv('g_ci_name_' + i).trim(), chance: gnum('g_ci_chance_' + i), value: gnum('g_ci_value_' + i) })
+      items.push({ name: gv('g_ci_name_' + i).trim(), chance: gnum('g_ci_chance_' + i), value: gnum('g_ci_value_' + i), image: gv('g_ci_img_' + i).trim() })
     })
     if (items.length) c.case.items = items
   } else if (window._gamiTab === 'levels') {
@@ -282,7 +282,7 @@ function collectCurrentGamiTab() {
       lv.name = gv('g_lv_name_' + i).trim()
       lv.reach = gnum('g_lv_reach_' + i); lv.conv = gnum('g_lv_conv_' + i); lv.tasks = gnum('g_lv_tasks_' + i)
       lv.call = gnum('g_lv_call_' + i); lv.plan = gnum('g_lv_plan_' + i)
-      lv.prizeName = gv('g_lv_pname_' + i).trim(); lv.prizeValue = gnum('g_lv_pval_' + i)
+      lv.prizeName = gv('g_lv_pname_' + i).trim(); lv.prizeValue = gnum('g_lv_pval_' + i); lv.prizeImage = gv('g_lv_pimg_' + i).trim()
     })
   }
 }
@@ -305,14 +305,21 @@ function renderGamiTab() {
       fld('Баллы за день без просрочек', num('g_p_day', c.points.noOverdueDay)) +
       fld('Цена кейса (баллы)', num('g_case_price', c.case.price)) +
       fld('Открытий кейса в день', num('g_case_perday', c.case.perDay != null ? c.case.perDay : 2)) +
-      '</div>' + saveBtn
+      '</div>' + saveBtn +
+      '<button onclick="resetGami()" style="margin-top:9px;width:100%;padding:9px;border-radius:9px;background:transparent;border:1px solid var(--line2);color:var(--txt3);font-size:12.5px;cursor:pointer;">Сбросить к стандартным</button>'
   } else if (t === 'case') {
     const rows = (c.case.items || []).map((it, i) =>
-      `<div style="display:grid;grid-template-columns:1fr 74px 96px 32px;gap:7px;align-items:center;margin-bottom:7px;">
-        ${inp('g_ci_name_' + i, it.name)}
-        <div style="position:relative;">${num('g_ci_chance_' + i, it.chance)}<span style="position:absolute;right:8px;top:8px;color:var(--txt3);font-size:12px;pointer-events:none;"></span></div>
-        ${num('g_ci_value_' + i, it.value)}
-        <button onclick="removeCaseItem(${i})" style="width:32px;height:32px;border-radius:8px;background:var(--red-bg);color:var(--red);border:none;font-size:16px;cursor:pointer;">×</button>
+      `<div style="border:1px solid var(--line);border-radius:10px;padding:9px;margin-bottom:8px;background:var(--card);">
+        <div style="display:grid;grid-template-columns:1fr 74px 96px 32px;gap:7px;align-items:center;margin-bottom:6px;">
+          ${inp('g_ci_name_' + i, it.name)}
+          ${num('g_ci_chance_' + i, it.chance)}
+          ${num('g_ci_value_' + i, it.value)}
+          <button onclick="removeCaseItem(${i})" style="width:32px;height:32px;border-radius:8px;background:var(--red-bg);color:var(--red);border:none;font-size:16px;cursor:pointer;">×</button>
+        </div>
+        <div style="display:flex;align-items:center;gap:8px;">
+          ${it.image ? `<img src="${String(it.image).replace(/"/g, '&quot;')}" style="width:34px;height:34px;border-radius:7px;object-fit:cover;border:1px solid var(--line2);flex:0 0 auto;">` : '<div style="width:34px;height:34px;border-radius:7px;background:var(--bg2);border:1px dashed var(--line2);flex:0 0 auto;"></div>'}
+          <input id="g_ci_img_${i}" value="${(it.image || '').replace(/"/g, '&quot;')}" placeholder="URL фото приза (необязательно)" style="flex:1;padding:8px 9px;border-radius:8px;border:1px solid var(--line2);background:var(--bg2);color:var(--txt);font-size:12.5px;">
+        </div>
       </div>`).join('')
     body.innerHTML =
       '<div style="display:grid;grid-template-columns:1fr 74px 96px 32px;gap:7px;font-size:11px;color:var(--txt3);text-transform:uppercase;letter-spacing:.4px;margin-bottom:7px;"><span>Приз</span><span>Шанс %</span><span>Стоим.</span><span></span></div>' +
@@ -334,10 +341,11 @@ function renderGamiTab() {
         <td style="padding:3px 6px;">${num('g_lv_plan_' + i, lv.plan, '64px')}</td>
         <td style="padding:3px 6px;">${inp('g_lv_pname_' + i, lv.prizeName, '150px')}</td>
         <td style="padding:3px 6px;">${num('g_lv_pval_' + i, lv.prizeValue, '110px')}</td>
+        <td style="padding:3px 6px;">${inp('g_lv_pimg_' + i, lv.prizeImage, '180px')}</td>
       </tr>`).join('')
     body.innerHTML =
-      '<div style="overflow-x:auto;"><table style="border-collapse:collapse;min-width:820px;"><thead><tr>' +
-      th('#') + th('Название') + th('Дозвон %') + th('Конв. %') + th('Задачи %') + th('Звонок ≤мин') + th('План %') + th('Название приза') + th('Стоим. приза') +
+      '<div style="overflow-x:auto;"><table style="border-collapse:collapse;min-width:1000px;"><thead><tr>' +
+      th('#') + th('Название') + th('Дозвон %') + th('Конв. %') + th('Задачи %') + th('Звонок ≤мин') + th('План %') + th('Название приза') + th('Стоим. приза') + th('Фото приза (URL)') +
       '</tr></thead><tbody>' + rows + '</tbody></table></div>' + saveBtn
   } else if (t === 'inventory') {
     body.innerHTML = '<div id="g_inv_list"><div style="color:var(--txt3);font-size:13px;">Загрузка...</div></div>'
@@ -361,6 +369,15 @@ async function saveGami() {
     const d = await r.json()
     if (d.ok) { window._gamiCfg = d.config; alert('Сохранено'); renderGamiTab() }
     else alert('Ошибка: ' + (d.error || '—'))
+  } catch (e) { alert(String(e)) }
+}
+
+async function resetGami() {
+  if (!confirm('Сбросить все настройки геймификации к стандартным? Текущие призы/уровни/баллы будут заменены.')) return
+  try {
+    const r = await fetch('/api/gamification', { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ session: getSession(), action: 'reset_config' }) })
+    const d = await r.json()
+    if (d.ok) { window._gamiCfg = d.config; renderGamiTab(); alert('Сброшено к стандартным') } else alert('Ошибка: ' + (d.error || '—'))
   } catch (e) { alert(String(e)) }
 }
 
@@ -400,6 +417,6 @@ export function initAdminModals() {
   Object.assign(window, {
     openMopsModal, closeMopsModal, loadMopsList, createMopAccount, deleteMopAccount, setMopRole, saveRaffle, setMopPlan,
     openClientsModal, closeClientsModal, loadClientsList, deleteClient, openClientForm, cInput, probeClient, onPipeChange, saveClient,
-    openGamiModal, closeGamiModal, gamiSwitchTab, saveGami, addCaseItem, removeCaseItem, gamiCaseSum, gamiDeliver,
+    openGamiModal, closeGamiModal, gamiSwitchTab, saveGami, addCaseItem, removeCaseItem, gamiCaseSum, gamiDeliver, resetGami,
   })
 }

@@ -205,7 +205,7 @@ function recomputeMop(st, m, cfg, mkey) {
       st.lastLevelMonth = mkey;
       const prize = {
         id: "lv" + Date.now() + Math.floor(Math.random() * 1000),
-        type: "level", level: target, name: norms.prizeName, value: norms.prizeValue,
+        type: "level", level: target, name: norms.prizeName, value: norms.prizeValue, image: norms.prizeImage || "",
         status: "pending", wonAt: new Date().toISOString(), month: mkey,
       };
       st.inventory = st.inventory || [];
@@ -249,6 +249,13 @@ export default async function handler(req, res) {
     // ══════════════ АДМИН ══════════════
     if (sess.role === "admin") {
       if (action === "get_config") { res.status(200).json({ ok: true, config: cfg }); return; }
+
+      if (action === "reset_config") {
+        const def = defaultConfig();
+        await redisSet(`gamification:config:${org}`, def);
+        res.status(200).json({ ok: true, config: def });
+        return;
+      }
 
       if (req.method === "POST" && action === "set_config") {
         const incoming = req.body && req.body.config;
@@ -332,7 +339,7 @@ export default async function handler(req, res) {
       const prizeItem = pickCasePrize(cfg.case.items); // рандом ТОЛЬКО на сервере
       const won = {
         id: "cs" + Date.now() + Math.floor(Math.random() * 1000),
-        type: "case", name: prizeItem.name, value: prizeItem.value || 0,
+        type: "case", name: prizeItem.name, value: prizeItem.value || 0, image: prizeItem.image || "",
         status: "pending", wonAt: new Date().toISOString(),
       };
       st.inventory = st.inventory || [];
@@ -342,7 +349,7 @@ export default async function handler(req, res) {
       if (st.caseHistory.length > 50) st.caseHistory = st.caseHistory.slice(0, 50);
       await saveMopState(org, mopId, st);
       await pushDrop(org, { who: sess.mopName || mopId, name: won.name, value: won.value, type: "case", at: won.wonAt });
-      res.status(200).json({ ok: true, prize: { name: won.name, value: won.value }, balance: balanceOf(st), opensLeft: Math.max(0, perDay - st.opensToday) });
+      res.status(200).json({ ok: true, prize: { name: won.name, value: won.value, image: won.image }, balance: balanceOf(st), opensLeft: Math.max(0, perDay - st.opensToday) });
       return;
     }
 
@@ -378,7 +385,7 @@ function buildStatePayload(st, m, cfg) {
     balance: balanceOf(st),
     earnedMonth: st.earnedMonth || 0,
     progress, metCount, normsCount: progress.length,
-    levels: cfg.levels.map((l, i) => ({ n: i + 1, name: l.name, prizeName: l.prizeName, prizeValue: l.prizeValue, done: (i + 1) <= level, current: (i + 1) === level })),
+    levels: cfg.levels.map((l, i) => ({ n: i + 1, name: l.name, prizeName: l.prizeName, prizeValue: l.prizeValue, prizeImage: l.prizeImage || "", done: (i + 1) <= level, current: (i + 1) === level })),
     case: { price: cfg.case.price, items: cfg.case.items, perDay },
     opensToday, opensLeft: Math.max(0, perDay - opensToday),
     points: cfg.points,
