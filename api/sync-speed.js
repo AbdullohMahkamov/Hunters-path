@@ -457,6 +457,7 @@ export default async function handler(req, res) {
         name,
         leads: D.leads,
         fastFirstCalls: D.firstCallTimes.filter(mn => mn < 15).length, // быстрый 1-й звонок сегодня (для геймификации)
+        firstCallTimesDay: D.firstCallTimes.map(x => Math.round(x)).slice(0, 300), // времена 1-го звонка (мин) по сегодняшним лидам — для SLA-счётчика
         medianFirstCallMin: medMin !== null ? Math.round(medMin) : null,
         medianFirstCallAssignMin: medAssign !== null ? Math.round(medAssign) : null,
         avgCallsPerLead: D.leads ? +(D.callsTotal / D.leads).toFixed(1) : 0,

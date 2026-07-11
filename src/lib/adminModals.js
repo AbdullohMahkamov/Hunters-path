@@ -280,12 +280,12 @@ function collectCurrentGamiTab() {
   const c = window._gamiCfg; if (!c) return
   if (window._gamiTab === 'settings') {
     const en = $('g_enabled'); if (en) c.enabled = en.checked
-    c.points = { reach: gnum('g_p_reach'), fastCall: gnum('g_p_fast'), taskDone: gnum('g_p_task'), dailyPlan: gnum('g_p_dplan'), dailyConv: gnum('g_p_dconv') }
+    c.points = { reach: gnum('g_p_reach'), fastCall: gnum('g_p_fast'), taskDone: gnum('g_p_task'), dailyPlan: gnum('g_p_dplan') }
     if ($('g_dplan_target')) c.dailyPlanTarget = gnum('g_dplan_target')
     if ($('g_first_max')) c.firstCallMax = Math.max(1, gnum('g_first_max'))
     if ($('g_task_goal')) c.taskGoal = Math.max(1, gnum('g_task_goal'))
-    if ($('g_conv_goal')) c.convGoal = Math.max(0, gnum('g_conv_goal'))
-    if ($('g_reach_goal')) c.reachGoal = Math.max(0, gnum('g_reach_goal'))
+    if ($('g_dozvon_coef')) { const v = parseFloat(gv('g_dozvon_coef')); c.dozvonCoef = (isNaN(v) || v <= 0) ? 0.6 : v }
+    if ($('g_freeze')) c.freezeTime = gv('g_freeze') || '16:00'
     const sr = []
     ;(c.salesRewards || []).forEach((_, i) => { if ($('g_sr_sales_' + i)) sr.push({ sales: gnum('g_sr_sales_' + i), opens: Math.max(0, gnum('g_sr_opens_' + i)) }) })
     if (sr.length) c.salesRewards = sr
@@ -331,16 +331,15 @@ function renderGamiTab() {
     body.innerHTML =
       `<label style="display:flex;align-items:center;gap:9px;font-size:14px;font-weight:600;margin-bottom:18px;cursor:pointer;"><input type="checkbox" id="g_enabled" ${c.enabled ? 'checked' : ''} style="width:18px;height:18px;"> Геймификация включена</label>` +
       '<div style="display:grid;grid-template-columns:1fr 1fr;gap:0 14px;">' +
-      fld('Баллы за дозвон (дневной)', num('g_p_reach', c.points.reach)) +
-      fld('Дозвон ≥ % за день', num('g_reach_goal', c.reachGoal != null ? c.reachGoal : 60), lvRange('reach', '%')) +
-      fld('Баллы за дневной план', num('g_p_dplan', c.points.dailyPlan != null ? c.points.dailyPlan : 250)) +
-      fld('Дневной план продаж (сум)', num('g_dplan_target', c.dailyPlanTarget != null ? c.dailyPlanTarget : 3000000), lvRange('plan', '%')) +
-      fld('Баллы за дневную конверсию', num('g_p_dconv', c.points.dailyConv != null ? c.points.dailyConv : 150)) +
-      fld('Конверсия ≥ % за день', num('g_conv_goal', c.convGoal != null ? c.convGoal : 3), lvRange('conv', '%')) +
-      fld('Баллы за 1-й звонок (дневной)', num('g_p_fast', c.points.fastCall)) +
-      fld('1-й звонок ≤ мин (после лида)', num('g_first_max', c.firstCallMax != null ? c.firstCallMax : 30), lvRange('call', ' мин', true)) +
-      fld('Баллы за задачи (дневной)', num('g_p_task', c.points.taskDone)) +
+      fld('Баллы за дозвон', num('g_p_reach', c.points.reach)) +
+      fld('Коэффициент дозвона (цель = лиды × K)', `<input id="g_dozvon_coef" type="number" step="0.05" min="0" value="${c.dozvonCoef != null ? c.dozvonCoef : 0.6}" style="width:100%;padding:8px 9px;border-radius:8px;border:1px solid var(--line2);background:var(--bg2);color:var(--txt);font-size:13px;">`) +
+      fld('Баллы за скорость 1-го звонка', num('g_p_fast', c.points.fastCall)) +
+      fld('SLA 1-го звонка (мин)', num('g_first_max', c.firstCallMax != null ? c.firstCallMax : 30), lvRange('call', ' мин', true)) +
+      fld('Баллы за задачи', num('g_p_task', c.points.taskDone)) +
       fld('Задачи ≥ % за день', num('g_task_goal', c.taskGoal != null ? c.taskGoal : 70), lvRange('tasks', '%')) +
+      fld('Баллы за дневной план', num('g_p_dplan', c.points.dailyPlan != null ? c.points.dailyPlan : 60)) +
+      fld('Дневной план продаж (сум)', num('g_dplan_target', c.dailyPlanTarget != null ? c.dailyPlanTarget : 3000000), lvRange('plan', '%')) +
+      fld('Заморозка знаменателя дозвона (МСК)', `<input id="g_freeze" type="time" value="${c.freezeTime || '16:00'}" style="width:100%;padding:7px 9px;border-radius:8px;border:1px solid var(--line2);background:var(--bg2);color:var(--txt);font-size:13px;">`) +
       fld('Цена кейса (баллы)', num('g_case_price', c.case.price)) +
       fld('Открытий кейса в день', num('g_case_perday', c.case.perDay != null ? c.case.perDay : 2)) +
       '</div>' +

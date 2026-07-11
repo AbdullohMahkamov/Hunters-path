@@ -392,21 +392,40 @@ export default function MopProgress({ view = 'levels' }) {
           <div className="gami-rules-h">{mt('gHowEarn')}</div>
           {st.earn ? (() => {
             const e = st.earn
-            const dailyRows = [
-              { g: e.reach, label: mt('gRuleReach'), cur: (e.reach.cur || 0) + '%', tgt: '≥ ' + e.reach.target + '%', pct: e.reach.target ? Math.min(100, Math.round((e.reach.cur || 0) / e.reach.target * 100)) : 0, days: e.reach.days },
-              { g: e.dailyPlan, label: mt('gRulePlan'), cur: (fmtVal(e.dailyPlan.cur || 0) || '0'), tgt: fmtVal(e.dailyPlan.target), pct: e.dailyPlan.target ? Math.min(100, Math.round((e.dailyPlan.cur || 0) / e.dailyPlan.target * 100)) : 0, days: e.dailyPlan.days },
-              { g: e.dailyConv, label: mt('gRuleConv'), cur: (e.dailyConv.cur || 0) + '%', tgt: e.dailyConv.target + '%', pct: e.dailyConv.target ? Math.min(100, Math.round((e.dailyConv.cur || 0) / e.dailyConv.target * 100)) : 0, days: e.dailyConv.days },
-              { g: e.dailyCall, label: mt('gRuleFast'), cur: e.dailyCall.cur != null ? e.dailyCall.cur + ' ' + mt('min') : '—', tgt: '≤ ' + e.dailyCall.target + ' ' + mt('min'), pct: (e.dailyCall.cur != null && e.dailyCall.cur > 0) ? Math.min(100, Math.round(e.dailyCall.target / e.dailyCall.cur * 100)) : (e.dailyCall.done ? 100 : 0), days: e.dailyCall.days },
-              { g: e.dailyTask, label: mt('gRuleTask'), cur: (e.dailyTask.cur || 0) + '%', tgt: '≥ ' + e.dailyTask.target + '%', pct: e.dailyTask.target ? Math.min(100, Math.round((e.dailyTask.cur || 0) / e.dailyTask.target * 100)) : 0, days: e.dailyTask.days },
+            const uz = getMopLang() === 'uz'
+            const pctOf = (x, y) => y > 0 ? Math.min(100, Math.round(x / y * 100)) : 0
+            const doneTxt = uz ? 'Bajarildi ✓' : 'Выполнено ✓'
+            const rows = [
+              {
+                g: e.dozvon, label: uz ? 'Aloqa (dozvon)' : 'Дозвон',
+                counter: `${e.dozvon.x} / ${e.dozvon.y}`, pct: pctOf(e.dozvon.x, e.dozvon.y),
+                action: e.dozvon.done ? doneTxt : (e.dozvon.y <= 0 ? (uz ? 'Lidlarni ishga oling' : 'Начните брать лиды в работу') : (uz ? `Yana ${e.dozvon.remain} ta lidga qoʻngʻiroq qiling` : `Дозвонитесь ещё до ${e.dozvon.remain} лидов`)),
+              },
+              {
+                g: e.speed, label: uz ? '1-qoʻngʻiroq tezligi' : 'Скорость 1-го звонка',
+                counter: `${e.speed.x} / ${e.speed.y}`, pct: pctOf(e.speed.x, e.speed.y),
+                action: e.speed.done ? doneTxt : (e.speed.y <= 0 ? (uz ? 'Bugun yangi lid yoʻq' : 'Пока нет новых лидов') : (uz ? `Yana ${e.speed.remain} lidni ${e.speed.sla} daqiqada oling` : `Возьмите ещё ${e.speed.remain} лидов за ${e.speed.sla} мин`)),
+              },
+              {
+                g: e.task, label: uz ? 'Vazifalar' : 'Задачи',
+                counter: `${e.task.x} / ${e.task.y}`, pct: pctOf(e.task.x, e.task.y),
+                action: e.task.done ? doneTxt : (e.task.y <= 0 ? (uz ? 'Bugun vazifa yoʻq' : 'Нет задач на сегодня') : (uz ? `Yana ${e.task.remain} ta vazifa bajaring` : `Выполните ещё ${e.task.remain} задач`)),
+              },
+              {
+                g: e.plan, label: uz ? 'Reja' : 'План',
+                counter: `${fmtVal(e.plan.cur) || '0'} / ${fmtVal(e.plan.target)}`, pct: pctOf(e.plan.cur, e.plan.target),
+                action: e.plan.done ? doneTxt : (uz ? `Yana ${fmtVal(e.plan.remain)} ga soting` : `Продайте ещё на ${fmtVal(e.plan.remain)}`),
+              },
             ]
             return (
               <div className="gami-checklist">
-                {dailyRows.map((row, i) => (
+                {rows.map((row, i) => (
                   <div key={i} className={'gami-goal daily ' + (row.g.done ? 'done' : 'fail')}>
                     <span className="gami-goal-ic">{row.g.done ? <Ic n="check" size={13} /> : <Ic n="cross" size={13} />}</span>
                     <div className="gami-goal-body">
-                      <div className="gami-goal-lbl"><span className="gami-goal-name">{row.label}</span><span className="gami-goal-sub">{row.cur} / {row.tgt}{row.days ? ` · ${row.days} ${mt('daysWord')}` : ''}</span></div>
+                      <div className="gami-goal-lbl"><span className="gami-goal-name">{row.label}</span><span className="gami-goal-sub">{row.counter}</span></div>
                       <div className="gami-goal-bar"><i style={{ width: row.pct + '%' }} /></div>
+                      <div className="gami-goal-action">{row.action}</div>
                     </div>
                     <span className="gami-goal-pts">+{row.g.pts}</span>
                   </div>
@@ -419,7 +438,6 @@ export default function MopProgress({ view = 'levels' }) {
               <span><b>+{st.points.fastCall}</b> {mt('gRuleFast')}</span>
               <span><b>+{st.points.taskDone}</b> {mt('gRuleTask')}</span>
               <span><b>+{st.points.dailyPlan}</b> {mt('gRulePlan')}</span>
-              <span><b>+{st.points.dailyConv}</b> {mt('gRuleConv')}</span>
             </div>
           )}
         </div>
