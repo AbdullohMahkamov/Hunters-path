@@ -421,6 +421,21 @@ export default async function handler(req, res) {
         return;
       }
 
+      // сбросить дневное состояние МОПа (открытия/лимит/бесплатные/цели дня)
+      if (req.method === "POST" && action === "reset_day") {
+        const { mopId } = req.body || {};
+        if (!mopId) { res.status(200).json({ ok: false, error: "no mopId" }); return; }
+        const st = await getMopState(org, mopId);
+        st.opensToday = 0; st.opensDay = "";
+        st.freeOpens = 0; st.salesClaimedDay = ""; st.salesClaimedTiers = [];
+        st.dozvonDenom = 0; st.dozvonDenomDay = ""; st.dozvonFrozen = false;
+        st.earnedToday = 0; st.dailyDay = "";
+        st.todayPlanAwarded = false; st.todayConvAwarded = false; st.todayCallAwarded = false; st.todayTaskAwarded = false; st.todayReachAwarded = false;
+        await saveMopState(org, mopId, st);
+        res.status(200).json({ ok: true });
+        return;
+      }
+
       // очистить инвентарь МОПа
       if (req.method === "POST" && action === "clear_inventory") {
         const { mopId } = req.body || {};

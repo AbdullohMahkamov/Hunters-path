@@ -454,7 +454,8 @@ async function loadGamiBalances() {
         <div style="display:flex;gap:7px;flex-wrap:wrap;align-items:center;">
           <input id="g_grant_${mid}" type="number" placeholder="напр. 5000" style="width:110px;padding:8px 9px;border-radius:8px;border:1px solid var(--line2);background:var(--bg2);color:var(--txt);font-size:13px;">
           <button onclick="grantPoints('${midJs}')" style="padding:8px 13px;border-radius:8px;background:var(--accent);border:none;color:#fff;font-size:12.5px;font-weight:600;cursor:pointer;">Начислить</button>
-          <button onclick="zeroPoints('${midJs}')" style="padding:8px 12px;border-radius:8px;background:var(--red-bg);border:1px solid var(--red);color:var(--red);font-size:12.5px;font-weight:600;cursor:pointer;">Обнулить</button>
+          <button onclick="zeroPoints('${midJs}')" style="padding:8px 12px;border-radius:8px;background:var(--red-bg);border:1px solid var(--red);color:var(--red);font-size:12.5px;font-weight:600;cursor:pointer;">Обнулить баллы</button>
+          <button onclick="resetDay('${midJs}')" style="padding:8px 12px;border-radius:8px;background:var(--gold-bg);border:1px solid var(--gold);color:var(--gold);font-size:12.5px;font-weight:600;cursor:pointer;">Сбросить день</button>
           <button onclick="clearInventory('${midJs}')" style="padding:8px 12px;border-radius:8px;background:var(--card2);border:1px solid var(--line2);color:var(--txt2);font-size:12.5px;cursor:pointer;">Очистить инвентарь</button>
         </div>
       </div>`
@@ -478,6 +479,14 @@ async function zeroPoints(mopId) {
     const r = await fetch('/api/gamification', { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ session: getSession(), action: 'zero_points', mopId }) })
     const d = await r.json()
     if (d.ok) { loadGamiBalances() } else alert('Ошибка: ' + (d.error || '—'))
+  } catch (e) { alert(String(e)) }
+}
+async function resetDay(mopId) {
+  if (!confirm('Сбросить дневное состояние (открытия, лимит, бесплатные, цели дня) у ' + mopId + '?')) return
+  try {
+    const r = await fetch('/api/gamification', { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ session: getSession(), action: 'reset_day', mopId }) })
+    const d = await r.json()
+    if (d.ok) { alert('Дневное состояние сброшено'); loadGamiBalances() } else alert('Ошибка: ' + (d.error || '—'))
   } catch (e) { alert(String(e)) }
 }
 async function clearInventory(mopId) {
@@ -525,7 +534,7 @@ export function initAdminModals() {
   Object.assign(window, {
     openMopsModal, closeMopsModal, loadMopsList, createMopAccount, deleteMopAccount, setMopRole, saveRaffle, setMopPlan,
     openClientsModal, closeClientsModal, loadClientsList, deleteClient, openClientForm, cInput, probeClient, onPipeChange, saveClient,
-    openGamiModal, closeGamiModal, gamiSwitchTab, saveGami, addCaseItem, removeCaseItem, gamiCaseSum, gamiDeliver, resetGami, resetEconomy, loadGamiBalances, grantPoints, zeroPoints, clearInventory,
+    openGamiModal, closeGamiModal, gamiSwitchTab, saveGami, addCaseItem, removeCaseItem, gamiCaseSum, gamiDeliver, resetGami, resetEconomy, loadGamiBalances, grantPoints, zeroPoints, resetDay, clearInventory,
   })
   // после F5 — вернуть открытую модалку «Геймификация» на нужной вкладке
   try {
