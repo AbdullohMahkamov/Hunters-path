@@ -165,6 +165,7 @@ export default function MopProgress({ view = 'levels' }) {
     requestAnimationFrame(() => requestAnimationFrame(() => {
       const track = trackRef.current
       if (!track) return
+      Array.from(track.children).forEach((c) => c.classList.remove('landed')) // сброс подсветки прошлого приза
       const vp = track.parentElement
       const center = vp.clientWidth / 2
       const jitter = (Math.random() * 2 - 1) * 24
@@ -204,8 +205,11 @@ export default function MopProgress({ view = 'levels' }) {
               const r = rarityOf(d.value, d.name)
               return (
                 <div className="gami-ticker-item" style={{ '--rc': r.c }} key={i} title={d.who ? `${d.name} — ${d.who}` : d.name}>
-                  <div className="gami-ti-vis"><PrizeVisual item={d} size={40} /></div>
-                  <div className="gami-ti-name">{d.name}</div>
+                  <div className="gami-ti-vis"><PrizeVisual item={d} size={38} /></div>
+                  <div className="gami-ti-meta">
+                    <div className="gami-ti-name">{d.name}</div>
+                    {d.who ? <div className="gami-ti-who">{d.who}</div> : null}
+                  </div>
                 </div>
               )
             })}

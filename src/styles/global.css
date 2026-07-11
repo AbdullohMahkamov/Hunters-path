@@ -476,7 +476,7 @@
   .gami-cell-vis .gami-art{width:52px;height:52px;filter:none;}
   .gami-cell-n{padding:6px 7px 1px;font-size:10.5px;font-weight:600;color:var(--txt);text-align:center;line-height:1.15;max-height:26px;overflow:hidden;}
   .gami-cell-v{margin-top:auto;padding:0 7px 8px;text-align:center;font-size:11px;font-weight:800;color:var(--rc,var(--gold));font-variant-numeric:tabular-nums;}
-  .gami-cell.landed{transform:translateY(-3px) scale(1.07);box-shadow:0 0 0 2px var(--rc),0 12px 28px -6px var(--rc);z-index:3;transition:transform .35s cubic-bezier(.34,1.5,.6,1),box-shadow .35s;}
+  .gami-cell.landed{box-shadow:0 0 0 2px var(--rc),0 8px 22px -6px var(--rc);z-index:3;transition:box-shadow .3s;}
   .gami-open-btn{width:100%;padding:14px;border-radius:12px;border:none;color:#fff;font-weight:800;font-size:15px;letter-spacing:.04em;text-transform:uppercase;cursor:pointer;font-family:inherit;
     background:linear-gradient(180deg,color-mix(in srgb,#fff 24%,var(--green)),var(--green));
     box-shadow:0 10px 26px -10px var(--green),inset 0 1px 0 rgba(255,255,255,.3);transition:filter .15s,transform .08s;}
@@ -496,14 +496,16 @@
   .gami-ticker-track{display:flex;gap:9px;padding:9px;width:max-content;animation:gami-scroll 48s linear infinite;}
   .gami-ticker:hover .gami-ticker-track{animation-play-state:paused;}
   @keyframes gami-scroll{to{transform:translateX(-50%)}}
-  .gami-ticker-item{flex:0 0 auto;width:96px;height:82px;position:relative;overflow:hidden;border-radius:11px;
+  .gami-ticker-item{flex:0 0 auto;width:98px;height:98px;position:relative;overflow:hidden;border-radius:11px;
     border:1px solid color-mix(in srgb,var(--rc) 55%,var(--line));
     background:linear-gradient(180deg,color-mix(in srgb,var(--rc) 48%,var(--card2)),color-mix(in srgb,var(--rc) 15%,var(--card2)));
-    display:flex;flex-direction:column;align-items:center;padding:9px 5px 0;}
-  .gami-ti-vis{width:48px;height:48px;border-radius:9px;background:#fff;display:grid;place-items:center;overflow:hidden;box-shadow:0 2px 8px rgba(0,0,0,.3);}
+    display:flex;flex-direction:column;align-items:center;padding:8px 5px 0;}
+  .gami-ti-vis{width:44px;height:44px;border-radius:9px;background:#fff;display:grid;place-items:center;overflow:hidden;box-shadow:0 2px 8px rgba(0,0,0,.3);}
   .gami-ti-vis .gami-photo{width:100%;height:100%;object-fit:contain;border:none;border-radius:0;box-shadow:none;background:#fff;padding:2px;}
-  .gami-ti-vis .gami-art{width:40px;height:40px;filter:none;}
-  .gami-ti-name{position:absolute;left:0;right:0;bottom:0;padding:3px 5px;background:rgba(0,0,0,.42);color:#fff;font-size:9.5px;font-weight:600;text-align:center;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;}
+  .gami-ti-vis .gami-art{width:36px;height:36px;filter:none;}
+  .gami-ti-meta{position:absolute;left:0;right:0;bottom:0;padding:3px 5px 4px;background:rgba(0,0,0,.48);}
+  .gami-ti-name{color:#fff;font-size:9.5px;font-weight:700;line-height:1.2;text-align:center;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;}
+  .gami-ti-who{color:rgba(255,255,255,.82);font-size:8.5px;line-height:1.25;text-align:center;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;}
 
   /* Арена кейса */
   .gami-arena{position:relative;overflow:hidden;border-radius:18px;padding:24px 22px;border:1px solid var(--line2);
@@ -519,8 +521,8 @@
     opacity:.55;animation:gami-rays-spin 22s linear infinite;}
   @keyframes gami-rays-spin{to{transform:rotate(360deg)}}
   .gami-chest-svg{position:relative;width:150px;height:auto;filter:drop-shadow(0 12px 26px color-mix(in srgb,var(--gold) 50%,transparent));animation:gami-float 4.5s ease-in-out infinite;}
-  .gami-case-photo{position:relative;width:148px;height:148px;object-fit:cover;border-radius:22px;
-    box-shadow:0 14px 32px -10px color-mix(in srgb,var(--accent) 50%,transparent),0 0 0 3px color-mix(in srgb,var(--gold) 40%,transparent);
+  .gami-case-photo{position:relative;width:118px;height:118px;object-fit:cover;border-radius:20px;
+    box-shadow:0 12px 28px -10px color-mix(in srgb,var(--accent) 50%,transparent),0 0 0 3px color-mix(in srgb,var(--gold) 40%,transparent);
     animation:gami-float 4.5s ease-in-out infinite;}
   @keyframes gami-float{0%,100%{transform:translateY(0)}50%{transform:translateY(-7px)}}
   .gami-arena-title{margin-top:6px;font-size:20px;font-weight:800;text-transform:uppercase;letter-spacing:.05em;}
