@@ -58,6 +58,18 @@ export const mop = {
     postJSON('/api/mop', { session: getSession(), action: 'change_password', oldPassword, newPassword }).then((r) => r.json()),
 }
 
+// ===== GAMIFICATION =====
+export const gami = {
+  // МОП
+  state: () => getJSON('/api/gamification?action=state&session=' + encodeURIComponent(getSession())),
+  openCase: () => postJSON('/api/gamification', { session: getSession(), action: 'open_case' }).then((r) => r.json()),
+  // АДМИН
+  getConfig: () => getJSON('/api/gamification?action=get_config&session=' + encodeURIComponent(getSession())),
+  setConfig: (config) => postJSON('/api/gamification', { session: getSession(), action: 'set_config', config }).then((r) => r.json()),
+  listInventory: () => getJSON('/api/gamification?action=list_inventory&session=' + encodeURIComponent(getSession())),
+  markDelivered: (mopId, itemId) => postJSON('/api/gamification', { session: getSession(), action: 'mark_delivered', mopId, itemId }).then((r) => r.json()),
+}
+
 // ===== DEMO ACCOUNTS (admin panel) =====
 export const demo = {
   list: () => postJSON('/api/demo', { action: 'list', session: getSession() }).then((r) => r.json()),

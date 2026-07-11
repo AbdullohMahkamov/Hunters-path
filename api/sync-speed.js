@@ -432,6 +432,7 @@ export default async function handler(req, res) {
         name,
         leads: S.leads,
         reached: S.reached,          // сколько лидов реально дозвонились (>40 сек)
+        fastFirstCalls: S.firstCallTimes.filter(mn => mn < 15).length, // 1-й звонок < 15 мин (для геймификации)
         medianFirstCallMin: medMin !== null ? Math.round(medMin) : null,
         medianFirstCallAssignMin: medAssign !== null ? Math.round(medAssign) : null, // 1-й звонок после назначения
         avgCallsPerLead: S.leads ? +(S.callsTotal / S.leads).toFixed(1) : 0,
