@@ -64,6 +64,13 @@ function defaultConfig() {
     // (типичный день ≈ 2500–3500 баллов) → баллов хватает на 1–2 открытия в день.
     points: { reach: 60, fastCall: 40, taskDone: 30, dailyPlan: 250, dailyConv: 150 },
     dailyPlanTarget: 3000000, // дневной план продаж (сум) для бонуса «закрыл дневной план»
+    firstCallMax: 30,         // 1-й звонок после прикрепления (медиана за сегодня) ≤ X мин → бонус fastCall
+    taskGoal: 70,             // задачи за сегодня ≥ X% → бонус taskDone
+    salesRewards: [           // продажи за месяц → бесплатные открытия кейса (3 порога)
+      { sales: 5000000, opens: 1 },
+      { sales: 10000000, opens: 3 },
+      { sales: 20000000, opens: 7 },
+    ],
     case: {
       price: 800,        // по карману на каждый день (настраивается)
       perDay: 2,         // сколько раз в день можно открыть (настраивается)
@@ -97,6 +104,9 @@ function normalizeConfig(c) {
   const d = defaultConfig();
   c.points = Object.assign({}, d.points, c.points || {});
   if (!c.dailyPlanTarget || c.dailyPlanTarget < 1) c.dailyPlanTarget = d.dailyPlanTarget;
+  if (!c.firstCallMax || c.firstCallMax < 1) c.firstCallMax = d.firstCallMax;
+  if (!c.taskGoal || c.taskGoal < 1) c.taskGoal = d.taskGoal;
+  if (!Array.isArray(c.salesRewards)) c.salesRewards = d.salesRewards;
   c.case = c.case || d.case;
   c.case.price = c.case.price || d.case.price;
   if (c.case.perDay == null || c.case.perDay < 1) c.case.perDay = d.case.perDay;
@@ -139,10 +149,10 @@ function mopMetrics(mopId, cache, speed, plans) {
     fastFirstCalls: sp && sp.fastFirstCalls != null ? sp.fastFirstCalls : 0,
     tasksDone: sp && sp.tasksDone != null ? sp.tasksDone : 0,
     tasksDonePct: sp && sp.tasksDonePct != null ? sp.tasksDonePct : 0,
-    // сегодняшние счётчики (для ежедневного заработка)
-    todayReached: spDay && spDay.reached != null ? spDay.reached : 0,
-    todayFast: spDay && spDay.fastFirstCalls != null ? spDay.fastFirstCalls : 0,
-    todayTasks: spDay && spDay.tasksDone != null ? spDay.tasksDone : 0,
+    // сегодняшние показатели (для ежедневного заработка)
+    todayReached: spDay && spDay.reached != null ? spDay.reached : 0,           // дозвоны за сегодня (штук)
+    todayCallMin: spDay && spDay.medianFirstCallAssignMin != null ? spDay.medianFirstCallAssignMin : (spDay && spDay.medianFirstCallMin != null ? spDay.medianFirstCallMin : null), // 1-й звонок после прикрепления, медиана
+    todayTaskRate: spDay && spDay.taskRate != null ? spDay.taskRate : 0,        // % задач за сегодня
     revenueToday: (bySales && bySales.revenueToday) || 0,
     revenue, plan,
   };
@@ -162,7 +172,7 @@ function earnedPoints(m, cfg, st) {
 
 // ─────────────────────────── СОСТОЯНИЕ МОПА ───────────────────────────
 function emptyState() {
-  return { level: 0, lastLevelMonth: "", carry: 0, earnedMonth: 0, earnedDays: 0, earnedToday: 0, pointsMonth: "", spent: 0, bonus: 0, opensDay: "", opensToday: 0, dailyDay: "", planDaysMonth: 0, convDaysMonth: 0, todayPlanAwarded: false, todayConvAwarded: false, inventory: [], levelHistory: [], caseHistory: [] };
+  return { level: 0, lastLevelMonth: "", carry: 0, earnedMonth: 0, earnedDays: 0, earnedToday: 0, pointsMonth: "", spent: 0, bonus: 0, opensDay: "", opensToday: 0, dailyDay: "", planDaysMonth: 0, convDaysMonth: 0, callDaysMonth: 0, taskDaysMonth: 0, todayPlanAwarded: false, todayConvAwarded: false, todayCallAwarded: false, todayTaskAwarded: false, freeOpens: 0, salesClaimedMonth: "", salesClaimedTiers: [], inventory: [], levelHistory: [], caseHistory: [] };
 }
 async function getMopState(org, mopId) {
   const raw = await redisGet(`gamification:mop:${org}:${mopId}`);
@@ -205,32 +215,49 @@ function recomputeMop(st, m, cfg, mkey) {
     st.carry = (st.carry || 0) + (st.earnedDays || 0) + (st.earnedToday || 0);
     st.spent = 0;
     st.earnedDays = 0; st.earnedToday = 0; st.dailyDay = "";
-    st.planDaysMonth = 0; st.convDaysMonth = 0; st.todayPlanAwarded = false; st.todayConvAwarded = false;
+    st.planDaysMonth = 0; st.convDaysMonth = 0; st.callDaysMonth = 0; st.taskDaysMonth = 0;
+    st.todayPlanAwarded = false; st.todayConvAwarded = false; st.todayCallAwarded = false; st.todayTaskAwarded = false;
+    st.salesClaimedMonth = mkey; st.salesClaimedTiers = [];
   }
   st.pointsMonth = mkey;
   // смена дня → банкуем вчерашний заработок, обнуляем сегодня
   if (st.dailyDay !== today) {
     st.earnedDays = (st.earnedDays || 0) + (st.earnedToday || 0);
     st.earnedToday = 0; st.dailyDay = today;
-    st.todayPlanAwarded = false; st.todayConvAwarded = false;
+    st.todayPlanAwarded = false; st.todayConvAwarded = false; st.todayCallAwarded = false; st.todayTaskAwarded = false;
   }
-  // дневные цели: план продаж и конверсия по уровню
-  const planMet = (m.revenueToday || 0) >= (cfg.dailyPlanTarget || 3000000);
+  // 4 ДНЕВНЫЕ БИНАРНЫЕ ЦЕЛИ (по сегодняшним данным)
+  const p = cfg.points;
   const lvIdx = Math.min(11, Math.max(0, (st.level || 1) - 1));
-  const convTarget = (cfg.levels[lvIdx] && cfg.levels[lvIdx].conv) || 3;
-  const convMet = (m.conv || 0) >= convTarget;
+  const convNorm = (cfg.levels[lvIdx] && cfg.levels[lvIdx].conv) || 3;   // конверсия — цифра из уровня
+  const callMax = cfg.firstCallMax || 30;
+  const taskGoal = cfg.taskGoal || 70;
+  const planMet = (m.revenueToday || 0) >= (cfg.dailyPlanTarget || 3000000);
+  const convMet = (m.conv || 0) >= convNorm;
+  const callMet = m.todayCallMin != null && m.todayCallMin <= callMax;
+  const taskMet = (m.todayTaskRate || 0) >= taskGoal;
   if (planMet && !st.todayPlanAwarded) { st.planDaysMonth = (st.planDaysMonth || 0) + 1; st.todayPlanAwarded = true; }
   if (convMet && !st.todayConvAwarded) { st.convDaysMonth = (st.convDaysMonth || 0) + 1; st.todayConvAwarded = true; }
-  // заработок за СЕГОДНЯ (пересчитывается каждый вызов из сегодняшних данных)
-  const p = cfg.points;
+  if (callMet && !st.todayCallAwarded) { st.callDaysMonth = (st.callDaysMonth || 0) + 1; st.todayCallAwarded = true; }
+  if (taskMet && !st.todayTaskAwarded) { st.taskDaysMonth = (st.taskDaysMonth || 0) + 1; st.todayTaskAwarded = true; }
   st.earnedToday = Math.round(
-    (p.reach || 0) * (m.todayReached || 0) +
-    (p.fastCall || 0) * (m.todayFast || 0) +
-    (p.taskDone || 0) * (m.todayTasks || 0) +
+    (p.reach || 0) * (m.todayReached || 0) +   // за каждый дозвон сегодня
     (planMet ? (p.dailyPlan || 0) : 0) +
-    (convMet ? (p.dailyConv || 0) : 0)
+    (convMet ? (p.dailyConv || 0) : 0) +
+    (callMet ? (p.fastCall || 0) : 0) +
+    (taskMet ? (p.taskDone || 0) : 0)
   );
   st.earnedMonth = (st.earnedDays || 0) + (st.earnedToday || 0);
+  // ПРОДАЖИ ЗА МЕСЯЦ → бесплатные открытия кейса (3 порога, раз за месяц)
+  if (st.salesClaimedMonth !== mkey) { st.salesClaimedMonth = mkey; st.salesClaimedTiers = []; }
+  const monthRev = m.revenue || 0;
+  (cfg.salesRewards || []).forEach((tier, i) => {
+    if (monthRev >= (tier.sales || 0) && !(st.salesClaimedTiers || []).includes(i)) {
+      st.freeOpens = (st.freeOpens || 0) + (tier.opens || 0);
+      st.salesClaimedTiers = st.salesClaimedTiers || [];
+      st.salesClaimedTiers.push(i);
+    }
+  });
 
   // 2) уровень: макс +1 за календарный месяц, только вверх
   if ((st.level || 0) < 12 && st.lastLevelMonth !== mkey) {
@@ -424,14 +451,18 @@ export default async function handler(req, res) {
       let st = await getMopState(org, mopId);
       if (m) st = recomputeMop(st, m, cfg, monthKey(nowTk()));
       const price = cfg.case.price;
-      // дневной лимит открытий
       const today = dateKey(nowTk());
       if (st.opensDay !== today) { st.opensDay = today; st.opensToday = 0; }
       const perDay = cfg.case.perDay || 2;
-      if ((st.opensToday || 0) >= perDay) { res.status(200).json({ ok: false, error: "Лимит на сегодня исчерпан" }); return; }
-      if (balanceOf(st) < price) { res.status(200).json({ ok: false, error: "Недостаточно баллов" }); return; }
-      st.opensToday = (st.opensToday || 0) + 1;
-      st.spent = (st.spent || 0) + price;
+      const useFree = (st.freeOpens || 0) > 0;
+      if (useFree) {
+        st.freeOpens = st.freeOpens - 1; // бесплатное открытие за продажи — без лимита и без списания
+      } else {
+        if ((st.opensToday || 0) >= perDay) { res.status(200).json({ ok: false, error: "Лимит на сегодня исчерпан" }); return; }
+        if (balanceOf(st) < price) { res.status(200).json({ ok: false, error: "Недостаточно баллов" }); return; }
+        st.opensToday = (st.opensToday || 0) + 1;
+        st.spent = (st.spent || 0) + price;
+      }
       const prizeItem = pickCasePrize(cfg.case.items); // рандом ТОЛЬКО на сервере
       const won = {
         id: "cs" + Date.now() + Math.floor(Math.random() * 1000),
@@ -445,7 +476,7 @@ export default async function handler(req, res) {
       if (st.caseHistory.length > 50) st.caseHistory = st.caseHistory.slice(0, 50);
       await saveMopState(org, mopId, st);
       await pushDrop(org, { who: sess.mopName || mopId, name: won.name, value: won.value, image: won.image, type: "case", at: won.wonAt });
-      res.status(200).json({ ok: true, prize: { name: won.name, value: won.value, image: won.image }, balance: balanceOf(st), opensLeft: Math.max(0, perDay - st.opensToday) });
+      res.status(200).json({ ok: true, prize: { name: won.name, value: won.value, image: won.image }, balance: balanceOf(st), opensLeft: Math.max(0, perDay - st.opensToday), freeOpens: st.freeOpens || 0 });
       return;
     }
 
@@ -486,16 +517,22 @@ function buildStatePayload(st, m, cfg) {
     opensToday, opensLeft: Math.max(0, perDay - opensToday),
     points: cfg.points,
     dailyPlanTarget: cfg.dailyPlanTarget || 3000000,
+    freeOpens: st.freeOpens || 0,
+    salesRewards: cfg.salesRewards || [],
+    firstCallMax: cfg.firstCallMax || 30,
+    taskGoal: cfg.taskGoal || 70,
     earn: m ? (() => {
       const lvIdx = Math.min(11, Math.max(0, (level || 1) - 1));
       const convNorm = (cfg.levels[lvIdx] && cfg.levels[lvIdx].conv) || 3;
       const tgt = cfg.dailyPlanTarget || 3000000;
+      const callMax = cfg.firstCallMax || 30;
+      const taskGoal = cfg.taskGoal || 70;
       return {
         reach: { count: m.todayReached || 0, pts: cfg.points.reach || 0 },
-        fast: { count: m.todayFast || 0, pts: cfg.points.fastCall || 0 },
-        task: { count: m.todayTasks || 0, pts: cfg.points.taskDone || 0 },
-        dailyPlan: { done: (m.revenueToday || 0) >= tgt, today: m.revenueToday || 0, target: tgt, pts: cfg.points.dailyPlan || 0, daysMonth: st.planDaysMonth || 0 },
-        dailyConv: { done: (m.conv || 0) >= convNorm, conv: m.conv || 0, target: convNorm, pts: cfg.points.dailyConv || 0, daysMonth: st.convDaysMonth || 0 },
+        dailyPlan: { done: (m.revenueToday || 0) >= tgt, cur: m.revenueToday || 0, target: tgt, pts: cfg.points.dailyPlan || 0, days: st.planDaysMonth || 0 },
+        dailyConv: { done: (m.conv || 0) >= convNorm, cur: m.conv || 0, target: convNorm, pts: cfg.points.dailyConv || 0, days: st.convDaysMonth || 0 },
+        dailyCall: { done: m.todayCallMin != null && m.todayCallMin <= callMax, cur: m.todayCallMin, target: callMax, pts: cfg.points.fastCall || 0, days: st.callDaysMonth || 0, lower: true },
+        dailyTask: { done: (m.todayTaskRate || 0) >= taskGoal, cur: m.todayTaskRate || 0, target: taskGoal, pts: cfg.points.taskDone || 0, days: st.taskDaysMonth || 0 },
       };
     })() : null,
     inventory: st.inventory || [],

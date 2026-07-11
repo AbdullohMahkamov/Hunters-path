@@ -268,6 +268,11 @@ function collectCurrentGamiTab() {
     const en = $('g_enabled'); if (en) c.enabled = en.checked
     c.points = { reach: gnum('g_p_reach'), fastCall: gnum('g_p_fast'), taskDone: gnum('g_p_task'), dailyPlan: gnum('g_p_dplan'), dailyConv: gnum('g_p_dconv') }
     if ($('g_dplan_target')) c.dailyPlanTarget = gnum('g_dplan_target')
+    if ($('g_first_max')) c.firstCallMax = Math.max(1, gnum('g_first_max'))
+    if ($('g_task_goal')) c.taskGoal = Math.max(1, gnum('g_task_goal'))
+    const sr = []
+    ;(c.salesRewards || []).forEach((_, i) => { if ($('g_sr_sales_' + i)) sr.push({ sales: gnum('g_sr_sales_' + i), opens: Math.max(0, gnum('g_sr_opens_' + i)) }) })
+    if (sr.length) c.salesRewards = sr
     if ($('g_case_price')) c.case.price = gnum('g_case_price')
     if ($('g_case_perday')) c.case.perDay = Math.max(1, gnum('g_case_perday'))
     if ($('g_case_img')) c.case.image = gv('g_case_img').trim()
@@ -301,15 +306,20 @@ function renderGamiTab() {
     body.innerHTML =
       `<label style="display:flex;align-items:center;gap:9px;font-size:14px;font-weight:600;margin-bottom:18px;cursor:pointer;"><input type="checkbox" id="g_enabled" ${c.enabled ? 'checked' : ''} style="width:18px;height:18px;"> Геймификация включена</label>` +
       '<div style="display:grid;grid-template-columns:1fr 1fr;gap:0 14px;">' +
-      fld('Баллы за дозвон (>40 сек)', num('g_p_reach', c.points.reach)) +
-      fld('Баллы за 1-й звонок < 15 мин', num('g_p_fast', c.points.fastCall)) +
-      fld('Баллы за выполненную задачу', num('g_p_task', c.points.taskDone)) +
-      fld('Баллы за закрытый дневной план', num('g_p_dplan', c.points.dailyPlan != null ? c.points.dailyPlan : 250)) +
-      fld('Баллы за дневную конверсию (по уровню)', num('g_p_dconv', c.points.dailyConv != null ? c.points.dailyConv : 150)) +
+      fld('Баллы за дозвон (за каждый)', num('g_p_reach', c.points.reach)) +
+      fld('Баллы за дневной план', num('g_p_dplan', c.points.dailyPlan != null ? c.points.dailyPlan : 250)) +
       fld('Дневной план продаж (сум)', num('g_dplan_target', c.dailyPlanTarget != null ? c.dailyPlanTarget : 3000000)) +
+      fld('Баллы за конверсию (норма из уровня)', num('g_p_dconv', c.points.dailyConv != null ? c.points.dailyConv : 150)) +
+      fld('Баллы за 1-й звонок (дневной)', num('g_p_fast', c.points.fastCall)) +
+      fld('1-й звонок ≤ мин (после лида)', num('g_first_max', c.firstCallMax != null ? c.firstCallMax : 30)) +
+      fld('Баллы за задачи (дневной)', num('g_p_task', c.points.taskDone)) +
+      fld('Задачи ≥ % за день', num('g_task_goal', c.taskGoal != null ? c.taskGoal : 70)) +
       fld('Цена кейса (баллы)', num('g_case_price', c.case.price)) +
       fld('Открытий кейса в день', num('g_case_perday', c.case.perDay != null ? c.case.perDay : 2)) +
       '</div>' +
+      '<div style="font-size:12.5px;font-weight:700;margin:16px 0 8px;">Бесплатные открытия за продажи (за месяц)</div>' +
+      '<div style="display:grid;grid-template-columns:1fr 1fr;gap:6px;font-size:11px;color:var(--txt3);margin-bottom:5px;"><span>Продажи ≥ (сум)</span><span>Бесплатных открытий</span></div>' +
+      (c.salesRewards || []).map((tier, i) => `<div style="display:grid;grid-template-columns:1fr 1fr;gap:8px;margin-bottom:7px;">${num('g_sr_sales_' + i, tier.sales)}${num('g_sr_opens_' + i, tier.opens)}</div>`).join('') +
       fld('URL фото кейса (если пусто — рисуем лут-кейс)', `<input id="g_case_img" value="${(c.case.image || '').replace(/"/g, '&quot;')}" placeholder="https://…" style="width:100%;padding:8px 9px;border-radius:8px;border:1px solid var(--line2);background:var(--bg2);color:var(--txt);font-size:13px;">`) +
       saveBtn +
       '<button onclick="resetEconomy()" style="margin-top:9px;width:100%;padding:10px;border-radius:9px;background:var(--gold-bg);border:1px solid var(--gold);color:var(--gold);font-size:13px;font-weight:600;cursor:pointer;">Сбросить экономику к стандартной (призы и фото сохранятся)</button>' +

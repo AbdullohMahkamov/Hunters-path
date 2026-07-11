@@ -187,12 +187,13 @@ export default function MopProgress({ view = 'levels' }) {
   if (loading) return <div className="mop-card" style={{ textAlign: 'center', color: 'var(--txt3)', padding: 30 }}>…</div>
   if (!st || st.enabled === false) return null
 
+  const freeOpens = st.freeOpens || 0
   const noOpensLeft = st.opensLeft != null && st.opensLeft <= 0
-  const canOpen = st.balance >= st.case.price && !spinning && !noOpensLeft
+  const canOpen = !spinning && (freeOpens > 0 || (st.balance >= st.case.price && !noOpensLeft))
   const pct = st.metCount != null && st.normsCount ? Math.round(st.metCount / st.normsCount * 100) : 0
 
   async function openCase() {
-    if (spinning || st.balance < st.case.price || noOpensLeft) return
+    if (spinning || (freeOpens <= 0 && (st.balance < st.case.price || noOpensLeft))) return
     setSpinning(true); setResult(null); setMsg('')
     let r
     try { r = await gami.openCase() } catch (e) { r = { ok: false, error: 'Ошибка сети' } }
@@ -362,7 +363,7 @@ export default function MopProgress({ view = 'levels' }) {
           <div className="gami-arena-title">{mt('gCase')}</div>
           <div className="gami-arena-price"><Ic n="coin" size={16} color="var(--gold)" />{fmtN(st.case.price)} {mt('gPts')}</div>
           {st.case.perDay != null && (
-            <div className="gami-arena-limit">{mt('gLimitToday')}: <b>{st.opensToday || 0}/{st.case.perDay}</b></div>
+            <div className="gami-arena-limit">{mt('gLimitToday')}: <b>{st.opensToday || 0}/{st.case.perDay}</b>{freeOpens > 0 ? <span className="gami-free-badge">{mt('gFreeOpens')}: {freeOpens}</span> : null}</div>
           )}
         </div>
         <div className="gami-reel-vp">
@@ -381,43 +382,43 @@ export default function MopProgress({ view = 'levels' }) {
           </div>
         </div>
         <button className="gami-open-btn" disabled={!canOpen} onClick={openCase}>
-          {spinning ? '…' : mt('gOpen')}
-          {!spinning && (noOpensLeft ? <small>{mt('gLimitReached')}</small> : st.balance < st.case.price ? <small>{mt('gNotEnough')}</small> : null)}
+          {spinning ? '…' : (freeOpens > 0 ? `${mt('gOpenFree')} (${freeOpens})` : mt('gOpen'))}
+          {!spinning && freeOpens <= 0 && (noOpensLeft ? <small>{mt('gLimitReached')}</small> : st.balance < st.case.price ? <small>{mt('gNotEnough')}</small> : null)}
         </button>
         {msg && <div className="gami-msg">{msg}</div>}
         {/* как копятся баллы — чек-лист с прогрессом */}
         <div className="gami-rules">
           <div className="gami-rules-h">{mt('gHowEarn')}</div>
-          {st.earn ? (
-            <div className="gami-checklist">
-              {[
-                { g: st.earn.dailyPlan, label: mt('gRulePlan'), cur: fmtVal(st.earn.dailyPlan.today) || '0', tgt: fmtVal(st.earn.dailyPlan.target), pct: st.earn.dailyPlan.target ? Math.min(100, Math.round(st.earn.dailyPlan.today / st.earn.dailyPlan.target * 100)) : 0 },
-                { g: st.earn.dailyConv, label: mt('gRuleConv'), cur: st.earn.dailyConv.conv + '%', tgt: st.earn.dailyConv.target + '%', pct: st.earn.dailyConv.target ? Math.min(100, Math.round(st.earn.dailyConv.conv / st.earn.dailyConv.target * 100)) : 0 },
-              ].map((row, i) => (
-                <div key={i} className={'gami-goal daily ' + (row.g.done ? 'done' : 'fail')}>
-                  <span className="gami-goal-ic">{row.g.done ? <Ic n="check" size={13} /> : <Ic n="cross" size={13} />}</span>
-                  <div className="gami-goal-body">
-                    <div className="gami-goal-lbl"><span className="gami-goal-name">{row.label}</span><span className="gami-goal-sub">{row.cur} / {row.tgt}{row.g.daysMonth ? ` · ${row.g.daysMonth} ${mt('daysWord')}` : ''}</span></div>
-                    <div className="gami-goal-bar"><i style={{ width: row.pct + '%' }} /></div>
+          {st.earn ? (() => {
+            const e = st.earn
+            const dailyRows = [
+              { g: e.dailyPlan, label: mt('gRulePlan'), cur: (fmtVal(e.dailyPlan.cur || 0) || '0'), tgt: fmtVal(e.dailyPlan.target), pct: e.dailyPlan.target ? Math.min(100, Math.round((e.dailyPlan.cur || 0) / e.dailyPlan.target * 100)) : 0, days: e.dailyPlan.days },
+              { g: e.dailyConv, label: mt('gRuleConv'), cur: (e.dailyConv.cur || 0) + '%', tgt: e.dailyConv.target + '%', pct: e.dailyConv.target ? Math.min(100, Math.round((e.dailyConv.cur || 0) / e.dailyConv.target * 100)) : 0, days: e.dailyConv.days },
+              { g: e.dailyCall, label: mt('gRuleFast'), cur: e.dailyCall.cur != null ? e.dailyCall.cur + ' ' + mt('min') : '—', tgt: '≤ ' + e.dailyCall.target + ' ' + mt('min'), pct: (e.dailyCall.cur != null && e.dailyCall.cur > 0) ? Math.min(100, Math.round(e.dailyCall.target / e.dailyCall.cur * 100)) : (e.dailyCall.done ? 100 : 0), days: e.dailyCall.days },
+              { g: e.dailyTask, label: mt('gRuleTask'), cur: (e.dailyTask.cur || 0) + '%', tgt: '≥ ' + e.dailyTask.target + '%', pct: e.dailyTask.target ? Math.min(100, Math.round((e.dailyTask.cur || 0) / e.dailyTask.target * 100)) : 0, days: e.dailyTask.days },
+            ]
+            return (
+              <div className="gami-checklist">
+                {dailyRows.map((row, i) => (
+                  <div key={i} className={'gami-goal daily ' + (row.g.done ? 'done' : 'fail')}>
+                    <span className="gami-goal-ic">{row.g.done ? <Ic n="check" size={13} /> : <Ic n="cross" size={13} />}</span>
+                    <div className="gami-goal-body">
+                      <div className="gami-goal-lbl"><span className="gami-goal-name">{row.label}</span><span className="gami-goal-sub">{row.cur} / {row.tgt}{row.days ? ` · ${row.days} ${mt('daysWord')}` : ''}</span></div>
+                      <div className="gami-goal-bar"><i style={{ width: row.pct + '%' }} /></div>
+                    </div>
+                    <span className="gami-goal-pts">+{row.g.pts}</span>
                   </div>
-                  <span className="gami-goal-pts">+{row.g.pts}</span>
-                </div>
-              ))}
-              {[
-                { g: st.earn.reach, label: mt('gRuleReach') },
-                { g: st.earn.fast, label: mt('gRuleFast') },
-                { g: st.earn.task, label: mt('gRuleTask') },
-              ].map((row, i) => (
-                <div key={'c' + i} className={'gami-goal ' + (row.g.count > 0 ? 'done' : 'idle')}>
-                  <span className="gami-goal-ic">{row.g.count > 0 ? <Ic n="check" size={13} /> : <Ic n="dot" size={13} />}</span>
+                ))}
+                <div className={'gami-goal ' + (e.reach.count > 0 ? 'done' : 'idle')}>
+                  <span className="gami-goal-ic">{e.reach.count > 0 ? <Ic n="check" size={13} /> : <Ic n="dot" size={13} />}</span>
                   <div className="gami-goal-body">
-                    <div className="gami-goal-lbl"><span className="gami-goal-name">{row.label}</span><span className="gami-goal-sub">{row.g.count} × +{row.g.pts}</span></div>
+                    <div className="gami-goal-lbl"><span className="gami-goal-name">{mt('gRuleReach')}</span><span className="gami-goal-sub">{e.reach.count} × +{e.reach.pts}</span></div>
                   </div>
-                  <span className="gami-goal-pts">+{fmtN(row.g.count * row.g.pts)}</span>
+                  <span className="gami-goal-pts">+{fmtN(e.reach.count * e.reach.pts)}</span>
                 </div>
-              ))}
-            </div>
-          ) : (
+              </div>
+            )
+          })() : (
             <div className="gami-rules-grid">
               <span><b>+{st.points.reach}</b> {mt('gRuleReach')}</span>
               <span><b>+{st.points.fastCall}</b> {mt('gRuleFast')}</span>
