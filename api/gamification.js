@@ -321,6 +321,28 @@ export default async function handler(req, res) {
         return;
       }
 
+      // обнулить баланс баллов МОПа
+      if (req.method === "POST" && action === "zero_points") {
+        const { mopId } = req.body || {};
+        if (!mopId) { res.status(200).json({ ok: false, error: "no mopId" }); return; }
+        const st = await getMopState(org, mopId);
+        st.bonus = (st.bonus || 0) - balanceOf(st); // текущий баланс → 0
+        await saveMopState(org, mopId, st);
+        res.status(200).json({ ok: true, balance: balanceOf(st) });
+        return;
+      }
+
+      // очистить инвентарь МОПа
+      if (req.method === "POST" && action === "clear_inventory") {
+        const { mopId } = req.body || {};
+        if (!mopId) { res.status(200).json({ ok: false, error: "no mopId" }); return; }
+        const st = await getMopState(org, mopId);
+        st.inventory = [];
+        await saveMopState(org, mopId, st);
+        res.status(200).json({ ok: true });
+        return;
+      }
+
       if (req.method === "POST" && action === "mark_delivered") {
         const { mopId, itemId } = req.body || {};
         const st = await getMopState(org, mopId);

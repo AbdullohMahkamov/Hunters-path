@@ -408,13 +408,17 @@ async function loadGamiBalances() {
     box.innerHTML = list.map((b) => {
       const mid = String(b.mopId)
       const midJs = mid.replace(/'/g, "\\'")
-      return `<div style="display:flex;align-items:center;gap:9px;padding:10px 12px;border:1px solid var(--line);border-radius:10px;margin-bottom:8px;background:var(--card);">
-        <div style="flex:1;min-width:0;">
+      return `<div style="border:1px solid var(--line);border-radius:10px;margin-bottom:8px;background:var(--card);padding:10px 12px;">
+        <div style="display:flex;justify-content:space-between;align-items:baseline;margin-bottom:9px;gap:10px;">
           <b style="font-size:13.5px;">${escapeHtml(b.mopName || mid)}</b>
-          <div style="font-size:12px;color:var(--txt3);">Баланс: <b style="color:var(--gold);">${(b.balance || 0).toLocaleString('ru-RU')}</b> балл.${b.bonus ? ` · бонус ${b.bonus.toLocaleString('ru-RU')}` : ''}</div>
+          <span style="font-size:12px;color:var(--txt3);white-space:nowrap;">Баланс: <b style="color:var(--gold);">${(b.balance || 0).toLocaleString('ru-RU')}</b> балл.${b.bonus ? ` · бонус ${b.bonus.toLocaleString('ru-RU')}` : ''}</span>
         </div>
-        <input id="g_grant_${mid}" type="number" placeholder="напр. 5000" style="width:100px;padding:8px 9px;border-radius:8px;border:1px solid var(--line2);background:var(--bg2);color:var(--txt);font-size:13px;">
-        <button onclick="grantPoints('${midJs}')" style="padding:8px 13px;border-radius:8px;background:var(--accent);border:none;color:#fff;font-size:12.5px;font-weight:600;cursor:pointer;white-space:nowrap;">Начислить</button>
+        <div style="display:flex;gap:7px;flex-wrap:wrap;align-items:center;">
+          <input id="g_grant_${mid}" type="number" placeholder="напр. 5000" style="width:110px;padding:8px 9px;border-radius:8px;border:1px solid var(--line2);background:var(--bg2);color:var(--txt);font-size:13px;">
+          <button onclick="grantPoints('${midJs}')" style="padding:8px 13px;border-radius:8px;background:var(--accent);border:none;color:#fff;font-size:12.5px;font-weight:600;cursor:pointer;">Начислить</button>
+          <button onclick="zeroPoints('${midJs}')" style="padding:8px 12px;border-radius:8px;background:var(--red-bg);border:1px solid var(--red);color:var(--red);font-size:12.5px;font-weight:600;cursor:pointer;">Обнулить</button>
+          <button onclick="clearInventory('${midJs}')" style="padding:8px 12px;border-radius:8px;background:var(--card2);border:1px solid var(--line2);color:var(--txt2);font-size:12.5px;cursor:pointer;">Очистить инвентарь</button>
+        </div>
       </div>`
     }).join('')
   } catch (e) { box.innerHTML = '<div style="color:var(--red);">' + String(e) + '</div>' }
@@ -427,6 +431,23 @@ async function grantPoints(mopId) {
     const r = await fetch('/api/gamification', { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ session: getSession(), action: 'grant_points', mopId, amount: amt }) })
     const d = await r.json()
     if (d.ok) { loadGamiBalances() } else alert('Ошибка: ' + (d.error || '—'))
+  } catch (e) { alert(String(e)) }
+}
+
+async function zeroPoints(mopId) {
+  if (!confirm('Обнулить баланс баллов у ' + mopId + '?')) return
+  try {
+    const r = await fetch('/api/gamification', { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ session: getSession(), action: 'zero_points', mopId }) })
+    const d = await r.json()
+    if (d.ok) { loadGamiBalances() } else alert('Ошибка: ' + (d.error || '—'))
+  } catch (e) { alert(String(e)) }
+}
+async function clearInventory(mopId) {
+  if (!confirm('Очистить весь инвентарь (выигранные призы) у ' + mopId + '?')) return
+  try {
+    const r = await fetch('/api/gamification', { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ session: getSession(), action: 'clear_inventory', mopId }) })
+    const d = await r.json()
+    if (d.ok) { alert('Инвентарь очищен'); loadGamiBalances() } else alert('Ошибка: ' + (d.error || '—'))
   } catch (e) { alert(String(e)) }
 }
 
@@ -466,6 +487,6 @@ export function initAdminModals() {
   Object.assign(window, {
     openMopsModal, closeMopsModal, loadMopsList, createMopAccount, deleteMopAccount, setMopRole, saveRaffle, setMopPlan,
     openClientsModal, closeClientsModal, loadClientsList, deleteClient, openClientForm, cInput, probeClient, onPipeChange, saveClient,
-    openGamiModal, closeGamiModal, gamiSwitchTab, saveGami, addCaseItem, removeCaseItem, gamiCaseSum, gamiDeliver, resetGami, resetEconomy, loadGamiBalances, grantPoints,
+    openGamiModal, closeGamiModal, gamiSwitchTab, saveGami, addCaseItem, removeCaseItem, gamiCaseSum, gamiDeliver, resetGami, resetEconomy, loadGamiBalances, grantPoints, zeroPoints, clearInventory,
   })
 }
