@@ -463,6 +463,18 @@ function buildStatePayload(st, m, cfg) {
     opensToday, opensLeft: Math.max(0, perDay - opensToday),
     points: cfg.points,
     dailyPlanTarget: cfg.dailyPlanTarget || 3000000,
+    earn: m ? (() => {
+      const lvIdx = Math.min(11, Math.max(0, (level || 1) - 1));
+      const convNorm = (cfg.levels[lvIdx] && cfg.levels[lvIdx].conv) || 3;
+      const tgt = cfg.dailyPlanTarget || 3000000;
+      return {
+        reach: { count: m.reached || 0, pts: cfg.points.reach || 0 },
+        fast: { count: m.fastFirstCalls || 0, pts: cfg.points.fastCall || 0 },
+        task: { count: m.tasksDone || 0, pts: cfg.points.taskDone || 0 },
+        dailyPlan: { done: (m.revenueToday || 0) >= tgt, today: m.revenueToday || 0, target: tgt, pts: cfg.points.dailyPlan || 0, daysMonth: st.planDaysMonth || 0 },
+        dailyConv: { done: (m.conv || 0) >= convNorm, conv: m.conv || 0, target: convNorm, pts: cfg.points.dailyConv || 0, daysMonth: st.convDaysMonth || 0 },
+      };
+    })() : null,
     inventory: st.inventory || [],
     caseHistory: st.caseHistory || [],
   };

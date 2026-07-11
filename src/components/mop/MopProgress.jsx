@@ -29,6 +29,8 @@ const ICONS = {
   gift: '<rect x="4" y="10" width="16" height="10" rx="1.5"/><path d="M3 7h18v3H3zM12 7v13"/><path d="M12 7S10.5 3 8 4s4 3 4 3zM12 7s1.5-4 4-3-4 3-4 3z"/>',
   lock: '<rect x="4" y="10" width="16" height="11" rx="2"/><path d="M8 10V7a4 4 0 0 1 8 0v3"/>',
   check: '<path d="M20 6 9 17l-5-5"/>',
+  cross: '<path d="M6 6l12 12M18 6L6 18"/>',
+  dot: '<circle cx="12" cy="12" r="3.4" fill="currentColor" stroke="none"/>',
   chev: '<path d="M6 9l6 6 6-6"/>',
   bolt: '<path d="M13 2 4 14h7l-1 8 9-12h-7z"/>',
   rank: '<path d="M12 2l2.5 4.5L20 8l-4 4 1 6-5-3-5 3 1-6-4-4 5.5-1.5z"/>',
@@ -142,34 +144,44 @@ export default function MopProgress({ view = 'levels' }) {
     if (!r || !r.ok) { setSpinning(false); setMsg((r && r.error) || 'Ошибка'); return }
 
     const items = st.case.items || []
-    const LEN = 56, WIN = 48
+    const LEN = 84, WIN = 74 // длиннее лента → дольше проносятся предметы
     const arr = []
     for (let i = 0; i < LEN; i++) arr.push(i === WIN ? { name: r.prize.name, value: r.prize.value, image: r.prize.image } : (items[Math.floor(Math.random() * items.length)] || { name: '' }))
     setStrip(arr)
 
     const PITCH = 118 // ячейка 106 + gap 12
+    const SPIN = 6.0 // сек — основная фаза с сильным замедлением
     // ждём, пока React отрендерит новую ленту (двойной rAF), затем стартуем прокрутку
     requestAnimationFrame(() => requestAnimationFrame(() => {
       const track = trackRef.current
       if (!track) return
       const vp = track.parentElement
       const center = vp.clientWidth / 2
-      const jitter = (Math.random() * 2 - 1) * 26
+      const jitter = (Math.random() * 2 - 1) * 22
       const target = WIN * PITCH + PITCH / 2 - center + jitter
+      const overshoot = target + PITCH * 0.34 // проскакиваем чуть дальше приза
       track.style.transition = 'none'
       track.style.transform = 'translateX(0)'
+      track.classList.add('spinning')
       void track.offsetWidth // форс-рефлоу
       requestAnimationFrame(() => {
-        track.style.transition = 'transform 5s cubic-bezier(.12,.62,.15,1)'
-        track.style.transform = `translateX(${-target}px)`
+        track.style.transition = `transform ${SPIN}s cubic-bezier(.045,.75,.12,1)`
+        track.style.transform = `translateX(${-overshoot}px)`
       })
+      // фаза доводки — назад точно на приз (лёгкий «клик» на место)
+      setTimeout(() => {
+        track.style.transition = 'transform .8s cubic-bezier(.3,1.3,.55,1)'
+        track.style.transform = `translateX(${-target}px)`
+      }, SPIN * 1000)
+      // подсветка выпавшей ячейки + снимаем «разгон»
+      setTimeout(() => { track.classList.remove('spinning'); const c = track.children[WIN]; if (c) c.classList.add('landed') }, SPIN * 1000 + 820)
     }))
     setTimeout(async () => {
       setResult(r.prize); setSpinning(false)
       const rr = rarityOf(r.prize.value)
       if (RANK[rr.key] >= 3) setTimeout(() => burst(rr.c), 80) // epic/legendary
       await load()
-    }, 5200)
+    }, SPIN * 1000 + 1150)
   }
 
   const drops = (st.recentDrops && st.recentDrops.length) ? st.recentDrops : (st.case.items || []).map((it) => ({ name: it.name, value: it.value, image: it.image }))
@@ -319,16 +331,47 @@ export default function MopProgress({ view = 'levels' }) {
           {!spinning && (noOpensLeft ? <small>{mt('gLimitReached')}</small> : st.balance < st.case.price ? <small>{mt('gNotEnough')}</small> : null)}
         </button>
         {msg && <div className="gami-msg">{msg}</div>}
-        {/* как копить баллы */}
+        {/* как копятся баллы — чек-лист с прогрессом */}
         <div className="gami-rules">
           <div className="gami-rules-h">{mt('gHowEarn')}</div>
-          <div className="gami-rules-grid">
-            <span><b>+{st.points.reach}</b> {mt('gRuleReach')}</span>
-            <span><b>+{st.points.fastCall}</b> {mt('gRuleFast')}</span>
-            <span><b>+{st.points.taskDone}</b> {mt('gRuleTask')}</span>
-            <span><b>+{st.points.dailyPlan}</b> {mt('gRulePlan')}{st.dailyPlanTarget ? ` (${fmtVal(st.dailyPlanTarget)})` : ''}</span>
-            <span><b>+{st.points.dailyConv}</b> {mt('gRuleConv')}</span>
-          </div>
+          {st.earn ? (
+            <div className="gami-checklist">
+              {[
+                { g: st.earn.dailyPlan, label: mt('gRulePlan'), cur: fmtVal(st.earn.dailyPlan.today) || '0', tgt: fmtVal(st.earn.dailyPlan.target), pct: st.earn.dailyPlan.target ? Math.min(100, Math.round(st.earn.dailyPlan.today / st.earn.dailyPlan.target * 100)) : 0 },
+                { g: st.earn.dailyConv, label: mt('gRuleConv'), cur: st.earn.dailyConv.conv + '%', tgt: st.earn.dailyConv.target + '%', pct: st.earn.dailyConv.target ? Math.min(100, Math.round(st.earn.dailyConv.conv / st.earn.dailyConv.target * 100)) : 0 },
+              ].map((row, i) => (
+                <div key={i} className={'gami-goal daily ' + (row.g.done ? 'done' : 'fail')}>
+                  <span className="gami-goal-ic">{row.g.done ? <Ic n="check" size={13} /> : <Ic n="cross" size={13} />}</span>
+                  <div className="gami-goal-body">
+                    <div className="gami-goal-lbl"><span className="gami-goal-name">{row.label}</span><span className="gami-goal-sub">{row.cur} / {row.tgt}{row.g.daysMonth ? ` · ${row.g.daysMonth} ${mt('daysWord')}` : ''}</span></div>
+                    <div className="gami-goal-bar"><i style={{ width: row.pct + '%' }} /></div>
+                  </div>
+                  <span className="gami-goal-pts">+{row.g.pts}</span>
+                </div>
+              ))}
+              {[
+                { g: st.earn.reach, label: mt('gRuleReach') },
+                { g: st.earn.fast, label: mt('gRuleFast') },
+                { g: st.earn.task, label: mt('gRuleTask') },
+              ].map((row, i) => (
+                <div key={'c' + i} className={'gami-goal ' + (row.g.count > 0 ? 'done' : 'idle')}>
+                  <span className="gami-goal-ic">{row.g.count > 0 ? <Ic n="check" size={13} /> : <Ic n="dot" size={13} />}</span>
+                  <div className="gami-goal-body">
+                    <div className="gami-goal-lbl"><span className="gami-goal-name">{row.label}</span><span className="gami-goal-sub">{row.g.count} × +{row.g.pts}</span></div>
+                  </div>
+                  <span className="gami-goal-pts">+{fmtN(row.g.count * row.g.pts)}</span>
+                </div>
+              ))}
+            </div>
+          ) : (
+            <div className="gami-rules-grid">
+              <span><b>+{st.points.reach}</b> {mt('gRuleReach')}</span>
+              <span><b>+{st.points.fastCall}</b> {mt('gRuleFast')}</span>
+              <span><b>+{st.points.taskDone}</b> {mt('gRuleTask')}</span>
+              <span><b>+{st.points.dailyPlan}</b> {mt('gRulePlan')}</span>
+              <span><b>+{st.points.dailyConv}</b> {mt('gRuleConv')}</span>
+            </div>
+          )}
         </div>
       </div>
       )}
@@ -341,8 +384,8 @@ export default function MopProgress({ view = 'levels' }) {
           ? <div style={{ color: 'var(--txt3)', fontSize: 13, padding: '4px 0' }}>{mt('gEmptyInv')}</div>
           : <div className="gami-inv">
             {st.inventory.map((it) => (
-              <div key={it.id} className="gami-inv-item">
-                <PrizeVisual item={it} size={it.image ? 40 : 24} />
+              <div key={it.id} className="gami-inv-item" style={{ '--rc': rarityOf(it.value).c }}>
+                <div className="gami-inv-vis"><PrizeVisual item={it} size={it.image ? 42 : 26} /></div>
                 <div style={{ flex: 1, minWidth: 0 }}>
                   <div className="gami-inv-name">{it.name}{it.type === 'level' ? ` · ${mt('gLevel')} ${it.level}` : ''}</div>
                   {it.value ? <div className="gami-inv-val">{fmtVal(it.value)}</div> : null}

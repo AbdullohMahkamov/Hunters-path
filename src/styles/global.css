@@ -466,15 +466,17 @@
   .gami-marker::after{content:"";position:absolute;bottom:-7px;left:50%;transform:translateX(-50%);border:7px solid transparent;border-bottom-color:var(--gold);filter:drop-shadow(0 0 4px var(--gold));}
   .gami-track{position:absolute;top:0;bottom:0;left:0;display:flex;gap:12px;padding:13px 0;will-change:transform;}
   .gami-cell{width:106px;flex:0 0 106px;border-radius:13px;position:relative;overflow:hidden;
-    background:linear-gradient(180deg,color-mix(in srgb,var(--rc,var(--accent)) 26%,var(--card2)),var(--card2));
-    border:1px solid color-mix(in srgb,var(--rc,var(--line)) 55%,var(--line));
+    background:linear-gradient(180deg,color-mix(in srgb,var(--rc,var(--accent)) 38%,var(--card2)),var(--card2) 74%);
+    border:1.5px solid color-mix(in srgb,var(--rc,var(--line)) 80%,var(--line));
+    box-shadow:inset 0 -22px 26px -20px var(--rc,var(--accent));
     display:flex;flex-direction:column;}
-  .gami-cell::before{content:"";position:absolute;top:0;left:0;right:0;height:3px;background:var(--rc,var(--accent));box-shadow:0 0 10px var(--rc,var(--accent));z-index:2;}
+  .gami-cell::before{content:"";position:absolute;top:0;left:0;right:0;height:4px;background:var(--rc,var(--accent));box-shadow:0 0 12px var(--rc,var(--accent));z-index:2;}
   .gami-cell-vis{margin:8px 8px 0;height:60px;border-radius:9px;background:#fff;display:grid;place-items:center;overflow:hidden;box-shadow:inset 0 0 0 1px rgba(0,0,0,.07);min-height:60px;}
   .gami-cell-vis .gami-photo{width:100%;height:100%;object-fit:contain;border:none;border-radius:0;box-shadow:none;background:#fff;padding:3px;}
   .gami-cell-vis .gami-art{width:52px;height:52px;filter:none;}
   .gami-cell-n{padding:6px 7px 1px;font-size:10.5px;font-weight:600;color:var(--txt);text-align:center;line-height:1.15;max-height:26px;overflow:hidden;}
   .gami-cell-v{margin-top:auto;padding:0 7px 8px;text-align:center;font-size:11px;font-weight:800;color:var(--rc,var(--gold));font-variant-numeric:tabular-nums;}
+  .gami-cell.landed{transform:translateY(-3px) scale(1.07);box-shadow:0 0 0 2px var(--rc),0 12px 28px -6px var(--rc);z-index:3;transition:transform .35s cubic-bezier(.34,1.5,.6,1),box-shadow .35s;}
   .gami-open-btn{width:100%;padding:14px;border-radius:12px;border:none;color:#fff;font-weight:800;font-size:15px;letter-spacing:.04em;text-transform:uppercase;cursor:pointer;font-family:inherit;
     background:linear-gradient(180deg,color-mix(in srgb,#fff 22%,var(--accent)),var(--accent));
     box-shadow:0 10px 26px -10px var(--accent),inset 0 1px 0 rgba(255,255,255,.3);transition:filter .15s,transform .08s;}
@@ -537,11 +539,33 @@
   .gami-rules-grid{display:grid;grid-template-columns:1fr 1fr;gap:8px 16px;}
   .gami-rules-grid span{font-size:12.5px;color:var(--txt2);}
   .gami-rules-grid b{color:var(--gold);}
+  /* чек-лист начисления */
+  .gami-checklist{display:flex;flex-direction:column;gap:10px;}
+  .gami-goal{display:flex;align-items:center;gap:11px;}
+  .gami-goal-ic{width:24px;height:24px;border-radius:7px;display:grid;place-items:center;flex:0 0 auto;}
+  .gami-goal.done .gami-goal-ic{background:var(--green-bg);color:var(--green);}
+  .gami-goal.fail .gami-goal-ic{background:var(--red-bg);color:var(--red);}
+  .gami-goal.idle .gami-goal-ic{background:var(--card2);color:var(--txt3);}
+  .gami-goal-body{flex:1;min-width:0;}
+  .gami-goal-lbl{display:flex;justify-content:space-between;gap:8px;align-items:baseline;flex-wrap:wrap;}
+  .gami-goal-name{font-size:13px;color:var(--txt);}
+  .gami-goal.daily.done .gami-goal-name{text-decoration:line-through;color:var(--txt3);}
+  .gami-goal-sub{font-size:11px;color:var(--txt3);font-variant-numeric:tabular-nums;}
+  .gami-goal-bar{height:5px;border-radius:3px;background:var(--bg2);border:1px solid var(--line);overflow:hidden;margin-top:5px;}
+  .gami-goal-bar i{display:block;height:100%;border-radius:3px;transition:width .4s;}
+  .gami-goal.done .gami-goal-bar i{background:var(--green);}
+  .gami-goal.fail .gami-goal-bar i{background:var(--red);}
+  .gami-goal-pts{font-weight:800;font-size:13px;flex:0 0 auto;font-variant-numeric:tabular-nums;}
+  .gami-goal.done .gami-goal-pts{color:var(--green);}
+  .gami-goal.fail .gami-goal-pts,.gami-goal.idle .gami-goal-pts{color:var(--txt3);}
 
   .gami-inv{display:flex;flex-direction:column;gap:8px;}
-  .gami-inv-item{display:flex;align-items:center;gap:11px;padding:9px 11px;border:1px solid var(--line);border-radius:10px;background:var(--bg2);}
+  .gami-inv-item{display:flex;align-items:center;gap:11px;padding:9px 11px;border:1px solid color-mix(in srgb,var(--rc) 45%,var(--line));border-left:4px solid var(--rc);border-radius:10px;background:linear-gradient(90deg,color-mix(in srgb,var(--rc) 12%,var(--bg2)),var(--bg2) 60%);}
+  .gami-inv-vis{width:44px;height:44px;border-radius:9px;background:#fff;display:grid;place-items:center;overflow:hidden;flex:0 0 auto;box-shadow:0 1px 5px rgba(0,0,0,.18);}
+  .gami-inv-vis .gami-photo{width:100%;height:100%;object-fit:contain;border:none;border-radius:0;box-shadow:none;background:#fff;padding:2px;}
+  .gami-inv-vis .gami-art{width:34px;height:34px;filter:none;}
   .gami-inv-name{font-size:13.5px;font-weight:600;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;}
-  .gami-inv-val{font-size:11.5px;color:var(--txt3);}
+  .gami-inv-val{font-size:11.5px;font-weight:700;color:var(--rc);}
   .gami-status{font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:.3px;padding:3px 9px;border-radius:999px;white-space:nowrap;flex:0 0 auto;}
   .gami-status.pend{background:var(--gold-bg);color:var(--gold);}
   .gami-status.done{background:var(--green-bg);color:var(--green);}
