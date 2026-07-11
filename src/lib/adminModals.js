@@ -234,13 +234,14 @@ async function saveClient() {
 const gv = (id) => { const el = $(id); return el ? el.value : '' }
 const gnum = (id) => { const n = parseFloat(gv(id)); return isNaN(n) ? 0 : n }
 
-function openGamiModal() {
+function openGamiModal(tab) {
   if (window.__switchToChat) window.__switchToChat()
   const ov = $('gamiOverlay'); if (ov) ov.style.display = 'block'
-  window._gamiTab = 'settings'
+  window._gamiTab = tab || 'settings'
+  try { localStorage.setItem('gami_open', window._gamiTab) } catch (e) { /* ignore */ } // помним для F5
   loadGamiConfig()
 }
-function closeGamiModal() { const ov = $('gamiOverlay'); if (ov) ov.style.display = 'none' }
+function closeGamiModal() { const ov = $('gamiOverlay'); if (ov) ov.style.display = 'none'; try { localStorage.removeItem('gami_open') } catch (e) { /* ignore */ } }
 
 async function loadGamiConfig() {
   const body = $('gamiBody')
@@ -273,7 +274,7 @@ async function refreshGamiPending() {
   } catch (e) { /* ignore */ }
 }
 
-function gamiSwitchTab(t) { collectCurrentGamiTab(); window._gamiTab = t; renderGamiTabs(); renderGamiTab() }
+function gamiSwitchTab(t) { collectCurrentGamiTab(); window._gamiTab = t; try { localStorage.setItem('gami_open', t) } catch (e) { /* ignore */ }; renderGamiTabs(); renderGamiTab() }
 
 function collectCurrentGamiTab() {
   const c = window._gamiCfg; if (!c) return
@@ -527,4 +528,9 @@ export function initAdminModals() {
     openClientsModal, closeClientsModal, loadClientsList, deleteClient, openClientForm, cInput, probeClient, onPipeChange, saveClient,
     openGamiModal, closeGamiModal, gamiSwitchTab, saveGami, addCaseItem, removeCaseItem, gamiCaseSum, gamiDeliver, resetGami, resetEconomy, loadGamiBalances, grantPoints, zeroPoints, clearInventory,
   })
+  // после F5 — вернуть открытую модалку «Геймификация» на нужной вкладке
+  try {
+    const savedTab = localStorage.getItem('gami_open')
+    if (savedTab) setTimeout(() => { if (window.openGamiModal) window.openGamiModal(savedTab) }, 60)
+  } catch (e) { /* ignore */ }
 }
