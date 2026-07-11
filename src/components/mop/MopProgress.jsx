@@ -1,6 +1,7 @@
 import React, { useEffect, useRef, useState, useSyncExternalStore } from 'react'
 import { gami } from '../../lib/api.js'
 import { mt, getMopLang, subscribeMopLang } from '../../lib/i18n.js'
+import { prizeArt } from './prizeArt.js'
 
 // Раздел «Прогресс» кабинета МОПа: уровень, карта 12 уровней, прогресс месяца,
 // кейс с рулеткой, инвентарь. Данные и рандом — с сервера (api/gamification.js).
@@ -76,7 +77,8 @@ function PrizeVisual({ item, size = 30, className }) {
   if (item && item.image) {
     return <img src={item.image} alt={item.name || ''} loading="lazy" className={'gami-photo ' + (className || '')} style={{ '--rc': r.c, width: size, height: size }} />
   }
-  return <Ic n={pickIcon(item && item.name)} size={size} color={r.c} />
+  const s = Math.round(size * 1.45)
+  return <svg viewBox="0 0 64 64" width={s} height={s} className={'gami-art ' + (className || '')} style={{ flex: '0 0 auto' }} dangerouslySetInnerHTML={{ __html: prizeArt(item && item.name) }} />
 }
 
 const METRIC_KEY = { reach: 'gReach', conv: 'gConv', tasks: 'gTasks', call: 'gCall', plan: 'gPlan' }

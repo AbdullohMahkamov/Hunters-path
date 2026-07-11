@@ -521,7 +521,9 @@
   /* Живые фото призов */
   .gami-photo{border-radius:10px;object-fit:cover;border:1.5px solid var(--rc);background:var(--card2);box-shadow:0 0 14px -2px color-mix(in srgb,var(--rc) 60%,transparent);}
   .gami-photo-lg{border-radius:16px;border-width:2px;box-shadow:0 12px 34px -8px color-mix(in srgb,var(--rc) 65%,transparent);}
+  .gami-art{flex:0 0 auto;filter:drop-shadow(0 3px 6px rgba(0,0,0,.32));}
   .gami-cell-vis{position:relative;z-index:1;display:grid;place-items:center;min-height:46px;}
+  .gami-cell .gami-art{filter:drop-shadow(0 0 8px color-mix(in srgb,var(--rc) 45%,transparent));}
   .gami-node-top{display:flex;align-items:center;justify-content:space-between;gap:8px;margin-bottom:8px;}
   .gami-node-top .gami-node-badge{margin-bottom:0;}
   .gami-node-thumb{display:grid;place-items:center;}
