@@ -13,16 +13,26 @@ function fmtVal(v) {
 }
 const fmtN = (n) => (n || 0).toLocaleString('ru-RU')
 
-// Редкость приза по стоимости (в стиле CS-кейсов, но в палитре Hunter).
+// Редкость приза по стоимости — 4 группы: зелёный (обычный) → синий → фиолет → золото (лучший).
 const RARITY = [
-  { min: 1000000, key: 'legendary', c: 'var(--gold)' },
-  { min: 300000, key: 'epic', c: '#a274ff' },
-  { min: 100000, key: 'rare', c: 'var(--accent)' },
-  { min: 30000, key: 'uncommon', c: 'var(--green)' },
-  { min: 0, key: 'common', c: 'var(--txt3)' },
+  { min: 50000, key: 'gold', c: '#f2b134' },    // лучший
+  { min: 25000, key: 'purple', c: '#a274ff' },
+  { min: 12000, key: 'blue', c: '#3b9eff' },
+  { min: 0, key: 'green', c: '#2ec46b' },        // обычный
 ]
-const rarityOf = (v) => RARITY.find((r) => (v || 0) >= r.min) || RARITY[RARITY.length - 1]
-const RANK = { common: 0, uncommon: 1, rare: 2, epic: 3, legendary: 4 }
+// Категории по названию поверх ценовой редкости:
+// деньги (ваучер/бонус/сум) — золото; снеки/перекусы — красный.
+const MONEY_RE = /ваучер|бонус|сум|деньг|cash|money/i
+const SNACK_RE = /кола|чипс|шоколад|кофе|энергетик|обед|снек|перекус|twix|snick|sniker|baunty|bounty|qurt|coca|pepsi|chips|ermak|shokolad|конфет|батончик/i
+const MONEY_RC = { key: 'money', c: '#f2b134' }
+const SNACK_RC = { key: 'snack', c: '#ff5a5f' }
+const rarityOf = (v, name) => {
+  if (name) {
+    if (MONEY_RE.test(name)) return MONEY_RC
+    if (SNACK_RE.test(name)) return SNACK_RC
+  }
+  return RARITY.find((r) => (v || 0) >= r.min) || RARITY[RARITY.length - 1]
+}
 
 const ICONS = {
   coin: '<circle cx="12" cy="12" r="9"/><path d="M12 8v8M9.5 10a2.5 2 0 0 1 5 0M9.5 14a2.5 2 0 0 0 5 0"/>',
@@ -75,7 +85,7 @@ function Ic({ n, size = 16, color, style }) {
 }
 // Визуал приза: живое фото (если задан URL) или контурная иллюстрация по категории.
 function PrizeVisual({ item, size = 30, className }) {
-  const r = rarityOf(item && item.value)
+  const r = rarityOf(item && item.value, item && item.name)
   if (item && item.image) {
     return <img src={item.image} alt={item.name || ''} loading="lazy" className={'gami-photo ' + (className || '')} style={{ '--rc': r.c, width: size, height: size }} />
   }
@@ -171,8 +181,8 @@ export default function MopProgress({ view = 'levels' }) {
     }))
     setTimeout(async () => {
       setResult(r.prize); setSpinning(false)
-      const rr = rarityOf(r.prize.value)
-      if (RANK[rr.key] >= 3) setTimeout(() => burst(rr.c), 80) // epic/legendary
+      const rr = rarityOf(r.prize.value, r.prize.name)
+      if ((r.prize.value || 0) >= 25000) setTimeout(() => burst(rr.c), 80) // конфетти на дорогих дропах
       await load()
     }, SPIN * 1000 + 380)
   }
@@ -191,7 +201,7 @@ export default function MopProgress({ view = 'levels' }) {
           <div className="gami-ticker-lbl"><span className="gami-live-dot" />{mt('gLiveDrops')}</div>
           <div className="gami-ticker-vp"><div className="gami-ticker-track" style={{ animationDuration: tickerDur + 's' }}>
             {[...dropsBase, ...dropsBase].map((d, i) => {
-              const r = rarityOf(d.value)
+              const r = rarityOf(d.value, d.name)
               return (
                 <div className="gami-ticker-item" style={{ '--rc': r.c }} key={i} title={d.who ? `${d.name} — ${d.who}` : d.name}>
                   <div className="gami-ti-vis"><PrizeVisual item={d} size={40} /></div>
@@ -253,7 +263,7 @@ export default function MopProgress({ view = 'levels' }) {
         <div className="mop-ct">{mt('gMap')}</div>
         <div className="gami-levelmap">
           {(st.levels || []).map((l) => {
-            const pr = rarityOf(l.prizeValue)
+            const pr = rarityOf(l.prizeValue, l.prizeName)
             const milestone = l.n % 3 === 0
             return (
               <div key={l.n} className={'gami-node' + (l.done ? ' done' : '') + (l.current ? ' current' : '') + (milestone ? ' milestone' : '')} style={{ '--rc': pr.c }}>
@@ -308,7 +318,7 @@ export default function MopProgress({ view = 'levels' }) {
           <div className="gami-marker" />
           <div className="gami-track" ref={trackRef}>
             {(strip.length ? strip : (st.case.items || [])).map((it, i) => {
-              const r = rarityOf(it.value)
+              const r = rarityOf(it.value, it.name)
               return (
                 <div className="gami-cell" key={i} style={{ '--rc': r.c }}>
                   <div className="gami-cell-vis"><PrizeVisual item={it} size={it.image ? 56 : 34} /></div>
@@ -377,7 +387,7 @@ export default function MopProgress({ view = 'levels' }) {
           ? <div style={{ color: 'var(--txt3)', fontSize: 13, padding: '4px 0' }}>{mt('gEmptyInv')}</div>
           : <div className="gami-inv">
             {st.inventory.map((it) => (
-              <div key={it.id} className="gami-inv-item" style={{ '--rc': rarityOf(it.value).c }}>
+              <div key={it.id} className="gami-inv-item" style={{ '--rc': rarityOf(it.value, it.name).c }}>
                 <div className="gami-inv-vis"><PrizeVisual item={it} size={it.image ? 42 : 26} /></div>
                 <div style={{ flex: 1, minWidth: 0 }}>
                   <div className="gami-inv-name">{it.name}{it.type === 'level' ? ` · ${mt('gLevel')} ${it.level}` : ''}</div>
@@ -393,7 +403,7 @@ export default function MopProgress({ view = 'levels' }) {
       {/* ── РЕЗУЛЬТАТ ОТКРЫТИЯ ── */}
       {result && (
         <div className="gami-modal-ov" onClick={() => setResult(null)}>
-          <div className="gami-modal" style={{ '--rc': rarityOf(result.value).c }} onClick={(e) => e.stopPropagation()}>
+          <div className="gami-modal" style={{ '--rc': rarityOf(result.value, result.name).c }} onClick={(e) => e.stopPropagation()}>
             <canvas ref={confRef} className="gami-conf" />
             <div className="gami-modal-glow" />
             <div className="gami-modal-lbl">{mt('gWon')}</div>

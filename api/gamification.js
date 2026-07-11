@@ -242,6 +242,7 @@ function pickCasePrize(items) {
 
 // ─────────────────────────── HANDLER ───────────────────────────
 export default async function handler(req, res) {
+  res.setHeader("Cache-Control", "no-store, max-age=0"); // никогда не кэшировать (цена/баланс всегда свежие)
   if (!REDIS_URL || !REDIS_TOKEN) { res.status(500).json({ error: "no redis" }); return; }
   const session = (req.query && req.query.session) || (req.body && req.body.session);
   const action = (req.query && req.query.action) || (req.body && req.body.action);
