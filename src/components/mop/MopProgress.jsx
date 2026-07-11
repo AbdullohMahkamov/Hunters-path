@@ -261,15 +261,17 @@ export default function MopProgress({ view = 'levels' }) {
           </div></div>
         </div>
       )}
-      {/* ── ШАПКА: уровень + баллы ── */}
-      <div className="mop-card gami-hero">
-        <div className="gami-rank">
-          <div className="gami-rank-badge"><Ic n="rank" size={26} color="var(--gold)" /><b>{st.level || '—'}</b></div>
-          <div>
-            <div className="gami-rank-name">{st.level > 0 ? st.levelName : mt('gNewbie')}</div>
-            <div className="gami-rank-sub">{mt('gLevel')} {st.level || 0} / 12</div>
+      {/* ── ШАПКА: уровень (только на «Уровнях») + баллы ── */}
+      <div className={'mop-card gami-hero' + (view === 'cases' ? ' pts-only' : '')}>
+        {view !== 'cases' && (
+          <div className="gami-rank">
+            <div className="gami-rank-badge"><Ic n="rank" size={26} color="var(--gold)" /><b>{st.level || '—'}</b></div>
+            <div>
+              <div className="gami-rank-name">{st.level > 0 ? st.levelName : mt('gNewbie')}</div>
+              <div className="gami-rank-sub">{mt('gLevel')} {st.level || 0} / 12</div>
+            </div>
           </div>
-        </div>
+        )}
         <div className="gami-hero-pts">
           <div className="gami-pts-n"><Ic n="coin" size={20} color="var(--gold)" />{fmtN(st.balance)}</div>
           <div className="gami-pts-lbl">{mt('gYourPts')} · +{fmtN(st.earnedMonth)} {mt('gEarnedMonth')}</div>
