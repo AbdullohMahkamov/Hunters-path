@@ -272,8 +272,8 @@ function recomputeMop(st, m, cfg, mkey) {
     (planMet ? (p.dailyPlan || 0) : 0)
   );
   st.earnedMonth = (st.earnedDays || 0) + (st.earnedToday || 0);
-  // ПРОДАЖИ ЗА СЕГОДНЯ → бесплатные открытия кейса (3 порога, сброс каждый день)
-  if (st.salesClaimedDay !== today) { st.salesClaimedDay = today; st.salesClaimedTiers = []; }
+  // ПРОДАЖИ ЗА СЕГОДНЯ → бесплатные открытия кейса (дневной лимит: не использовал — сгорели)
+  if (st.salesClaimedDay !== today) { st.salesClaimedDay = today; st.salesClaimedTiers = []; st.freeOpens = 0; }
   const dayRev = m.revenueToday || 0;
   (cfg.salesRewards || []).forEach((tier, i) => {
     if (dayRev >= (tier.sales || 0) && !(st.salesClaimedTiers || []).includes(i)) {
@@ -415,6 +415,7 @@ export default async function handler(req, res) {
         if (!mopId) { res.status(200).json({ ok: false, error: "no mopId" }); return; }
         const st = await getMopState(org, mopId);
         st.bonus = (st.bonus || 0) - balanceOf(st); // текущий баланс → 0
+        st.freeOpens = 0;                            // и бесплатные открытия обнуляем
         await saveMopState(org, mopId, st);
         res.status(200).json({ ok: true, balance: balanceOf(st) });
         return;
