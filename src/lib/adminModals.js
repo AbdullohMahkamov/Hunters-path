@@ -286,6 +286,7 @@ function collectCurrentGamiTab() {
     if ($('g_task_goal')) c.taskGoal = Math.max(1, gnum('g_task_goal'))
     if ($('g_dozvon_coef')) { const v = parseFloat(gv('g_dozvon_coef')); c.dozvonCoef = (isNaN(v) || v <= 0) ? 0.6 : v }
     if ($('g_freeze')) c.freezeTime = gv('g_freeze') || '16:00'
+    if ($('g_calc')) c.calcTime = gv('g_calc') || '18:00'
     if ($('g_cashback')) c.stickerCashback = Math.max(0, gnum('g_cashback'))
     const sr = []
     ;(c.salesRewards || []).forEach((_, i) => { if ($('g_sr_sales_' + i)) sr.push({ sales: gnum('g_sr_sales_' + i), opens: Math.max(0, gnum('g_sr_opens_' + i)) }) })
@@ -341,6 +342,7 @@ function renderGamiTab() {
       fld('Баллы за дневной план', num('g_p_dplan', c.points.dailyPlan != null ? c.points.dailyPlan : 60)) +
       fld('Дневной план продаж (сум)', num('g_dplan_target', c.dailyPlanTarget != null ? c.dailyPlanTarget : 3000000), lvRange('plan', '%')) +
       fld('Заморозка знаменателя дозвона (МСК)', `<input id="g_freeze" type="time" value="${c.freezeTime || '16:00'}" style="width:100%;padding:7px 9px;border-radius:8px;border:1px solid var(--line2);background:var(--bg2);color:var(--txt);font-size:13px;">`) +
+      fld('Время начисления баллов дня (МСК)', `<input id="g_calc" type="time" value="${c.calcTime || '18:00'}" style="width:100%;padding:7px 9px;border-radius:8px;border:1px solid var(--line2);background:var(--bg2);color:var(--txt);font-size:13px;">`) +
       fld('Цена кейса (баллы)', num('g_case_price', c.case.price)) +
       fld('Открытий кейса в день', num('g_case_perday', c.case.perDay != null ? c.case.perDay : 2)) +
       fld('Кэшбек за стикер (ценность 0)', num('g_cashback', c.stickerCashback != null ? c.stickerCashback : 20)) +

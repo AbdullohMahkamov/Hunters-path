@@ -68,6 +68,7 @@ function defaultConfig() {
     taskGoal: 70,             // задачи за сегодня ≥ X% → балл
     dozvonCoef: 0.6,          // цель дозвона = взято_лидов × коэффициент (округл. вверх)
     freezeTime: "16:00",      // после этого времени (МСК) новые лиды не увеличивают цель дозвона
+    calcTime: "18:00",        // в это время (МСК) дневные баллы фиксируются и зачисляются на баланс
     stickerCashback: 20,      // если из кейса выпал стикер/смайлик (ценность 0) → вернуть N баллов
     salesRewards: [           // продажи за месяц → бесплатные открытия кейса (3 порога)
       { sales: 5000000, opens: 1 },
@@ -111,6 +112,7 @@ function normalizeConfig(c) {
   if (!c.taskGoal || c.taskGoal < 1) c.taskGoal = d.taskGoal;
   if (!c.dozvonCoef || c.dozvonCoef <= 0) c.dozvonCoef = d.dozvonCoef;
   if (!c.freezeTime) c.freezeTime = d.freezeTime;
+  if (!c.calcTime) c.calcTime = d.calcTime;
   if (c.stickerCashback == null || c.stickerCashback < 0) c.stickerCashback = d.stickerCashback;
   if (!Array.isArray(c.salesRewards)) c.salesRewards = d.salesRewards;
   c.case = c.case || d.case;
@@ -184,7 +186,7 @@ function earnedPoints(m, cfg, st) {
 
 // ─────────────────────────── СОСТОЯНИЕ МОПА ───────────────────────────
 function emptyState() {
-  return { level: 0, lastLevelMonth: "", carry: 0, earnedMonth: 0, earnedDays: 0, earnedToday: 0, pointsMonth: "", spent: 0, bonus: 0, opensDay: "", opensToday: 0, dailyDay: "", planDaysMonth: 0, convDaysMonth: 0, callDaysMonth: 0, taskDaysMonth: 0, reachDaysMonth: 0, todayPlanAwarded: false, todayConvAwarded: false, todayCallAwarded: false, todayTaskAwarded: false, todayReachAwarded: false, freeOpens: 0, salesClaimedDay: "", salesClaimedTiers: [], dozvonDenom: 0, dozvonDenomDay: "", dozvonFrozen: false, inventory: [], levelHistory: [], caseHistory: [] };
+  return { level: 0, lastLevelMonth: "", carry: 0, earnedMonth: 0, earnedDays: 0, earnedToday: 0, pointsMonth: "", spent: 0, bonus: 0, opensDay: "", opensToday: 0, dailyDay: "", planDaysMonth: 0, convDaysMonth: 0, callDaysMonth: 0, taskDaysMonth: 0, reachDaysMonth: 0, todayPlanAwarded: false, todayConvAwarded: false, todayCallAwarded: false, todayTaskAwarded: false, todayReachAwarded: false, freeOpens: 0, salesClaimedDay: "", salesClaimedTiers: [], dozvonDenom: 0, dozvonDenomDay: "", dozvonFrozen: false, todayCredited: false, creditedTodayValue: 0, inventory: [], levelHistory: [], caseHistory: [] };
 }
 async function getMopState(org, mopId) {
   const raw = await redisGet(`gamification:mop:${org}:${mopId}`);
@@ -222,19 +224,21 @@ function metricsMeetNorms(m, norms) {
 function recomputeMop(st, m, cfg, mkey) {
   // ЕЖЕДНЕВНАЯ модель: считаем заработок за СЕГОДНЯ и банкуем по дням.
   const today = dateKey(nowTk());
+  // Баллы дня зачисляются только в calcTime (18:00). До этого earnedToday — предварительный (не в балансе).
+  const creditedYesterday = () => st.todayCredited ? (st.creditedTodayValue || 0) : (st.earnedToday || 0);
   // смена месяца → весь месяц в carry, сброс
   if (st.pointsMonth && st.pointsMonth !== mkey) {
-    st.carry = (st.carry || 0) + (st.earnedDays || 0) + (st.earnedToday || 0);
+    st.carry = (st.carry || 0) + (st.earnedDays || 0) + creditedYesterday();
     st.spent = 0;
-    st.earnedDays = 0; st.earnedToday = 0; st.dailyDay = "";
+    st.earnedDays = 0; st.earnedToday = 0; st.dailyDay = ""; st.todayCredited = false; st.creditedTodayValue = 0;
     st.planDaysMonth = 0; st.convDaysMonth = 0; st.callDaysMonth = 0; st.taskDaysMonth = 0; st.reachDaysMonth = 0;
     st.todayPlanAwarded = false; st.todayConvAwarded = false; st.todayCallAwarded = false; st.todayTaskAwarded = false; st.todayReachAwarded = false;
   }
   st.pointsMonth = mkey;
-  // смена дня → банкуем вчерашний заработок, обнуляем сегодня
+  // смена дня → банкуем вчерашний зачтённый день, обнуляем сегодня
   if (st.dailyDay !== today) {
-    st.earnedDays = (st.earnedDays || 0) + (st.earnedToday || 0);
-    st.earnedToday = 0; st.dailyDay = today;
+    st.earnedDays = (st.earnedDays || 0) + creditedYesterday();
+    st.earnedToday = 0; st.dailyDay = today; st.todayCredited = false; st.creditedTodayValue = 0;
     st.todayPlanAwarded = false; st.todayConvAwarded = false; st.todayCallAwarded = false; st.todayTaskAwarded = false; st.todayReachAwarded = false;
   }
   // 4 ДНЕВНЫЕ БИНАРНЫЕ ЦЕЛИ (по сегодняшним данным)
@@ -273,7 +277,11 @@ function recomputeMop(st, m, cfg, mkey) {
     (taskMet ? (p.taskDone || 0) : 0) +
     (planMet ? (p.dailyPlan || 0) : 0)
   );
-  st.earnedMonth = (st.earnedDays || 0) + (st.earnedToday || 0);
+  // зачёт баллов дня в calcTime (18:00 МСК) — фиксируем значение; до этого earnedToday предварительный
+  const calcMin = parseFreezeMinutes(cfg.calcTime || "18:00");
+  if (!st.todayCredited && nowMskMinutes() >= calcMin) { st.todayCredited = true; st.creditedTodayValue = st.earnedToday; }
+  // баланс = прошлые дни + сегодня ТОЛЬКО после зачёта в 18:00
+  st.earnedMonth = (st.earnedDays || 0) + (st.todayCredited ? (st.creditedTodayValue || 0) : 0);
   // ПРОДАЖИ ЗА СЕГОДНЯ → бесплатные открытия кейса (дневной лимит: не использовал — сгорели)
   if (st.salesClaimedDay !== today) { st.salesClaimedDay = today; st.salesClaimedTiers = []; st.freeOpens = 0; }
   const dayRev = m.revenueToday || 0;
@@ -569,6 +577,9 @@ function buildStatePayload(st, m, cfg) {
     taskGoal: cfg.taskGoal || 70,
     dozvonCoef: cfg.dozvonCoef || 0.6,
     freezeTime: cfg.freezeTime || "16:00",
+    calcTime: cfg.calcTime || "18:00",
+    earnedTodayLive: st.earnedToday || 0,
+    todayCredited: !!st.todayCredited,
     maxPoints: (cfg.points.reach || 0) + (cfg.points.fastCall || 0) + (cfg.points.taskDone || 0) + (cfg.points.dailyPlan || 0),
     earn: m ? (() => {
       const coef = cfg.dozvonCoef || 0.6;

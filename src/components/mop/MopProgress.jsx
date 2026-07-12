@@ -395,13 +395,14 @@ export default function MopProgress({ view = 'levels' }) {
             const uz = getMopLang() === 'uz'
             const pctOf = (x, y) => y > 0 ? Math.min(100, Math.round(x / y * 100)) : 0
             const doneTxt = uz ? 'Bajarildi ✓' : 'Выполнено ✓'
+            const coefPct = Math.round((st.dozvonCoef || 0.6) * 100)
             const rows = [
               {
-                g: e.dozvon, label: uz ? 'Aloqa (dozvon)' : 'Дозвон',
+                g: e.dozvon, label: (uz ? 'Aloqa (dozvon)' : 'Дозвон') + ` · ${uz ? 'kamida' : 'мин.'} ${coefPct}%`,
                 idle: e.dozvon.y <= 0, counter: e.dozvon.y > 0 ? `${e.dozvon.x} / ${e.dozvon.y}` : `0 / ~${e.dozvon.est}`, pct: pctOf(e.dozvon.x, e.dozvon.y),
                 action: e.dozvon.done ? doneTxt
-                  : (e.dozvon.y > 0 ? (uz ? `Yana ${e.dozvon.remain} ta lidga qoʻngʻiroq qiling` : `Дозвонитесь ещё до ${e.dozvon.remain} лидов`)
-                    : (uz ? `Odatda ~${e.dozvon.estLeads} lid → ${e.dozvon.est} dozvon kerak` : `Обычно ~${e.dozvon.estLeads} лидов → нужно ${e.dozvon.est} дозвонов`)),
+                  : (e.dozvon.y > 0 ? (uz ? `Yana ${e.dozvon.remain} ta lidga aloqa qiling` : `Дозвонитесь ещё до ${e.dozvon.remain} лидов`)
+                    : (uz ? `Odatda ~${e.dozvon.estLeads} lid → ${e.dozvon.est} ta aloqa kerak` : `Обычно ~${e.dozvon.estLeads} лидов → нужно ${e.dozvon.est} дозвонов`)),
               },
               {
                 g: e.speed, label: uz ? '1-qoʻngʻiroq tezligi' : 'Скорость 1-го звонка',
@@ -411,7 +412,7 @@ export default function MopProgress({ view = 'levels' }) {
                     : (uz ? `Lid kelishi bilan ${e.speed.sla} daqiqada oling` : `Берите за ${e.speed.sla} мин по мере поступления`)),
               },
               {
-                g: e.task, label: uz ? 'Vazifalar' : 'Задачи',
+                g: e.task, label: (uz ? 'Vazifalar' : 'Задачи') + ` · ${uz ? 'kamida' : 'мин.'} ${e.task.goalPct}%`,
                 idle: (e.task.x || 0) <= 0, counter: e.task.y > 0 ? `${e.task.x} / ${e.task.y}` : '0 / —', pct: pctOf(e.task.x, e.task.y),
                 action: e.task.done ? doneTxt
                   : ((e.task.x || 0) <= 0 ? (e.task.y > 0 ? (uz ? `${e.task.y} ta vazifa kutmoqda` : `${e.task.y} задач ждут`) : (uz ? 'Vazifa qoʻying va bajaring' : 'Ставьте и закрывайте задачи'))
@@ -427,6 +428,7 @@ export default function MopProgress({ view = 'levels' }) {
             return (
               <div className="gami-checklist">
                 <div className="gami-maxrow">{uz ? 'Bugun maksimal' : 'Сегодня максимум'}: <b>{fmtN(st.maxPoints || 0)} {uz ? 'ball' : 'баллов'}</b></div>
+                <div className="gami-creditnote">{uz ? 'Bugun yigʻildi' : 'Сегодня набрано'}: <b>{fmtN(st.earnedTodayLive || 0)}</b> · {st.todayCredited ? (uz ? 'hisobga oʻtdi ✓' : 'зачислено ✓') : (uz ? `${st.calcTime || '18:00'} da hisobga oʻtadi` : `зачислим в ${st.calcTime || '18:00'}`)}</div>
                 {rows.map((row, i) => (
                   <div key={i} className={'gami-goal daily ' + (row.g.done ? 'done' : row.idle ? 'idle' : 'fail')}>
                     <span className="gami-goal-ic">{row.g.done ? <Ic n="check" size={13} /> : row.idle ? <Ic n="dot" size={13} /> : <Ic n="cross" size={13} />}</span>
