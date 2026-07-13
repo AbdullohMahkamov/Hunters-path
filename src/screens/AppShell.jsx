@@ -251,10 +251,8 @@ export default function AppShell({ onLogout }) {
             <div className="chat-sidebar" id="chatSidebar">
               <div className="side-nav">
                 <div className="sec-dropdown-wrap" ref={secWrapRef}>
-                  <button className={'sec-dropdown-btn' + (secOpen ? ' open' : '') + (tab !== 'chat' ? ' active' : '')} onClick={(e) => { e.stopPropagation(); setSecOpen((v) => !v) }}>
-                    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><line x1="3" y1="6" x2="21" y2="6" /><line x1="3" y1="12" x2="21" y2="12" /><line x1="3" y1="18" x2="21" y2="18" /></svg>
-                    <span>{uz ? 'Menyu' : 'Меню'}</span>
-                    <svg className="chev" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><polyline points="6 9 12 15 18 9" /></svg>
+                  <button className={'sec-dropdown-btn burger' + (secOpen ? ' open' : '') + (tab !== 'chat' ? ' active' : '')} onClick={(e) => { e.stopPropagation(); setSecOpen((v) => !v) }} title={uz ? 'Menyu' : 'Меню'} aria-label="menu">
+                    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round"><line x1="3" y1="6" x2="21" y2="6" /><line x1="3" y1="12" x2="21" y2="12" /><line x1="3" y1="18" x2="21" y2="18" /></svg>
                   </button>
                   <div className={'sec-dropdown' + (secOpen ? ' open' : '')} id="secDropdown">
                     <button className={'menu-item' + (tab === 'dash' ? ' active' : '')} onClick={() => goSection('dash')}><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round"><path d="M3 3v18h18" /><rect x="7" y="10" width="3" height="8" /><rect x="12" y="6" width="3" height="12" /><rect x="17" y="13" width="3" height="5" /></svg>{uz ? 'Dashboard' : 'Дашборд'}</button>
@@ -264,9 +262,9 @@ export default function AppShell({ onLogout }) {
                     {isAdmin && <button className="menu-item" onClick={() => { setSecOpen(false); window.openGamiModal && window.openGamiModal() }}><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round"><path d="M12 2l2.5 4.5L20 8l-4 4 1 6-5-3-5 3 1-6-4-4 5.5-1.5z" /></svg>{uz ? 'Geymifikatsiya' : 'Геймификация'}</button>}
                   </div>
                 </div>
-                <div className="side-brand" onClick={() => applyTab('chat')} style={{ cursor: 'pointer' }} title="Hunter AI"><div className="side-logo">H</div></div>
+                <div className="side-brand" onClick={() => applyTab('chat')} style={{ cursor: 'pointer' }} title="Hunter AI"><div className="side-logo">H</div><span>Hunter AI</span></div>
                 {isAdmin && (
-                  <div className="notif-wrap" ref={notifWrapRef} style={{ position: 'relative', flex: '0 0 auto' }}>
+                  <div className="notif-wrap" ref={notifWrapRef} style={{ marginLeft: 'auto', marginRight: '-4px', position: 'relative', flex: '0 0 auto' }}>
                     <button className="side-nav-ic notif-bell" onClick={(e) => { e.stopPropagation(); setNotifOpen((v) => !v) }} title={uz ? 'Bildirishnomalar' : 'Уведомления'}>
                       <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.9" strokeLinecap="round" strokeLinejoin="round"><path d="M18 8a6 6 0 0 0-12 0c0 7-3 9-3 9h18s-3-2-3-9" /><path d="M13.7 21a2 2 0 0 1-3.4 0" /></svg>
                       {notifs.length > 0 && <span className="notif-badge">{notifs.length}</span>}
