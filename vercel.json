@@ -17,6 +17,9 @@
     },
     "api/telegram-digest.js": {
       "maxDuration": 120
+    },
+    "api/dev-agent.js": {
+      "maxDuration": 120
     }
   },
   "crons": [
@@ -39,6 +42,14 @@
     {
       "path": "/api/telegram-digest",
       "schedule": "0 21 * * *"
+    },
+    {
+      "path": "/api/dev-agent?action=nightly&cron=1",
+      "schedule": "0 0 * * *"
+    },
+    {
+      "path": "/api/dev-agent?action=weekly_review&cron=1",
+      "schedule": "30 0 * * 0"
     }
   ]
 }

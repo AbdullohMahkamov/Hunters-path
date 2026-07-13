@@ -7,6 +7,12 @@ import Login from './screens/Login.jsx'
 // МОП не тянет админку/дашборд (~215KB), админ/РОП не тянет кабинет МОПа (~85KB).
 const MopCabinet = lazy(() => import('./screens/MopCabinet.jsx'))
 const AppShell = lazy(() => import('./screens/AppShell.jsx'))
+const DevAgent = lazy(() => import('./screens/DevAgent.jsx'))
+
+// Отдельный внутренний маршрут /dev-agent (только админ). nginx на VPS отдаёт index.html (SPA-fallback).
+function isDevAgentRoute() {
+  try { return window.location.pathname.replace(/\/+$/, '') === '/dev-agent' } catch (e) { return false }
+}
 
 // Хук на сессию (реактивный).
 export function useSession() {
@@ -51,7 +57,21 @@ export default function App() {
   }
 
   if (phase === 'loading') return null
-  if (phase === 'login') return <Login onLoggedIn={handleLoggedIn} />
+  if (phase === 'login') {
+    // на /dev-agent без входа — сначала логин, после входа останемся на этом маршруте
+    return <Login onLoggedIn={handleLoggedIn} />
+  }
+  // Внутренний маршрут /dev-agent — только для админа. Иначе уводим на главную.
+  if (isDevAgentRoute()) {
+    if (sess.role === 'admin') {
+      return (
+        <Suspense fallback={null}>
+          <DevAgent onLogout={handleLogout} />
+        </Suspense>
+      )
+    }
+    try { window.history.replaceState(null, '', '/') } catch (e) { /* ignore */ }
+  }
   return (
     <Suspense fallback={null}>
       {phase === 'mop' ? <MopCabinet onLogout={handleLogout} /> : <AppShell onLogout={handleLogout} />}

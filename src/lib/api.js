@@ -123,4 +123,14 @@ export const quests = {
   generate: (body) => postJSON('/api/generate-quests', { session: getSession(), ...body }).then((r) => r.json()),
 }
 
+// ===== DEV-AGENT (внутренний ревизор, только админ) =====
+export const devAgent = {
+  state: () => getJSON('/api/dev-agent?action=state&session=' + encodeURIComponent(getSession())),
+  chat: (text) => postJSON('/api/dev-agent', { action: 'chat', session: getSession(), text }).then((r) => r.json()),
+  nightly: () => postJSON('/api/dev-agent', { action: 'nightly', session: getSession() }).then((r) => r.json()),
+  weeklyReview: () => postJSON('/api/dev-agent', { action: 'weekly_review', session: getSession() }).then((r) => r.json()),
+  decision: ({ refId, kind, claim, verdict, note }) => postJSON('/api/dev-agent', { action: 'decision', session: getSession(), refId, kind, claim, verdict, note }).then((r) => r.json()),
+  reset: (full) => postJSON('/api/dev-agent', { action: 'reset', session: getSession(), full: !!full }).then((r) => r.json()),
+}
+
 export { postJSON, getJSON }
