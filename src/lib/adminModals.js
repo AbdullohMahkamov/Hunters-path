@@ -1,7 +1,7 @@
 // Модалки админа: «МОПы (кабинеты)» и «Клиенты» — дословный перенос из public/index.html.
 // Императивные (innerHTML в #mopsList/#clientsList/#clientForm). Форматы /api/mop и /api/user-data не менялись.
 import { getSession } from './session.js'
-import { escapeHtml } from './format.js'
+import { escapeHtml, jsAttr } from './format.js'
 
 const $ = (id) => document.getElementById(id)
 
@@ -52,7 +52,7 @@ async function loadMopsList() {
           <div><b style="font-size:14px;">${escapeHtml(a.name || a.login)}</b><div style="font-size:12px;color:var(--txt3);">логин: ${escapeHtml(a.login)}</div><div style="font-size:12px;color:var(--txt2);margin-top:2px;">код: <span style="font-family:ui-monospace,monospace;font-weight:700;color:var(--accent);user-select:all;cursor:text;">${escapeHtml(a.password || '—')}</span></div></div>
           <div style="display:flex;gap:6px;flex:0 0 auto;">
             <button onclick="toggleEditMop(${i})" style="padding:6px 10px;border-radius:8px;background:var(--card2);color:var(--txt2);border:1px solid var(--line2);font-size:12px;cursor:pointer;">Изменить</button>
-            <button onclick="deleteMopAccount('${escapeHtml(a.login)}')" style="padding:6px 10px;border-radius:8px;background:var(--red-bg);color:var(--red);border:none;font-size:12px;cursor:pointer;">Удалить</button>
+            <button onclick="deleteMopAccount('${jsAttr(a.login)}')" style="padding:6px 10px;border-radius:8px;background:var(--red-bg);color:var(--red);border:none;font-size:12px;cursor:pointer;">Удалить</button>
           </div>
         </div>
         <div id="editMop_${i}" style="display:none;margin-top:10px;padding-top:10px;border-top:1px dashed var(--line);">
@@ -60,7 +60,7 @@ async function loadMopsList() {
           <input id="editName_${i}" value="${escapeHtml(a.name || '')}" placeholder="Имя" style="width:100%;padding:8px;border-radius:7px;border:1px solid var(--line2);background:var(--bg2);color:var(--txt);font-size:13px;margin-bottom:6px;box-sizing:border-box;">
           <input id="editLogin_${i}" value="${escapeHtml(a.login || '')}" placeholder="Логин" style="width:100%;padding:8px;border-radius:7px;border:1px solid var(--line2);background:var(--bg2);color:var(--txt);font-size:13px;margin-bottom:6px;box-sizing:border-box;">
           <input id="editPass_${i}" value="${escapeHtml(a.password || '')}" placeholder="Код (пароль)" style="width:100%;padding:8px;border-radius:7px;border:1px solid var(--line2);background:var(--bg2);color:var(--txt);font-size:13px;margin-bottom:8px;box-sizing:border-box;">
-          <button onclick="saveMopAccount('${escapeHtml(a.login)}',${i})" style="width:100%;padding:9px;border-radius:7px;background:var(--accent);color:#fff;border:none;font-weight:600;font-size:13px;cursor:pointer;">Сохранить изменения</button>
+          <button onclick="saveMopAccount('${jsAttr(a.login)}',${i})" style="width:100%;padding:9px;border-radius:7px;background:var(--accent);color:#fff;border:none;font-weight:600;font-size:13px;cursor:pointer;">Сохранить изменения</button>
         </div>
         <div style="display:flex;gap:8px;margin-top:10px;align-items:center;">
           <span style="font-size:12px;color:var(--txt3);">Роль:</span>
@@ -72,7 +72,7 @@ async function loadMopsList() {
         <div style="display:flex;gap:8px;margin-top:8px;align-items:center;">
           <span style="font-size:12px;color:var(--txt3);">План:</span>
           <input id="plan_${a.mopId}" type="number" value="${plans[a.mopId] || 0}" style="flex:1;padding:7px;border-radius:7px;border:1px solid var(--line2);background:var(--bg2);color:var(--txt);font-size:13px;">
-          <button onclick="setMopPlan('${a.mopId}')" style="padding:7px 12px;border-radius:7px;background:var(--card2);border:1px solid var(--line2);color:var(--txt);font-size:12px;cursor:pointer;">Сохранить</button>
+          <button onclick="setMopPlan('${jsAttr(a.mopId)}')" style="padding:7px 12px;border-radius:7px;background:var(--card2);border:1px solid var(--line2);color:var(--txt);font-size:12px;cursor:pointer;">Сохранить</button>
         </div>
       </div>`).join('')
     } else { html += '<div style="color:var(--txt3);font-size:13px;text-align:center;padding:10px;">Пока нет аккаунтов МОПов.</div>' }
@@ -154,7 +154,7 @@ async function loadClientsList() {
           <div style="font-size:13.5px;font-weight:600;">${escapeHtml(c.name)}</div>
           <div style="font-size:11px;color:var(--txt3);">${escapeHtml(c.subdomain)}.amocrm.ru · логин: ${escapeHtml(c.login)}</div>
         </div>
-        <button onclick="deleteClient('${escapeHtml(c.org)}')" style="background:var(--card);border:1px solid var(--line2);color:var(--red);border-radius:7px;padding:5px 10px;font-size:12px;cursor:pointer;">Удалить</button>
+        <button onclick="deleteClient('${jsAttr(c.org)}')" style="background:var(--card);border:1px solid var(--line2);color:var(--red);border-radius:7px;padding:5px 10px;font-size:12px;cursor:pointer;">Удалить</button>
       </div>`).join('')
   } catch (e) { box.innerHTML = '<div style="font-size:12px;color:var(--red);">' + String(e) + '</div>' }
 }
@@ -472,7 +472,7 @@ async function loadGamiBalances() {
     if (!list.length) { box.innerHTML = '<div style="color:var(--txt3);font-size:13px;text-align:center;padding:14px;">Нет аккаунтов МОПов.</div>'; return }
     box.innerHTML = list.map((b) => {
       const mid = String(b.mopId)
-      const midJs = mid.replace(/'/g, "\\'")
+      const midJs = jsAttr(mid)
       return `<div style="border:1px solid var(--line);border-radius:10px;margin-bottom:8px;background:var(--card);padding:10px 12px;">
         <div style="display:flex;justify-content:space-between;align-items:baseline;margin-bottom:9px;gap:10px;">
           <b style="font-size:13.5px;">${escapeHtml(b.mopName || mid)}</b>
@@ -546,7 +546,7 @@ async function loadGamiInventory() {
         ${isCashback
           ? `<span style="font-size:11px;font-weight:700;color:var(--gold);background:var(--gold-bg);padding:4px 10px;border-radius:999px;white-space:nowrap;">+${it.cashback} на счёт</span>`
           : pend
-            ? `<button onclick="gamiDeliver('${escapeHtml(String(it.mopId))}','${it.id}')" style="padding:7px 13px;border-radius:8px;background:var(--accent);border:none;color:#fff;font-size:12.5px;font-weight:600;cursor:pointer;white-space:nowrap;">Выдано</button>`
+            ? `<button onclick="gamiDeliver('${jsAttr(it.mopId)}','${jsAttr(it.id)}')" style="padding:7px 13px;border-radius:8px;background:var(--accent);border:none;color:#fff;font-size:12.5px;font-weight:600;cursor:pointer;white-space:nowrap;">Выдано</button>`
             : '<span style="font-size:11px;font-weight:700;text-transform:uppercase;color:var(--green);background:var(--green-bg);padding:4px 10px;border-radius:999px;">Выдано</span>'}
       </div>`
     }).join('')

@@ -100,15 +100,16 @@ export default async function handler(req, res) {
   const K = (name) => org === "hunter" ? name : `${name}:${org}`;
 
   const now = new Date();
-  const monthStart = Math.floor(new Date(now.getFullYear(), now.getMonth(), 1).getTime() / 1000);
-  // начало сегодняшнего дня (по локальному времени сервера ~ UTC; для Ташкента UTC+5 сместим)
+  // Границы месяца/дня — по КАЛЕНДАРЮ ТАШКЕНТА (UTC+5), а не по UTC сервера Vercel.
+  // Иначе на стыке суток/месяца (00:00–05:00 по Ташкенту) продажи уезжали в прошлый период.
   const TZ_OFFSET = 5 * 3600; // Узбекистан UTC+5
-  const nowLocal = new Date(Date.now() + TZ_OFFSET * 1000);
-  const dayStart = Math.floor(new Date(Date.UTC(nowLocal.getUTCFullYear(), nowLocal.getUTCMonth(), nowLocal.getUTCDate()) ).getTime() / 1000) - TZ_OFFSET;
+  const nowLocal = new Date(Date.now() + TZ_OFFSET * 1000); // «сейчас» в календаре Ташкента (через UTC-геттеры)
+  const monthStart = Math.floor(Date.UTC(nowLocal.getUTCFullYear(), nowLocal.getUTCMonth(), 1) / 1000) - TZ_OFFSET;
+  const nextMonth = Math.floor(Date.UTC(nowLocal.getUTCFullYear(), nowLocal.getUTCMonth() + 1, 1) / 1000) - TZ_OFFSET;
+  const dayStart = Math.floor(Date.UTC(nowLocal.getUTCFullYear(), nowLocal.getUTCMonth(), nowLocal.getUTCDate()) / 1000) - TZ_OFFSET;
   // Тянем лиды, созданные за последние 120 дней, чтобы поймать старые лиды, закрывшиеся в этом месяце.
   // Продажи считаем по дате ЗАКРЫТИЯ (closed_at) в этом месяце. Объём лидов — по created_at в этом месяце.
   const lookbackStart = monthStart - 120 * 24 * 3600;
-  const nextMonth = Math.floor(new Date(now.getFullYear(), now.getMonth() + 1, 1).getTime() / 1000);
 
   // ===== ХЕЛПЕРЫ: реальная дата продажи и доплаты =====
   const cfvOf = (L) => L.custom_fields_values || (L._embedded && L._embedded.custom_fields_values) || [];
@@ -159,6 +160,13 @@ export default async function handler(req, res) {
           for (const s of sts) statusName[s.id] = s.name;
         }
       }
+    }
+    // ЗАЩИТА КЭША: если воронку/статусы не получили (сбой или 429 на /pipelines, либо имя не совпало),
+    // то statusName пуст → stName="" у всех → isSold=false → нули. НЕ перезаписываем корректный дашборд —
+    // прерываем sync, чтобы разовый сбой amoCRM не обнулял витрину.
+    if (!pipelineId || Object.keys(statusName).length === 0) {
+      res.status(502).json({ error: "amoCRM: воронка/статусы не получены — синхронизация прервана, кэш не изменён" });
+      return;
     }
 
     // 2) Причины отказа: id -> name

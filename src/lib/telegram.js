@@ -2,7 +2,7 @@
 // Императивный (innerHTML в #tgChatList/#tgSummary/#tgChatWindow/#tgSegments/#tgDigest/#tgHistoryAnalysis).
 // Эндпоинты /api/telegram-* (chats/import/send) не менялись.
 import { getSession } from './session.js'
-import { escapeHtml } from './format.js'
+import { escapeHtml, jsAttr } from './format.js'
 
 const $ = (id) => document.getElementById(id)
 
@@ -106,7 +106,7 @@ async function renderTgSegments() {
       d.summary.filter((s) => s.count > 0).map((s) => `
       <div style="display:flex;justify-content:space-between;align-items:center;padding:9px 0;border-top:1px solid var(--line);">
         <div><b style="font-size:13px;">${escapeHtml(s.name)}</b> <span style="color:var(--txt3);font-size:12px;">— ${s.count} клиентов</span></div>
-        <button onclick="openTgSend('${escapeHtml(s.name).replace(/'/g, '')}',${s.count})" style="padding:5px 12px;border-radius:8px;background:var(--accent);color:#fff;border:none;font-size:12px;font-weight:600;cursor:pointer;">Написать</button>
+        <button onclick="openTgSend('${jsAttr(s.name)}',${s.count})" style="padding:5px 12px;border-radius:8px;background:var(--accent);color:#fff;border:none;font-size:12px;font-weight:600;cursor:pointer;">Написать</button>
       </div>`).join('')
   } catch (e) { box.innerHTML = '<div style="color:var(--red);">Ошибка загрузки сегментов</div>' }
 }
@@ -208,7 +208,7 @@ async function loadTelegramChats() {
     if (!d.chats.length) { list.innerHTML = '<div style="font-size:13px;color:var(--txt3);">Чатов пока нет. Напишите боту или подключите бизнес-аккаунт.</div>'; return }
     list.innerHTML = d.chats.map((c) => {
       const wait = c.waitingReply ? `<span style="font-size:11px;color:var(--red);font-weight:600;">● ждёт ответа ${c.waitingMinutes} мин</span>` : `<span style="font-size:11px;color:var(--txt3);">вы ответили</span>`
-      return `<div onclick="openTgChat(${c.chatId},'${escapeHtml(c.name).replace(/'/g, '')}')" style="background:var(--card);border:1px solid ${c.waitingReply ? 'var(--red)' : 'var(--line2)'};border-radius:12px;padding:12px 14px;margin-bottom:8px;cursor:pointer;">
+      return `<div onclick="openTgChat(${c.chatId},'${jsAttr(c.name)}')" style="background:var(--card);border:1px solid ${c.waitingReply ? 'var(--red)' : 'var(--line2)'};border-radius:12px;padding:12px 14px;margin-bottom:8px;cursor:pointer;">
         <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:4px;">
           <div style="font-weight:600;font-size:14px;">${escapeHtml(c.name)}</div>
           <div style="font-size:11px;color:var(--txt3);">${c.lastTime}</div>

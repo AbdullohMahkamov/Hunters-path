@@ -48,7 +48,10 @@ async function collectActivity(token, cfg) {
   const H = { Authorization: `Bearer ${token}` };
   const base = `https://${SUBDOMAIN}.amocrm.ru/api/v4`;
   const now = new Date();
-  const monthStart = Math.floor(new Date(now.getFullYear(), now.getMonth(), 1).getTime() / 1000);
+  // monthStart — по календарю Ташкента (UTC+5), консистентно с dayKey (UTC+5).
+  const _tzoffA = 5 * 3600;
+  const _nlA = new Date(Date.now() + _tzoffA * 1000);
+  const monthStart = Math.floor(Date.UTC(_nlA.getUTCFullYear(), _nlA.getUTCMonth(), 1) / 1000) - _tzoffA;
 
   // структура: mop -> { calls:{day:n}, moves:{}, tasks:{}, closes:{}, leads:{} }  (day => счётчик)
   const acc = {};

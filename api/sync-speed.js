@@ -76,7 +76,11 @@ export default async function handler(req, res) {
   const H = { Authorization: `Bearer ${token}` };
   const base = `https://${SUBDOMAIN}.amocrm.ru/api/v4`;
   const now = new Date();
-  const monthStart = Math.floor(new Date(now.getFullYear(), now.getMonth(), 1).getTime() / 1000);
+  // monthStart — по календарю Ташкента (UTC+5), консистентно с dayStart2 ниже;
+  // иначе фильтр amoCRM терял лиды, созданные 00:00–05:00 1-го числа месяца.
+  const _tzoffMs = 5 * 3600;
+  const _nlMs = new Date(Date.now() + _tzoffMs * 1000);
+  const monthStart = Math.floor(Date.UTC(_nlMs.getUTCFullYear(), _nlMs.getUTCMonth(), 1) / 1000) - _tzoffMs;
 
   // === РАБОЧЕЕ ВРЕМЯ (для честной скорости первого звонка) ===
   // читаем настройки клиента: workdays [0..6, 0=Вс], workStart/workEnd "HH:MM"
@@ -143,6 +147,9 @@ export default async function handler(req, res) {
       for (const p of ((pd._embedded && pd._embedded.pipelines) || []))
         if (p.name === PIPELINE_ID_NAME) pipelineId = p.id;
     }
+    // ЗАЩИТА: без pipelineId фильтр по воронке не применится → метрики соберутся по чужим воронкам.
+    // Прерываем, чтобы разовый сбой /pipelines не портил кэш speed.
+    if (!pipelineId) { res.status(502).json({ error: "amoCRM: воронка не получена — sync-speed прерван, кэш не изменён" }); return; }
 
     // 1б) Тянем названия причин потери, чтобы отличить «неверный номер» / «телефон отключён»
     const lossNameById = {};
