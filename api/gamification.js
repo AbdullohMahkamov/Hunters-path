@@ -13,12 +13,30 @@
 const REDIS_URL = process.env.UPSTASH_REDIS_REST_URL;
 const REDIS_TOKEN = process.env.UPSTASH_REDIS_REST_TOKEN;
 
+// fetch с таймаутом и ретраем: подвисший коннект Upstash отваливается за timeoutMs и
+// повторяется на новом (обычно здоровом), вместо зависания до убийства функции (~21с → 500 пусто).
+async function rfetch(url, opts = {}, { timeoutMs = 3500, retries = 2 } = {}) {
+  let lastErr;
+  for (let attempt = 0; attempt <= retries; attempt++) {
+    const ctl = new AbortController();
+    const t = setTimeout(() => ctl.abort(), timeoutMs);
+    try {
+      return await fetch(url, { ...opts, signal: ctl.signal });
+    } catch (e) {
+      lastErr = e;
+      if (attempt < retries) await new Promise(rs => setTimeout(rs, 150 * (attempt + 1)));
+    } finally {
+      clearTimeout(t);
+    }
+  }
+  throw lastErr;
+}
 async function redisGet(key) {
-  const r = await fetch(`${REDIS_URL}/get/${encodeURIComponent(key)}`, { headers: { Authorization: `Bearer ${REDIS_TOKEN}` } });
+  const r = await rfetch(`${REDIS_URL}/get/${encodeURIComponent(key)}`, { headers: { Authorization: `Bearer ${REDIS_TOKEN}` } });
   const d = await r.json(); return d && d.result != null ? d.result : null;
 }
 async function redisSet(key, value) {
-  await fetch(`${REDIS_URL}/set/${encodeURIComponent(key)}`, { method: "POST", headers: { Authorization: `Bearer ${REDIS_TOKEN}` }, body: typeof value === "string" ? value : JSON.stringify(value) });
+  await rfetch(`${REDIS_URL}/set/${encodeURIComponent(key)}`, { method: "POST", headers: { Authorization: `Bearer ${REDIS_TOKEN}` }, body: typeof value === "string" ? value : JSON.stringify(value) });
 }
 async function getSession(session) {
   if (!session) return null;
