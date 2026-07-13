@@ -38,6 +38,7 @@ export default function AppShell({ onLogout }) {
   const [, force] = useState(0)
   const bootedRef = useRef(false)
   const dashLoadedRef = useRef(false)
+  const secWrapRef = useRef(null)
 
   // renderDashboard — загрузка живых данных дашборда (1:1 по поведению монолита)
   async function loadDashboard() {
@@ -125,6 +126,14 @@ export default function AppShell({ onLogout }) {
     if (adsets) adsets.style.display = isRop ? 'none' : ''
     ;['genBtn', 'nextBtn'].forEach((id) => { const el = document.getElementById(id); if (el) el.style.display = isRop ? 'none' : '' })
   }, [tab, isRop])
+
+  // закрывать выпадашку «Меню» по клику в любое место вне неё
+  useEffect(() => {
+    if (!secOpen) return
+    const onDown = (e) => { if (secWrapRef.current && !secWrapRef.current.contains(e.target)) setSecOpen(false) }
+    document.addEventListener('mousedown', onDown)
+    return () => document.removeEventListener('mousedown', onDown)
+  }, [secOpen])
 
   function goSection(sec) {
     toggleSidebar(false)
@@ -220,7 +229,7 @@ export default function AppShell({ onLogout }) {
             <div className="chat-sidebar" id="chatSidebar">
               <div className="side-nav">
                 <button className="side-nav-ic" onClick={collapseSidebar} title="Свернуть панель"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><rect x="3" y="3" width="18" height="18" rx="2" /><line x1="9" y1="3" x2="9" y2="21" /></svg></button>
-                <div className="sec-dropdown-wrap">
+                <div className="sec-dropdown-wrap" ref={secWrapRef}>
                   <button className={'sec-dropdown-btn' + (secOpen ? ' open' : '') + (tab !== 'chat' ? ' active' : '')} onClick={(e) => { e.stopPropagation(); setSecOpen((v) => !v) }}>
                     <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><line x1="3" y1="6" x2="21" y2="6" /><line x1="3" y1="12" x2="21" y2="12" /><line x1="3" y1="18" x2="21" y2="18" /></svg>
                     <span>{uz ? 'Menyu' : 'Меню'}</span>
