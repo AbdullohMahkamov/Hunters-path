@@ -211,9 +211,10 @@ export default async function handler(req, res) {
         // Исключение: ТОЛЬКО в июле 2026 первый бонус за темп даётся до 12 числа (обычно до 10).
         // Остальные пороги (20 / конец месяца) и другие месяцы — без изменений.
         const firstTempoDay = (now.getUTCFullYear() === 2026 && now.getUTCMonth() === 6) ? 12 : 10;
+        // Правило: достиг порога % — бонус зачтён НАВСЕГДА (дата — мягкий ориентир для темпа, а не дедлайн).
         const tempoBonuses = [
-          { label: `33% до ${firstTempoDay} числа`, need: 33, byDay: firstTempoDay, got: planPct >= 33 && day <= firstTempoDay, possible: day <= firstTempoDay },
-          { label: "66% до 20 числа", need: 66, byDay: 20, got: planPct >= 66 && day <= 20, possible: day <= 20 },
+          { label: `33% до ${firstTempoDay} числа`, need: 33, byDay: firstTempoDay, got: planPct >= 33, possible: day <= firstTempoDay },
+          { label: "66% до 20 числа", need: 66, byDay: 20, got: planPct >= 66, possible: day <= 20 },
           { label: "100% до конца месяца", need: 100, byDay: 31, got: planPct >= 100, possible: true },
         ];
         const tempoBonusSum = tempoBonuses.filter(b => b.got).length * bonus15;
@@ -264,10 +265,10 @@ export default async function handler(req, res) {
           const pp = plan > 0 ? (rev / plan * 100) : 0;
           for (let i = 0; i < ladder.steps.length; i++) if (pp >= ladder.steps[i][0]) r = ladder.steps[i][1];
           const kpi = Math.round(rev * r / 100);
-          // бонусы за темп при этой выручке (по факту достигнутого %)
+          // бонусы за темп при этой выручке (по факту достигнутого % — дата не влияет)
           let tb = 0;
-          if (pp >= 33 && day <= 10) tb += bonus15;
-          if (pp >= 66 && day <= 20) tb += bonus15;
+          if (pp >= 33) tb += bonus15;
+          if (pp >= 66) tb += bonus15;
           if (pp >= 100) tb += bonus15;
           return { total: fix + kpi + tb, rate: r, kpi };
         };
@@ -324,18 +325,18 @@ export default async function handler(req, res) {
         // ближайший невыполненный бонус
         let nextTempoBonus = null;
         const tempoTargets = [
-          { pct: 33, byDay: firstTempoDay, got: planPct >= 33 && day <= firstTempoDay },
-          { pct: 66, byDay: 20, got: planPct >= 66 && day <= 20 },
+          { pct: 33, byDay: firstTempoDay, got: planPct >= 33 },
+          { pct: 66, byDay: 20, got: planPct >= 66 },
           { pct: 100, byDay: daysInMonth, got: planPct >= 100 },
         ];
         for (const tt of tempoTargets) {
-          if (!tt.got && day <= tt.byDay) {
+          if (!tt.got) { // следующий непокрытый порог (дата — мягкий ориентир, дедлайна нет)
             const targetRev = Math.round(plan * tt.pct / 100);
             nextTempoBonus = {
               pct: tt.pct, byDay: tt.byDay,
               revenueNeeded: Math.max(0, targetRev - revenue),
               progress: targetRev > 0 ? Math.min(100, Math.round(revenue / targetRev * 100)) : 0,
-              daysLeft: tt.byDay - day,
+              daysLeft: Math.max(0, tt.byDay - day),
             };
             break;
           }

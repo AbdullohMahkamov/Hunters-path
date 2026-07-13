@@ -251,11 +251,8 @@
     position:sticky;top:0;z-index:15;background:var(--bg);
     padding-top:10px;padding-bottom:9px;margin-bottom:12px;
     box-shadow:0 8px 14px -10px rgba(0,0,0,.22);}
-  /* десктоп: во всю ширину #dashView (вкладки на своём месте слева, кнопка «Обновить» справа) */
-  body.shell .dtabs{margin-left:-28px;margin-right:-28px;padding-left:28px;padding-right:28px;}
-  /* фон-«шапка» НАД панелью — закрывает верхний паддинг контейнера (24px), чтобы контент
-     не просвечивал сверху при скролле. Тянется вверх с запасом и уходит за край вьюпорта. */
-  body.shell .dtabs::before{content:"";position:absolute;left:0;right:0;bottom:100%;height:60px;background:var(--bg);}
+  /* десктоп: во всю ширину #dashView, у самого верха (как сайдбар); padding 18 сверху */
+  body.shell .dtabs{margin:-24px -28px 12px;padding:18px 28px 9px;box-sizing:border-box;}
   .dtab{padding:9px 14px;font-size:13.5px;font-weight:500;color:var(--txt2);background:none;border:none;
     border-bottom:2px solid transparent;cursor:pointer;margin-bottom:-1px;}
   .dtab.on{color:var(--txt);border-bottom-color:var(--txt);}
