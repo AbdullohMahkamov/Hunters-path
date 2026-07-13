@@ -303,6 +303,7 @@ export default async function handler(req, res) {
     const reader = r.body.getReader();
     const decoder = new TextDecoder();
     let buffer = "";
+    let inTok = 0, outTok = 0; // расход токенов за этот ответ
     while (true) {
       const { done, value } = await reader.read();
       if (done) break;
@@ -316,12 +317,15 @@ export default async function handler(req, res) {
         if (payload === "[DONE]") continue;
         try {
           const evt = JSON.parse(payload);
+          if (evt.type === "message_start" && evt.message && evt.message.usage) inTok = evt.message.usage.input_tokens || 0;
+          if (evt.type === "message_delta" && evt.usage && evt.usage.output_tokens != null) outTok = evt.usage.output_tokens;
           if (evt.type === "content_block_delta" && evt.delta && evt.delta.type === "text_delta") {
             res.write(evt.delta.text);
           }
         } catch (e) { /* пропускаем неполные */ }
       }
     }
+    res.write(`\n[[TOK:${inTok},${outTok}]]`); // маркер расхода токенов — фронт покажет мелко под ответом
     res.end();
   } catch (err) {
     try { res.status(500).json({ error: "Server error", detail: String(err) }); } catch (e) { res.end(); }
