@@ -134,4 +134,13 @@ export const devAgent = {
   setConfig: (config) => postJSON('/api/dev-agent', { action: 'set_config', session: getSession(), config }).then((r) => r.json()),
 }
 
+// ===== GROWTH AGENT (Агент Б — гипотезы роста, только админ) =====
+export const growthAgent = {
+  state: () => getJSON('/api/growth-agent?action=state&session=' + encodeURIComponent(getSession())),
+  run: () => postJSON('/api/growth-agent', { action: 'run', session: getSession() }).then((r) => r.json()),
+  markResult: ({ hypId, result, note }) => postJSON('/api/growth-agent', { action: 'mark_result', session: getSession(), hypId, result, note }).then((r) => r.json()),
+  setConfig: (config) => postJSON('/api/growth-agent', { action: 'set_config', session: getSession(), config }).then((r) => r.json()),
+  reset: (full) => postJSON('/api/growth-agent', { action: 'reset', session: getSession(), full: !!full }).then((r) => r.json()),
+}
+
 export { postJSON, getJSON }

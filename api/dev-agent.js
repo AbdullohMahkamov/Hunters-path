@@ -173,6 +173,80 @@ async function gatherAggregates(cfg) {
   return { perClient, outOfRange, telephonySuspects, caseOdds, callVolume, orgsScanned: orgs.length };
 }
 
+// ── DATA TRUST LAYER ────────────────────────────────────────────────────────────────
+// ЕДИНСТВЕННЫЙ интерфейс, через который Growth Agent (Агент Б) получает данные клиента.
+// Возвращает воронку с trust-статусом каждого этапа/перехода: verified | suspicious | insufficient.
+// Growth Agent имеет право строить гипотезу ТОЛЬКО на 'verified' переходах.
+const MIN_LEADS_TRUST = 30; // мало лидов за период → insufficient
+// история снимков (для динамики конверсии/чека по неделям) — те же snap:${date}, что пишет sync.js
+async function readSnapHistory(org, days = 21) {
+  const kl = org === "hunter" ? "snap:list" : `snap:list:${org}`;
+  const dates = (await rgetJSON(kl, [])) || [];
+  const recent = dates.slice(-days);
+  const snaps = await Promise.all(recent.map((d) => rgetJSON(org === "hunter" ? `snap:${d}` : `snap:${d}:${org}`, null)));
+  return snaps.filter(Boolean);
+}
+export async function getVerifiedFunnel(org) {
+  const cfg = await getConfig();
+  const kd = org === "hunter" ? "dashboard" : `dashboard:${org}`;
+  const ks = org === "hunter" ? "speed" : `speed:${org}`;
+  const [dash, speed, snaps] = await Promise.all([rgetJSON(kd, null), rgetJSON(ks, null), readSnapHistory(org)]);
+  const t = (dash && dash.totals) || {};
+  const leads = t.leads != null ? t.leads : null;
+  const sold = t.sold != null ? t.sold : null;
+  const revenue = t.revenue != null ? t.revenue : null;
+  const avgCheck = t.avgCheck != null ? t.avgCheck : null;
+  const avgCheckMedian = t.avgCheckMedian != null ? t.avgCheckMedian : null;
+  const dealCycleDays = t.dealCycleMedianDays != null ? t.dealCycleMedianDays : null;
+  const paidReceiptCount = t.paidReceiptCount != null ? t.paidReceiptCount : null;
+  const called = speed && Array.isArray(speed.mops) ? speed.mops.reduce((s, m) => s + (m.calledLeads || 0), 0) : null;
+  const reached = speed && Array.isArray(speed.mops) ? speed.mops.reduce((s, m) => s + (m.reached || 0), 0) : null;
+  const tel = speed && speed.telephony;
+  const telSuspicious = !!(tel && tel.total >= 20 && tel.noCallButActivePct >= cfg.noCallThreshold);
+  const dashAge = dash ? ageH(dash.updatedAt) : null;
+  const dataFresh = dashAge != null && dashAge < 48;
+  const lowLeads = leads != null && leads < MIN_LEADS_TRUST;
+  const pct = (a, b) => (a != null && b) ? +(a / b * 100).toFixed(1) : null;
+  const minTrust = (x, y) => [x, y].includes("insufficient") ? "insufficient" : ([x, y].includes("suspicious") ? "suspicious" : "verified");
+  const tLeads = leads == null ? "insufficient" : (lowLeads ? "insufficient" : "verified");
+  const tCalled = telSuspicious ? "suspicious" : (called == null ? "insufficient" : (lowLeads ? "insufficient" : "verified"));
+  const tReached = telSuspicious ? "suspicious" : (reached == null ? "insufficient" : (lowLeads ? "insufficient" : "verified"));
+  const tSold = sold == null ? "insufficient" : (lowLeads ? "insufficient" : "verified");
+  // деньги по этапам: до сделки денег нет, на сделке — выручка (бюджет+доплаты)
+  const stages = [
+    { stage: "Лиды", value: leads, money: null, trust: tLeads },
+    { stage: "Звонили (набрали)", value: called, money: null, trust: tCalled, transitionFromPrev: { name: "лиды → обзвон", pct: pct(called, leads), trust: minTrust(tLeads, tCalled) } },
+    { stage: "Дозвон (реальный разговор ≥40с)", value: reached, money: null, trust: tReached, transitionFromPrev: { name: "обзвон → дозвон", pct: pct(reached, called), trust: minTrust(tCalled, tReached) } },
+    { stage: "Сделка выиграна (Sotildi)", value: sold, money: revenue, trust: tSold, transitionFromPrev: { name: "разговор → сделка", pct: pct(sold, reached), trust: minTrust(tReached, tSold) } },
+    { stage: "Оплачено", value: null, money: null, trust: "insufficient", transitionFromPrev: { name: "сделка → оплата", pct: null, trust: "insufficient", note: "в amoCRM клиента нет отдельного поля/статуса оплаты — «выиграно» ≠ «оплачено». Инфо-сигнал: сделок с чеком To'lov cheki = " + (paidReceiptCount != null ? paidReceiptCount : "н/д") } },
+  ];
+  // ЯВНАЯ ТОЧКА МАКС. ОТТОКА — только среди verified-переходов (drop = 100 - конверсия перехода)
+  let maxDropOff = null;
+  for (const s of stages) { const tr = s.transitionFromPrev; if (tr && tr.trust === "verified" && tr.pct != null) { const drop = +(100 - tr.pct).toFixed(1); if (!maxDropOff || drop > maxDropOff.dropPct) maxDropOff = { transition: tr.name, toStage: s.stage, convPct: tr.pct, dropPct: drop }; } }
+  const bottleneck = maxDropOff ? { stage: maxDropOff.toStage, transition: maxDropOff.transition, pct: maxDropOff.convPct } : null;
+  const undiagnosable = stages.filter((s) => s.transitionFromPrev && s.transitionFromPrev.trust !== "verified")
+    .map((s) => ({ transition: s.transitionFromPrev.name, trust: s.transitionFromPrev.trust, reason: s.transitionFromPrev.trust === "suspicious" ? "данные звонков ненадёжны (детектор телефонии клиента)" : "недостаточно данных за период" }));
+  // ДИНАМИКА по snap-истории: конверсия и средний чек — раннее vs позднее окно (~2 недели)
+  let dynamics = null;
+  if (snaps.length >= 4) {
+    const half = Math.floor(snaps.length / 2);
+    const early = snaps.slice(0, half), late = snaps.slice(half);
+    const avg = (arr, k) => { const v = arr.map((x) => x[k]).filter((x) => x != null); return v.length ? +(v.reduce((a, b) => a + b, 0) / v.length).toFixed(1) : null; };
+    const mk = (k) => { const e = avg(early, k), l = avg(late, k); return (e != null && l != null) ? { from: e, to: l, delta: +(l - e).toFixed(1) } : null; };
+    dynamics = { window: `${snaps.length} снимков`, conv: mk("conv"), avgCheck: mk("avgCheck"), avgCheckMedian: mk("avgCheckMedian"), trust: (telSuspicious ? "suspicious" : (lowLeads ? "insufficient" : "verified")) };
+  }
+  return {
+    org, period: "текущий месяц", dataFresh, telephonySuspicious: telSuspicious,
+    stages,
+    avgCheck: { mean: avgCheck, median: avgCheckMedian, trust: tSold, note: "медиана устойчивее к редким крупным сделкам" },
+    dealCycle: { companyMedianDays: dealCycleDays, byMop: (dash && dash.mopsByConv || []).map((m) => ({ name: m.name, days: m.dealCycleDays })).filter((x) => x.days != null), trust: tSold },
+    ltv: { value: null, trust: "insufficient", note: "повторные продажи/LTV по контактам пока не считаются (нужна contact-группировка)" },
+    paymentInfo: { paidReceiptCount, trust: "info", note: "справочно: сделки с приложенным чеком оплаты; не является trust-статусом «оплачено»" },
+    maxDropOff, bottleneck, dynamics, undiagnosable,
+    openStageDistribution: (dash && dash.velocity && dash.velocity.stages) ? dash.velocity.stages : null,
+  };
+}
+
 // ── GIT LOG + DIFF по ключевым модулям (через GitHub API, read-only) ────────────────
 const KEY_MODULE_RE = /(sync-speed|sync|dashboard|finance|gamification|dev-agent|user-data|mop|activity)\.js$/;
 async function readGitLog(hours) {
@@ -401,6 +475,7 @@ export default async function handler(req, res) {
       return;
     }
     if (action === "get_config") { res.status(200).json({ ok: true, config: await getConfig() }); return; }
+    if (action === "verified_funnel") { res.status(200).json({ ok: true, funnel: await getVerifiedFunnel(String(q.org || b.org || "hunter")) }); return; }
     if (action === "set_config") {
       const cur = await getConfig(); const inc = b.config || {};
       const next = { ...cur };

@@ -20,6 +20,9 @@
     },
     "api/dev-agent.js": {
       "maxDuration": 120
+    },
+    "api/growth-agent.js": {
+      "maxDuration": 180
     }
   },
   "crons": [
@@ -50,6 +53,10 @@
     {
       "path": "/api/dev-agent?action=weekly_review&cron=1",
       "schedule": "30 0 * * 0"
+    },
+    {
+      "path": "/api/growth-agent?action=cron_tick&cron=1",
+      "schedule": "0 2 * * *"
     }
   ]
 }

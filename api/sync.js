@@ -208,6 +208,11 @@ export default async function handler(req, res) {
     // === VELOCITY (скорость воронки) ===
     const saleDurations = [];      // длительности «создан → продан» в днях (для медианы/среднего)
     const stageDistribution = {};  // текущий статус (открытые лиды) -> количество
+    // === КОММЕРЧЕСКАЯ ВОРОНКА (деньги/цикл) — аддитивно, для Dev-Agent/Growth Agent ===
+    const checks = [];             // цены выигранных сделок месяца (для МЕДИАННОГО чека, устойчив к выбросам)
+    const mopDurations = {};       // name -> [дни цикла сделки] (цикл по каждому МОПу)
+    let paidReceiptCount = 0;      // сделок с приложенным чеком оплаты (To'lov cheki) — ИНФО-сигнал, не trust-«оплачено»
+    const PAID_RECEIPT_FIELD_ID = 117856; // клиент-специфично (Hunter Academy). У других org поля нет → счётчик 0. При тираже → в конфиг.
     // === ИСТОЧНИКИ РЕКЛАМЫ (adset_name) ===
     const adsets = {};             // adset_name -> {leads, sold, revenue}
     let soldPeriod = 0, revenuePeriod = 0;  // продажи за окно аудита (~4 месяца)
@@ -249,7 +254,7 @@ export default async function handler(req, res) {
       // время «создан → продан» в днях (для проданных с корректными датами)
       if (isSold && L.created_at && L.closed_at && L.closed_at > L.created_at) {
         const days = (L.closed_at - L.created_at) / DAY;
-        if (days >= 0 && days < 365) saleDurations.push(days);
+        if (days >= 0 && days < 365) { saleDurations.push(days); if (mop) (mopDurations[mop] = mopDurations[mop] || []).push(days); }
       }
       // распределение открытых лидов по текущему этапу (не продано и не закрыто)
       if (!isSold && !isLost) {
@@ -307,6 +312,10 @@ export default async function handler(req, res) {
       // === ВЫРУЧКА: ВСЕ аккаунты, проданные в этом месяце (по реальной дате) ===
       if (isSold && closedThisMonth) {
         sold++; soldSum += price; newSalesSum += price; // newSalesSum — только новые продажи, без доплат (для среднего чека)
+        if (price > 0) checks.push(price); // для медианного чека
+        // чек оплаты приложен? (To'lov cheki) — инфо-сигнал
+        const cfvP = L.custom_fields_values || (L._embedded && L._embedded.custom_fields_values);
+        if (Array.isArray(cfvP) && cfvP.some(x => x.field_id === PAID_RECEIPT_FIELD_ID && x.values && x.values[0] && x.values[0].value)) paidReceiptCount++;
       }
       // Доплаты в этом месяце учитываем ТОЛЬКО если сама продажа была в ПРОШЛЫЕ месяцы.
       // Если продажа этого месяца — доплата уже включена в price (полная сумма), не задваиваем.
@@ -443,8 +452,10 @@ export default async function handler(req, res) {
 
     const totalLeads = Object.values(byMop).reduce((a, m) => a + m.leads, 0);
     const conv = totalLeads > 0 ? +(soldTeam / totalLeads * 100).toFixed(2) : 0;
-    // Средний чек — по всей кассе (все аккаунты)
+    // Средний чек — по всей кассе (все аккаунты). СРЕДНЕЕ + МЕДИАНА (медиана устойчива к редким крупным сделкам).
     const avgCheck = sold > 0 ? Math.round(newSalesSum / sold) : 0;
+    const medianOf = (arr) => { if (!arr || !arr.length) return null; const s = [...arr].sort((a, b) => a - b); const m = Math.floor(s.length / 2); return Math.round(s.length % 2 ? s[m] : (s[m - 1] + s[m]) / 2); };
+    const avgCheckMedian = medianOf(checks);
     const noContactPct = totalLeads > 0 ? +(noContact / totalLeads * 100).toFixed(0) : 0;
 
     // === ВСЁ ВРЕМЯ = ВСЯ БАЗА (для дашборда) ===
@@ -498,6 +509,7 @@ export default async function handler(req, res) {
       conv: v.leads > 0 ? +(v.sold / v.leads * 100).toFixed(2) : 0,
       reachPct: v.leads > 0 ? +((v.leads - v.noContact) / v.leads * 100).toFixed(0) : 0, // % дозвона
       reached: Math.max(0, v.leads - v.noContact), // сколько дозвонились (штук)
+      dealCycleDays: medianOf(mopDurations[name]), // медианный цикл сделки «создан→продан» по МОПу (дни)
     }));
     const mopsByConv = [...mops].sort((a, b) => b.conv - a.conv);
     const mopsBySales = [...mops].sort((a, b) => b.sold - a.sold);
@@ -525,7 +537,9 @@ export default async function handler(req, res) {
         revenuePeriod,              // выручка за ~4 месяца (для аудита)
         soldTeam,                   // продаж только пятёрки
         revenueTeam: soldSumTeam,   // выручка пятёрки
-        conv, avgCheck,
+        conv, avgCheck, avgCheckMedian,        // средний чек: среднее + медиана (устойчива к выбросам)
+        paidReceiptCount,                       // сделок с приложенным чеком оплаты (To'lov cheki) — инфо-сигнал, не «оплачено»
+        dealCycleMedianDays: velocityMedian,    // медианный цикл сделки по компании (дни)
         noContactPct, ownExcluded,
         // цель НЕ хардкодим на сервере — она у каждого своя, задаётся клиентом (getGoal).
         // клиент считает goalPct/needPerMonth сам по своей цели.
@@ -563,6 +577,11 @@ export default async function handler(req, res) {
         conv: result.totals.conv,
         leads: result.totals.leads,
         noContactPct: result.totals.noContactPct,
+        // === коммерческая динамика (для «средний чек/конверсия по неделям») ===
+        avgCheck: result.totals.avgCheck,
+        avgCheckMedian: result.totals.avgCheckMedian,
+        dealCycleMedianDays: result.totals.dealCycleMedianDays,
+        reached: (result.mopsByConv || []).reduce((s, m) => s + (m.reached || 0), 0),
       };
       await redisSet(redisUrl, redisToken, K(`snap:${today}`), JSON.stringify(snap));
       // ведём список дат снимков (последние 90)
