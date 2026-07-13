@@ -264,7 +264,9 @@ export default async function handler(req, res) {
     const dayStart2 = Math.floor(new Date(Date.UTC(nowLocal2.getUTCFullYear(), nowLocal2.getUTCMonth(), nowLocal2.getUTCDate())).getTime() / 1000) - TZ_OFFSET2;
 
     // 3a) ЗВОНКИ С ДЛИТЕЛЬНОСТЬЮ — из notes каждого лида (надёжно, как /leads/{id}/notes).
-    // Utel пишет params.duration (сек). Разговор дольше REACHED_SEC = реальный дозвон.
+    // Источник данных о звонках — ТОЛЬКО amoCRM API (ноты call_in/call_out, params.duration в сек).
+    // Никаких вендор-специфичных интеграций телефонии: клиент сам настраивает свою телефонию так,
+    // чтобы она передавала звонки в его amoCRM. Разговор дольше REACHED_SEC = реальный дозвон.
     // Тянем только по лидам, которые нам нужны (созданные сегодня + за месяц, где были звонки),
     // чтобы не перегружать: приоритет — сегодняшние лиды (для метрики «за сегодня»).
     const REACHED_SEC = 40;
@@ -342,6 +344,10 @@ export default async function handler(req, res) {
     const suspicious2 = []; // подозрительные по звонкам (этап 2)
     const nowSec2 = Math.floor(Date.now() / 1000);
     const STALL_DAYS = 7; // лид без движения дольше 7 дней = завис
+    // ДЕТЕКТОР ТЕЛЕФОНИИ (на КЛИЕНТА, не на МОПа персонально): лиды без единого звонка в amoCRM,
+    // но с другой активностью в CRM (задача/закрытая задача/смена ответственного). Сигнал ВОЗМОЖНОЙ
+    // проблемы телефонии на стороне клиента (звонят не через amoCRM / интеграция настроена не полностью).
+    let telTotal = 0, telNoCallButActive = 0;
 
     for (const id in leadInfo) {
       const L = leadInfo[id];
@@ -352,6 +358,9 @@ export default async function handler(req, res) {
       const S = stat[mop];
       S.leads++;
       S.callsTotal += L.calls;
+      // детектор телефонии: лид без звонка, но с другой CRM-активностью
+      telTotal++;
+      if ((L.calls || 0) === 0 && (((L.tasks || 0) > 0) || ((L.tasksDone || 0) > 0) || (Array.isArray(L._assignTs) && L._assignTs.length > 0))) telNoCallButActive++;
       // «ставит задачи» считаем ТОЛЬКО среди дозвонившихся (задача ставится после разговора)
       if (L.reachedReal && L.tasks > 0) S.withTask++;
       S.tasksTotal += (L.tasks || 0);
@@ -486,7 +495,9 @@ export default async function handler(req, res) {
       };
     }).sort((a,b)=> (a.medianFirstCallMin??9e9) - (b.medianFirstCallMin??9e9));
 
-    const result = { updatedAt: new Date().toISOString(), period: "Текущий месяц", mops, mopsDay, suspicious2: suspicious2.slice(0, 300), _callDiag: { notesSeen, callNotesSeen, reachedSet } };
+    // детектор телефонии на КЛИЕНТА: % лидов без звонка, но с активностью в CRM (сигнал возможной проблемы телефонии клиента)
+    const telephony = { total: telTotal, noCallButActive: telNoCallButActive, noCallButActivePct: telTotal ? Math.round(telNoCallButActive / telTotal * 100) : 0 };
+    const result = { updatedAt: new Date().toISOString(), period: "Текущий месяц", mops, mopsDay, suspicious2: suspicious2.slice(0, 300), telephony, _callDiag: { notesSeen, callNotesSeen, reachedSet } };
     await redisSet(redisUrl, redisToken, K("speed"), JSON.stringify(result));
     res.status(200).json({ ok: true, ...result });
   } catch (err) {

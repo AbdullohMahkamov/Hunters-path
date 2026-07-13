@@ -227,6 +227,16 @@ async function pushDrop(org, entry) {
   arr.unshift(entry);
   await redisSet(`gamification:drops:${org}`, arr.slice(0, 30));
 }
+// Лог круток кейса (последние 1000) — только имя приза + время. Для Dev-Agent: сверка
+// заданных шансов с фактическим распределением. Пишем write-only, поведение кейса не меняем.
+async function pushSpin(org, name, value) {
+  try {
+    const raw = await redisGet(`gamification:spinlog:${org}`);
+    const arr = raw ? JSON.parse(raw) : [];
+    arr.unshift({ n: name, v: value || 0, at: Date.now() });
+    await redisSet(`gamification:spinlog:${org}`, arr.slice(0, 1000));
+  } catch (e) { /* ignore */ }
+}
 function bandNormsForLevel(cfg, level) {
   const idx = Math.min(12, Math.max(1, level)) - 1;
   return cfg.levels[idx];
@@ -549,6 +559,7 @@ export default async function handler(req, res) {
       if (st.caseHistory.length > 50) st.caseHistory = st.caseHistory.slice(0, 50);
       await saveMopState(org, mopId, st);
       await pushDrop(org, { who: sess.mopName || mopId, name: won.name, value: won.value, image: won.image, type: "case", at: won.wonAt });
+      await pushSpin(org, won.name, won.value); // лог крутки для сверки шансов (Dev-Agent)
       res.status(200).json({ ok: true, prize: { name: won.name, value: won.value, image: won.image, cashback }, balance: balanceOf(st), opensLeft: Math.max(0, perDay - st.opensToday), freeOpens: st.freeOpens || 0 });
       return;
     }

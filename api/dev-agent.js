@@ -1,25 +1,19 @@
 // /api/dev-agent.js — ВНУТРЕННИЙ агент-ревизор Hunter AI с постоянной памятью.
 // Только для админа (основателя). НЕ клиентская фича. Он ПРЕДЛАГАЕТ — решает человек.
 //
-// Права (жёстко): читает всё (read-only), пишет ТОЛЬКО в devagent:*.
-// Никогда не трогает продакшн-данные, код или конфиги. Выход по фиксам — готовый промпт
-// для Claude Code, который человек вставляет сам.
+// ══════════════ ГРАНИЦЫ (жёстко, вне текущей версии НЕ реализуем даже частично) ══════════════
+//  Агент МОЖЕТ: читать всё (read-only), писать ТОЛЬКО в devagent:*, слать сообщения основателю.
+//  Агент НЕ МОЖЕТ и не будет: менять код, автодеплой, писать в продакшн-данные/таблицы клиентов,
+//  дёргать вендоров телефонии. Фикс он отдаёт как ГОТОВЫЙ ПРОМПТ для Claude Code — человек вставляет
+//  вручную. Автоматических действий над кодом/инфраструктурой/клиентскими данными — НЕТ.
 //
-// Компромиссы против исходного ТЗ (serverless-реальность):
-//  • git log за сутки — не через git CLI (в функции нет репо), а через GitHub API (read-only).
-//    Нужен env GITHUB_TOKEN (для приватного репо) + GITHUB_REPO (по умолчанию наш). Нет токена —
-//    секция git пустая с пометкой.
-//  • «агрегаты за сутки» — из уже существующих кэшей Redis (dashboard/speed/tg), а не отдельный ETL.
-//  • cron-аутентификация — по заголовку Authorization: Bearer $CRON_SECRET (стандарт Vercel Cron);
-//    если CRON_SECRET не задан — допускаем вызов с ?cron=1 (graceful).
+// ИСТОЧНИК ДАННЫХ О ЗВОНКАХ — ТОЛЬКО amoCRM API (для всех клиентов). Никаких вендор-специфичных
+// интеграций телефонии. call_count=0 в amoCRM принимается как данность; при подозрении агент лишь
+// ПРЕДУПРЕЖДАЕТ о возможной проблеме телефонии НА СТОРОНЕ КЛИЕНТА, не обвиняя сотрудника.
 //
-// Actions:
-//  GET  ?action=state            — вся память для UI (admin)
-//  POST {action:'chat', text}    — дневная переписка (admin), пишет в devagent:chat
-//  POST {action:'nightly'}       — ночной прогон (admin вручную ИЛИ cron)
-//  POST {action:'weekly_review'} — недельная ревизия памяти (admin ИЛИ cron)
-//  POST {action:'decision', ...} — решение человека по находке/гипотезе (admin)
-//  POST {action:'reset', full?}  — сброс памяти агента (admin)
+// Компромиссы против ТЗ (serverless): git log+diff — через GitHub API (в функции нет git CLI);
+// «объём звонков за 14 дней» — собственный ряд агента в devagent:series:* (снапшоты его не хранят);
+// cron-аутентификация — Authorization: Bearer $CRON_SECRET (стандарт Vercel) с fallback ?cron=1.
 
 const REDIS_URL = process.env.UPSTASH_REDIS_REST_URL;
 const REDIS_TOKEN = process.env.UPSTASH_REDIS_REST_TOKEN;
@@ -27,41 +21,85 @@ const AKEY = process.env.ANTHROPIC_API_KEY;
 const MODEL = "claude-sonnet-5";
 
 const K = {
-  findings: "devagent:findings",
-  hypotheses: "devagent:hypotheses",
-  decisions: "devagent:decisions",
-  fixed: "devagent:fixed",
-  chat: "devagent:chat",
-  conflog: "devagent:conflog", // журнал изменений confidence (защита от дрейфа)
+  findings: "devagent:findings", hypotheses: "devagent:hypotheses", decisions: "devagent:decisions",
+  fixed: "devagent:fixed", chat: "devagent:chat", conflog: "devagent:conflog",
+  config: "devagent:config", idmap: "devagent:idmap",
+  quota: (d) => `devagent:quota:${d}`, series: (name, org) => `devagent:series:${name}:${org}`,
 };
-const CAP = { findings: 60, hypotheses: 60, decisions: 200, fixed: 120, chat: 240, conflog: 300 };
+const CAP = { findings: 60, hypotheses: 60, decisions: 200, fixed: 120, chat: 240, conflog: 300, series: 30 };
+
+// Пороги — НЕ хардкод: дефолты, переопределяются через админ-панель (devagent:config).
+const DEFAULT_CONFIG = {
+  noCallThreshold: 30,     // % лидов без звонка, но с активностью → suspicious (телефония клиента)
+  callDropThreshold: 60,   // % обвала объёма звонков за день против среднего за 14 дней
+  chatDailyLimit: 20,      // ручных сообщений в день (уведомление, не блокировка)
+  nightlyDailyLimit: 1,    // плановых (cron) вызовов Claude в сутки
+  minEvidenceConfirm: 3,   // минимум независимых наблюдений для статуса confirmed
+  spinMinSample: 60,       // минимум круток кейса, чтобы судить о шансах
+};
 
 async function rget(key) {
-  try {
-    const r = await fetch(`${REDIS_URL}/get/${encodeURIComponent(key)}`, { headers: { Authorization: `Bearer ${REDIS_TOKEN}` } });
-    const d = await r.json();
-    return d && d.result != null ? d.result : null;
-  } catch (e) { return null; }
+  try { const r = await fetch(`${REDIS_URL}/get/${encodeURIComponent(key)}`, { headers: { Authorization: `Bearer ${REDIS_TOKEN}` } }); const d = await r.json(); return d && d.result != null ? d.result : null; } catch (e) { return null; }
 }
 async function rgetJSON(key, dflt) { const raw = await rget(key); if (raw == null) return dflt; try { return JSON.parse(raw); } catch (e) { return dflt; } }
-async function rsetJSON(key, value) {
-  try {
-    await fetch(`${REDIS_URL}/set/${encodeURIComponent(key)}`, { method: "POST", headers: { Authorization: `Bearer ${REDIS_TOKEN}` }, body: JSON.stringify(value) });
-    return true;
-  } catch (e) { return false; }
-}
+async function rsetJSON(key, value) { try { await fetch(`${REDIS_URL}/set/${encodeURIComponent(key)}`, { method: "POST", headers: { Authorization: `Bearer ${REDIS_TOKEN}` }, body: JSON.stringify(value) }); return true; } catch (e) { return false; } }
 async function rdel(key) { try { await fetch(`${REDIS_URL}/del/${encodeURIComponent(key)}`, { method: "POST", headers: { Authorization: `Bearer ${REDIS_TOKEN}` } }); } catch (e) {} }
+async function getSession(session) { if (!session) return null; try { const raw = await rget(`session:${session}`); return raw ? JSON.parse(raw) : null; } catch (e) { return null; } }
 
-async function getSession(session) {
-  if (!session) return null;
-  try { const raw = await rget(`session:${session}`); return raw ? JSON.parse(raw) : null; } catch (e) { return null; }
+let _idc = 0;
+function newId(p) { _idc++; return `${p}_${Date.now().toString(36)}_${_idc}`; }
+function todayKey() { return new Date(Date.now() + 3 * 3600000).toISOString().slice(0, 10); } // МСК
+
+async function getConfig() { const c = await rgetJSON(K.config, null); return { ...DEFAULT_CONFIG, ...(c || {}) }; }
+
+// ── ОБЕЗЛИЧИВАНИЕ ──────────────────────────────────────────────────────────────────
+// Реальные имена клиентов (org) и сотрудников (МОП) НИКОГДА не уходят в промпт к модели.
+// Маппing real→alias хранится локально в devagent:idmap. Обезличиваем весь промпт целиком
+// на границе вызова; вывод модели де-обезличиваем только для показа основателю.
+async function listOrgs() {
+  const clients = await rgetJSON("clients:list", []);
+  const orgs = ["hunter"]; for (const c of (clients || [])) if (c && c.org && !orgs.includes(c.org)) orgs.push(c.org);
+  return orgs;
+}
+async function listMopNames() {
+  const accounts = await rgetJSON("mops:accounts", []);
+  const names = new Set();
+  for (const a of (accounts || [])) { if (a && a.name) names.add(String(a.name)); }
+  return names;
+}
+async function buildIdMap() {
+  const map = await rgetJSON(K.idmap, { orgs: {}, mops: {}, oc: 0, mc: 0 });
+  map.orgs = map.orgs || {}; map.mops = map.mops || {}; map.oc = map.oc || 0; map.mc = map.mc || 0;
+  const orgs = await listOrgs();
+  for (const o of orgs) { if (!map.orgs[o]) { map.oc++; map.orgs[o] = `client_${map.oc}`; } }
+  const mopNames = await listMopNames();
+  // добавим имена МОПов из speed каждого org (на случай, если их нет в mops:accounts)
+  for (const o of orgs) { const sp = await rgetJSON(o === "hunter" ? "speed" : `speed:${o}`, null); if (sp && Array.isArray(sp.mops)) for (const m of sp.mops) if (m && m.name) mopNames.add(String(m.name)); }
+  const alpha = "ABCDEFGHIJKLMNOPQRSTUVWXYZ";
+  for (const n of mopNames) { if (!map.mops[n]) { const a = map.mc < 26 ? alpha[map.mc] : `Z${map.mc}`; map.mc++; map.mops[n] = `mop_${a}`; } }
+  await rsetJSON(K.idmap, map);
+  return map;
+}
+function pairsLongestFirst(obj) { return Object.entries(obj).sort((a, b) => b[0].length - a[0].length); }
+function escRe(s) { return s.replace(/[.*+?^${}()|[\]\\]/g, "\\$&"); }
+function anonymize(str, map) {
+  let s = String(str);
+  for (const [real, alias] of pairsLongestFirst(map.orgs)) if (real && real !== "hunter") s = s.replace(new RegExp(escRe(real), "g"), alias);
+  for (const [real, alias] of pairsLongestFirst(map.mops)) if (real) s = s.replace(new RegExp(escRe(real), "g"), alias);
+  // hunter отдельно (короткое слово) — заменяем как отдельный org-идентификатор
+  if (map.orgs.hunter) s = s.replace(/\bhunter\b/g, map.orgs.hunter);
+  return s;
+}
+function deanonymize(str, map) {
+  let s = String(str);
+  const inv = {};
+  for (const [real, alias] of Object.entries(map.orgs)) inv[alias] = real;
+  for (const [real, alias] of Object.entries(map.mops)) inv[alias] = real;
+  for (const [alias, real] of pairsLongestFirst(inv).map(([a, r]) => [a, r])) s = s.replace(new RegExp(escRe(alias), "g"), real);
+  return s;
 }
 
-// стабильный id без Math.random (детерминируем от времени + счётчика)
-let _idc = 0;
-function newId(prefix) { _idc++; return `${prefix}_${Date.now().toString(36)}_${_idc}`; }
-
-// ── ПАМЯТЬ ──
+// ── ПАМЯТЬ ─────────────────────────────────────────────────────────────────────────
 async function readMemory() {
   const [findings, hypotheses, decisions, fixed, chat] = await Promise.all([
     rgetJSON(K.findings, []), rgetJSON(K.hypotheses, []), rgetJSON(K.decisions, []), rgetJSON(K.fixed, []), rgetJSON(K.chat, []),
@@ -69,145 +107,205 @@ async function readMemory() {
   return { findings, hypotheses, decisions, fixed, chat };
 }
 
-// ── АГРЕГАТЫ СИСТЕМЫ (read-only) ──
+// ── КОНКРЕТНЫЕ АГРЕГАТЫ (read-only, только amoCRM для звонков) ────────────────────────
 function ageH(ts) { if (!ts) return null; const t = typeof ts === "string" ? Date.parse(ts) : (ts > 1e12 ? ts : ts * 1000); return t ? +(((Date.now() - t) / 3600000).toFixed(1)) : null; }
+const okRange = (v, lo, hi) => v == null || (v >= lo && v <= hi);
 
-async function readAggregates() {
-  const [dash, speed, tgDigest, tgHist] = await Promise.all([
-    rgetJSON("dashboard", null), rgetJSON("speed", null), rgetJSON("tg:digest", null), rgetJSON("tghist:hunter", null),
-  ]);
-  const agg = {}, invariants = [];
-  if (dash) {
-    const t = dash.totals || {};
-    agg.dashboard = {
-      updatedAt: dash.updatedAt, ageHours: ageH(dash.updatedAt),
-      sold: t.sold, revenue: t.revenue, conv: t.conv, avgCheck: t.avgCheck, noContactPct: t.noContactPct,
-      mopsReach: (dash.mopsByConv || []).map((m) => ({ name: m.name, leads: m.leads, reachPct: m.reachPct, conv: m.conv, sold: m.sold })),
-      problemsTop: (dash.problems || []).slice(0, 6),
-    };
-    const a = ageH(dash.updatedAt);
-    if (a != null && a > 6) invariants.push({ name: "dashboard_freshness", ok: false, detail: `кэш dashboard устарел: ${a}ч (>6ч)` });
-  }
-  if (speed) {
-    agg.speed = {
-      updatedAt: speed.updatedAt, ageHours: ageH(speed.updatedAt), callDiag: speed._callDiag || null,
-      today: (speed.mopsDay || []).map((m) => ({ name: m.name, leads: m.leads, reached: m.reached, reachedPct: m.reachedPct, called: m.calledLeads, tasksDonePct: m.tasksDonePct })),
-    };
-    // инвариант: дневной дозвон не должен рушиться в разы против месячного (был баг с лимитом нот)
-    const monthReach = {}; (dash && dash.mopsByConv || []).forEach((m) => { monthReach[m.name] = m.reachPct; });
-    for (const m of (speed.mopsDay || [])) {
-      const mr = monthReach[m.name];
-      if (mr != null && m.reachedPct != null && mr - m.reachedPct >= 30 && m.calledLeads >= 10)
-        invariants.push({ name: "dozvon_today_vs_month", ok: false, detail: `${m.name}: дозвон сегодня ${m.reachedPct}% против месяца ${mr}% при ${m.calledLeads} званых — возможен недосчёт` });
+async function gatherAggregates(cfg) {
+  const orgs = await listOrgs();
+  const perClient = [];
+  const outOfRange = [];       // метрики вне логического диапазона
+  const telephonySuspects = []; // клиенты с возможной проблемой телефонии
+  const caseOdds = [];          // сверка шансов кейса с фактом
+  const callVolume = [];        // объём звонков за сутки vs 14д (ряд агента)
+
+  for (const org of orgs) {
+    const kd = org === "hunter" ? "dashboard" : `dashboard:${org}`;
+    const ks = org === "hunter" ? "speed" : `speed:${org}`;
+    const [dash, speed, gcfg, spinlog] = await Promise.all([
+      rgetJSON(kd, null), rgetJSON(ks, null), rgetJSON(`gamification:config:${org}`, null), rgetJSON(`gamification:spinlog:${org}`, []),
+    ]);
+    const c = { org, hasDash: !!dash, hasSpeed: !!speed };
+    if (dash) { const t = dash.totals || {}; c.dashboard = { ageHours: ageH(dash.updatedAt), sold: t.sold, revenue: t.revenue, conv: t.conv, avgCheck: t.avgCheck, noContactPct: t.noContactPct, leads: t.leads };
+      if (!okRange(t.conv, 0, 100)) outOfRange.push({ org, metric: "conv", value: t.conv });
+      if (!okRange(t.noContactPct, 0, 100)) outOfRange.push({ org, metric: "noContactPct", value: t.noContactPct });
     }
+    if (speed) {
+      c.speed = { ageHours: ageH(speed.updatedAt), callDiag: speed._callDiag || null,
+        today: (speed.mopsDay || []).map((m) => ({ name: m.name, leads: m.leads, reached: m.reached, reachedPct: m.reachedPct, called: m.calledLeads })) };
+      // out-of-range по МОПам (дозвон>100, отрицательные значения и т.п.)
+      for (const m of [...(speed.mops || []), ...(speed.mopsDay || [])]) {
+        for (const [k, lo, hi] of [["reachedPct", 0, 100], ["reachPct", 0, 100], ["calledPct", 0, 100], ["tasksDonePct", 0, 100], ["medianFirstCallMin", 0, 1e6], ["reached", 0, 1e7], ["leads", 0, 1e7]]) {
+          if (m[k] != null && !okRange(m[k], lo, hi)) outOfRange.push({ org, mop: m.name, metric: k, value: m[k] });
+        }
+      }
+      // ДЕТЕКТОР ТЕЛЕФОНИИ (на клиента): % лидов без звонка, но с активностью
+      if (speed.telephony && speed.telephony.total >= 20) {
+        const pct = speed.telephony.noCallButActivePct;
+        c.telephony = speed.telephony;
+        if (pct >= cfg.noCallThreshold) telephonySuspects.push({ org, pct, total: speed.telephony.total, noCallButActive: speed.telephony.noCallButActive });
+      }
+      // ОБЪЁМ ЗВОНКОВ за сутки vs среднее за 14д — ведём собственный ряд в devagent:*
+      const volToday = (speed.mopsDay || []).reduce((s, m) => s + (m.called || m.calledLeads || 0), 0);
+      const series = await rgetJSON(K.series("callvol", org), []);
+      const prev = series.filter((x) => x.date !== todayKey()).slice(-14);
+      const avg = prev.length ? Math.round(prev.reduce((s, x) => s + x.vol, 0) / prev.length) : null;
+      const dropPct = (avg != null && avg > 0) ? Math.round((1 - volToday / avg) * 100) : null;
+      callVolume.push({ org, volToday, avg14: avg, samples: prev.length, dropPct, suspicious: dropPct != null && dropPct >= cfg.callDropThreshold });
+      // записываем сегодняшнюю точку (перезапись за день — норм)
+      const upd = series.filter((x) => x.date !== todayKey()); upd.push({ date: todayKey(), vol: volToday });
+      await rsetJSON(K.series("callvol", org), upd.slice(-CAP.series));
+    }
+    // СВЕРКА ШАНСОВ КЕЙСА: заданные chance vs фактическое распределение (до 1000 круток)
+    if (gcfg && gcfg.case && Array.isArray(gcfg.case.items) && Array.isArray(spinlog)) {
+      const N = spinlog.length;
+      if (N >= cfg.spinMinSample) {
+        const obs = {}; for (const s of spinlog) obs[s.n] = (obs[s.n] || 0) + 1;
+        const rows = gcfg.case.items.map((it) => { const got = obs[it.name] || 0; const actualPct = +(got / N * 100).toFixed(1); return { name: it.name, chance: it.chance, actualPct, delta: +(actualPct - it.chance).toFixed(1), n: got }; });
+        const flagged = rows.filter((r) => Math.abs(r.delta) >= Math.max(5, r.chance * 0.4));
+        caseOdds.push({ org, spins: N, rows, flagged });
+      } else if (N > 0) {
+        caseOdds.push({ org, spins: N, insufficient: true, note: `${N} круток, мало для суждения (нужно ≥${cfg.spinMinSample})` });
+      }
+    }
+    perClient.push(c);
   }
-  if (tgDigest) agg.tgDigest = { totalChats: tgDigest.totalChats, noReplyChats: tgDigest.noReplyChats, priceCount: tgDigest.priceCount, objectionCount: tgDigest.objectionCount };
-  if (tgHist) agg.tgHistory = { total: tgHist.total, noReply: tgHist.noReply, priceQ: tgHist.priceQ, objQ: tgHist.objQ, leftAfterPrice: tgHist.leftAfterPrice };
-  return { agg, invariants };
+  return { perClient, outOfRange, telephonySuspects, caseOdds, callVolume, orgsScanned: orgs.length };
 }
 
-// ── GIT LOG за сутки через GitHub API (read-only) ──
-async function readGitLog(hours = 24) {
+// ── GIT LOG + DIFF по ключевым модулям (через GitHub API, read-only) ────────────────
+const KEY_MODULE_RE = /(sync-speed|sync|dashboard|finance|gamification|dev-agent|user-data|mop|activity)\.js$/;
+async function readGitLog(hours) {
   const repo = process.env.GITHUB_REPO || "AbdullohMahkamov/Hunters-path";
   const token = process.env.GITHUB_TOKEN || "";
   const since = new Date(Date.now() - hours * 3600000).toISOString();
   const headers = { "User-Agent": "hunter-devagent", Accept: "application/vnd.github+json" };
   if (token) headers.Authorization = `Bearer ${token}`;
   try {
-    const r = await fetch(`https://api.github.com/repos/${repo}/commits?since=${encodeURIComponent(since)}&per_page=50`, { headers });
-    if (!r.ok) return { available: false, note: `GitHub API ${r.status}${token ? "" : " (нет GITHUB_TOKEN — приватный репо недоступен)"}`, commits: [] };
+    const r = await fetch(`https://api.github.com/repos/${repo}/commits?since=${encodeURIComponent(since)}&per_page=40`, { headers });
+    if (!r.ok) return { available: false, note: `GitHub API ${r.status}${token ? "" : " (нет GITHUB_TOKEN)"}`, commits: [] };
     const arr = await r.json();
-    if (!Array.isArray(arr)) return { available: false, note: "unexpected response", commits: [] };
-    return { available: true, commits: arr.map((c) => ({ sha: (c.sha || "").slice(0, 7), msg: (c.commit && c.commit.message || "").split("\n")[0], author: c.commit && c.commit.author && c.commit.author.name, date: c.commit && c.commit.author && c.commit.author.date })) };
+    if (!Array.isArray(arr)) return { available: false, note: "unexpected", commits: [] };
+    const commits = arr.map((c) => ({ sha: (c.sha || "").slice(0, 7), fullSha: c.sha, msg: (c.commit && c.commit.message || "").split("\n")[0], date: c.commit && c.commit.author && c.commit.author.date }));
+    // diff по ключевым модулям — до 6 последних коммитов
+    const keyDiffs = [];
+    for (const c of commits.slice(0, 6)) {
+      try {
+        const d = await fetch(`https://api.github.com/repos/${repo}/commits/${c.fullSha}`, { headers });
+        if (!d.ok) continue;
+        const det = await d.json();
+        for (const f of (det.files || [])) {
+          if (!KEY_MODULE_RE.test(f.filename)) continue;
+          keyDiffs.push({ sha: c.sha, file: f.filename, status: f.status, changes: `+${f.additions}/-${f.deletions}`, patch: (f.patch || "").slice(0, 700) });
+        }
+      } catch (e) { /* skip */ }
+    }
+    return { available: true, commits: commits.map((c) => ({ sha: c.sha, msg: c.msg, date: c.date })), keyDiffs: keyDiffs.slice(0, 12) };
   } catch (e) { return { available: false, note: String(e), commits: [] }; }
 }
 
-// ── СИСТЕМНЫЙ ПРОМПТ ──
-const SYSTEM = `Ты — технический ревизор Hunter AI, SaaS для аналитики отделов продаж на базе amoCRM. Твоя работа — находить проблемы в системе раньше, чем их найдёт клиент.
+// ── СИСТЕМНЫЙ ПРОМПТ ────────────────────────────────────────────────────────────────
+const SYSTEM = `Ты — технический ревизор Hunter AI, тиражируемого SaaS для аналитики отделов продаж на базе amoCRM (много клиентов). Твоя работа — находить проблемы в системе раньше, чем их найдёт клиент.
 
-Ты работаешь с одним человеком — основателем. Он ждёт от тебя прямоты, а не вежливости. Если он неправ — скажи. Если данные не позволяют сделать вывод — скажи, что не знаешь. Пиши по-русски, коротко и по делу, без воды и лести.
+Работаешь с одним человеком — основателем. Он ждёт прямоты, а не вежливости. Неправ — скажи. Данных мало для вывода — скажи «не знаю». По-русски, коротко, без воды и лести.
+
+ЖЁСТКИЕ ГРАНИЦЫ (ты их не нарушаешь даже частично): ты только ЧИТАЕШЬ и ПРЕДЛАГАЕШЬ. Никаких изменений кода, автодеплоя, записи в данные клиентов. Фикс — только как ГОТОВЫЙ ПРОМПТ для Claude Code, человек вставит сам.
+
+ИСТОЧНИК ДАННЫХ О ЗВОНКАХ — ТОЛЬКО amoCRM. Если у клиента много лидов без звонка, но с другой активностью в CRM — это сигнал ВОЗМОЖНОЙ проблемы телефонии НА СТОРОНЕ КЛИЕНТА (звонят не через amoCRM / интеграция настроена не полностью). НИКОГДА не формулируй это как «сотрудник X не работает». Предлагай клиенту проверить настройки телефонии в его amoCRM.
 
 ПРАВИЛА ПАМЯТИ:
-- Гипотеза не становится фактом (finding) без доказательств (evidence). Confidence растёт ТОЛЬКО с новыми evidence. Каждое изменение confidence сопровождай полем "reason".
-- Не повторяй то, что уже в 'fixed' и не переоткрывай отклонённое в 'decisions'.
-- Не выноси суждений о людях по данным, помеченным как ненадёжные.
-- Если предлагаешь фикс — давай ГОТОВЫЙ промпт для Claude Code (самодостаточный: файл, что менять, как проверить).
-- Ты НЕ можешь менять код/данные/конфиги. Только предлагать. Решает человек.
+- Гипотеза НЕ становится finding (confirmed) при менее чем 3 независимых наблюдениях (evidence). Меньше — статус остаётся гипотезой, и явно пиши «N наблюдений, недостаточно для подтверждения».
+- Confidence растёт ТОЛЬКО с новыми evidence. Каждое изменение confidence — с полем "reason".
+- Не повторяй то, что в 'fixed'; не переоткрывай отклонённое в 'decisions'.
+- Не суди о людях по ненадёжным данным (suspicious/insufficient метрики).
 
-ФОРМАТ ОТВЕТА — строго JSON, без markdown и текста вокруг:
+Все идентификаторы уже обезличены (client_N, mop_A) — так и оперируй ими.
+
+ФОРМАТ — строго JSON, без markdown и текста вокруг:
 {
-  "findings":[{"id","claim","confidence":0..1,"status":"confirmed","evidence":["..."],"source":"...","reason":"почему confidence такой"}],
+  "findings":[{"id","claim","confidence":0..1,"status":"confirmed","evidence":["..."],"source":"...","reason":"..."}],
   "hypotheses":[{"id","claim","confidence":0..1,"status":"testing|needs_data|likely|rejected","evidence":["..."],"source":"...","reason":"..."}],
   "questions_for_human":["..."],
-  "report":"краткий отчёт человеку (5-12 строк, живым языком, самое важное сверху)",
-  "suggested_prompts":[{"title":"...","prompt":"готовый промпт для Claude Code"}]
+  "report":"краткий отчёт (5-12 строк, важное сверху)",
+  "suggested_prompts":[{"title":"...","prompt":"готовый самодостаточный промпт для Claude Code: файл, что менять, как проверить"}]
 }
-Сохраняй существующие id при обновлении элементов памяти; для новых — оставь id пустым, бэкенд проставит.`;
+Сохраняй существующие id при обновлении; для новых id оставь пустым.`;
 
-function buildUserContent({ memory, agg, invariants, git, extra }) {
+function buildNightlyContent({ memory, agg, git, weekly }) {
+  if (weekly) {
+    return `РЕЖИМ: НЕДЕЛЬНАЯ РЕВИЗИЯ ПАМЯТИ (отдельный отчёт, НЕ обычный ночной анализ).
+Вот вся твоя память целиком:
+findings: ${JSON.stringify(memory.findings)}
+hypotheses: ${JSON.stringify(memory.hypotheses)}
+decisions: ${JSON.stringify(memory.decisions)}
+fixed: ${JSON.stringify(memory.fixed.map((f) => f.claim || f))}
+
+Свежие агрегаты для сверки: ${JSON.stringify(agg)}
+
+Ответь на вопросы ревизии:
+1. Какие из твоих находок ПРОТИВОРЕЧАТ друг другу?
+2. Какие основаны на данных, которые с тех пор ИЗМЕНИЛИСЬ?
+3. Что понизить в confidence или УДАЛИТЬ (status:"rejected", reason)?
+Верни JSON того же формата. report — это отчёт по ревизии, не по новым проблемам.`;
+  }
   return `ТВОЯ ПАМЯТЬ:
-findings (подтверждено): ${JSON.stringify(memory.findings)}
-hypotheses (в проверке): ${JSON.stringify(memory.hypotheses)}
+findings: ${JSON.stringify(memory.findings)}
+hypotheses: ${JSON.stringify(memory.hypotheses)}
 decisions (решения человека): ${JSON.stringify(memory.decisions.slice(-30))}
 fixed (уже исправлено): ${JSON.stringify(memory.fixed.map((f) => f.claim || f))}
 
-ДАННЫЕ СИСТЕМЫ (агрегаты, read-only):
-${JSON.stringify(agg)}
+АГРЕГАТЫ ЗА СУТКИ (конкретные источники):
+1) Кейсы — заданные шансы vs факт: ${JSON.stringify(agg.caseOdds)}
+2) Звонки (только amoCRM) — объём за сутки vs среднее за 14д: ${JSON.stringify(agg.callVolume)}
+3) Метрики МОПов вне логического диапазона: ${JSON.stringify(agg.outOfRange)}
+4) Клиенты с возможной проблемой телефонии (% лидов без звонка, но с активностью > порога): ${JSON.stringify(agg.telephonySuspects)}
+   (это сигнал на СТОРОНЕ КЛИЕНТА, не повод обвинять сотрудника)
+5) Обзор по клиентам: ${JSON.stringify(agg.perClient)}
 
-АВТО-ИНВАРИАНТЫ (наши проверки; ok:false = аномалия):
-${JSON.stringify(invariants)}
+ИЗМЕНЕНИЯ В КОДЕ за 24ч:
+commits: ${git.available ? JSON.stringify(git.commits) : "(git недоступен: " + git.note + ")"}
+diff по ключевым модулям (расчёт метрик, ролл кейса, парсинг конфигов): ${git.available ? JSON.stringify(git.keyDiffs) : "—"}
 
-ИЗМЕНЕНИЯ В КОДЕ за 24ч (git):
-${git.available ? JSON.stringify(git.commits) : "(git недоступен: " + git.note + ")"}
-${extra || ""}
 ЗАДАЧА:
-1. Проверь висящие гипотезы — данные их подтверждают или опровергают? Двигай confidence только с evidence (+ reason).
+1. Проверь висящие гипотезы — данные подтверждают/опровергают? Двигай confidence только с evidence (+reason). Помни правило ≥3 наблюдений для confirmed.
 2. Найди новое: аномалии, противоречия, метрики, которые не сходятся.
-3. Проверь, не сломали ли вчерашние коммиты что-то работавшее.
+3. Проверь, не сломали ли вчерашние коммиты работавшее (смотри diff по ключевым модулям).
 4. Задай вопросы, если данных не хватает.
-Верни строго JSON описанного формата.`;
+Верни строго JSON.`;
 }
 
-async function callModel(system, userContent, maxTokens = 3200) {
+async function callModel(system, userContent, maxTokens) {
   const r = await fetch("https://api.anthropic.com/v1/messages", {
-    method: "POST",
-    headers: { "content-type": "application/json", "x-api-key": AKEY, "anthropic-version": "2023-06-01" },
+    method: "POST", headers: { "content-type": "application/json", "x-api-key": AKEY, "anthropic-version": "2023-06-01" },
     body: JSON.stringify({ model: MODEL, max_tokens: maxTokens, system, messages: [{ role: "user", content: userContent }] }),
   });
   if (!r.ok) { const t = await r.text(); throw new Error(`Anthropic ${r.status}: ${t.slice(0, 300)}`); }
-  const d = await r.json();
-  const usage = d.usage || {};
-  const text = (d.content || []).filter((b) => b.type === "text").map((b) => b.text).join("").trim();
-  return { text, tokens: (usage.input_tokens || 0) + (usage.output_tokens || 0) };
+  const d = await r.json(); const u = d.usage || {};
+  return { text: (d.content || []).filter((b) => b.type === "text").map((b) => b.text).join("").trim(), tokens: (u.input_tokens || 0) + (u.output_tokens || 0) };
 }
-function parseJSON(text) {
-  let t = text.replace(/```json/gi, "").replace(/```/g, "").trim();
-  const s = t.indexOf("{"), e = t.lastIndexOf("}");
-  if (s >= 0 && e > s) t = t.slice(s, e + 1);
-  return JSON.parse(t);
-}
+function parseJSON(text) { let t = text.replace(/```json/gi, "").replace(/```/g, "").trim(); const s = t.indexOf("{"), e = t.lastIndexOf("}"); if (s >= 0 && e > s) t = t.slice(s, e + 1); return JSON.parse(t); }
 
-// merge: сохраняем id, логируем изменения confidence, проставляем id новым, чистим fixed/rejected
-function mergeMemoryList(prevList, newList, kind, conflog, fixedClaims, rejectedClaims) {
+function mergeMemoryList(prevList, newList, kind, conflog, fixedClaims, rejectedClaims, minEvidence) {
   const prevById = {}; for (const p of prevList) if (p && p.id) prevById[p.id] = p;
   const out = [];
   for (const it of (newList || [])) {
     if (!it || !it.claim) continue;
     const claimLc = String(it.claim).toLowerCase();
-    if (fixedClaims.has(claimLc) || rejectedClaims.has(claimLc)) continue; // не переоткрываем
+    if (fixedClaims.has(claimLc) || rejectedClaims.has(claimLc)) continue;
     let id = it.id && prevById[it.id] ? it.id : (it.id || newId(kind));
     const prev = prevById[id];
     const conf = typeof it.confidence === "number" ? Math.max(0, Math.min(1, it.confidence)) : (prev ? prev.confidence : 0.3);
-    if (prev && typeof prev.confidence === "number" && Math.abs((prev.confidence || 0) - conf) >= 0.01) {
-      conflog.push({ id, kind, from: prev.confidence, to: conf, reason: it.reason || "(без причины)", at: Date.now() });
+    const evidence = Array.isArray(it.evidence) ? it.evidence.slice(0, 12) : (prev ? prev.evidence : []);
+    let status = it.status || (prev && prev.status) || (kind === "finding" ? "confirmed" : "testing");
+    let reason = it.reason || (prev && prev.reason) || "";
+    // ПРАВИЛО: confirmed требует ≥ minEvidence независимых наблюдений
+    if (status === "confirmed" && evidence.length < minEvidence) {
+      status = "likely";
+      reason = `${evidence.length} наблюдений, недостаточно для подтверждения (нужно ≥${minEvidence}). ${reason}`.trim();
     }
-    out.push({
-      id, claim: it.claim, confidence: conf, status: it.status || (prev && prev.status) || (kind === "finding" ? "confirmed" : "testing"),
-      evidence: Array.isArray(it.evidence) ? it.evidence.slice(0, 12) : (prev ? prev.evidence : []),
-      source: it.source || (prev && prev.source) || "nightly",
-      reason: it.reason || (prev && prev.reason) || "",
-      created: prev ? prev.created : Date.now(), updated: Date.now(),
-    });
+    if (prev && typeof prev.confidence === "number" && Math.abs((prev.confidence || 0) - conf) >= 0.01)
+      conflog.push({ id, kind, from: prev.confidence, to: conf, reason: it.reason || "(без причины)", at: Date.now() });
+    out.push({ id, claim: it.claim, confidence: conf, status, evidence, source: it.source || (prev && prev.source) || "nightly", reason, created: prev ? prev.created : Date.now(), updated: Date.now() });
   }
   return out;
 }
@@ -216,139 +314,130 @@ async function pushChat(role, text, meta) {
   const chat = await rgetJSON(K.chat, []);
   chat.push({ id: newId("m"), role, text: text || "", ...(meta || {}), at: Date.now() });
   await rsetJSON(K.chat, chat.slice(-CAP.chat));
-  return chat;
 }
 
-// ── НОЧНОЙ ПРОГОН / НЕДЕЛЬНАЯ РЕВИЗИЯ ──
-async function runNightly(mode) {
+async function bumpQuota(field) { const key = K.quota(todayKey()); const q = await rgetJSON(key, { nightly: 0, chat: 0 }); q[field] = (q[field] || 0) + 1; await rsetJSON(key, q); return q; }
+async function getQuota() { return await rgetJSON(K.quota(todayKey()), { nightly: 0, chat: 0 }); }
+
+// ── НОЧНОЙ ПРОГОН / НЕДЕЛЬНАЯ РЕВИЗИЯ ────────────────────────────────────────────────
+async function runNightly(mode, viaCron) {
+  const cfg = await getConfig();
+  // лимит плановых (cron) вызовов: не более nightlyDailyLimit в сутки — уведомление, не блокировка
+  if (viaCron) {
+    const q = await getQuota();
+    if ((q.nightly || 0) >= cfg.nightlyDailyLimit) { return { ok: false, skipped: true, reason: "плановый лимит вызовов на сегодня исчерпан" }; }
+  }
+  const map = await buildIdMap();
   const memory = await readMemory();
-  const { agg, invariants } = await readAggregates();
+  const agg = await gatherAggregates(cfg);
   const git = await readGitLog(mode === "weekly" ? 24 * 7 : 24);
-  const extra = mode === "weekly"
-    ? `\nРЕЖИМ: НЕДЕЛЬНАЯ РЕВИЗИЯ ПАМЯТИ. Пройдись по СВОИМ findings/hypotheses и честно скажи: какие выводы устарели, оказались неверны или больше не подтверждаются данными? Понижай confidence отвергнутых (status:"rejected", reason). Не выдумывай нового без данных.\n`
-    : "";
-  const { text, tokens } = await callModel(SYSTEM, buildUserContent({ memory, agg, invariants, git, extra }), 8000);
+  const rawContent = buildNightlyContent({ memory, agg, git, weekly: mode === "weekly" });
+  const content = anonymize(rawContent, map); // реальные имена НЕ уходят в модель
+  const { text, tokens } = await callModel(SYSTEM, content, 8000);
+  await bumpQuota("nightly");
   let out; try { out = parseJSON(text); } catch (e) {
-    await pushChat("agent", `Ночной прогон: не смог разобрать ответ модели в JSON.\n\n${text.slice(0, 4000)}`, { kind: mode === "weekly" ? "weekly" : "nightly", tokens });
-    return { ok: false, error: "parse_failed", raw: text.slice(0, 400) };
+    await pushChat("agent", `Прогон: не смог разобрать ответ модели в JSON.\n\n${deanonymize(text, map).slice(0, 4000)}`, { kind: mode === "weekly" ? "weekly" : "nightly", tokens });
+    return { ok: false, error: "parse_failed" };
   }
   const conflog = await rgetJSON(K.conflog, []);
   const fixedClaims = new Set((memory.fixed || []).map((f) => String(f.claim || f).toLowerCase()));
   const rejectedClaims = new Set((memory.decisions || []).filter((d) => d.verdict === "rejected").map((d) => String(d.claim || "").toLowerCase()));
-  const findings = mergeMemoryList(memory.findings, out.findings, "finding", conflog, fixedClaims, rejectedClaims).slice(0, CAP.findings);
-  const hypotheses = mergeMemoryList(memory.hypotheses, out.hypotheses, "hyp", conflog, fixedClaims, rejectedClaims).slice(0, CAP.hypotheses);
-  await Promise.all([
-    rsetJSON(K.findings, findings),
-    rsetJSON(K.hypotheses, hypotheses),
-    rsetJSON(K.conflog, conflog.slice(-CAP.conflog)),
-  ]);
-  const report = (out.report || "Прогон завершён.").trim();
-  const questions = Array.isArray(out.questions_for_human) ? out.questions_for_human : [];
-  const prompts = Array.isArray(out.suggested_prompts) ? out.suggested_prompts.slice(0, 8) : [];
-  await pushChat("agent", report, {
-    kind: mode === "weekly" ? "weekly" : "nightly", tokens,
-    questions, suggested_prompts: prompts,
-    stats: { findings: findings.length, hypotheses: hypotheses.length, invariants: invariants.filter((i) => !i.ok).length },
-  });
+  let findings = mergeMemoryList(memory.findings, out.findings, "finding", conflog, fixedClaims, rejectedClaims, cfg.minEvidenceConfirm);
+  let hypotheses = mergeMemoryList(memory.hypotheses, out.hypotheses, "hyp", conflog, fixedClaims, rejectedClaims, cfg.minEvidenceConfirm);
+  // элементы, не дотянувшие до confirmed, переезжают из findings в hypotheses
+  const demoted = findings.filter((f) => f.status !== "confirmed");
+  findings = findings.filter((f) => f.status === "confirmed");
+  hypotheses = [...demoted, ...hypotheses].slice(0, CAP.hypotheses);
+  findings = findings.slice(0, CAP.findings);
+  await Promise.all([rsetJSON(K.findings, findings), rsetJSON(K.hypotheses, hypotheses), rsetJSON(K.conflog, conflog.slice(-CAP.conflog))]);
+  const report = deanonymize((out.report || "Прогон завершён.").trim(), map);
+  const questions = (Array.isArray(out.questions_for_human) ? out.questions_for_human : []).map((q) => deanonymize(q, map));
+  const prompts = (Array.isArray(out.suggested_prompts) ? out.suggested_prompts.slice(0, 8) : []).map((p) => ({ title: deanonymize(p.title || "Фикс", map), prompt: deanonymize(p.prompt || "", map) }));
+  await pushChat("agent", report, { kind: mode === "weekly" ? "weekly" : "nightly", tokens, questions, suggested_prompts: prompts, stats: { findings: findings.length, hypotheses: hypotheses.length, outOfRange: agg.outOfRange.length, telephonySuspects: agg.telephonySuspects.length } });
   return { ok: true, report, findings: findings.length, hypotheses: hypotheses.length, questions, suggested_prompts: prompts, tokens };
 }
 
-// ── ДНЕВНАЯ ПЕРЕПИСКА ──
+// ── ДНЕВНАЯ ПЕРЕПИСКА ────────────────────────────────────────────────────────────────
 async function runChat(userText) {
-  const memory = await readMemory();
-  const { agg, invariants } = await readAggregates();
+  const cfg = await getConfig();
+  const map = await buildIdMap();
+  const q = await getQuota();
+  const overLimit = (q.chat || 0) >= cfg.chatDailyLimit; // уведомление, НЕ блокировка
   await pushChat("human", userText);
-  const history = (await rgetJSON(K.chat, [])).slice(-20)
-    .map((m) => `${m.role === "human" ? "ОСНОВАТЕЛЬ" : "АГЕНТ"}: ${m.text}`).join("\n");
-  const sys = SYSTEM + `\n\nСЕЙЧАС: живой диалог с основателем (не ночной прогон). Отвечай ТЕКСТОМ (не JSON), прямо и по делу. Опирайся на свою память и данные. Если основатель одобряет/отвергает находку — учти это. Если предлагаешь фикс — дай готовый промпт для Claude Code прямо в ответе (в блоке).`;
-  const content = `ТВОЯ ПАМЯТЬ:
-findings: ${JSON.stringify(memory.findings)}
-hypotheses: ${JSON.stringify(memory.hypotheses)}
-decisions: ${JSON.stringify(memory.decisions.slice(-20))}
-fixed: ${JSON.stringify(memory.fixed.map((f) => f.claim || f))}
-
-ДАННЫЕ СИСТЕМЫ: ${JSON.stringify(agg)}
-АВТО-ИНВАРИАНТЫ: ${JSON.stringify(invariants)}
-
-ПЕРЕПИСКА (последнее):
-${history}
-
-Ответь на последнюю реплику основателя.`;
-  const { text, tokens } = await callModel(sys, content, 2200);
-  await pushChat("agent", text, { kind: "reply", tokens });
-  return { ok: true, reply: text, tokens };
+  const memory = await readMemory();
+  const agg = await gatherAggregates(cfg);
+  const history = (await rgetJSON(K.chat, [])).slice(-20).map((m) => `${m.role === "human" ? "ОСНОВАТЕЛЬ" : "АГЕНТ"}: ${m.text}`).join("\n");
+  const sys = SYSTEM + `\n\nСЕЙЧАС: живой диалог с основателем (не ночной прогон). Отвечай ТЕКСТОМ (не JSON), прямо и по делу. Опирайся на память и данные. Если предлагаешь фикс — дай готовый промпт для Claude Code прямо в ответе (в блоке \`\`\`).`;
+  const rawContent = `ТВОЯ ПАМЯТЬ:\nfindings: ${JSON.stringify(memory.findings)}\nhypotheses: ${JSON.stringify(memory.hypotheses)}\ndecisions: ${JSON.stringify(memory.decisions.slice(-20))}\nfixed: ${JSON.stringify(memory.fixed.map((f) => f.claim || f))}\n\nАГРЕГАТЫ: ${JSON.stringify({ outOfRange: agg.outOfRange, telephonySuspects: agg.telephonySuspects, callVolume: agg.callVolume, caseOdds: agg.caseOdds })}\n\nПЕРЕПИСКА:\n${history}\n\nОтветь на последнюю реплику основателя.`;
+  const { text, tokens } = await callModel(sys, anonymize(rawContent, map), 2200);
+  await bumpQuota("chat");
+  let reply = deanonymize(text, map);
+  if (overLimit) reply = `⚠️ Дневной лимит ручного чата (${cfg.chatDailyLimit} сообщений) превышен — это защита от расходов, но я не блокирую тебя. Лимит сбросится завтра, порог настраивается.\n\n` + reply;
+  await pushChat("agent", reply, { kind: "reply", tokens });
+  return { ok: true, reply, tokens, overLimit };
 }
 
 export default async function handler(req, res) {
   res.setHeader("Cache-Control", "no-store");
   if (!REDIS_URL || !REDIS_TOKEN) { res.status(500).json({ error: "no redis" }); return; }
   if (!AKEY) { res.status(500).json({ error: "no ANTHROPIC_API_KEY" }); return; }
-
   const q = req.query || {}, b = req.body || {};
   const action = q.action || b.action || "state";
-
-  // cron-гейт: заголовок Vercel Cron (Authorization: Bearer $CRON_SECRET) или ?cron=1, если секрет не задан
   const cronSecret = process.env.CRON_SECRET || "";
   const authHeader = (req.headers && (req.headers.authorization || req.headers.Authorization)) || "";
   const isCron = cronSecret ? (authHeader === `Bearer ${cronSecret}`) : (q.cron === "1" || b.cron === true);
-
-  // admin-гейт
-  const session = q.session || b.session;
-  const sess = await getSession(session);
+  const sess = await getSession(q.session || b.session);
   const isAdmin = !!sess && sess.role === "admin";
-
   const cronActions = new Set(["nightly", "weekly_review"]);
-  if (!isAdmin && !(cronActions.has(action) && isCron)) {
-    res.status(403).json({ error: "admin only (или cron с секретом)" }); return;
-  }
+  if (!isAdmin && !(cronActions.has(action) && isCron)) { res.status(403).json({ error: "admin only (или cron с секретом)" }); return; }
 
   try {
     if (action === "state") {
-      const [memory, conflog] = await Promise.all([readMemory(), rgetJSON(K.conflog, [])]);
-      res.status(200).json({ ok: true, ...memory, conflog: conflog.slice(-60) });
+      const map = await rgetJSON(K.idmap, { orgs: {}, mops: {} });
+      const [memory, conflog, cfg, quota] = await Promise.all([readMemory(), rgetJSON(K.conflog, []), getConfig(), getQuota()]);
+      // де-обезличиваем для показа основателю (в памяти хранится обезличенно)
+      const de = (arr) => (arr || []).map((it) => ({ ...it, claim: deanonymize(it.claim || "", map), evidence: (it.evidence || []).map((e) => deanonymize(e, map)), reason: deanonymize(it.reason || "", map) }));
+      res.status(200).json({ ok: true, findings: de(memory.findings), hypotheses: de(memory.hypotheses), decisions: memory.decisions, fixed: memory.fixed, chat: memory.chat, conflog: conflog.slice(-60), config: cfg, quota });
       return;
     }
-    if (action === "chat") {
-      const text = String(b.text || "").trim();
-      if (!text) { res.status(400).json({ error: "empty text" }); return; }
-      const out = await runChat(text);
-      res.status(200).json(out);
-      return;
+    if (action === "get_config") { res.status(200).json({ ok: true, config: await getConfig() }); return; }
+    if (action === "set_config") {
+      const cur = await getConfig(); const inc = b.config || {};
+      const next = { ...cur };
+      for (const k of Object.keys(DEFAULT_CONFIG)) if (typeof inc[k] === "number" && isFinite(inc[k]) && inc[k] >= 0) next[k] = inc[k];
+      await rsetJSON(K.config, next);
+      res.status(200).json({ ok: true, config: next }); return;
     }
-    if (action === "nightly") { res.status(200).json(await runNightly("nightly")); return; }
-    if (action === "weekly_review") { res.status(200).json(await runNightly("weekly")); return; }
+    if (action === "chat") { const text = String(b.text || "").trim(); if (!text) { res.status(400).json({ error: "empty text" }); return; } res.status(200).json(await runChat(text)); return; }
+    if (action === "nightly") { res.status(200).json(await runNightly("nightly", isCron && !isAdmin)); return; }
+    if (action === "weekly_review") { res.status(200).json(await runNightly("weekly", isCron && !isAdmin)); return; }
 
     if (action === "decision") {
-      // {refId, kind:'finding'|'hyp', claim, verdict:'approved'|'rejected'|'fixed', note}
       const verdict = String(b.verdict || "");
       if (!["approved", "rejected", "fixed"].includes(verdict)) { res.status(400).json({ error: "bad verdict" }); return; }
+      const map = await rgetJSON(K.idmap, { orgs: {}, mops: {} });
       const decisions = await rgetJSON(K.decisions, []);
-      const entry = { id: newId("dec"), refId: b.refId || "", kind: b.kind || "", claim: b.claim || "", verdict, note: b.note || "", at: Date.now() };
-      decisions.push(entry);
-      await rsetJSON(K.decisions, decisions.slice(-CAP.decisions));
-      // убираем элемент из активных списков; при 'fixed' переносим в fixed
       const listKey = b.kind === "finding" ? K.findings : K.hypotheses;
       const list = await rgetJSON(listKey, []);
       const item = list.find((x) => x.id === b.refId);
-      const rest = list.filter((x) => x.id !== b.refId);
-      await rsetJSON(listKey, rest);
+      // claim в решениях храним ОБЕЗЛИЧЕННО (как в памяти), чтобы не утёк в промпт
+      const claimStored = (item && item.claim) || anonymize(b.claim || "", map);
+      decisions.push({ id: newId("dec"), refId: b.refId || "", kind: b.kind || "", claim: claimStored, verdict, note: anonymize(b.note || "", map), at: Date.now() });
+      await rsetJSON(K.decisions, decisions.slice(-CAP.decisions));
+      await rsetJSON(listKey, list.filter((x) => x.id !== b.refId));
       if (verdict === "fixed" && (item || b.claim)) {
         const fixed = await rgetJSON(K.fixed, []);
-        fixed.push({ id: newId("fix"), claim: (item && item.claim) || b.claim, note: b.note || "", at: Date.now() });
+        fixed.push({ id: newId("fix"), claim: claimStored, note: anonymize(b.note || "", map), at: Date.now() });
         await rsetJSON(K.fixed, fixed.slice(-CAP.fixed));
       }
-      await pushChat("human", `[решение: ${verdict}] ${(item && item.claim) || b.claim || ""}${b.note ? " — " + b.note : ""}`, { kind: "decision" });
-      res.status(200).json({ ok: true, decision: entry });
-      return;
+      await pushChat("human", `[решение: ${verdict}] ${deanonymize(claimStored, map)}${b.note ? " — " + b.note : ""}`, { kind: "decision" });
+      res.status(200).json({ ok: true }); return;
     }
 
     if (action === "reset") {
-      // по умолчанию чистим рабочую память (findings/hypotheses/chat/conflog), сохраняя историю решений и fixed.
-      // full=true — полный сброс всего devagent:*.
       await Promise.all([rdel(K.findings), rdel(K.hypotheses), rdel(K.chat), rdel(K.conflog)]);
-      if (b.full === true || q.full === "1") { await Promise.all([rdel(K.decisions), rdel(K.fixed)]); }
-      res.status(200).json({ ok: true, reset: true, full: b.full === true || q.full === "1" });
-      return;
+      if (b.full === true || q.full === "1") { await Promise.all([rdel(K.decisions), rdel(K.fixed), rdel(K.idmap)]); }
+      res.status(200).json({ ok: true, reset: true, full: b.full === true || q.full === "1" }); return;
     }
 
     res.status(400).json({ error: "unknown action" });

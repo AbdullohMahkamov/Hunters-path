@@ -131,6 +131,7 @@ export const devAgent = {
   weeklyReview: () => postJSON('/api/dev-agent', { action: 'weekly_review', session: getSession() }).then((r) => r.json()),
   decision: ({ refId, kind, claim, verdict, note }) => postJSON('/api/dev-agent', { action: 'decision', session: getSession(), refId, kind, claim, verdict, note }).then((r) => r.json()),
   reset: (full) => postJSON('/api/dev-agent', { action: 'reset', session: getSession(), full: !!full }).then((r) => r.json()),
+  setConfig: (config) => postJSON('/api/dev-agent', { action: 'set_config', session: getSession(), config }).then((r) => r.json()),
 }
 
 export { postJSON, getJSON }
