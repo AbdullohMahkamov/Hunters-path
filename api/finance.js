@@ -408,15 +408,22 @@ export default async function handler(req, res) {
       const gidMap = await getGidMap();
       const realTabs = Object.keys(gidMap);
       const list = MONTHS.filter(mo => mo.m <= curMonth);
-      const results = [];
-      for (const mo of list) {
-        const real = realTabs.find(t => t.toLowerCase().includes(mo.labelUz.toLowerCase())) || mo.tab;
-        const r = await readMonth(real, { isCurrent: mo.m === curMonth });
-        if (r.error === "no_access") { res.status(200).json({ ok: false, error: "no_access" }); return; }
-        if (r.revenue != null || r.profit != null) {
-          results.push({ month: mo.label, monthUz: mo.labelUz, m: mo.m, revenue: r.revenue, expenses: r.expenses, profit: r.profit, margin: r.margin });
-        }
+      // ОПТИМИЗАЦИЯ: читаем месяцы ПАРАЛЛЕЛЬНО пулами по 4 (было строго последовательно →
+      // на холодном кэше N AI-вызовов подряд). Кэш защищает от повторов; порядок сохраняем.
+      const settled = [];
+      const POOL = 4;
+      for (let i = 0; i < list.length; i += POOL) {
+        const chunk = await Promise.all(list.slice(i, i + POOL).map(async (mo) => {
+          const real = realTabs.find(t => t.toLowerCase().includes(mo.labelUz.toLowerCase())) || mo.tab;
+          const r = await readMonth(real, { isCurrent: mo.m === curMonth });
+          return { mo, r };
+        }));
+        settled.push(...chunk);
       }
+      if (settled.some(({ r }) => r.error === "no_access")) { res.status(200).json({ ok: false, error: "no_access" }); return; }
+      const results = settled
+        .filter(({ r }) => r.revenue != null || r.profit != null)
+        .map(({ mo, r }) => ({ month: mo.label, monthUz: mo.labelUz, m: mo.m, revenue: r.revenue, expenses: r.expenses, profit: r.profit, margin: r.margin }));
       res.status(200).json({ ok: true, year: results });
       return;
     }

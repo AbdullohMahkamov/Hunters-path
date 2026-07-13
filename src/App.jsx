@@ -1,10 +1,12 @@
-import React, { useEffect, useState, useSyncExternalStore } from 'react'
+import React, { useEffect, useState, useSyncExternalStore, lazy, Suspense } from 'react'
 import { subscribe, getSnapshot, getSession, setSession, setRoleOrg, clearSession } from './lib/session.js'
 import { auth } from './lib/api.js'
 import { applyTheme } from './lib/theme.js'
 import Login from './screens/Login.jsx'
-import MopCabinet from './screens/MopCabinet.jsx'
-import AppShell from './screens/AppShell.jsx'
+// Ленивые экраны по ролям: за сессию виден ровно один путь — грузим только нужный чанк.
+// МОП не тянет админку/дашборд (~215KB), админ/РОП не тянет кабинет МОПа (~85KB).
+const MopCabinet = lazy(() => import('./screens/MopCabinet.jsx'))
+const AppShell = lazy(() => import('./screens/AppShell.jsx'))
 
 // Хук на сессию (реактивный).
 export function useSession() {
@@ -50,6 +52,9 @@ export default function App() {
 
   if (phase === 'loading') return null
   if (phase === 'login') return <Login onLoggedIn={handleLoggedIn} />
-  if (phase === 'mop') return <MopCabinet onLogout={handleLogout} />
-  return <AppShell onLogout={handleLogout} />
+  return (
+    <Suspense fallback={null}>
+      {phase === 'mop' ? <MopCabinet onLogout={handleLogout} /> : <AppShell onLogout={handleLogout} />}
+    </Suspense>
+  )
 }

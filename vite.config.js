@@ -21,6 +21,14 @@ export default defineConfig(({ mode }) => {
     build: {
       outDir: 'dist',
       emptyOutDir: true,
+      target: 'es2020', // современные браузеры — меньше полифилов/транспиляции
+      rollupOptions: {
+        output: {
+          // React/ReactDOM в отдельный vendor-чанк: он не меняется между деплоями →
+          // кэшируется у пользователя, правки кода приложения его не инвалидируют.
+          manualChunks: { react: ['react', 'react-dom'] },
+        },
+      },
     },
   }
 })

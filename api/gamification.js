@@ -498,8 +498,9 @@ export default async function handler(req, res) {
       let st = await getMopState(org, mopId);
       if (m) {
         const before = st.level || 0;
-        st = recomputeMop(st, m, cfg, monthKey(nowTk()));
-        await saveMopState(org, mopId, st);
+        const snapBefore = JSON.stringify(st);          // ОПТИМИЗАЦИЯ: пишем в Redis только если recompute реально
+        st = recomputeMop(st, m, cfg, monthKey(nowTk())); // что-то изменил (смена дня/месяца, зачёт в 18:00, левелап,
+        if (JSON.stringify(st) !== snapBefore) await saveMopState(org, mopId, st); // freeOpens). Иначе поллинг = read-only.
         if ((st.level || 0) > before) {
           const lp = st.inventory[0];
           await pushDrop(org, { who: sess.mopName || mopId, name: lp.name, value: lp.value, image: lp.image, type: "level", level: st.level, at: lp.wonAt });
