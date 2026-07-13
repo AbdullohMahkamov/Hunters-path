@@ -113,9 +113,10 @@ function renderCustomPlan() {
   wrap.innerHTML = ''
   const cp = state.customPlan
   if (!state.done) state.done = {}
+  const isRop = getRole() === 'rop' // РОП видит и закрывает только задачи отдела продаж (ОП)
   const head = document.createElement('div')
   head.style.cssText = 'background:var(--card);border:1px solid var(--line);border-radius:12px;padding:13px 15px;margin-bottom:14px;'
-  const allTasks = [...(cp.marketing || []), ...(cp.sales || [])]
+  const allTasks = isRop ? [...(cp.sales || [])] : [...(cp.marketing || []), ...(cp.sales || [])]
   const taskDone = (q) => { const steps = (q.steps || []); return steps.length > 0 ? steps.every((_, si) => !!state.done[q.id + '_s' + si]) : !!state.done[q.id] }
   const doneN = allTasks.filter(taskDone).length
   // цель — красиво с разделителями тысяч (250.000.000 so'm) вместо сырого числа
@@ -126,13 +127,13 @@ function renderCustomPlan() {
   head.innerHTML = `
     <div style="font-size:13px;color:var(--txt2);">${svg('target', 15)} ${uz ? 'Sizning maqsadingiz' : 'Ваша цель'}:</div>
     <div style="font-size:15px;font-weight:600;margin:3px 0 8px;">${goalTxt}</div>
-    <div style="font-size:12.5px;color:var(--txt3);">${uz ? 'Bajarildi' : 'Выполнено'}: ${doneN}/${allTasks.length}</div>
-    ${doneN >= allTasks.length && allTasks.length > 0 ? `<div style="margin-top:11px;padding:11px 13px;border-radius:11px;background:var(--green-bg);border:1px solid var(--green);">
+    <div style="font-size:12.5px;color:var(--txt3);">${isRop ? (uz ? 'Sotuv boʻyicha bajarildi' : 'Выполнено по продажам') : (uz ? 'Bajarildi' : 'Выполнено')}: ${doneN}/${allTasks.length}</div>
+    ${!isRop && doneN >= allTasks.length && allTasks.length > 0 ? `<div style="margin-top:11px;padding:11px 13px;border-radius:11px;background:var(--green-bg);border:1px solid var(--green);">
         <div style="font-size:13.5px;font-weight:700;color:var(--green);margin-bottom:8px;">🎉 ${uz ? 'Barcha vazifalar bajarildi!' : 'Все задачи выполнены!'}</div>
         <div style="font-size:12.5px;color:var(--txt2);margin-bottom:10px;">${uz ? 'Yangi maʼlumotlar boʻyicha keyingi rejani tuzamiz.' : 'Соберём следующий план по свежим данным.'}</div>
         <button onclick="replanFromTasks()" style="width:100%;padding:11px;border-radius:10px;background:var(--green);border:none;color:#fff;font-size:14px;font-weight:600;cursor:pointer;">${uz ? 'Yangi vazifalar olish →' : 'Получить новые задачи →'}</button>
       </div>` : ''}
-    <button onclick="replanFromTasks()" style="width:100%;margin-top:8px;padding:9px;border-radius:9px;background:none;border:1px solid var(--line2);color:var(--txt2);font-size:12.5px;cursor:pointer;">${svg('refresh', 14)} ${uz ? 'Rejani qayta tuzish' : 'Пересобрать план'}</button>`
+    ${!isRop ? `<button onclick="replanFromTasks()" style="width:100%;margin-top:8px;padding:9px;border-radius:9px;background:none;border:1px solid var(--line2);color:var(--txt2);font-size:12.5px;cursor:pointer;">${svg('refresh', 14)} ${uz ? 'Rejani qayta tuzish' : 'Пересобрать план'}</button>` : ''}`
   wrap.appendChild(head)
   const sections = [
     { key: 'marketing', iconName: 'mega', label: (uz ? 'Marketing' : 'Маркетинг'), items: cp.marketing || [] },
@@ -141,6 +142,7 @@ function renderCustomPlan() {
   if (!state.cpOpen) state.cpOpen = {}
   let bosqich = 0
   sections.forEach((sec) => {
+    if (isRop && sec.key !== 'sales') return // РОП — только отдел продаж
     if (!sec.items.length) return
     const h = document.createElement('div'); h.className = 'task-section'; h.innerHTML = svg(sec.iconName, 16) + ' ' + sec.label; wrap.appendChild(h)
     sec.items.forEach((q) => {
@@ -176,8 +178,9 @@ function renderCustomPlan() {
           ${getRole() !== 'rop' ? `<button class="boss-btn ready" onclick="helpCustomTask('${q.id}')">${uz ? 'Butun vazifa bo‘yicha yordam' : 'Помощь по всей задаче'}</button>` : ''}
         </div>`
       }
-      // отчёт при закрытии задачи (когда все шаги выполнены) — питает коллективный разум
-      if (on && getRole() !== 'rop') {
+      // отчёт при закрытии задачи (когда все шаги выполнены) — питает коллективный разум.
+      // Доступно и владельцу, и РОПу (РОП закрывает задачи отдела продаж).
+      if (on) {
         body += q.report
           ? `<div class="task-report done">✓ ${uz ? 'Hisobot yuborildi' : 'Отчёт отправлен'}</div>`
           : `<button class="task-report-btn" onclick="openTaskReport('${q.id}')">📝 ${uz ? 'Hisobot qoldirish (vazifani yopish)' : 'Оставить отчёт (закрыть задачу)'}</button>`
