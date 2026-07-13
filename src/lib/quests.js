@@ -122,8 +122,12 @@ function renderCustomPlan() {
     <div style="font-size:13px;color:var(--txt2);">${svg('target', 15)} ${uz ? 'Sizning maqsadingiz' : 'Ваша цель'}:</div>
     <div style="font-size:15px;font-weight:600;margin:3px 0 8px;">${escapeHtml(cp.goal || (uz ? 'Belgilanmagan' : 'Не указана'))}</div>
     <div style="font-size:12.5px;color:var(--txt3);">${uz ? 'Bajarildi' : 'Выполнено'}: ${doneN}/${allTasks.length}</div>
-    ${doneN >= allTasks.length && allTasks.length > 0 ? `<button onclick="wizReaudit()" style="width:100%;margin-top:11px;padding:11px;border-radius:10px;background:var(--green);border:none;color:#fff;font-size:14px;font-weight:600;cursor:pointer;">${uz ? 'Barcha vazifalar bajarildi — yangi audit' : 'Все задачи выполнены — новый аудит'}</button>` : ''}
-    <button onclick="wizRegenerate()" style="width:100%;margin-top:8px;padding:9px;border-radius:9px;background:none;border:1px solid var(--line2);color:var(--txt2);font-size:12.5px;cursor:pointer;">${svg('refresh', 14)} ${uz ? 'Rejani qayta tuzish' : 'Пересобрать план'}</button>`
+    ${doneN >= allTasks.length && allTasks.length > 0 ? `<div style="margin-top:11px;padding:11px 13px;border-radius:11px;background:var(--green-bg);border:1px solid var(--green);">
+        <div style="font-size:13.5px;font-weight:700;color:var(--green);margin-bottom:8px;">🎉 ${uz ? 'Barcha vazifalar bajarildi!' : 'Все задачи выполнены!'}</div>
+        <div style="font-size:12.5px;color:var(--txt2);margin-bottom:10px;">${uz ? 'Yangi maʼlumotlar boʻyicha keyingi rejani tuzamiz.' : 'Соберём следующий план по свежим данным.'}</div>
+        <button onclick="replanFromTasks()" style="width:100%;padding:11px;border-radius:10px;background:var(--green);border:none;color:#fff;font-size:14px;font-weight:600;cursor:pointer;">${uz ? 'Yangi vazifalar olish →' : 'Получить новые задачи →'}</button>
+      </div>` : ''}
+    <button onclick="replanFromTasks()" style="width:100%;margin-top:8px;padding:9px;border-radius:9px;background:none;border:1px solid var(--line2);color:var(--txt2);font-size:12.5px;cursor:pointer;">${svg('refresh', 14)} ${uz ? 'Rejani qayta tuzish' : 'Пересобрать план'}</button>`
   wrap.appendChild(head)
   const sections = [
     { key: 'marketing', iconName: 'mega', label: (uz ? 'Marketing' : 'Маркетинг'), items: cp.marketing || [] },
