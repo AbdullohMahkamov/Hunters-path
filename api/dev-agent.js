@@ -227,10 +227,10 @@ async function runNightly(mode) {
   const extra = mode === "weekly"
     ? `\nРЕЖИМ: НЕДЕЛЬНАЯ РЕВИЗИЯ ПАМЯТИ. Пройдись по СВОИМ findings/hypotheses и честно скажи: какие выводы устарели, оказались неверны или больше не подтверждаются данными? Понижай confidence отвергнутых (status:"rejected", reason). Не выдумывай нового без данных.\n`
     : "";
-  const { text, tokens } = await callModel(SYSTEM, buildUserContent({ memory, agg, invariants, git, extra }), 3600);
+  const { text, tokens } = await callModel(SYSTEM, buildUserContent({ memory, agg, invariants, git, extra }), 8000);
   let out; try { out = parseJSON(text); } catch (e) {
-    await pushChat("agent", `Ночной прогон: не смог разобрать ответ модели в JSON.\n\n${text.slice(0, 1200)}`, { kind: mode === "weekly" ? "weekly" : "nightly", tokens });
-    return { ok: false, error: "parse_failed" };
+    await pushChat("agent", `Ночной прогон: не смог разобрать ответ модели в JSON.\n\n${text.slice(0, 4000)}`, { kind: mode === "weekly" ? "weekly" : "nightly", tokens });
+    return { ok: false, error: "parse_failed", raw: text.slice(0, 400) };
   }
   const conflog = await rgetJSON(K.conflog, []);
   const fixedClaims = new Set((memory.fixed || []).map((f) => String(f.claim || f).toLowerCase()));
