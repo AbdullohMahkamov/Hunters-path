@@ -49,6 +49,16 @@ async function getSession(session) { if (!session) return null; try { const raw 
 let _idc = 0;
 function newId(p) { _idc++; return `${p}_${Date.now().toString(36)}_${_idc}`; }
 function todayKey() { return new Date(Date.now() + 3 * 3600000).toISOString().slice(0, 10); } // МСК
+// Контекст времени — чтобы агент отличал «0 за сегодня из-за раннего часа» от регресса.
+// ВАЖНО: дневные метрики (speed.today/дозвон за сегодня) считаются по ТАШКЕНТСКОМУ дню (UTC+5).
+function timeContext() {
+  const tash = new Date(Date.now() + 5 * 3600000), msk = new Date(Date.now() + 3 * 3600000), utc = new Date(Date.now());
+  const th = tash.getUTCHours();
+  return {
+    utc: utc.toISOString().slice(0, 16), tashkent: tash.toISOString().slice(0, 16), tashkentHour: th, tashkentDay: tash.toISOString().slice(0, 10), msk: msk.toISOString().slice(0, 16),
+    note: `Дневные метрики (speed.today / mopsDay / дозвон за сегодня) считаются по ТАШКЕНТСКОМУ дню (UTC+5). Сейчас в Ташкенте ${th}:00 — ${th < 6 ? "рабочий день ещё НЕ начался, поэтому пустые/нулевые дневные метрики — ЗАКОНОМЕРНО, это НЕ регресс" : (th < 10 ? "утро, дневные метрики только набираются" : "рабочий день идёт")}. Месячные метрики (dashboard, speed.mops) от времени суток НЕ зависят и должны быть полными.`,
+  };
+}
 
 async function getConfig() { const c = await rgetJSON(K.config, null); return { ...DEFAULT_CONFIG, ...(c || {}) }; }
 
@@ -170,7 +180,7 @@ async function gatherAggregates(cfg) {
     }
     perClient.push(c);
   }
-  return { perClient, outOfRange, telephonySuspects, caseOdds, callVolume, orgsScanned: orgs.length };
+  return { perClient, outOfRange, telephonySuspects, caseOdds, callVolume, orgsScanned: orgs.length, time: timeContext() };
 }
 
 // ── DATA TRUST LAYER ────────────────────────────────────────────────────────────────
@@ -286,6 +296,8 @@ const SYSTEM = `Ты — технический ревизор Hunter AI, тир
 
 ИСТОЧНИК ДАННЫХ О ЗВОНКАХ — ТОЛЬКО amoCRM. Если у клиента много лидов без звонка, но с другой активностью в CRM — это сигнал ВОЗМОЖНОЙ проблемы телефонии НА СТОРОНЕ КЛИЕНТА (звонят не через amoCRM / интеграция настроена не полностью). НИКОГДА не формулируй это как «сотрудник X не работает». Предлагай клиенту проверить настройки телефонии в его amoCRM.
 
+ВРЕМЯ: дневные метрики («за сегодня», speed.today, дозвон за сегодня) считаются по ТАШКЕНТСКОМУ дню (UTC+5) — см. блок ВРЕМЯ в данных. Если сейчас ранний час в Ташкенте (ночь/раннее утро), пустые/нулевые дневные метрики — ЗАКОНОМЕРНО, НЕ выдвигай по ним гипотезу о регрессе. Месячные метрики от времени суток не зависят.
+
 ПРАВИЛА ПАМЯТИ:
 - Гипотеза НЕ становится finding (confirmed) при менее чем 3 независимых наблюдениях (evidence). Меньше — статус остаётся гипотезой, и явно пиши «N наблюдений, недостаточно для подтверждения».
 - Confidence растёт ТОЛЬКО с новыми evidence. Каждое изменение confidence — с полем "reason".
@@ -326,6 +338,8 @@ findings: ${JSON.stringify(memory.findings)}
 hypotheses: ${JSON.stringify(memory.hypotheses)}
 decisions (решения человека): ${JSON.stringify(memory.decisions.slice(-30))}
 fixed (уже исправлено): ${JSON.stringify(memory.fixed.map((f) => f.claim || f))}
+
+ВРЕМЯ И СВЕЖЕСТЬ (учитывай при трактовке ПУСТЫХ дневных метрик — не путай ранний час с регрессом): ${JSON.stringify(agg.time)}
 
 АГРЕГАТЫ ЗА СУТКИ (конкретные источники):
 1) Кейсы — заданные шансы vs факт: ${JSON.stringify(agg.caseOdds)}
@@ -441,7 +455,7 @@ async function runChat(userText) {
   const agg = await gatherAggregates(cfg);
   const history = (await rgetJSON(K.chat, [])).slice(-20).map((m) => `${m.role === "human" ? "ОСНОВАТЕЛЬ" : "АГЕНТ"}: ${m.text}`).join("\n");
   const sys = SYSTEM + `\n\nСЕЙЧАС: живой диалог с основателем (не ночной прогон). Отвечай ТЕКСТОМ (не JSON), прямо и по делу. Опирайся на память и данные. Если предлагаешь фикс — дай готовый промпт для Claude Code прямо в ответе (в блоке \`\`\`).`;
-  const rawContent = `ТВОЯ ПАМЯТЬ:\nfindings: ${JSON.stringify(memory.findings)}\nhypotheses: ${JSON.stringify(memory.hypotheses)}\ndecisions: ${JSON.stringify(memory.decisions.slice(-20))}\nfixed: ${JSON.stringify(memory.fixed.map((f) => f.claim || f))}\n\nАГРЕГАТЫ: ${JSON.stringify({ outOfRange: agg.outOfRange, telephonySuspects: agg.telephonySuspects, callVolume: agg.callVolume, caseOdds: agg.caseOdds })}\n\nПЕРЕПИСКА:\n${history}\n\nОтветь на последнюю реплику основателя.`;
+  const rawContent = `ТВОЯ ПАМЯТЬ:\nfindings: ${JSON.stringify(memory.findings)}\nhypotheses: ${JSON.stringify(memory.hypotheses)}\ndecisions: ${JSON.stringify(memory.decisions.slice(-20))}\nfixed: ${JSON.stringify(memory.fixed.map((f) => f.claim || f))}\n\nВРЕМЯ (трактовка дневных метрик): ${JSON.stringify(agg.time)}\nАГРЕГАТЫ: ${JSON.stringify({ outOfRange: agg.outOfRange, telephonySuspects: agg.telephonySuspects, callVolume: agg.callVolume, caseOdds: agg.caseOdds })}\n\nПЕРЕПИСКА:\n${history}\n\nОтветь на последнюю реплику основателя.`;
   const { text, tokens } = await callModel(sys, anonymize(rawContent, map), 2200);
   await bumpQuota("chat");
   let reply = deanonymize(text, map);
