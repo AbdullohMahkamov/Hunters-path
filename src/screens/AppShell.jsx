@@ -172,10 +172,6 @@ export default function AppShell({ onLogout }) {
     document.getElementById('chatSidebar')?.classList.toggle('open', open)
     document.getElementById('sideBackdrop')?.classList.toggle('show', open)
   }
-  function collapseSidebar() {
-    if (window.matchMedia('(max-width:700px)').matches) { toggleSidebar(false); return }
-    document.body.classList.toggle('sidebar-collapsed')
-  }
   function openSidebar() {
     if (window.matchMedia('(max-width:700px)').matches) { toggleSidebar(true); return }
     document.body.classList.remove('sidebar-collapsed')
@@ -254,7 +250,6 @@ export default function AppShell({ onLogout }) {
           <div className="chat-layout">
             <div className="chat-sidebar" id="chatSidebar">
               <div className="side-nav">
-                <button className="side-nav-ic" onClick={collapseSidebar} title="Свернуть панель"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><rect x="3" y="3" width="18" height="18" rx="2" /><line x1="9" y1="3" x2="9" y2="21" /></svg></button>
                 <div className="sec-dropdown-wrap" ref={secWrapRef}>
                   <button className={'sec-dropdown-btn' + (secOpen ? ' open' : '') + (tab !== 'chat' ? ' active' : '')} onClick={(e) => { e.stopPropagation(); setSecOpen((v) => !v) }}>
                     <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><line x1="3" y1="6" x2="21" y2="6" /><line x1="3" y1="12" x2="21" y2="12" /><line x1="3" y1="18" x2="21" y2="18" /></svg>
