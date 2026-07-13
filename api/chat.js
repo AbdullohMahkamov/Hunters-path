@@ -202,7 +202,7 @@ export default async function handler(req, res) {
 [{"q":"Почему Komiljon не дозванивается?","level":"hot"},{"q":"Успеваем на план месяца?","level":"warn"}]
 Формулируй грамотно и естественно (${lang === "uz" ? "живой узбекский латиницей, без русизмов" : "русский"}). Максимум 4. Если всё хорошо — 1-2 общих вопроса.`;
       const qReq = {
-        model: "claude-sonnet-4-6", max_tokens: 500,
+        model: "claude-sonnet-5", max_tokens: 500,
         system: qSystem + live,
         messages: [{ role: "user", content: "Проанализируй данные и предложи вопросы." }],
       };
@@ -280,7 +280,7 @@ export default async function handler(req, res) {
     let progressNote = "";
 
     const anthropicReq = {
-      model: "claude-sonnet-4-6",
+      model: "claude-sonnet-5",
       max_tokens: 2500,
       system: SYSTEM + progressNote + live,
       messages: messages,
