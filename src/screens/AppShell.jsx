@@ -1,5 +1,5 @@
 import React, { useEffect, useRef, useState, useSyncExternalStore } from 'react'
-import { getSnapshot, subscribe, orgQ } from '../lib/session.js'
+import { getSnapshot, subscribe, orgQ, getSession } from '../lib/session.js'
 import { state, save, loadCloud, ensureChats, setLang } from '../lib/appState.js'
 import { applyTheme } from '../lib/theme.js'
 import { installShellStubs } from '../lib/shellStubs.js'
@@ -39,6 +39,9 @@ export default function AppShell({ onLogout }) {
   const bootedRef = useRef(false)
   const dashLoadedRef = useRef(false)
   const secWrapRef = useRef(null)
+  const notifWrapRef = useRef(null)
+  const [notifs, setNotifs] = useState([]) // ожидающие выдачи призы МОПов
+  const [notifOpen, setNotifOpen] = useState(false)
 
   // renderDashboard — загрузка живых данных дашборда (1:1 по поведению монолита)
   async function loadDashboard() {
@@ -134,6 +137,28 @@ export default function AppShell({ onLogout }) {
     document.addEventListener('mousedown', onDown)
     return () => document.removeEventListener('mousedown', onDown)
   }, [secOpen])
+
+  // уведомления (админ): призы МОПов, ожидающие выдачи. Опрос раз в минуту.
+  async function loadNotifs() {
+    try {
+      const r = await fetch('/api/gamification?action=list_inventory&session=' + encodeURIComponent(getSession()))
+      const d = await r.json()
+      if (d && d.ok) setNotifs((d.inventory || []).filter((x) => x.status !== 'delivered' && x.status !== 'cashback'))
+    } catch (e) { /* ignore */ }
+  }
+  useEffect(() => {
+    if (!isAdmin) return
+    loadNotifs()
+    const iv = setInterval(loadNotifs, 60000)
+    return () => clearInterval(iv)
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [isAdmin])
+  useEffect(() => {
+    if (!notifOpen) return
+    const onDown = (e) => { if (notifWrapRef.current && !notifWrapRef.current.contains(e.target)) setNotifOpen(false) }
+    document.addEventListener('mousedown', onDown)
+    return () => document.removeEventListener('mousedown', onDown)
+  }, [notifOpen])
 
   function goSection(sec) {
     toggleSidebar(false)
@@ -244,6 +269,30 @@ export default function AppShell({ onLogout }) {
                   </div>
                 </div>
                 <div className="side-brand" onClick={() => applyTab('chat')} style={{ cursor: 'pointer' }}><div className="side-logo">H</div><span>Hunter AI</span></div>
+                {isAdmin && (
+                  <div className="notif-wrap" ref={notifWrapRef} style={{ marginLeft: 'auto', position: 'relative', flex: '0 0 auto' }}>
+                    <button className="side-nav-ic notif-bell" onClick={(e) => { e.stopPropagation(); setNotifOpen((v) => !v) }} title={uz ? 'Bildirishnomalar' : 'Уведомления'}>
+                      <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.9" strokeLinecap="round" strokeLinejoin="round"><path d="M18 8a6 6 0 0 0-12 0c0 7-3 9-3 9h18s-3-2-3-9" /><path d="M13.7 21a2 2 0 0 1-3.4 0" /></svg>
+                      {notifs.length > 0 && <span className="notif-badge">{notifs.length}</span>}
+                    </button>
+                    {notifOpen && (
+                      <div className="notif-panel">
+                        <div className="notif-head">{uz ? 'Bildirishnomalar' : 'Уведомления'}</div>
+                        {notifs.length === 0
+                          ? <div className="notif-empty">{uz ? 'Yangi bildirishnoma yoʻq' : 'Новых уведомлений нет'}</div>
+                          : notifs.map((n) => (
+                            <button key={n.id} className="notif-item" onClick={() => { setNotifOpen(false); window.openGamiModal && window.openGamiModal('inventory') }}>
+                              <span className="notif-dot" />
+                              <div style={{ minWidth: 0 }}>
+                                <div className="notif-t">🎁 {n.mopName}</div>
+                                <div className="notif-d">{(uz ? 'yutdi: ' : 'выиграл: ') + (n.name || '')} — {uz ? 'berish kerak' : 'нужно выдать'}</div>
+                              </div>
+                            </button>
+                          ))}
+                      </div>
+                    )}
+                  </div>
+                )}
               </div>
 
               <button className={'side-chat-home' + (tab === 'chat' ? ' active' : '')} onClick={() => goSection('chat')}>
