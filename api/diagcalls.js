@@ -55,11 +55,13 @@ export default async function handler(req, res) {
     else if (dur < 120) agg.s40_119++; else agg.s120plus++;
   };
 
+  const FETCH_BUDGET = 8000, TOTAL_BUDGET = 48000, MAX_SAMPLE = 120;
   try {
-    // 1) Тянем лиды за ~30 дней (только наши МОПы), собираем id лида + id первого контакта
+    // 1) Тянем лиды за ~30 дней (только наши МОПы), собираем id лида + id первого контакта.
+    //    Берём широкую выборку ВСЕХ лидов (знаменатель дозвона), не только со звонками.
     const leadRows = []; // {id, contactId}
     let page = 1;
-    while (page <= 4 && Date.now() - startedAt < 6000) {
+    while (page <= 6 && Date.now() - startedAt < FETCH_BUDGET) {
       const url = `${base}/leads?with=contacts&filter[created_at][from]=${monthStart}&limit=250&page=${page}`;
       const r = await fetch(url, { headers: H });
       if (!r.ok) break;
@@ -73,23 +75,27 @@ export default async function handler(req, res) {
       if (leads.length < 250) break;
       page++;
     }
+    // равномерная выборка по всему пулу (не только первые страницы)
+    const pool = leadRows.slice();
+    const step = Math.max(1, Math.floor(pool.length / MAX_SAMPLE));
+    const sample = [];
+    for (let i = 0; i < pool.length && sample.length < MAX_SAMPLE; i += step) sample.push(pool[i]);
 
-    // 2) Сэмплируем лиды и смотрим call-notes на ЛИДЕ и на КОНТАКТЕ
-    const noteTypeHist = {};       // все note_type на лидах (топ)
-    const callParamKeys = {};      // ключи params у call-нот (лид+контакт)
+    // 2) Сэмплируем лиды: call-notes на ЛИДЕ и (если на лиде дозвона нет) на КОНТАКТЕ
+    const noteTypeHist = {};
+    const callParamKeys = {};
     const durLead = { missing: 0, zero: 0, s1_9: 0, s10_39: 0, s40_119: 0, s120plus: 0 };
     const durContact = { missing: 0, zero: 0, s1_9: 0, s10_39: 0, s40_119: 0, s120plus: 0 };
     let leadCallNotes = 0, contactCallNotes = 0;
-    let leadsSampled = 0, leadsWithAnyLeadCall = 0, leadsWithAnyContactCall = 0;
+    let leadsSampled = 0;
+    let leadsWithNoCallNote = 0;      // ГЛАВНОЕ: лиды вообще без call-ноты (ни на лиде, ни на контакте)
+    let leadsWithAnyLeadCall = 0, leadsWithAnyContactCall = 0;
     let reachedOnLead = 0, reachedOnContact = 0, reachedEither = 0;
-    const seenContacts = new Set();
 
-    for (const row of leadRows) {
-      if (Date.now() - startedAt > 8500) break;
-      if (leadsSampled >= 60) break;
+    for (const row of sample) {
+      if (Date.now() - startedAt > TOTAL_BUDGET) break;
       leadsSampled++;
       let hadLeadCall = false, hadContactCall = false, reachL = false, reachC = false;
-      // ноты лида
       try {
         const r = await fetch(`${base}/leads/${row.id}/notes?limit=250`, { headers: H });
         if (r.ok) {
@@ -107,9 +113,8 @@ export default async function handler(req, res) {
           }
         }
       } catch (e) {}
-      // ноты контакта (звонки часто пишутся на контакт, а не на лид)
-      if (row.contactId && !seenContacts.has(row.contactId)) {
-        seenContacts.add(row.contactId);
+      // контакт проверяем всегда (чтобы поймать звонки, «уехавшие» на контакт)
+      if (row.contactId && Date.now() - startedAt < TOTAL_BUDGET) {
         try {
           const r = await fetch(`${base}/contacts/${row.contactId}/notes?limit=250`, { headers: H });
           if (r.ok) {
@@ -129,27 +134,29 @@ export default async function handler(req, res) {
       }
       if (hadLeadCall) leadsWithAnyLeadCall++;
       if (hadContactCall) leadsWithAnyContactCall++;
+      if (!hadLeadCall && !hadContactCall) leadsWithNoCallNote++;
       if (reachL) reachedOnLead++;
       if (reachC) reachedOnContact++;
       if (reachL || reachC) reachedEither++;
     }
 
-    // топ note_type
     const noteTypeTop = Object.entries(noteTypeHist).sort((a, b) => b[1] - a[1]).slice(0, 12);
+    const pct = (n) => leadsSampled ? Math.round(n / leadsSampled * 100) : 0;
 
     res.status(200).json({
       ok: true, org, subdomain: SUBDOMAIN, reachedSecThreshold: REACHED_SEC,
       periodDays: 30, elapsedMs: Date.now() - startedAt,
       leadsFound: leadRows.length, leadsSampled,
+      // сколько лидов-знаменателя ВООБЩЕ без звонков (ключ к заниженному %)
+      leadsWithNoCallNote, pctNoCall: pct(leadsWithNoCallNote),
       callNotes: { onLead: leadCallNotes, onContact: contactCallNotes },
       leadsWithCall: { onLead: leadsWithAnyLeadCall, onContact: leadsWithAnyContactCall },
-      // ГЛАВНОЕ: сколько лидов «дозвонились» (нота ≥40 сек) по разным источникам
       reachedLeads: { onLeadOnly: reachedOnLead, onContact: reachedOnContact, either: reachedEither,
-        pctEither: leadsSampled ? Math.round(reachedEither / leadsSampled * 100) : 0,
-        pctLeadOnly: leadsSampled ? Math.round(reachedOnLead / leadsSampled * 100) : 0 },
+        pctEitherOfAll: pct(reachedEither),
+        pctReachOfCalled: leadsWithAnyLeadCall ? Math.round(reachedOnLead / leadsWithAnyLeadCall * 100) : 0 },
       durationBuckets: { lead: durLead, contact: durContact },
       callParamKeys, noteTypeTop,
-      hint: "Если callNotes.onContact >> onLead или reachedLeads.onContact заметно > onLeadOnly — звонки пишутся на контакт, а мы читаем только ноты лида. Если durationBuckets.*.missing/zero велики — поле duration не приходит. Если много s10_39 — порог 40с высоковат.",
+      hint: "pctNoCall велик → знаменатель полон лидов, которым не звонили (или звонок не в call-ноте). reachedLeads.onContact>0 → часть дозвонов на контакте (мы их не читаем). pctReachOfCalled — реальный дозвон среди тех, кому реально звонили.",
     });
   } catch (err) {
     res.status(200).json({ ok: false, error: String(err) });
