@@ -134,44 +134,57 @@ function renderCustomPlan() {
     { key: 'sales', iconName: 'bag', label: (uz ? 'Sotuvlar' : 'Продажи'), items: cp.sales || [] },
   ]
   if (!state.cpOpen) state.cpOpen = {}
+  let bosqich = 0
   sections.forEach((sec) => {
     if (!sec.items.length) return
-    const h = document.createElement('div'); h.className = 'task-section ic-btn'; h.innerHTML = svg(sec.iconName, 16) + ' ' + sec.label; wrap.appendChild(h)
+    const h = document.createElement('div'); h.className = 'task-section'; h.innerHTML = svg(sec.iconName, 16) + ' ' + sec.label; wrap.appendChild(h)
     sec.items.forEach((q) => {
+      bosqich++
       const steps = (q.steps || [])
       const stepDone = (si) => !!state.done[q.id + '_s' + si]
-      const allSteps = steps.length > 0
-      const on = allSteps ? steps.every((_, si) => stepDone(si)) : !!state.done[q.id]
+      const hasSteps = steps.length > 0
+      const on = hasSteps ? steps.every((_, si) => stepDone(si)) : !!state.done[q.id]
       const doneSteps = steps.filter((_, si) => stepDone(si)).length
       const isOpen = !!state.cpOpen[q.id]
-      const stepsHtml = steps.map((st, si) => {
-        const sd = stepDone(si)
-        return `<div class="cp-substep${sd ? ' done' : ''}">
-          <div class="cp-check${sd ? ' on' : ''}" onclick="event.stopPropagation();toggleCpStep('${q.id}',${si})">${sd ? '✓' : ''}</div>
-          <div class="cp-sub-t">${escapeHtml(st)}</div>
-          ${getRole() !== 'rop' ? `<button class="cp-sub-help" onclick="event.stopPropagation();helpCustomStep('${q.id}',${si})" title="Помощь">${svg('help', 14)}</button>` : ''}
+      // шаги — как красивые .quest-строки (тот же дизайн, что у статичных этапов)
+      let body = ''
+      if (hasSteps) {
+        steps.forEach((st, si) => {
+          const sd = stepDone(si)
+          body += `<div class="quest${sd ? ' done' : ''}">
+            <div class="qcheck${sd ? ' on' : ''}" onclick="toggleCpStep('${q.id}',${si})">${sd ? '✓' : ''}</div>
+            <div class="q-main"><div class="q-t">${escapeHtml(st)}</div></div>
+            ${getRole() !== 'rop' ? `<button class="q-help" onclick="event.stopPropagation();helpCustomStep('${q.id}',${si})">${uz ? 'yordam' : 'помощь'}</button>` : ''}
+          </div>`
+        })
+      } else {
+        body += `<div class="quest${on ? ' done' : ''}">
+          <div class="qcheck${on ? ' on' : ''}" onclick="toggleCustomTask('${q.id}')">${on ? '✓' : ''}</div>
+          <div class="q-main"><div class="q-t">${escapeHtml(q.t)}</div></div>
         </div>`
-      }).join('')
+      }
+      // блок «Зачем эта задача» — в стиле boss-цели этапа
+      if (q.d) {
+        body += `<div class="boss${on ? ' down' : ''}">
+          <div class="boss-h">${uz ? 'Vazifaning maqsadi' : 'Зачем эта задача'}</div>
+          <div class="boss-d">${escapeHtml(q.d)}</div>
+          ${getRole() !== 'rop' ? `<button class="boss-btn ready" onclick="helpCustomTask('${q.id}')">${uz ? 'Butun vazifa bo‘yicha yordam' : 'Помощь по всей задаче'}</button>` : ''}
+        </div>`
+      }
       const card = document.createElement('div')
       card.className = 'stage' + (on ? ' done' : '') + (isOpen ? ' open' : '')
       card.innerHTML = `
         <div class="s-head" onclick="toggleCpCard('${q.id}')">
           <div class="s-icon">${on ? svg('check', 18) : svg(sec.iconName, 18)}</div>
           <div style="min-width:0;flex:1;">
-            <div class="s-name">${escapeHtml(q.t)}
-              ${on ? `<span class="tag tag-done">${uz ? 'bajarildi' : 'готово'}</span>` : ''}
+            <div class="s-name">${uz ? 'Bosqich' : 'Этап'} ${bosqich} · ${escapeHtml(q.t)}
+              ${on ? `<span class="tag tag-done">${uz ? 'yopildi' : 'закрыт'}</span>` : ''}
             </div>
-            <div class="s-sub">${escapeHtml(q.d || '')}${allSteps ? ` · ${doneSteps}/${steps.length} ${uz ? 'qadam' : 'шагов'}` : ''}</div>
+            <div class="s-sub">${hasSteps ? `${doneSteps}/${steps.length} ${uz ? 'vazifa' : 'задач'}` : (uz ? '1 vazifa' : '1 задача')}</div>
           </div>
           <div class="s-chev">▾</div>
         </div>
-        <div class="s-body">
-          <div style="padding:10px 14px 14px;">
-            ${allSteps ? `<div style="font-size:12px;color:var(--txt3);margin-bottom:8px;">${uz ? 'Bosqichlar (belgilang):' : 'Под-задачи (отмечайте по мере выполнения):'}</div>${stepsHtml}` : `
-            <button onclick="event.stopPropagation();toggleCustomTask('${q.id}')" style="width:100%;padding:11px;border-radius:9px;background:${on ? 'var(--card2)' : 'var(--green)'};border:none;color:${on ? 'var(--txt2)' : '#fff'};font-size:13.5px;font-weight:600;cursor:pointer;">${on ? (uz ? '↩ Bajarilmagan' : '↩ Не выполнено') : (uz ? '✓ Bajarildi' : '✓ Выполнено')}</button>`}
-            ${getRole() !== 'rop' ? `<button onclick="event.stopPropagation();helpCustomTask('${q.id}')" style="width:100%;margin-top:9px;padding:10px;border-radius:9px;background:var(--accent-bg);border:1px solid var(--accent);color:var(--accent);font-size:13px;font-weight:600;cursor:pointer;">${svg('help', 14)} ${uz ? 'Butun vazifa bo‘yicha yordam' : 'Помощь по всей задаче'}</button>` : ''}
-          </div>
-        </div>`
+        <div class="s-body">${body}</div>`
       wrap.appendChild(card)
     })
   })
