@@ -409,8 +409,10 @@ export default async function handler(req, res) {
       res.status(200).json({ ok: true, config: next }); return;
     }
     if (action === "chat") { const text = String(b.text || "").trim(); if (!text) { res.status(400).json({ error: "empty text" }); return; } res.status(200).json(await runChat(text)); return; }
-    if (action === "nightly") { res.status(200).json(await runNightly("nightly", isCron && !isAdmin)); return; }
-    if (action === "weekly_review") { res.status(200).json(await runNightly("weekly", isCron && !isAdmin)); return; }
+    // nightly/weekly: cron-триггер (не админ) НИКОГДА не отдаёт отчёт в ответе (в нём реальные имена) —
+    // только факт запуска; сам отчёт пишется в память, админ читает его через state. Полный результат — только админу.
+    if (action === "nightly") { const r = await runNightly("nightly", isCron && !isAdmin); res.status(200).json(isAdmin ? r : { ok: !!r.ok, ran: !!r.ok }); return; }
+    if (action === "weekly_review") { const r = await runNightly("weekly", isCron && !isAdmin); res.status(200).json(isAdmin ? r : { ok: !!r.ok, ran: !!r.ok }); return; }
 
     if (action === "decision") {
       const verdict = String(b.verdict || "");
