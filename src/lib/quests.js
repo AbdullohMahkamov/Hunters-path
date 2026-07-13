@@ -118,9 +118,14 @@ function renderCustomPlan() {
   const allTasks = [...(cp.marketing || []), ...(cp.sales || [])]
   const taskDone = (q) => { const steps = (q.steps || []); return steps.length > 0 ? steps.every((_, si) => !!state.done[q.id + '_s' + si]) : !!state.done[q.id] }
   const doneN = allTasks.filter(taskDone).length
+  // цель — красиво с разделителями тысяч (250.000.000 so'm) вместо сырого числа
+  const goalDigits = Number(String(cp.goal == null ? '' : cp.goal).replace(/[^\d]/g, '')) || 0
+  const goalTxt = goalDigits > 0
+    ? new Intl.NumberFormat('de-DE').format(goalDigits) + (uz ? " so'm" : ' сум')
+    : (cp.goal ? escapeHtml(String(cp.goal)) : (uz ? 'Belgilanmagan' : 'Не указана'))
   head.innerHTML = `
     <div style="font-size:13px;color:var(--txt2);">${svg('target', 15)} ${uz ? 'Sizning maqsadingiz' : 'Ваша цель'}:</div>
-    <div style="font-size:15px;font-weight:600;margin:3px 0 8px;">${escapeHtml(cp.goal || (uz ? 'Belgilanmagan' : 'Не указана'))}</div>
+    <div style="font-size:15px;font-weight:600;margin:3px 0 8px;">${goalTxt}</div>
     <div style="font-size:12.5px;color:var(--txt3);">${uz ? 'Bajarildi' : 'Выполнено'}: ${doneN}/${allTasks.length}</div>
     ${doneN >= allTasks.length && allTasks.length > 0 ? `<div style="margin-top:11px;padding:11px 13px;border-radius:11px;background:var(--green-bg);border:1px solid var(--green);">
         <div style="font-size:13.5px;font-weight:700;color:var(--green);margin-bottom:8px;">🎉 ${uz ? 'Barcha vazifalar bajarildi!' : 'Все задачи выполнены!'}</div>
