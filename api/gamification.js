@@ -224,8 +224,8 @@ function metricsMeetNorms(m, norms) {
 function recomputeMop(st, m, cfg, mkey) {
   // ЕЖЕДНЕВНАЯ модель: считаем заработок за СЕГОДНЯ и банкуем по дням.
   const today = dateKey(nowTk());
-  // Баллы дня зачисляются только в calcTime (18:00). До этого earnedToday — предварительный (не в балансе).
-  const creditedYesterday = () => st.todayCredited ? (st.creditedTodayValue || 0) : (st.earnedToday || 0);
+  // При смене дня/месяца период уже завершён — банкуем весь заработок дня (план + остальное).
+  const creditedYesterday = () => st.earnedToday || 0;
   // смена месяца → весь месяц в carry, сброс
   if (st.pointsMonth && st.pointsMonth !== mkey) {
     st.carry = (st.carry || 0) + (st.earnedDays || 0) + creditedYesterday();
@@ -271,17 +271,17 @@ function recomputeMop(st, m, cfg, mkey) {
   // ── ПЛАН ──
   const planMet = (m.revenueToday || 0) >= planTarget;
 
-  st.earnedToday = Math.round(
-    (reachMet ? (p.reach || 0) : 0) +
-    (speedMet ? (p.fastCall || 0) : 0) +
-    (taskMet ? (p.taskDone || 0) : 0) +
-    (planMet ? (p.dailyPlan || 0) : 0)
-  );
-  // зачёт баллов дня в calcTime (18:00 МСК) — фиксируем значение; до этого earnedToday предварительный
+  // ПЛАН (продажа) — свершившийся факт: зачисляем в баланс СРАЗУ.
+  // ДОЗВОН/СКОРОСТЬ/ЗАДАЧИ — за день ещё меняются: зачисляем в calcTime (18:00 МСК).
+  const planPts = planMet ? (p.dailyPlan || 0) : 0;
+  const otherPts = (reachMet ? (p.reach || 0) : 0) + (speedMet ? (p.fastCall || 0) : 0) + (taskMet ? (p.taskDone || 0) : 0);
+  st.earnedToday = Math.round(planPts + otherPts); // всего за сегодня (для «Сегодня набрано»)
   const calcMin = parseFreezeMinutes(cfg.calcTime || "18:00");
-  if (!st.todayCredited && nowMskMinutes() >= calcMin) { st.todayCredited = true; st.creditedTodayValue = st.earnedToday; }
-  // баланс = прошлые дни + сегодня ТОЛЬКО после зачёта в 18:00
-  st.earnedMonth = (st.earnedDays || 0) + (st.todayCredited ? (st.creditedTodayValue || 0) : 0);
+  const deferredIn = nowMskMinutes() >= calcMin;   // «отложенная» часть зачтена (после 18:00)
+  st.todayCredited = deferredIn;
+  // в балансе сегодня: план всегда + остальное только после 18:00
+  st.creditedTodayValue = Math.round(planPts + (deferredIn ? otherPts : 0));
+  st.earnedMonth = (st.earnedDays || 0) + (st.creditedTodayValue || 0);
   // ПРОДАЖИ ЗА СЕГОДНЯ → бесплатные открытия кейса (дневной лимит: не использовал — сгорели)
   if (st.salesClaimedDay !== today) { st.salesClaimedDay = today; st.salesClaimedTiers = []; st.freeOpens = 0; }
   const dayRev = m.revenueToday || 0;
@@ -580,6 +580,8 @@ function buildStatePayload(st, m, cfg) {
     calcTime: cfg.calcTime || "18:00",
     earnedTodayLive: st.earnedToday || 0,
     todayCredited: !!st.todayCredited,
+    creditedNow: st.creditedTodayValue || 0,                                        // уже в балансе сегодня (план + остальное после 18:00)
+    pendingCredit: Math.max(0, (st.earnedToday || 0) - (st.creditedTodayValue || 0)), // ждёт зачёта в 18:00
     maxPoints: (cfg.points.reach || 0) + (cfg.points.fastCall || 0) + (cfg.points.taskDone || 0) + (cfg.points.dailyPlan || 0),
     earn: m ? (() => {
       const coef = cfg.dozvonCoef || 0.6;

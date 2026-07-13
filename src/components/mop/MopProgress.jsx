@@ -104,6 +104,7 @@ const ICONS = {
   play: '<circle cx="12" cy="12" r="9"/><path d="M10 8.5l6 3.5-6 3.5z"/>',
   battery: '<rect x="3" y="8" width="16" height="9" rx="2"/><path d="M21 11v3M8 10l-1 2h2l-1 2"/>',
   cert: '<rect x="4" y="4" width="16" height="13" rx="2"/><path d="M8 20l2-3M16 20l-2-3M9 9h6M9 12h4"/>',
+  refresh: '<path d="M21 12a9 9 0 1 1-2.64-6.36M21 3v5h-5"/>',
 }
 function pickIcon(name) {
   const s = (name || '').toLowerCase()
@@ -144,6 +145,7 @@ export default function MopProgress({ view = 'levels' }) {
   useSyncExternalStore(subscribeMopLang, getMopLang, getMopLang) // перерисовка при смене языка
   const [st, setSt] = useState(null)
   const [loading, setLoading] = useState(true)
+  const [refreshing, setRefreshing] = useState(false)
   const [spinning, setSpinning] = useState(false)
   const [strip, setStrip] = useState([])
   const [result, setResult] = useState(null)
@@ -182,6 +184,12 @@ export default function MopProgress({ view = 'levels' }) {
 
   async function load() {
     try { const d = await gami.state(); if (d && d.ok) setSt(d) } catch (e) { /* ignore */ } finally { setLoading(false) }
+  }
+  async function refresh() {
+    if (refreshing) return
+    setRefreshing(true)
+    try { const d = await gami.state(); if (d && d.ok) setSt(d) } catch (e) { /* ignore */ }
+    setTimeout(() => setRefreshing(false), 500) // держим спиннер чуть дольше, чтобы клик ощущался
   }
   useEffect(() => { load() }, [])
 
@@ -278,6 +286,10 @@ export default function MopProgress({ view = 'levels' }) {
           <div className="gami-pts-n"><Ic n="coin" size={20} color="var(--gold)" />{fmtN(st.balance)}</div>
           <div className="gami-pts-lbl">{mt('gYourPts')} · +{fmtN(st.earnedMonth)} {mt('gEarnedMonth')}</div>
         </div>
+        <button className={'gami-refresh' + (refreshing ? ' spin' : '')} onClick={refresh} disabled={refreshing}
+          title={getMopLang() === 'uz' ? 'Maʼlumotlarni yangilash' : 'Обновить данные'} aria-label="refresh">
+          <Ic n="refresh" size={17} />
+        </button>
       </div>
 
       {/* ── ПРОГРЕСС ТЕКУЩЕГО МЕСЯЦА ── */}
@@ -428,7 +440,15 @@ export default function MopProgress({ view = 'levels' }) {
             return (
               <div className="gami-checklist">
                 <div className="gami-maxrow">{uz ? 'Bugun maksimal' : 'Сегодня максимум'}: <b>{fmtN(st.maxPoints || 0)} {uz ? 'ball' : 'баллов'}</b></div>
-                <div className="gami-creditnote">{uz ? 'Bugun yigʻildi' : 'Сегодня набрано'}: <b>{fmtN(st.earnedTodayLive || 0)}</b> · {st.todayCredited ? (uz ? 'hisobga oʻtdi ✓' : 'зачислено ✓') : (uz ? `${st.calcTime || '18:00'} da hisobga oʻtadi` : `зачислим в ${st.calcTime || '18:00'}`)}</div>
+                <div className="gami-creditnote">{uz ? 'Bugun yigʻildi' : 'Сегодня набрано'}: <b>{fmtN(st.earnedTodayLive || 0)}</b> · {
+                  st.todayCredited
+                    ? (uz ? 'hisobga oʻtdi ✓' : 'зачислено ✓')
+                    : (st.pendingCredit > 0
+                        ? ((st.creditedNow || 0) > 0
+                            ? (uz ? `${fmtN(st.creditedNow)} hisobda · qolgani ${st.calcTime || '18:00'} da` : `${fmtN(st.creditedNow)} в балансе · остальное в ${st.calcTime || '18:00'}`)
+                            : (uz ? `${st.calcTime || '18:00'} da hisobga oʻtadi` : `зачислим в ${st.calcTime || '18:00'}`))
+                        : (uz ? 'hisobga oʻtdi ✓' : 'зачислено ✓'))
+                }</div>
                 {rows.map((row, i) => (
                   <div key={i} className={'gami-goal daily ' + (row.g.done ? 'done' : row.idle ? 'idle' : 'fail')}>
                     <span className="gami-goal-ic">{row.g.done ? <Ic n="check" size={13} /> : row.idle ? <Ic n="dot" size={13} /> : <Ic n="cross" size={13} />}</span>

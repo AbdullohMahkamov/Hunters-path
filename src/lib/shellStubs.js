@@ -5,6 +5,7 @@
 // По мере переноса каждая заглушка заменяется реальной реализацией.
 
 import { setDashPeriodReal, setDiscPeriodReal } from './dashRender.js'
+import { loadActivity, setActPeriod } from './activityRender.js'
 import { state, save } from './appState.js'
 
 let installed = false
@@ -24,19 +25,19 @@ export function installShellStubs() {
     })
     if (tab === 'trends' && typeof window.loadTrends === 'function') window.loadTrends()
     if (tab === 'finance' && typeof window.loadFinance === 'function') window.loadFinance()
+    if (tab === 'sales') loadActivity() // «Активность менеджеров» — тянем кэш при открытии вкладки
   }
 
-  // setDashPeriod / setDiscPeriod — реальные (перерисовка по данным)
+  // setDashPeriod / setDiscPeriod / setActPeriod / loadActivity — реальные (перерисовка по данным)
   window.setDashPeriod = setDashPeriodReal
   window.setDiscPeriod = setDiscPeriodReal
-  window.setActPeriod = function (per) {
-    ['act-month', 'act-today'].forEach((id) => { const el = document.getElementById(id); if (el) el.classList.toggle('on', id === 'act-' + per) })
-  }
+  window.setActPeriod = setActPeriod
+  window.loadActivity = loadActivity
 
   // Заглушки загрузки данных / модалок — реальные реализации в следующих этапах.
   // (syncAll/openSuspModal/…/editForecastGoal ставит initDashModals; квесты — initQuests и т.д.)
   const noop = () => { /* раздел переносится в следующем этапе */ }
-  ;['showHint', 'loadActivity', 'askForecastHelp'].forEach((fn) => {
+  ;['showHint', 'askForecastHelp'].forEach((fn) => {
     if (typeof window[fn] !== 'function') window[fn] = noop
   })
   if (typeof window.finView === 'undefined') window.finView = 'month'

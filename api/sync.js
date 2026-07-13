@@ -366,8 +366,12 @@ export default async function handler(req, res) {
           soldTeam++; soldSumTeam += price;
           byMop[mop].sold++; byMop[mop].revenue += price;
         }
+        // доплаты МОПа в этом месяце по сделкам ПРОШЛЫХ месяцев (в price текущей продажи доплата уже включена — не задваиваем)
+        if (isSold && !closedThisMonth) { byMop[mop].revenue += doplataInRange(L, monthStart, nextMonth); }
         // продажи пятёрки за СЕГОДНЯ (по реальной дате продажи, UTC+5)
         if (isSold && saleTs >= dayStart) { byMop[mop].soldToday++; byMop[mop].revenueToday += price; }
+        // доплата МОПа сегодня по старой сделке (продажа была раньше сегодня) — тоже в личную кассу за сегодня
+        else if (isSold && saleTs < dayStart) { byMop[mop].revenueToday += doplataInRange(L, dayStart, dayStart + DAY); }
         // продажи пятёрки за всю базу
         if (isSold) soldTeamBase++;
       }

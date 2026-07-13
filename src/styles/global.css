@@ -432,6 +432,12 @@
   .gami-hero.pts-only .gami-hero-pts{text-align:left;}
   .gami-pts-n{display:inline-flex;align-items:center;gap:7px;font-size:28px;font-weight:800;color:var(--gold);font-variant-numeric:tabular-nums;text-shadow:0 1px 12px color-mix(in srgb,var(--gold) 35%,transparent);}
   .gami-pts-lbl{font-size:11.5px;color:var(--txt3);margin-top:2px;}
+  .gami-refresh{flex:0 0 auto;display:inline-flex;align-items:center;justify-content:center;width:34px;height:34px;border-radius:9px;
+    border:1px solid var(--line);background:var(--card);color:var(--txt2);cursor:pointer;transition:background .15s,color .15s,border-color .15s;}
+  .gami-refresh:hover{background:var(--line);color:var(--txt);border-color:var(--line2);}
+  .gami-refresh:disabled{cursor:default;opacity:.85;}
+  .gami-refresh.spin svg{animation:gami-spin .7s linear infinite;}
+  @keyframes gami-spin{to{transform:rotate(360deg);}}
 
   .gami-metric{margin-top:11px;}
   .gami-metric-top{display:flex;justify-content:space-between;align-items:baseline;margin-bottom:5px;}
@@ -727,8 +733,8 @@
     max-width:75%;font-size:15px;line-height:1.5;white-space:pre-wrap;word-wrap:break-word;
     font-family:'Inter','Segoe UI',-apple-system,BlinkMacSystemFont,ui-sans-serif,Roboto,"Helvetica Neue",Arial,sans-serif;
     letter-spacing:.1px;}
-  .msg.k .m-bubble{color:var(--txt);font-size:16px;line-height:1.75;font-weight:400;
-    font-family:'Inter','Segoe UI',-apple-system,BlinkMacSystemFont,ui-sans-serif,Roboto,"Helvetica Neue",Arial,sans-serif;
+  .msg.k .m-bubble{color:var(--txt);font-size:16.5px;line-height:1.62;font-weight:400;
+    font-family:Georgia,'Iowan Old Style','Palatino Linotype','Book Antiqua','Times New Roman',serif;
     letter-spacing:0;}
   /* звёздочка в ответе (как Claude) */
   .m-bubble .ans-star{display:inline-block;width:16px;height:16px;color:#c15f3c;vertical-align:-2px;margin-right:7px;}
@@ -765,20 +771,23 @@
   .qlbl-daily{color:var(--txt3);font-weight:600;}
   .qbar+.qbar{padding-top:2px;}
   /* markdown inside assistant */
-  .m-bubble h1,.m-bubble h2,.m-bubble h3,.m-bubble h4{margin:14px 0 7px;line-height:1.3;font-weight:700;color:var(--txt);}
-  .m-bubble h1{font-size:19px;} .m-bubble h2{font-size:17px;} .m-bubble h3{font-size:15.5px;} .m-bubble h4{font-size:14.5px;}
-  .m-bubble p{margin:8px 0;}
-  .m-bubble ul,.m-bubble ol{margin:8px 0;padding-left:22px;}
-  .m-bubble li{margin:4px 0;}
+  .m-bubble h1,.m-bubble h2,.m-bubble h3,.m-bubble h4{margin:20px 0 9px;line-height:1.28;font-weight:700;color:var(--txt);}
+  .m-bubble h1{font-size:23px;} .m-bubble h2{font-size:19px;} .m-bubble h3{font-size:16.5px;} .m-bubble h4{font-size:15px;}
+  .m-bubble p{margin:11px 0;}
+  .m-bubble ul,.m-bubble ol{margin:11px 0;padding-left:26px;}
+  .m-bubble li{margin:6px 0;padding-left:3px;}
+  .m-bubble ul li::marker{color:var(--txt3);}
   .m-bubble strong{font-weight:700;color:var(--txt);}
   .m-bubble em{font-style:italic;}
-  .m-bubble hr{border:none;border-top:1px solid var(--line);margin:14px 0;}
-  .m-bubble code{background:var(--card);padding:2px 6px;border-radius:5px;font-size:13px;font-family:ui-monospace,Menlo,monospace;}
-  .m-bubble pre{background:var(--card);border:1px solid var(--line);border-radius:10px;padding:12px;overflow-x:auto;margin:10px 0;}
-  .m-bubble pre code{background:none;padding:0;font-size:13px;line-height:1.5;}
-  .m-bubble table{border-collapse:collapse;width:100%;margin:10px 0;font-size:13px;}
-  .m-bubble th,.m-bubble td{border:1px solid var(--line);padding:7px 9px;text-align:left;}
-  .m-bubble th{background:var(--card);font-weight:600;}
+  .m-bubble hr{border:none;border-top:1px solid var(--line);margin:18px 0;}
+  .m-bubble code{background:var(--card);padding:2px 6px;border-radius:5px;font-size:14px;font-family:ui-monospace,Menlo,monospace;}
+  .m-bubble pre{background:var(--card);border:1px solid var(--line);border-radius:10px;padding:12px;overflow-x:auto;margin:12px 0;}
+  .m-bubble pre code{background:none;padding:0;font-size:13.5px;line-height:1.5;}
+  /* таблица — editorial: только горизонтальные линии, шапка подчёркнута */
+  .m-bubble table{border-collapse:collapse;width:100%;margin:16px 0;font-size:15px;}
+  .m-bubble th,.m-bubble td{border:none;border-bottom:1px solid var(--line);padding:10px 16px 10px 0;text-align:left;vertical-align:top;}
+  .m-bubble th{border-bottom:1.5px solid var(--line2);font-weight:700;color:var(--txt2);font-size:13.5px;letter-spacing:.2px;}
+  .m-bubble tr:last-child td{border-bottom:none;}
   .m-bubble a{color:var(--accent);}
   .m-file{font-size:12px;color:var(--txt2);margin-top:6px;display:flex;align-items:center;gap:5px;}
   .msg.me .m-file{color:rgba(255,255,255,.85);}

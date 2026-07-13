@@ -92,15 +92,15 @@ export function applyLiveDash(d) {
   set('mkNoContact', (noContactVal != null ? noContactVal : 0) + '%')
   loadOverviewExtras()
 
-  // Топ по продажам
-  const bySales = d.mopsBySales || []
-  const maxSold = Math.max(1, ...bySales.map((m) => m.sold))
+  // Топ по продажам — по ВЫРУЧКЕ (сортировка, бар и значение)
+  const bySales = [...(d.mopsBySales || [])].sort((a, b) => (b.revenue || 0) - (a.revenue || 0))
+  const maxRev = Math.max(1, ...bySales.map((m) => m.revenue || 0))
   const topEl = document.getElementById('topSalesChart')
   if (topEl) topEl.innerHTML = bySales.map((m, i) => `
     <div class="mop-row">
       <div class="mop-name">${i + 1}. ${escapeHtml(m.name)}</div>
-      <div class="mop-bar-wrap"><div class="mop-bar" style="width:${Math.round(m.sold / maxSold * 100)}%;background:var(--accent);"></div></div>
-      <div class="mop-val">${m.sold} прод.</div>
+      <div class="mop-bar-wrap"><div class="mop-bar" style="width:${Math.round((m.revenue || 0) / maxRev * 100)}%;background:var(--accent);"></div></div>
+      <div class="mop-val">${fmtSum(m.revenue || 0)}</div>
     </div>`).join('') || '<div style="font-size:12px;color:var(--txt3);">Нет данных за месяц</div>'
 
   renderPlanFact(d)
