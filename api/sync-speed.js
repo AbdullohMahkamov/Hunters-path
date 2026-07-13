@@ -294,7 +294,10 @@ export default async function handler(req, res) {
           callNotesSeen++;
           const p = n.params || {};
           const dur = parseInt(p.duration != null ? p.duration : (p.DURATION || 0), 10) || 0;
-          if (dur >= REACHED_SEC) { leadInfo[lid].reachedReal = true; reachedSet++; }
+          if (dur >= REACHED_SEC) {
+            leadInfo[lid].reachedReal = true; reachedSet++;
+            if ((n.created_at || 0) >= dayStart2) leadInfo[lid].reachedRealToday = true; // реальный дозвон ИМЕННО сегодня (звонок сегодня ≥40 сек)
+          }
         }
       } catch (e) { /* пропускаем сбойный лид */ }
     }
@@ -377,8 +380,8 @@ export default async function handler(req, res) {
         D.leads++;                              // ВСЕ лиды с сегодняшней активностью (единый знаменатель)
         D.callsTotal += callsToday;
         if (callsToday > 0) D.calledLeads++;    // сегодня звонили по этому лиду
-        if (L.reachedReal && callsToday > 0) D.reached++; // и был реальный дозвон
-        if (L.reachedReal && callsToday > 0 && L.tasks > 0) D.withTask++; // задачи только среди дозвонившихся
+        if (L.reachedRealToday) D.reached++; // реальный дозвон СЕГОДНЯ (разговор ≥40 сек именно сегодня)
+        if (L.reachedRealToday && L.tasks > 0) D.withTask++; // задачи только среди дозвонившихся сегодня
         D.tasksTotal += (L.tasks || 0);
         D.tasksDone += (L.tasksDone || 0);
         if (L.firstCall && L.firstCall >= dayStart2) {
@@ -396,7 +399,7 @@ export default async function handler(req, res) {
           }
         }
       }
-      // РЕАЛЬНЫЙ ДОЗВОН — только если был разговор дольше 60 сек
+      // РЕАЛЬНЫЙ ДОЗВОН — только если был разговор ≥ REACHED_SEC (40 сек)
       if (L.reachedReal) S.reached++;
       // ДЕТЕКТОР ХАЛТУРЫ (с учётом «мёртвых» номеров):
       if (L.status === LOST_STATUS) {
