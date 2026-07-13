@@ -2,6 +2,8 @@
 // (стримится по токенам, как в VSCode), ПОТОМ выдаёт маркер ===PLAN=== и строго JSON плана.
 // Данные аудита — те же, что у /api/audit-plan. Стриминг — как у /api/chat.
 
+import { retrieveSolutions } from "./knowledge.js"; // коллективный разум: проверенные подходы из общей базы
+
 export const config = { api: { bodyParser: { sizeLimit: "2mb" } } };
 
 async function readCache(key) {
@@ -15,6 +17,32 @@ async function readCache(key) {
     return JSON.parse(d.result);
   } catch (e) { return null; }
 }
+async function resolveOrg(session) {
+  const url = process.env.UPSTASH_REDIS_REST_URL, token = process.env.UPSTASH_REDIS_REST_TOKEN;
+  if (!session || !url || !token) return "hunter";
+  try {
+    const r = await fetch(`${url}/get/session:${session}`, { headers: { Authorization: `Bearer ${token}` } });
+    const d = await r.json();
+    if (d && d.result) { const s = JSON.parse(d.result); return (s && s.org) || "hunter"; }
+  } catch (e) { /* ignore */ }
+  return "hunter";
+}
+// подсказки о проблемах бизнеса — для матчинга решений в общей базе
+function buildProblemHints(dash, speed, auditProblems) {
+  const hints = [];
+  if (auditProblems) for (const p of auditProblems) hints.push(p.name);
+  if (dash && dash.totals) {
+    const t = dash.totals;
+    const nc = t.noContactPctAudit != null ? t.noContactPctAudit : t.noContactPct;
+    if (nc != null && nc >= 30) hints.push("дозвон", "потеря до контакта");
+    const conv = t.convAudit != null ? t.convAudit : t.conv;
+    if (conv != null && conv < 3) hints.push("конверсия", "закрытие сделки");
+  }
+  if (speed && speed.mops) {
+    for (const m of speed.mops) { if (m.medianFirstCallMin != null && m.medianFirstCallMin > 30) { hints.push("скорость дозвона", "первый звонок"); break; } }
+  }
+  return hints;
+}
 
 export default async function handler(req, res) {
   if (req.method !== "POST") { res.status(405).json({ error: "Method not allowed" }); return; }
@@ -22,7 +50,8 @@ export default async function handler(req, res) {
   if (!apiKey) { res.status(500).json({ error: "ANTHROPIC_API_KEY not set" }); return; }
 
   try {
-    const { goal, currentSales, lang, adjust } = req.body || {};
+    const { goal, currentSales, lang, adjust, session } = req.body || {};
+    const org = await resolveOrg(session);
     const dash = await readCache("dashboard");
     const speed = await readCache("speed");
 
@@ -44,6 +73,17 @@ export default async function handler(req, res) {
     }
     if (!auditText.trim()) auditText = "Данных мало. Составь общий план роста продаж.";
 
+    // КОЛЛЕКТИВНЫЙ РАЗУМ: подмешиваем проверенные подходы похожих бизнесов из общей базы
+    let kbBlock = "";
+    try {
+      const hints = buildProblemHints(dash, speed, auditProblems);
+      const solutions = await retrieveSolutions(org, hints, 4);
+      if (solutions.length) {
+        kbBlock = "\n\nПРОВЕРЕННЫЕ ПОДХОДЫ ПОХОЖИХ БИЗНЕСОВ (реальный обезличенный опыт из общей базы; адаптируй те, что подходят к этой ситуации, не копируй слепо):\n" +
+          solutions.map((s, i) => `${i + 1}. Проблема: ${s.problem || (s.problemTags || []).join(", ")}. Подход: ${s.approach}. Итог: ${s.outcome}`).join("\n");
+      }
+    } catch (e) { /* ignore */ }
+
     const SYSTEM = `Ты — коммерческий директор, помогаешь ОБЫЧНОМУ предпринимателю БЕЗ опыта в маркетинге и продажах. Эксперт здесь ТЫ, не он.
 
 ОБРАЩЕНИЕ: обращайся к предпринимателю ТОЛЬКО на «Вы» (вежливо, уважительно). В узбекском — форма «Siz» и вежливые формы глаголов («hisoblang/yozing/qo'shing/yo'naltiring», не «hisobla/yoz»). Язык — грамотный и чистый, уровня C1 (образованный носитель), но простой и понятный, без жаргона.
@@ -56,11 +96,13 @@ export default async function handler(req, res) {
 {"marketing":[{"t":"крупная задача","d":"зачем простыми словами","steps":["конкретное действие 1","действие 2"]}],"sales":[{"t":"...","d":"...","steps":["..."]}]}
 
 Правила плана: разделы marketing (привлечение клиентов) и sales (обработка, дозвон, доведение до покупки, средний чек). 2-3 крупные задачи на раздел, у каждой 2-4 конкретных под-шага — действия, понятные новичку («позвони…», «напиши…», «попроси менеджера…»). Простой язык, привязка к реальным проблемам из аудита. Задачи ведут от точки А к цели.
+
+Если в контексте есть блок «ПРОВЕРЕННЫЕ ПОДХОДЫ ПОХОЖИХ БИЗНЕСОВ» — опирайся на этот реальный опыт (что уже сработало у других), адаптируя под ситуацию этого предпринимателя. Не копируй дословно — бери суть.
 ${lang === "uz" ? "Весь текст (и разбор, и план) — на ЖИВОМ, грамотном узбекском (латиница), как образованный НОСИТЕЛЬ языка, а НЕ дословный перевод с русского. Естественные узбекские слова и обороты, без русизмов и мешанины с русским. Просто и понятно. Кривой/машинный узбекский недопустим." : "Весь текст — ПО-РУССКИ."}`;
 
     const adjustLine = (adjust && String(adjust).trim())
       ? `\n\nПРАВКА ОТ ПРЕДПРИНИМАТЕЛЯ (обязательно учти): ${String(adjust).trim()}` : "";
-    const USER = `АУДИТ БИЗНЕСА (точка А):\n${auditText}\n\nЦЕЛЬ (точка Б): ${goal || "не указана, составь план на рост"}${adjustLine}\n\nРазбери ситуацию вслух, затем ===PLAN=== и JSON.`;
+    const USER = `АУДИТ БИЗНЕСА (точка А):\n${auditText}${kbBlock}\n\nЦЕЛЬ (точка Б): ${goal || "не указана, составь план на рост"}${adjustLine}\n\nРазбери ситуацию вслух, затем ===PLAN=== и JSON.`;
 
     const r = await fetch("https://api.anthropic.com/v1/messages", {
       method: "POST",

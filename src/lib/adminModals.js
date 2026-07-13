@@ -22,12 +22,22 @@ async function loadMopsList() {
     const accounts = d.accounts || [], plans = d.plans || {}, crm = d.mopsFromCrm || []
     let rafflePrize = ''
     try { const rr = await (await fetch('/api/mop?action=get_raffle&session=' + encodeURIComponent(getSession()))).json(); if (rr.ok && rr.raffle) rafflePrize = rr.raffle.prize || '' } catch (e) { /* ignore */ }
+    let niche = ''
+    try { const nr = await (await fetch('/api/knowledge?action=get_niche&session=' + encodeURIComponent(getSession()))).json(); if (nr.ok) niche = nr.niche || '' } catch (e) { /* ignore */ }
     let html = `<div style="background:var(--gold-bg);border:1px solid var(--gold);border-radius:12px;padding:14px;margin-bottom:16px;">
       <div style="font-size:13px;font-weight:700;margin-bottom:8px;">🎁 Приз розыгрыша месяца</div>
       <div style="font-size:11px;color:var(--txt3);margin-bottom:8px;">Видят все МОПы, кто закрыл план. Бюджет до 1 млн.</div>
       <div style="display:flex;gap:8px;">
         <input id="rafflePrizeInput" value="${escapeHtml(rafflePrize)}" placeholder="Напр. AirPods Pro" style="flex:1;padding:9px;border-radius:8px;border:1px solid var(--line2);background:var(--bg2);color:var(--txt);font-size:13px;">
         <button onclick="saveRaffle()" style="padding:9px 14px;border-radius:8px;background:var(--gold);color:#000;border:none;font-weight:600;cursor:pointer;font-size:13px;">Сохранить</button>
+      </div>
+    </div>
+    <div style="background:var(--card);border:1px solid var(--line2);border-radius:12px;padding:14px;margin-bottom:16px;">
+      <div style="font-size:13px;font-weight:700;margin-bottom:6px;">🧠 Ниша бизнеса</div>
+      <div style="font-size:11px;color:var(--txt3);margin-bottom:8px;">Для коллективного разума — подбирать проверенные решения похожих бизнесов. Напр.: «онлайн-курсы», «услуги ремонта», «розница одежды».</div>
+      <div style="display:flex;gap:8px;">
+        <input id="nicheInput" value="${escapeHtml(niche)}" placeholder="Ниша бизнеса" style="flex:1;padding:9px;border-radius:8px;border:1px solid var(--line2);background:var(--bg2);color:var(--txt);font-size:13px;">
+        <button onclick="saveNiche()" style="padding:9px 14px;border-radius:8px;background:var(--accent);color:#fff;border:none;font-weight:600;cursor:pointer;font-size:13px;">Сохранить</button>
       </div>
     </div>
     <div style="background:var(--card);border:1px solid var(--line2);border-radius:12px;padding:14px;margin-bottom:16px;">
@@ -106,6 +116,12 @@ async function deleteMopAccount(login) {
   if (!confirm('Удалить аккаунт ' + login + '?')) return
   await fetch('/api/mop', { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ session: getSession(), action: 'delete', login }) })
   loadMopsList()
+}
+async function saveNiche() {
+  const inp = $('nicheInput'); if (!inp) return
+  const btn = inp.nextElementSibling
+  await fetch('/api/knowledge', { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ session: getSession(), action: 'set_niche', niche: inp.value.trim() }) })
+  if (btn) { const old = btn.textContent; btn.textContent = '✓'; setTimeout(() => { btn.textContent = old }, 1200) }
 }
 function toggleEditMop(i) {
   const el = $('editMop_' + i)
@@ -562,7 +578,7 @@ export function initAdminModals() {
   if (_inited) return
   _inited = true
   Object.assign(window, {
-    openMopsModal, closeMopsModal, loadMopsList, createMopAccount, deleteMopAccount, setMopRole, saveRaffle, setMopPlan, toggleEditMop, saveMopAccount,
+    openMopsModal, closeMopsModal, loadMopsList, createMopAccount, deleteMopAccount, setMopRole, saveRaffle, setMopPlan, toggleEditMop, saveMopAccount, saveNiche,
     openClientsModal, closeClientsModal, loadClientsList, deleteClient, openClientForm, cInput, probeClient, onPipeChange, saveClient,
     openGamiModal, closeGamiModal, gamiSwitchTab, saveGami, addCaseItem, removeCaseItem, gamiCaseSum, gamiDeliver, resetGami, resetEconomy, loadGamiBalances, grantPoints, zeroPoints, resetDay, clearInventory,
   })

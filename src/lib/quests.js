@@ -2,7 +2,7 @@
 // Императивный: рендер в #filters/#stages/#dopSection/#dopQuests, генератор в #genOverlay/#genBody.
 // Эндпоинт /api/generate-quests не менялся.
 import { state, save, getGoal } from './appState.js'
-import { getRole } from './session.js'
+import { getRole, getSession } from './session.js'
 import { tr } from './shellI18n.js'
 import { escapeHtml } from './format.js'
 import { STAGES, ALL_QUESTS, RANKS, svg, stageDone, stageUnlocked } from './questsData.js'
@@ -176,6 +176,12 @@ function renderCustomPlan() {
           ${getRole() !== 'rop' ? `<button class="boss-btn ready" onclick="helpCustomTask('${q.id}')">${uz ? 'Butun vazifa bo‘yicha yordam' : 'Помощь по всей задаче'}</button>` : ''}
         </div>`
       }
+      // отчёт при закрытии задачи (когда все шаги выполнены) — питает коллективный разум
+      if (on && getRole() !== 'rop') {
+        body += q.report
+          ? `<div class="task-report done">✓ ${uz ? 'Hisobot yuborildi' : 'Отчёт отправлен'}</div>`
+          : `<button class="task-report-btn" onclick="openTaskReport('${q.id}')">📝 ${uz ? 'Hisobot qoldirish (vazifani yopish)' : 'Оставить отчёт (закрыть задачу)'}</button>`
+      }
       const card = document.createElement('div')
       card.className = 'stage' + (on ? ' done' : '') + (isOpen ? ' open' : '')
       card.innerHTML = `
@@ -214,6 +220,52 @@ function helpCustomTask(id) {
   goChat()
   const stepsTxt = (q.steps && q.steps.length) ? (' Под-задачи: ' + q.steps.join('; ') + '.') : ''
   ask('Помоги выполнить задачу «' + q.t + '». ' + (q.d || '') + stepsTxt + ' Дай конкретные пошаговые действия и готовые материалы, чтобы я закрыл её.')
+}
+// Отчёт при закрытии задачи → сохраняем в задаче + отправляем в коллективный разум (/api/knowledge).
+function openTaskReport(qid) {
+  const cp = state.customPlan; if (!cp) return
+  const q = [...(cp.marketing || []), ...(cp.sales || [])].find((x) => x.id === qid); if (!q) return
+  const uz = state.lang === 'uz'
+  const section = (cp.marketing || []).includes(q) ? 'marketing' : 'sales'
+  const ov = document.createElement('div')
+  ov.className = 'plan-confirm-ov'
+  ov.innerHTML = `<div class="plan-confirm-box" style="max-width:440px;">
+    <div class="plan-confirm-t">${uz ? 'Vazifa hisoboti' : 'Отчёт по задаче'}</div>
+    <div style="font-size:12.5px;color:var(--txt3);margin:-4px 0 14px;">${escapeHtml(q.t)}</div>
+    <label class="tr-lbl">${uz ? 'Nima qildingiz?' : 'Что вы сделали?'}</label>
+    <textarea id="tr_done" class="tr-ta" rows="3" placeholder="${uz ? 'Qisqacha: nima va qanday qildingiz' : 'Коротко: что и как сделали'}"></textarea>
+    <label class="tr-lbl">${uz ? 'Qanday natija?' : 'Какой результат?'}</label>
+    <textarea id="tr_res" class="tr-ta" rows="2" placeholder="${uz ? 'Nima oʻzgardi' : 'Что изменилось'}"></textarea>
+    <label class="tr-lbl">${uz ? 'Ishladimi?' : 'Сработало?'}</label>
+    <div class="tr-toggle">
+      <button type="button" class="tr-opt" data-v="1">${uz ? '👍 Ha, ishladi' : '👍 Да, сработало'}</button>
+      <button type="button" class="tr-opt" data-v="0">${uz ? '👎 Unchalik emas' : '👎 Не очень'}</button>
+    </div>
+    <div class="plan-confirm-actions" style="margin-top:16px;">
+      <button class="plan-btn ghost" data-act="cancel">${uz ? 'Bekor' : 'Отмена'}</button>
+      <button class="plan-btn primary" data-act="save">${uz ? 'Yuborish va yopish' : 'Отправить и закрыть'}</button>
+    </div>
+  </div>`
+  let positive = null
+  const opts = ov.querySelectorAll('.tr-opt')
+  opts.forEach((o) => { o.onclick = () => { positive = o.dataset.v === '1'; opts.forEach((x) => x.classList.remove('on')); o.classList.add('on') } })
+  const close = () => ov.remove()
+  ov.addEventListener('click', (e) => { if (e.target === ov) close() })
+  ov.querySelector('[data-act="cancel"]').onclick = close
+  ov.querySelector('[data-act="save"]').onclick = () => {
+    const whatDone = ov.querySelector('#tr_done').value.trim()
+    const result = ov.querySelector('#tr_res').value.trim()
+    if (!whatDone) { ov.querySelector('#tr_done').focus(); return }
+    if (positive == null) { alert(uz ? 'Ishladimi yoki yoʻqmi belgilang' : 'Отметьте: сработало или нет'); return }
+    q.report = { whatDone, result, positive, at: Date.now() }
+    save(); renderStages(); close()
+    // в общую базу попадут только положительные (решает бэкенд)
+    fetch('/api/knowledge', {
+      method: 'POST', headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({ session: getSession(), action: 'submit', taskTitle: q.t, section, whatDone, result, positive }),
+    }).catch(() => {})
+  }
+  document.body.appendChild(ov)
 }
 function wizRegenerate() { if (!confirm('Пересобрать план заново? Текущие задачи и прогресс по ним сбросятся.')) return; state.customPlan = null; state.done = {}; save(); if (window.openWizard) window.openWizard() }
 function wizReaudit() { if (!confirm('Все задачи выполнены! Сделать новый аудит и получить следующий план? (текущие задачи заменятся новыми)')) return; state.customPlan = null; state.done = {}; save(); if (window.openWizard) window.openWizard() }
@@ -329,7 +381,7 @@ export function initQuests() {
   if (_inited) return
   _inited = true
   Object.assign(window, {
-    toggleStage, toggleQuest, toggleCpCard, toggleCpStep, toggleCustomTask, helpCustomStep, helpCustomTask,
+    toggleStage, toggleQuest, toggleCpCard, toggleCpStep, toggleCustomTask, helpCustomStep, helpCustomTask, openTaskReport,
     wizRegenerate, wizReaudit, fightBoss, resetHunt, toggleDop, removeDop,
     openGenerator, closeGenerator, acceptGen, skipGen, askNext, helpQuest,
   })
