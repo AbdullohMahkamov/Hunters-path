@@ -375,12 +375,13 @@
   .sec-toggle{display:flex;align-items:center;gap:10px;padding:9px 10px;border-radius:9px;font-size:14.5px;
     color:var(--txt);cursor:pointer;border:none;background:transparent;width:100%;text-align:left;font-family:inherit;font-weight:500;}
   /* Советник — главная кнопка (сердце продукта), визуально доминирует */
-  .side-chat-home{display:flex;align-items:center;gap:10px;padding:11px 12px;border-radius:10px;font-size:15px;
-    color:#fff;cursor:pointer;border:none;width:100%;text-align:left;font-family:inherit;font-weight:600;
-    background:var(--accent);margin-bottom:8px;transition:filter .15s;box-shadow:0 1px 4px rgba(0,0,0,.08);}
-  .side-chat-home:hover{filter:brightness(1.06);}
-  .side-chat-home svg{width:18px;height:18px;flex:0 0 auto;}
-  .side-chat-home.active{box-shadow:0 0 0 2px var(--bg2),0 0 0 4px var(--accent);}
+  .side-chat-home{display:flex;align-items:center;gap:10px;padding:10px 12px;border-radius:10px;font-size:14.5px;
+    color:var(--txt);cursor:pointer;border:none;width:100%;text-align:left;font-family:inherit;font-weight:500;
+    background:transparent;margin-bottom:2px;transition:background .15s,color .15s;}
+  .side-chat-home svg{width:18px;height:18px;flex:0 0 auto;color:var(--txt3);transition:color .15s;}
+  .side-chat-home:hover{background:var(--card2);}
+  .side-chat-home.active{background:var(--accent-bg);color:var(--accent);font-weight:600;}
+  .side-chat-home.active svg{color:var(--accent);}
   .sec-toggle:hover{background:var(--card2);}
   .sec-toggle svg.lead{width:17px;height:17px;color:var(--txt2);flex:0 0 auto;}
   .sec-toggle .chev{margin-left:auto;width:15px;height:15px;color:var(--txt3);transition:transform .18s;}
