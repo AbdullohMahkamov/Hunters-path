@@ -81,6 +81,23 @@ export default async function handler(req, res) {
         res.status(200).json({ ok: true, deleted: true });
         return;
       }
+      // изменить логин/код/имя существующего аккаунта (без удаления и пересоздания)
+      if (req.method === "POST" && req.body && req.body.action === "update_account") {
+        const { login, newLogin, password, name } = req.body;
+        const accounts = JSON.parse((await redisGet("mops:accounts")) || "[]");
+        const a = accounts.find(x => (x.login || "").toLowerCase() === String(login || "").toLowerCase());
+        if (!a) { res.status(200).json({ ok: false, error: "Аккаунт не найден" }); return; }
+        const nl = (newLogin != null ? String(newLogin) : "").trim();
+        if (nl && nl.toLowerCase() !== (a.login || "").toLowerCase()) {
+          if (accounts.find(x => (x.login || "").toLowerCase() === nl.toLowerCase())) { res.status(200).json({ ok: false, error: "Такой логин уже есть" }); return; }
+          a.login = nl;
+        }
+        if (password != null && String(password) !== "") a.password = String(password);
+        if (name != null && String(name).trim() !== "") a.name = String(name).trim();
+        await redisSet("mops:accounts", accounts);
+        res.status(200).json({ ok: true, saved: true });
+        return;
+      }
       // задать личный план МОПу
       if (req.method === "POST" && req.body && req.body.action === "set_plan") {
         const { mopId, plan } = req.body;

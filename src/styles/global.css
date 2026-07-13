@@ -252,7 +252,7 @@
     padding-top:10px;padding-bottom:9px;margin-bottom:12px;
     box-shadow:0 8px 14px -10px rgba(0,0,0,.22);}
   /* десктоп: во всю ширину #dashView, у самого верха (как сайдбар); padding 18 сверху */
-  body.shell .dtabs{margin:-24px -28px 12px;padding:18px 28px 9px;box-sizing:border-box;}
+  body.shell .dtabs{margin:0 -28px 12px;padding:18px 28px 9px;box-sizing:border-box;}
   .dtab{padding:9px 14px;font-size:13.5px;font-weight:500;color:var(--txt2);background:none;border:none;
     border-bottom:2px solid transparent;cursor:pointer;margin-bottom:-1px;}
   .dtab.on{color:var(--txt);border-bottom-color:var(--txt);}
@@ -337,6 +337,7 @@
   body.shell:not(.sec-open) #chatView .chat-main{display:flex;}
   /* разделы: справа от сайдбара, во весь экран */
   body.shell #dashView,body.shell #mapView,body.shell #tgView{position:fixed;left:256px;right:0;top:0;bottom:0;display:none;overflow-y:auto;padding:24px 28px 40px!important;margin:0!important;max-width:none!important;z-index:20;background:var(--bg);}
+  body.shell #dashView{padding-top:0!important;} /* без верхнего паддинга — панель вкладок сама у верха */
   body.shell #dashView.active,body.shell #mapView.active,body.shell #tgView.active{display:block;}
   @media(max-width:700px){
     body.shell .chat-sidebar{transform:translateX(-100%)!important;transition:transform .25s;}

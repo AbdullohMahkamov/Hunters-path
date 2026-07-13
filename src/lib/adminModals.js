@@ -47,10 +47,20 @@ async function loadMopsList() {
     </div>`
     if (accounts.length) {
       html += '<div style="font-size:13px;font-weight:700;margin-bottom:8px;">Аккаунты МОПов:</div>'
-      html += accounts.map((a) => `<div style="background:var(--card);border:1px solid var(--line);border-radius:10px;padding:12px;margin-bottom:8px;">
-        <div style="display:flex;justify-content:space-between;align-items:center;">
+      html += accounts.map((a, i) => `<div style="background:var(--card);border:1px solid var(--line);border-radius:10px;padding:12px;margin-bottom:8px;">
+        <div style="display:flex;justify-content:space-between;align-items:flex-start;gap:8px;">
           <div><b style="font-size:14px;">${escapeHtml(a.name || a.login)}</b><div style="font-size:12px;color:var(--txt3);">логин: ${escapeHtml(a.login)}</div><div style="font-size:12px;color:var(--txt2);margin-top:2px;">код: <span style="font-family:ui-monospace,monospace;font-weight:700;color:var(--accent);user-select:all;cursor:text;">${escapeHtml(a.password || '—')}</span></div></div>
-          <button onclick="deleteMopAccount('${escapeHtml(a.login)}')" style="padding:6px 10px;border-radius:8px;background:var(--red-bg);color:var(--red);border:none;font-size:12px;cursor:pointer;">Удалить</button>
+          <div style="display:flex;gap:6px;flex:0 0 auto;">
+            <button onclick="toggleEditMop(${i})" style="padding:6px 10px;border-radius:8px;background:var(--card2);color:var(--txt2);border:1px solid var(--line2);font-size:12px;cursor:pointer;">Изменить</button>
+            <button onclick="deleteMopAccount('${escapeHtml(a.login)}')" style="padding:6px 10px;border-radius:8px;background:var(--red-bg);color:var(--red);border:none;font-size:12px;cursor:pointer;">Удалить</button>
+          </div>
+        </div>
+        <div id="editMop_${i}" style="display:none;margin-top:10px;padding-top:10px;border-top:1px dashed var(--line);">
+          <div style="font-size:11px;color:var(--txt3);margin-bottom:6px;">Изменить данные аккаунта:</div>
+          <input id="editName_${i}" value="${escapeHtml(a.name || '')}" placeholder="Имя" style="width:100%;padding:8px;border-radius:7px;border:1px solid var(--line2);background:var(--bg2);color:var(--txt);font-size:13px;margin-bottom:6px;box-sizing:border-box;">
+          <input id="editLogin_${i}" value="${escapeHtml(a.login || '')}" placeholder="Логин" style="width:100%;padding:8px;border-radius:7px;border:1px solid var(--line2);background:var(--bg2);color:var(--txt);font-size:13px;margin-bottom:6px;box-sizing:border-box;">
+          <input id="editPass_${i}" value="${escapeHtml(a.password || '')}" placeholder="Код (пароль)" style="width:100%;padding:8px;border-radius:7px;border:1px solid var(--line2);background:var(--bg2);color:var(--txt);font-size:13px;margin-bottom:8px;box-sizing:border-box;">
+          <button onclick="saveMopAccount('${escapeHtml(a.login)}',${i})" style="width:100%;padding:9px;border-radius:7px;background:var(--accent);color:#fff;border:none;font-weight:600;font-size:13px;cursor:pointer;">Сохранить изменения</button>
         </div>
         <div style="display:flex;gap:8px;margin-top:10px;align-items:center;">
           <span style="font-size:12px;color:var(--txt3);">Роль:</span>
@@ -96,6 +106,19 @@ async function deleteMopAccount(login) {
   if (!confirm('Удалить аккаунт ' + login + '?')) return
   await fetch('/api/mop', { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ session: getSession(), action: 'delete', login }) })
   loadMopsList()
+}
+function toggleEditMop(i) {
+  const el = $('editMop_' + i)
+  if (el) el.style.display = el.style.display === 'none' ? 'block' : 'none'
+}
+async function saveMopAccount(login, i) {
+  const newLogin = ($('editLogin_' + i).value || '').trim()
+  const password = $('editPass_' + i).value
+  const name = ($('editName_' + i).value || '').trim()
+  if (!newLogin) { alert('Логин не может быть пустым'); return }
+  const r = await fetch('/api/mop', { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ session: getSession(), action: 'update_account', login, newLogin, password, name }) })
+  const d = await r.json()
+  if (d.ok) { loadMopsList() } else { alert(d.error || 'Ошибка сохранения') }
 }
 async function setMopRole(login, mopRole) {
   await fetch('/api/mop', { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ session: getSession(), action: 'set_role', login, mopRole }) })
@@ -539,7 +562,7 @@ export function initAdminModals() {
   if (_inited) return
   _inited = true
   Object.assign(window, {
-    openMopsModal, closeMopsModal, loadMopsList, createMopAccount, deleteMopAccount, setMopRole, saveRaffle, setMopPlan,
+    openMopsModal, closeMopsModal, loadMopsList, createMopAccount, deleteMopAccount, setMopRole, saveRaffle, setMopPlan, toggleEditMop, saveMopAccount,
     openClientsModal, closeClientsModal, loadClientsList, deleteClient, openClientForm, cInput, probeClient, onPipeChange, saveClient,
     openGamiModal, closeGamiModal, gamiSwitchTab, saveGami, addCaseItem, removeCaseItem, gamiCaseSum, gamiDeliver, resetGami, resetEconomy, loadGamiBalances, grantPoints, zeroPoints, resetDay, clearInventory,
   })
