@@ -21,7 +21,7 @@ export default async function handler(req, res) {
   if (!apiKey) { res.status(500).json({ error: "ANTHROPIC_API_KEY not set" }); return; }
 
   try {
-    const { goal, currentSales, lang } = req.body || {};
+    const { goal, currentSales, lang, adjust } = req.body || {};
 
     // Живой аудит: проблемы + дисциплина + KPI (проблемы считаются за ~4 месяца в sync.js)
     const dash = await readCache("dashboard");
@@ -68,7 +68,10 @@ export default async function handler(req, res) {
 {"marketing":[{"t":"крупная задача","d":"зачем это, 1 предложение","steps":["под-шаг 1","под-шаг 2"]}],"sales":[{"t":"...","d":"...","steps":["..."]}]}
 ${lang === "uz" ? "Пиши ПО-УЗБЕКСКИ (латиница)." : "Пиши ПО-РУССКИ."}`;
 
-    const USER = `АУДИТ БИЗНЕСА (точка А):\n${auditText}\n\nЦЕЛЬ — куда хочет дойти (точка Б): ${goal || "не указана, составь план на рост"}\n\nСоставь план задач с под-шагами (JSON). Задачи должны вести от точки А к точке Б.`;
+    const adjustLine = (adjust && String(adjust).trim())
+      ? `\n\nПРАВКА ОТ ПРЕДПРИНИМАТЕЛЯ (обязательно учти при пересоставлении плана): ${String(adjust).trim()}`
+      : "";
+    const USER = `АУДИТ БИЗНЕСА (точка А):\n${auditText}\n\nЦЕЛЬ — куда хочет дойти (точка Б): ${goal || "не указана, составь план на рост"}${adjustLine}\n\nСоставь план задач с под-шагами (JSON). Задачи должны вести от точки А к точке Б.`;
 
     const r = await fetch("https://api.anthropic.com/v1/messages", {
       method: "POST",
