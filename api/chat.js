@@ -46,7 +46,7 @@ async function resolveSessionInfo(session) {
 
 function num(n){ return (n==null?0:n).toLocaleString("ru"); }
 
-function liveBlock(d, fin, realGoal, workdays) {
+function liveBlock(d, fin, realGoal, workdays, tg) {
   if (!d || !d.totals) {
     return "\n\nЖИВЫЕ ДАННЫЕ amoCRM: пока не загружены (кэш пуст). Попроси нажать «Обновить из amoCRM» в дашборде.";
   }
@@ -138,6 +138,29 @@ function liveBlock(d, fin, realGoal, workdays) {
     }
   }
 
+  // --- TELEGRAM (переписка с клиентами) ---
+  if (tg && (tg.digest || tg.seg)) {
+    s += `\nTELEGRAM (переписка с клиентами):\n`;
+    const g = tg.digest;
+    if (g) {
+      if (g.totalChats != null) {
+        s += `• Диалогов (вчера): ${g.totalChats}`;
+        if (g.priceCount != null) s += ` · спрашивали цену: ${g.priceCount}`;
+        if (g.objectionCount != null) s += ` · возражений: ${g.objectionCount}`;
+        if (g.installmentCount != null) s += ` · про рассрочку: ${g.installmentCount}`;
+        if (g.noReplyChats != null) s += ` · остались без ответа: ${g.noReplyChats}`;
+        s += `\n`;
+      }
+      if (g.summary) s += `Сводка по переписке: ${g.summary}\n`;
+      if (Array.isArray(g.tips) && g.tips.length) s += `Что улучшить в переписке: ${g.tips.join("; ")}\n`;
+    }
+    const stats = tg.seg && tg.seg.stats;
+    if (stats && stats.segments && Object.keys(stats.segments).length) {
+      const parts = Object.entries(stats.segments).map(([k, v]) => `${k}: ${v}`);
+      s += `Сегменты клиентов в Telegram: ${parts.join(", ")}${stats.total ? ` (всего ${stats.total})` : ""}\n`;
+    }
+  }
+
   s += `\n(Данные на ${new Date(d.updatedAt).toLocaleDateString("ru")}, кэш обновляется по кнопке/раз в час.)`;
   return s;
 }
@@ -164,7 +187,10 @@ export default async function handler(req, res) {
     const speed = await readCache("speed", org);
     if (cache && speed) cache.speed = speed;
     const fin = await readCache(org === "hunter" ? "fin:v2:current" : `${org}:fin:v2:current`, null);
-    const live = liveBlock(cache, fin, GOAL, workdays);
+    // ДАННЫЕ TELEGRAM: ночной дайджест (общий) + сегменты клиентов (ключ уже org-scoped)
+    const tgDigest = await readCache("tg:digest", null);
+    const tgSeg = await readCache(`tgseg:${org}`, null);
+    const live = liveBlock(cache, fin, GOAL, workdays, { digest: tgDigest, seg: tgSeg });
 
     // === УМНЫЕ ВОПРОСЫ: AI находит проблемы и предлагает, что спросить ===
     if (action === "smart-questions") {
@@ -227,7 +253,7 @@ export default async function handler(req, res) {
 
 ФОРМАТ: коротко и по делу. Если проблем несколько — списком по приоритету (сначала то, что сильнее всего бьёт по деньгам). Не пиши простыни — владелец занят.
 
-У ТЕБЯ ЕСТЬ ЖИВЫЕ ДАННЫЕ (см. блок ниже): продажи, менеджеры, дисциплина, дозвон, скорость воронки, причины потерь, источники рекламы, финансы. Используй ВСЁ это, чтобы находить связи и корень проблемы. Например: продажи упали → смотри дозвон, смотри у кого из МОПов просадка, смотри источники — и покажи причинно-следственную цепочку.
+У ТЕБЯ ЕСТЬ ЖИВЫЕ ДАННЫЕ (см. блок ниже): продажи, менеджеры, дисциплина, дозвон, скорость воронки, причины потерь, источники рекламы, финансы, а также ПЕРЕПИСКА С КЛИЕНТАМИ В TELEGRAM (сколько диалогов, кто спрашивал цену, возражения, кто остался без ответа, сегменты клиентов, сводка и советы по переписке). Используй ВСЁ это, чтобы находить связи и корень проблемы. Если спрашивают про Telegram/переписку/клиентов в мессенджере — отвечай по этому блоку. Например: продажи упали → смотри дозвон, смотри у кого из МОПов просадка, смотри источники — и покажи причинно-следственную цепочку.
 
 ДИАГНОСТИКА (когда спрашивают «что не так» / «почему просели» / «чего не хватает»):
 - Прогони все метрики, найди 2-3 главные дыры (те, что сильнее всего мешают цели).
