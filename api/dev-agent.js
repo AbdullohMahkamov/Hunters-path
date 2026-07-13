@@ -199,7 +199,8 @@ export async function getVerifiedFunnel(org) {
   const avgCheckMedian = t.avgCheckMedian != null ? t.avgCheckMedian : null;
   const dealCycleDays = t.dealCycleMedianDays != null ? t.dealCycleMedianDays : null;
   const paidReceiptCount = t.paidReceiptCount != null ? t.paidReceiptCount : null;
-  const called = speed && Array.isArray(speed.mops) ? speed.mops.reduce((s, m) => s + (m.calledLeads || 0), 0) : null;
+  // месячный «дозвон/разговор» = сумма reached по МОПам (звонок ≥40с). Чистого месячного «набрали»
+  // в кэше нет (calledLeads только в дневных), поэтому промежуточный этап «звонили» не строим.
   const reached = speed && Array.isArray(speed.mops) ? speed.mops.reduce((s, m) => s + (m.reached || 0), 0) : null;
   const tel = speed && speed.telephony;
   const telSuspicious = !!(tel && tel.total >= 20 && tel.noCallButActivePct >= cfg.noCallThreshold);
@@ -209,14 +210,12 @@ export async function getVerifiedFunnel(org) {
   const pct = (a, b) => (a != null && b) ? +(a / b * 100).toFixed(1) : null;
   const minTrust = (x, y) => [x, y].includes("insufficient") ? "insufficient" : ([x, y].includes("suspicious") ? "suspicious" : "verified");
   const tLeads = leads == null ? "insufficient" : (lowLeads ? "insufficient" : "verified");
-  const tCalled = telSuspicious ? "suspicious" : (called == null ? "insufficient" : (lowLeads ? "insufficient" : "verified"));
   const tReached = telSuspicious ? "suspicious" : (reached == null ? "insufficient" : (lowLeads ? "insufficient" : "verified"));
   const tSold = sold == null ? "insufficient" : (lowLeads ? "insufficient" : "verified");
   // деньги по этапам: до сделки денег нет, на сделке — выручка (бюджет+доплаты)
   const stages = [
     { stage: "Лиды", value: leads, money: null, trust: tLeads },
-    { stage: "Звонили (набрали)", value: called, money: null, trust: tCalled, transitionFromPrev: { name: "лиды → обзвон", pct: pct(called, leads), trust: minTrust(tLeads, tCalled) } },
-    { stage: "Дозвон (реальный разговор ≥40с)", value: reached, money: null, trust: tReached, transitionFromPrev: { name: "обзвон → дозвон", pct: pct(reached, called), trust: minTrust(tCalled, tReached) } },
+    { stage: "Дозвон / разговор (≥40с)", value: reached, money: null, trust: tReached, transitionFromPrev: { name: "лид → дозвон", pct: pct(reached, leads), trust: minTrust(tLeads, tReached) } },
     { stage: "Сделка выиграна (Sotildi)", value: sold, money: revenue, trust: tSold, transitionFromPrev: { name: "разговор → сделка", pct: pct(sold, reached), trust: minTrust(tReached, tSold) } },
     { stage: "Оплачено", value: null, money: null, trust: "insufficient", transitionFromPrev: { name: "сделка → оплата", pct: null, trust: "insufficient", note: "в amoCRM клиента нет отдельного поля/статуса оплаты — «выиграно» ≠ «оплачено». Инфо-сигнал: сделок с чеком To'lov cheki = " + (paidReceiptCount != null ? paidReceiptCount : "н/д") } },
   ];
