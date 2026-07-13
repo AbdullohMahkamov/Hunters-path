@@ -105,6 +105,7 @@ export function renderStages() {
       <div class="s-body">${body}</div>`
     wrap.appendChild(card)
   })
+  renderTaskHistory()
 }
 
 function renderCustomPlan() {
@@ -202,7 +203,34 @@ function renderCustomPlan() {
       wrap.appendChild(card)
     })
   })
+  renderTaskHistory()
 }
+
+// История выполненных задач (с отчётами) — переживает пересборку плана. РОП видит только продажи.
+function renderTaskHistory() {
+  const wrap = $('stages'); if (!wrap) return
+  let hist = state.taskHistory || []
+  if (getRole() === 'rop') hist = hist.filter((h) => h.section === 'sales')
+  if (!hist.length) return
+  const uz = state.lang === 'uz'
+  const open = !!state.histOpen
+  const card = document.createElement('div')
+  card.className = 'hist-card'
+  let body = ''
+  if (open) {
+    body = '<div class="hist-body">' + hist.map((h) => {
+      const date = new Date(h.at).toLocaleString('ru-RU', { day: '2-digit', month: '2-digit', year: 'numeric', hour: '2-digit', minute: '2-digit' })
+      return `<div class="hist-item">
+        <div class="hist-item-top"><span class="hist-badge ${h.positive ? 'ok' : 'no'}">${h.positive ? '👍' : '👎'}</span><b>${escapeHtml(h.taskTitle)}</b><span class="hist-date">${date}</span></div>
+        ${h.whatDone ? `<div class="hist-d"><span>${uz ? 'Qildim' : 'Сделано'}:</span> ${escapeHtml(h.whatDone)}</div>` : ''}
+        ${h.result ? `<div class="hist-d"><span>${uz ? 'Natija' : 'Результат'}:</span> ${escapeHtml(h.result)}</div>` : ''}
+      </div>`
+    }).join('') + '</div>'
+  }
+  card.innerHTML = `<div class="hist-head" onclick="toggleHist()"><span>📋 ${uz ? 'Bajarilgan vazifalar tarixi' : 'История выполненных задач'} (${hist.length})</span><span class="hist-chev">${open ? '▴' : '▾'}</span></div>${body}`
+  wrap.appendChild(card)
+}
+function toggleHist() { state.histOpen = !state.histOpen; save(); renderStages() }
 
 function toggleStage(id) { state.open[id] = !state.open[id]; save(); renderStages() }
 function toggleQuest(id, e) { e.stopPropagation(); state.done[id] = !state.done[id]; save(); renderHeader(); renderStages() }
@@ -261,6 +289,9 @@ function openTaskReport(qid) {
     if (!whatDone) { ov.querySelector('#tr_done').focus(); return }
     if (positive == null) { alert(uz ? 'Ishladimi yoki yoʻqmi belgilang' : 'Отметьте: сработало или нет'); return }
     q.report = { whatDone, result, positive, at: Date.now() }
+    if (!Array.isArray(state.taskHistory)) state.taskHistory = []
+    state.taskHistory.unshift({ id: 'h' + Date.now(), taskTitle: q.t, section, whatDone, result, positive, at: Date.now() })
+    state.taskHistory = state.taskHistory.slice(0, 200)
     save(); renderStages(); close()
     // в общую базу попадут только положительные (решает бэкенд)
     fetch('/api/knowledge', {
@@ -384,7 +415,7 @@ export function initQuests() {
   if (_inited) return
   _inited = true
   Object.assign(window, {
-    toggleStage, toggleQuest, toggleCpCard, toggleCpStep, toggleCustomTask, helpCustomStep, helpCustomTask, openTaskReport,
+    toggleStage, toggleQuest, toggleCpCard, toggleCpStep, toggleCustomTask, helpCustomStep, helpCustomTask, openTaskReport, toggleHist,
     wizRegenerate, wizReaudit, fightBoss, resetHunt, toggleDop, removeDop,
     openGenerator, closeGenerator, acceptGen, skipGen, askNext, helpQuest,
   })
