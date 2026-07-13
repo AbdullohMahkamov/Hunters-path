@@ -83,6 +83,7 @@ export default function AppShell({ onLogout }) {
       // мосты для императивных модулей (чат/скелеты) → React
       window.__forceShellRender = () => force((n) => n + 1)
       window.__switchToChat = () => applyTab('chat')
+      window.__changeLang = changeLang
       window.toggleSidebar = toggleSidebar
       window.newChat = newChat
       window.openSettings = () => setSettingsOpen(true)
