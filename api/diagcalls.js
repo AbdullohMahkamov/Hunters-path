@@ -82,81 +82,65 @@ export default async function handler(req, res) {
     for (let i = 0; i < pool.length && sample.length < MAX_SAMPLE; i += step) sample.push(pool[i]);
 
     // 2) Сэмплируем лиды: call-notes на ЛИДЕ и (если на лиде дозвона нет) на КОНТАКТЕ
-    const noteTypeHist = {};
-    const callParamKeys = {};
     const durLead = { missing: 0, zero: 0, s1_9: 0, s10_39: 0, s40_119: 0, s120plus: 0 };
-    const durContact = { missing: 0, zero: 0, s1_9: 0, s10_39: 0, s40_119: 0, s120plus: 0 };
-    let leadCallNotes = 0, contactCallNotes = 0;
-    let leadsSampled = 0;
-    let leadsWithNoCallNote = 0;      // ГЛАВНОЕ: лиды вообще без call-ноты (ни на лиде, ни на контакте)
-    let leadsWithAnyLeadCall = 0, leadsWithAnyContactCall = 0;
-    let reachedOnLead = 0, reachedOnContact = 0, reachedEither = 0;
+    const callStatusHist = {};   // call_status → {count, dur0, durPos, sumDur}
+    const callResultHist = {};   // call_result → count
+    let leadCallNotes = 0;
+    let leadsSampled = 0, leadsWithAnyLeadCall = 0;
+    // дозвон при разных порогах длительности (по лидам, за 30 дней)
+    let reach_pos = 0, reach_10 = 0, reach_15 = 0, reach_40 = 0; // dur>0, ≥10, ≥15, ≥40
 
     for (const row of sample) {
       if (Date.now() - startedAt > TOTAL_BUDGET) break;
       leadsSampled++;
-      let hadLeadCall = false, hadContactCall = false, reachL = false, reachC = false;
+      let had = false, mx = -1; // mx — макс длительность разговора по лиду
       try {
         const r = await fetch(`${base}/leads/${row.id}/notes?limit=250`, { headers: H });
         if (r.ok) {
           const d = await r.json();
           const notes = (d._embedded && d._embedded.notes) || [];
           for (const n of notes) {
-            noteTypeHist[n.note_type] = (noteTypeHist[n.note_type] || 0) + 1;
             if (!isCall(n.note_type)) continue;
-            leadCallNotes++; hadLeadCall = true;
+            leadCallNotes++; had = true;
             const p = n.params || {};
-            for (const k of Object.keys(p)) callParamKeys[k] = (callParamKeys[k] || 0) + 1;
             const present = p.duration != null || p.DURATION != null;
             const dur = durOf(p); bucket(durLead, dur, present);
-            if (dur >= REACHED_SEC) reachL = true;
+            if (dur > mx) mx = dur;
+            // call_status: связь с длительностью (какой статус = реальный разговор)
+            const cs = String(p.call_status != null ? p.call_status : "—");
+            if (!callStatusHist[cs]) callStatusHist[cs] = { count: 0, dur0: 0, durPos: 0, sumDur: 0, maxDur: 0 };
+            const S = callStatusHist[cs]; S.count++; S.sumDur += dur; if (dur === 0) S.dur0++; else S.durPos++; if (dur > S.maxDur) S.maxDur = dur;
+            const cr = String(p.call_result != null && p.call_result !== "" ? p.call_result : "—");
+            callResultHist[cr] = (callResultHist[cr] || 0) + 1;
           }
         }
       } catch (e) {}
-      // контакт проверяем всегда (чтобы поймать звонки, «уехавшие» на контакт)
-      if (row.contactId && Date.now() - startedAt < TOTAL_BUDGET) {
-        try {
-          const r = await fetch(`${base}/contacts/${row.contactId}/notes?limit=250`, { headers: H });
-          if (r.ok) {
-            const d = await r.json();
-            const notes = (d._embedded && d._embedded.notes) || [];
-            for (const n of notes) {
-              if (!isCall(n.note_type)) continue;
-              contactCallNotes++; hadContactCall = true;
-              const p = n.params || {};
-              for (const k of Object.keys(p)) callParamKeys[k] = (callParamKeys[k] || 0) + 1;
-              const present = p.duration != null || p.DURATION != null;
-              const dur = durOf(p); bucket(durContact, dur, present);
-              if (dur >= REACHED_SEC) reachC = true;
-            }
-          }
-        } catch (e) {}
-      }
-      if (hadLeadCall) leadsWithAnyLeadCall++;
-      if (hadContactCall) leadsWithAnyContactCall++;
-      if (!hadLeadCall && !hadContactCall) leadsWithNoCallNote++;
-      if (reachL) reachedOnLead++;
-      if (reachC) reachedOnContact++;
-      if (reachL || reachC) reachedEither++;
+      if (had) leadsWithAnyLeadCall++;
+      if (mx > 0) reach_pos++;
+      if (mx >= 10) reach_10++;
+      if (mx >= 15) reach_15++;
+      if (mx >= 40) reach_40++;
     }
 
-    const noteTypeTop = Object.entries(noteTypeHist).sort((a, b) => b[1] - a[1]).slice(0, 12);
     const pct = (n) => leadsSampled ? Math.round(n / leadsSampled * 100) : 0;
+    const pctCalled = (n) => leadsWithAnyLeadCall ? Math.round(n / leadsWithAnyLeadCall * 100) : 0;
+    // средняя длительность по каждому call_status
+    for (const k of Object.keys(callStatusHist)) { const S = callStatusHist[k]; S.avgDur = S.count ? Math.round(S.sumDur / S.count) : 0; delete S.sumDur; }
 
     res.status(200).json({
-      ok: true, org, subdomain: SUBDOMAIN, reachedSecThreshold: REACHED_SEC,
-      periodDays: 30, elapsedMs: Date.now() - startedAt,
-      leadsFound: leadRows.length, leadsSampled,
-      // сколько лидов-знаменателя ВООБЩЕ без звонков (ключ к заниженному %)
-      leadsWithNoCallNote, pctNoCall: pct(leadsWithNoCallNote),
-      callNotes: { onLead: leadCallNotes, onContact: contactCallNotes },
-      leadsWithCall: { onLead: leadsWithAnyLeadCall, onContact: leadsWithAnyContactCall },
-      reachedLeads: { onLeadOnly: reachedOnLead, onContact: reachedOnContact, either: reachedEither,
-        pctEitherOfAll: pct(reachedEither),
-        pctReachOfCalled: leadsWithAnyLeadCall ? Math.round(reachedOnLead / leadsWithAnyLeadCall * 100) : 0 },
-      durationBuckets: { lead: durLead, contact: durContact },
-      callParamKeys, noteTypeTop,
-      hint: "pctNoCall велик → знаменатель полон лидов, которым не звонили (или звонок не в call-ноте). reachedLeads.onContact>0 → часть дозвонов на контакте (мы их не читаем). pctReachOfCalled — реальный дозвон среди тех, кому реально звонили.",
+      ok: true, org, subdomain: SUBDOMAIN, periodDays: 30, elapsedMs: Date.now() - startedAt,
+      leadsFound: leadRows.length, leadsSampled, leadCallNotes,
+      leadsWithAnyLeadCall, pctCalledOfSampled: pct(leadsWithAnyLeadCall),
+      // дозвон (по лидам) при РАЗНЫХ порогах — % от всех и % от реально званых
+      reachByThreshold: {
+        connected_dur_gt0: { leads: reach_pos, pctOfAll: pct(reach_pos), pctOfCalled: pctCalled(reach_pos) },
+        ge10s:             { leads: reach_10,  pctOfAll: pct(reach_10),  pctOfCalled: pctCalled(reach_10) },
+        ge15s:             { leads: reach_15,  pctOfAll: pct(reach_15),  pctOfCalled: pctCalled(reach_15) },
+        ge40s_current:     { leads: reach_40,  pctOfAll: pct(reach_40),  pctOfCalled: pctCalled(reach_40) },
+      },
+      durationBucketsLead: durLead,
+      callStatusHist, callResultHist,
+      hint: "call_status с avgDur≈0 и dur0>>durPos = недозвон/сброс; статус с durPos = реальный разговор. reachByThreshold показывает, как порог влияет на % дозвона. Текущий порог 40с, вероятно, режет короткие реальные разговоры.",
     });
   } catch (err) {
     res.status(200).json({ ok: false, error: String(err) });
