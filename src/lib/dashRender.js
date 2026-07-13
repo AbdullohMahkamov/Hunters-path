@@ -259,27 +259,27 @@ function renderVelocity(d) {
 
 function renderPlanFact(d) {
   const box = document.getElementById('planFactChart'); if (!box) return
-  const t = d.totals || {}
   const mops = d.mopsBySales || []
   if (!mops.length) { box.innerHTML = '<div style="font-size:12px;color:var(--txt3);">Нет данных. Обновите из amoCRM.</div>'; return }
   const goal = getGoal()
-  const avgCheck = t.avgCheck || 1800000
-  const planTotal = Math.max(1, Math.round(goal / avgCheck))
-  const planPerMop = Math.ceil(planTotal / mops.length)
+  const list = [...mops].sort((a, b) => (b.revenue || 0) - (a.revenue || 0))
+  const fallbackPer = Math.max(1, Math.round(goal / list.length)) // если личный план МОПа не задан
+  const totalPlan = list.reduce((s, m) => s + (m.plan > 0 ? m.plan : fallbackPer), 0)
   const uz = state.lang === 'uz'
-  box.innerHTML = mops.map((m) => {
-    const fact = m.sold || 0
-    const pct = Math.round(fact / planPerMop * 100)
+  box.innerHTML = list.map((m) => {
+    const planV = m.plan > 0 ? m.plan : fallbackPer // личный план МОПа (из кабинета)
+    const fact = m.revenue || 0
+    const pct = Math.round(fact / planV * 100)
     const color = pct >= 100 ? 'var(--green)' : (pct >= 50 ? 'var(--accent)' : 'var(--red)')
     return `<div style="padding:10px 0;border-top:1px solid var(--line);">
       <div style="display:flex;align-items:center;gap:10px;">
         <div class="mop-name" style="width:120px;">${escapeHtml(m.name)}</div>
         <div class="mop-bar-wrap"><div class="mop-bar" style="width:${Math.min(100, pct)}%;background:${color};"></div></div>
-        <div class="mop-val" style="color:${color};white-space:nowrap;">${fact} / ${planPerMop}</div>
+        <div class="mop-val" style="color:${color};white-space:nowrap;">${fmtSum(fact)} / ${fmtSum(planV)}</div>
       </div>
       <div style="font-size:11px;color:var(--txt3);margin-top:3px;margin-left:130px;">${uz ? 'reja bajarilishi' : 'выполнение плана'}: ${pct}%</div>
     </div>`
-  }).join('') + `<div style="font-size:11px;color:var(--txt3);margin-top:9px;">${uz ? 'Umumiy reja' : 'Общий план'}: ${planTotal} ${uz ? 'sotuv/oy' : 'продаж/мес'} · ${uz ? 'har MOPga' : 'на каждого МОПа'} ~${planPerMop}</div>`
+  }).join('') + `<div style="font-size:11px;color:var(--txt3);margin-top:9px;">${uz ? 'Umumiy reja' : 'Общий план'}: ${fmtSum(totalPlan)}</div>`
 }
 
 async function loadOverviewExtras() {

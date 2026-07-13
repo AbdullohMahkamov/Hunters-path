@@ -246,7 +246,16 @@
   .funnel-bar{height:100%;background:var(--accent);border-radius:6px;}
   .funnel-val{font-size:11.5px;font-weight:600;width:90px;text-align:right;flex:0 0 auto;}
   .goal-card{background:var(--card);border:1px solid var(--line);border-radius:12px;padding:15px;margin-bottom:14px;}
-  .dtabs{display:flex;gap:6px;margin-bottom:16px;border-bottom:1px solid var(--line);}
+  /* панель под-вкладок «плавает» сверху при скролле дашборда; вкладки центрированы по высоте */
+  .dtabs{display:flex;gap:6px;align-items:center;border-bottom:1px solid var(--line);
+    position:sticky;top:0;z-index:15;background:var(--bg);
+    padding-top:10px;padding-bottom:9px;margin-bottom:12px;
+    box-shadow:0 8px 14px -10px rgba(0,0,0,.22);}
+  /* десктоп: во всю ширину #dashView (вкладки на своём месте слева, кнопка «Обновить» справа) */
+  body.shell .dtabs{margin-left:-28px;margin-right:-28px;padding-left:28px;padding-right:28px;}
+  /* фон-«шапка» НАД панелью — закрывает верхний паддинг контейнера (24px), чтобы контент
+     не просвечивал сверху при скролле. Тянется вверх с запасом и уходит за край вьюпорта. */
+  body.shell .dtabs::before{content:"";position:absolute;left:0;right:0;bottom:100%;height:60px;background:var(--bg);}
   .dtab{padding:9px 14px;font-size:13.5px;font-weight:500;color:var(--txt2);background:none;border:none;
     border-bottom:2px solid transparent;cursor:pointer;margin-bottom:-1px;}
   .dtab.on{color:var(--txt);border-bottom-color:var(--txt);}

@@ -475,6 +475,8 @@ export default async function handler(req, res) {
     const convAudit = leadsAudit > 0 ? +(soldTeamAudit / leadsAudit * 100).toFixed(2) : 0;
     const noContactPctAudit = leadsAudit > 0 ? +(noContactAudit / leadsAudit * 100).toFixed(0) : 0;
 
+    // индивидуальные планы МОПов (личный план в выручке, задаётся в кабинете/админке) — по имени
+    const mopPlans = (await redisGetCfg(redisUrl, redisToken, `mops:plans:${org}`)) || {};
     // МОПы: конверсия + дозвон + топ по продажам
     const mops = Object.entries(byMop).map(([name, v]) => ({
       id: name,        // идентификатор МОПа = его имя (МОПы уникальны по имени в этой системе)
@@ -482,6 +484,7 @@ export default async function handler(req, res) {
       leads: v.leads,
       sold: v.sold,
       revenue: v.revenue,
+      plan: mopPlans[name] || 0,   // личный план МОПа (выручка)
       soldToday: v.soldToday || 0,
       revenueToday: v.revenueToday || 0,
       conv: v.leads > 0 ? +(v.sold / v.leads * 100).toFixed(2) : 0,
