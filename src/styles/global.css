@@ -822,8 +822,7 @@
   .qrow{display:flex;gap:8px;overflow-x:auto;padding-bottom:6px;scrollbar-width:none;}
   .qrow::-webkit-scrollbar{display:none}
   .qchip{flex:0 0 auto;border:1px solid var(--line2);background:var(--card);border-radius:20px;padding:8px 14px;
-    font-family:Georgia,'Iowan Old Style','Palatino Linotype','Book Antiqua','Times New Roman',serif;
-    font-size:15px;font-weight:500;color:var(--txt);cursor:pointer;white-space:nowrap;}
+    font-family:inherit;font-size:13.5px;font-weight:500;color:var(--txt);cursor:pointer;white-space:nowrap;}
   .qchip:active{background:var(--accent2,#eaf1ff);}
   .qchip.hot{border-color:#f3b4b6;background:#fff5f5;color:#c92a2f;}
   .qchip.plan{border-color:var(--gold);background:var(--gold-bg);color:var(--gold);}
