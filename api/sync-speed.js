@@ -274,13 +274,17 @@ export default async function handler(req, res) {
       const li = leadInfo[id];
       return li && li.calls > 0; // были звонки — есть смысл проверять дозвон
     });
-    // ограничим, чтобы не улететь по времени: сначала сегодняшние, потом остальные
+    // ПРИОРИТЕТ проверки нот: лиды с активностью СЕГОДНЯ (звонили сегодня ИЛИ созданы сегодня).
+    // Важно: старый лид, которого обзванивают сегодня, тоже нужен для метрики «За сегодня» —
+    // иначе он окажется за лимитом, его ноты не прочитаются и дозвон за сегодня не засчитается
+    // (симптом: «звонили 40, дозвон 8» — звонили из событий не капается, а reached из нот — да).
+    const isTodayActive = (li) => (li.created || 0) >= dayStart2 || (li._callTs || []).some(ts => ts >= dayStart2);
     leadIdsToCheck.sort((a, b) => {
-      const ta = (leadInfo[a].created || 0) >= dayStart2 ? 0 : 1;
-      const tb = (leadInfo[b].created || 0) >= dayStart2 ? 0 : 1;
+      const ta = isTodayActive(leadInfo[a]) ? 0 : 1;
+      const tb = isTodayActive(leadInfo[b]) ? 0 : 1;
       return ta - tb;
     });
-    const MAX_LEADS_CHECK = 400; // потолок, чтобы уложиться в лимит времени
+    const MAX_LEADS_CHECK = 600; // потолок, чтобы уложиться в лимит времени (сегодняшние — в начале)
     const toCheck = leadIdsToCheck.slice(0, MAX_LEADS_CHECK);
     for (const lid of toCheck) {
       try {
