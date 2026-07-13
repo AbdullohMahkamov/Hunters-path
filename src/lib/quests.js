@@ -253,23 +253,8 @@ function resetHunt() {
 
 // ===== ДОП-КВЕСТЫ =====
 export function renderDopQuests() {
-  const dops = state.dopQuests || []
-  const sec = $('dopSection'); if (!sec) return
-  if (!dops.length) { sec.style.display = 'none'; return }
-  sec.style.display = 'block'
-  $('dopQuests').innerHTML = dops.map((q, i) => {
-    const on = !!state.done['dop' + i]
-    return `<div class="dop-card">
-      <div class="dop-head">
-        <div class="qcheck${on ? ' on' : ''}" onclick="toggleDop(${i})" style="width:22px;height:22px;">${on ? '✓' : ''}</div>
-        <span class="dop-badge">доп</span>
-        <button onclick="removeDop(${i})" style="margin-left:auto;background:none;border:none;color:var(--txt3);cursor:pointer;font-size:15px;">🗑</button>
-      </div>
-      <div class="dop-t" style="${on ? 'text-decoration:line-through;color:var(--txt3);' : ''}">${escapeHtml(q.t)}</div>
-      <div class="dop-d">${escapeHtml(q.d)}</div>
-      ${q.problem ? `<div class="dop-prob">🎯 Закрывает: ${escapeHtml(q.problem)}</div>` : ''}
-    </div>`
-  }).join('')
+  // Фича «доп-задачи по проблемам» убрана — секция всегда скрыта.
+  const sec = $('dopSection'); if (sec) sec.style.display = 'none'
 }
 function toggleDop(i) { state.done['dop' + i] = !state.done['dop' + i]; save(); renderDopQuests() }
 function removeDop(i) {
