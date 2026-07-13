@@ -304,9 +304,9 @@ export default function AppShell({ onLogout }) {
                 <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M9 11l3 3L22 4" /><path d="M21 12v7a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11" /></svg>
                 <span>{uz ? 'Vazifalar' : 'Задачи'}</span>
               </button>
+              <div className="side-div" />
               <button className="side-new" onClick={newChat}><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><line x1="12" y1="5" x2="12" y2="19" /><line x1="5" y1="12" x2="19" y2="12" /></svg>{uz ? 'Yangi chat' : 'Новый чат'}</button>
 
-              <div className="side-div" />
               <div className="side-group-lbl">{uz ? 'So‘nggi chatlar' : 'Недавние чаты'}</div>
               <div className="side-list" id="sideList">
                 {chats.map((c) => (
