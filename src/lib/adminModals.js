@@ -541,7 +541,7 @@ async function loadGamiInventory() {
       return `<div style="display:flex;align-items:center;gap:11px;padding:10px 12px;border:1px solid var(--line);border-radius:10px;margin-bottom:8px;background:var(--card);">
         <div style="flex:1;min-width:0;">
           <div style="font-size:13.5px;font-weight:600;">${escapeHtml(it.mopName || it.mopId)} <span style="color:var(--txt3);font-weight:500;">— ${escapeHtml(it.name)}${val}</span></div>
-          <div style="font-size:11px;color:var(--txt3);margin-top:2px;">${tag} · ${new Date(it.wonAt).toLocaleDateString('ru-RU')}</div>
+          <div style="font-size:11px;color:var(--txt3);margin-top:2px;">${tag} · ${new Date(it.wonAt).toLocaleString('ru-RU', { day: '2-digit', month: '2-digit', year: 'numeric', hour: '2-digit', minute: '2-digit' })}</div>
         </div>
         ${isCashback
           ? `<span style="font-size:11px;font-weight:700;color:var(--gold);background:var(--gold-bg);padding:4px 10px;border-radius:999px;white-space:nowrap;">+${it.cashback} на счёт</span>`

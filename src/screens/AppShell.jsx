@@ -286,6 +286,7 @@ export default function AppShell({ onLogout }) {
                               <div style={{ minWidth: 0 }}>
                                 <div className="notif-t">🎁 {n.mopName}</div>
                                 <div className="notif-d">{(uz ? 'yutdi: ' : 'выиграл: ') + (n.name || '')} — {uz ? 'berish kerak' : 'нужно выдать'}</div>
+                                {n.wonAt && <div className="notif-time">{new Date(n.wonAt).toLocaleString('ru-RU', { day: '2-digit', month: '2-digit', hour: '2-digit', minute: '2-digit' })}</div>}
                               </div>
                             </button>
                           ))}
