@@ -186,9 +186,14 @@ export default async function handler(req, res) {
   if (!AKEY) { res.status(500).json({ error: "no ANTHROPIC_API_KEY" }); return; }
   const q = req.query || {}, b = req.body || {};
   const action = q.action || b.action || "state";
+  const isProd = process.env.NODE_ENV === "production";
   const cronSecret = process.env.CRON_SECRET || "";
   const authHeader = (req.headers && (req.headers.authorization || req.headers.Authorization)) || "";
-  const isCron = cronSecret ? (authHeader === `Bearer ${cronSecret}`) : (q.cron === "1" || b.cron === true);
+  // В ПРОДЕ cron-триггер принимается ТОЛЬКО с валидным CRON_SECRET (Authorization: Bearer …),
+  // который Vercel Cron подставляет автоматически. Fallback ?cron=1 — ИСКЛЮЧИТЕЛЬНО вне прода (dev).
+  const isCron = cronSecret
+    ? (authHeader === `Bearer ${cronSecret}`)
+    : (!isProd && (q.cron === "1" || b.cron === true));
   const sess = await getSession(q.session || b.session);
   const isAdmin = !!sess && sess.role === "admin";
   const cronActions = new Set(["cron_tick", "run"]);
