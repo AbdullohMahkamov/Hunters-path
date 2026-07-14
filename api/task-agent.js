@@ -15,6 +15,9 @@
 // Эскалации дублируются в UI /dev-agent (вкладка Task Agent).
 
 import { sendTg, getPeople, pushChat, getChat } from "./tg-bot.js";
+// MOP Agent не строит свой канал — его находки вливаются в ЭТОТ же список задач РОПа
+// и дальше едут по уже работающей машине: пинг → диалог → порог 13:00 → эскалация владельцу.
+import { getOpenMopFindings, getFreshAutoClosed, closeMopFinding, getMopLastRun } from "./mop-agent.js";
 
 const REDIS_URL = process.env.UPSTASH_REDIS_REST_URL;
 const REDIS_TOKEN = process.env.UPSTASH_REDIS_REST_TOKEN;
@@ -49,20 +52,45 @@ const daysLeft = (deadline) => {
 };
 const hoursOverdue = (deadline) => { const dl = daysLeft(deadline); return dl != null && dl < 0 ? Math.abs(dl) * 24 + tkHour() : 0; };
 
-// ── ЗАДАЧИ ОП (read-only из appdata) ──
+// ── ЗАДАЧИ РОПа: ДВА ИСТОЧНИКА, ОДИН ПОТОК ──
+// 1) План Hunter AI (appdata.customPlan.sales) — задачи ОП, РОП закрывает их в интерфейсе.
+// 2) Находки MOP Agent (mopagent:findings) — задачи по отделу / по конкретному МОПу.
+// Оба идут РОПу ОДНИМ потоком через один бот и один тред, различаясь пометкой 🏢 / 👤.
 async function loadSalesTasks() {
+  const out = [];
+  // ── источник 1: план ──
   const app = await rgetJSON(`appdata:${ORG}`, null);
   const cp = app && app.customPlan;
-  if (!cp || !Array.isArray(cp.sales)) return [];
-  const done = (app && app.done) || {};
-  const hist = (app && app.taskHistory) || [];
-  return cp.sales.map((q) => {
-    const steps = q.steps || [];
-    const isDone = steps.length ? steps.every((_, si) => !!done[q.id + "_s" + si]) : !!done[q.id];
-    const report = hist.find((h) => h.taskId === q.id || h.id === q.id) || (q.report ? { result: q.report } : null);
-    return { id: q.id, title: q.t, why: q.d || "", deadline: q.deadline || "", steps, done: isDone, report: report || null,
-      daysLeft: daysLeft(q.deadline), hoursOverdue: hoursOverdue(q.deadline) };
-  });
+  if (cp && Array.isArray(cp.sales)) {
+    const done = (app && app.done) || {};
+    const hist = (app && app.taskHistory) || [];
+    for (const q of cp.sales) {
+      const steps = q.steps || [];
+      const isDone = steps.length ? steps.every((_, si) => !!done[q.id + "_s" + si]) : !!done[q.id];
+      const report = hist.find((h) => h.taskId === q.id || h.id === q.id) || (q.report ? { result: q.report } : null);
+      out.push({ id: q.id, title: q.t, why: q.d || "", deadline: q.deadline || "", steps, done: isDone, report: report || null,
+        source: "plan", scope: "plan",
+        daysLeft: daysLeft(q.deadline), hoursOverdue: hoursOverdue(q.deadline) });
+    }
+  }
+  // ── источник 2: находки MOP Agent (могут иметь ЧАСОВОЙ горизонт → deadlineAt) ──
+  try {
+    for (const f of await getOpenMopFindings()) {
+      const hrsLeft = f.deadlineAt ? Math.round((f.deadlineAt - Date.now()) / 3600000) : null;
+      out.push({
+        id: f.id, title: f.title, why: f.fact || "", deadline: f.deadline || "",
+        deadlineAt: f.deadlineAt || null, deadlineLabel: f.deadlineLabel || "",
+        steps: f.action ? [f.action] : [], done: false, report: null,
+        source: "mop-agent", scope: f.scope, mop: f.mop || null, mops: f.mops || [], issueType: f.type,
+        repeatCount: f.repeatCount || 1, // >1 → РОП уже отчитывался «сделал», а проблема вернулась
+        // часовой горизонт: считаем из deadlineAt, а не из даты
+        daysLeft: hrsLeft != null ? Math.ceil(hrsLeft / 24) : daysLeft(f.deadline),
+        hoursLeft: hrsLeft,
+        hoursOverdue: (hrsLeft != null && hrsLeft < 0) ? Math.abs(hrsLeft) : hoursOverdue(f.deadline),
+      });
+    }
+  } catch (e) { /* MOP Agent недоступен — план всё равно едет */ }
+  return out;
 }
 
 async function callModel(system, user, maxTokens = 900) {
@@ -118,9 +146,26 @@ function langLine(lang) {
 }
 
 // ── ПИНГ ПО ЗАДАЧЕ ──
+// Пометка масштаба: РОП должен сразу понимать — работать с процессом или поговорить с человеком.
+function scopeTag(task) {
+  if (task.source !== "mop-agent") return "";
+  if (task.scope === "department") return "🏢 ПО ОТДЕЛУ";
+  return `👤 ПО МОПУ${task.mop ? ` (${task.mop})` : ""}`;
+}
 async function composePing(task, chatHistory, lang) {
   const overdue = task.hoursOverdue > 0;
+  const tag = scopeTag(task);
+  // Состав затронутых людей у задачи ПО ОТДЕЛУ меняется день ко дню — он пересобирается при каждом
+  // прогоне MOP Agent. Даём его модели ОТДЕЛЬНОЙ строкой и требуем назвать поимённо: без имён РОПу
+  // не с кем разговаривать («наладить процесс» без списка людей — это не задача, а лозунг).
+  const who = (task.mops || []).length ? task.mops.join(", ") : "";
+  const repeatLine = task.repeatCount > 1
+    ? `\nПОВТОРНЫЙ ЗАХОД (${task.repeatCount}-й раз): РОП уже отчитывался, что закрыл это, но в данных проблема снова видна. Скажи это прямо и без обвинений: «отмечали как решённое, но факт повторился». Спроси, что мешает закрепить.`
+    : "";
   const user = `${langLine(lang)}
+${tag ? `\nМАСШТАБ ЗАДАЧИ: ${tag}. Начни сообщение ровно с этой пометки «${tag}» отдельной строкой — РОП должен сразу видеть, это вопрос процесса или разговор с конкретным человеком.\n${task.scope === "department" ? "Это СИСТЕМНАЯ проблема (встречается у нескольких менеджеров) — формулируй управленчески, про процесс, а НЕ про вину конкретного человека." : "Это ТОЧЕЧНЫЙ случай у одного человека — попроси РОПа поговорить с ним. Никаких ярлыков вроде «плохо работает», только факт и действие."}` : ""}${repeatLine}
+${who ? `ЗАТРОНУТЫЕ СОТРУДНИКИ (актуально на сейчас, состав мог смениться со вчера): ${who}. ОБЯЗАТЕЛЬНО назови их поимённо в сообщении — иначе РОПу непонятно, с кем говорить.` : ""}
+${task.deadlineLabel ? `СРОК (жёсткое правило, не обсуждается): ${task.deadlineLabel}` : ""}
 
 ЗАДАЧА ОТДЕЛА ПРОДАЖ:
 Название: ${task.title}
@@ -142,7 +187,15 @@ needsDetail=false и пустой checklist — только если ждёшь
   let out;
   // 1400 токенов: вопрос + подсказка (на 700 JSON обрывался и агент сваливался в дефолтный шаблон)
   try { out = parseJSON(await callModel(SYSTEM_ROP, user, 1400)); }
-  catch (e) { out = { question: `Здравствуйте! Я система Hunter AI. Какой статус по задаче «${task.title}»? Срок: ${task.deadline || "не задан"}.`, needsDetail: true, hintHeader: "Чтобы я зафиксировал это правильно, укажите:", checklist: ["статус (сделано / в процессе / не начато)", "если не сделано — что мешает", "когда реально планируете закончить"] }; }
+  // Fallback тоже должен нести пометку масштаба, имена и срок — иначе при сбое модели РОП получит
+  // обезличенное «какой статус?», из которого непонятно ни с кем говорить, ни к какому сроку.
+  catch (e) {
+    out = {
+      question: `${tag ? tag + "\n" : ""}Здравствуйте! Я система Hunter AI. Какой статус по задаче «${task.title}»?${who ? ` Затронуты: ${who}.` : ""} Срок: ${task.deadlineLabel || task.deadline || "не задан"}.`,
+      needsDetail: true, hintHeader: "Чтобы я зафиксировал это правильно, укажите:",
+      checklist: ["статус (сделано / в процессе / не начато)", "если не сделано — что мешает", "когда реально планируете закончить"],
+    };
+  }
   return assembleMsg(out);
 }
 
@@ -160,7 +213,7 @@ export async function handleRopReply(text) {
   const user = `${langLine(ropLang)}
 
 ОТКРЫТЫЕ ЗАДАЧИ ОТДЕЛА ПРОДАЖ:
-${open.map((t) => `- [${t.id}] ${t.title} | срок ${t.deadline || "нет"} ${t.hoursOverdue > 0 ? "(ПРОСРОЧЕНО)" : ""}`).join("\n") || "(открытых задач нет)"}
+${open.map((t) => `- [${t.id}] ${scopeTag(t) ? scopeTag(t) + " " : ""}${t.title} | срок ${t.deadlineLabel || t.deadline || "нет"} ${t.hoursOverdue > 0 ? "(ПРОСРОЧЕНО)" : ""}`).join("\n") || "(открытых задач нет)"}
 
 ПЕРЕПИСКА (последнее):
 ${recent}
@@ -172,7 +225,11 @@ ${recent}
 
 Верни СТРОГО JSON, на языке переписки:
 {"reply":"текст ответа РОПу","needsDetail":true,"hintHeader":"заголовок подсказки","checklist":["пункт 1","пункт 2"],"taskId":"id задачи или пусто","status":"in_progress|blocked|claims_done|unclear|none","note":"кратко что зафиксировал"}
-status: in_progress — работает; blocked — что-то мешает; claims_done — говорит что сделал (напомни закрыть в интерфейсе и оставить отчёт); unclear — непонятно; none — не про задачи.`;
+status: in_progress — работает; blocked — что-то мешает; claims_done — говорит что сделал; unclear — непонятно; none — не про задачи.
+
+claims_done ставь СТРОГО: только если человек ЯВНО и КОНКРЕТНО сказал, что сделал (что именно сделал / с кем поговорил / что изменилось). Расплывчатое «вроде норм», «да там ок», «разберёмся», «посмотрю» — это НЕ claims_done, это unclear, и needsDetail=true. Не выдавай желаемое за сделанное: по claims_done с needsDetail=false задача закрывается автоматически, откатить это человек не сможет.
+
+ВАЖНО про закрытие: задачи с пометкой 🏢/👤 (находки по отделу/по МОПу) закрываются ПРЯМО ЗДЕСЬ, по твоей оценке ответа — НЕ отправляй РОПа закрывать их в интерфейсе, карточки там нет. Остальные задачи плана он закрывает сам в интерфейсе Hunter AI и оставляет отчёт.`;
 
   let out;
   try { out = parseJSON(await callModel(SYSTEM_ROP, user, 900)); }
@@ -191,6 +248,19 @@ status: in_progress — работает; blocked — что-то мешает; 
   if (taskId) {
     st[taskId] = { ...(st[taskId] || {}), ropRepliedAt: Date.now(), ropRepliedDay: tkDay(), state: out.status || "unclear", note: out.note || "" };
     await rsetJSON(K.status, st);
+  }
+  // Находку MOP Agent РОП закрывает СЛОВОМ (карточки в интерфейсе у неё нет).
+  // ЖЁСТКИЙ ГЕЙТ, не мягче, чем у задач плана: закрываем ТОЛЬКО если модель И признала ответ
+  // «сделано» (claims_done), И сочла его исчерпывающим (needsDetail=false). Расплывчатое
+  // «вроде норм / посмотрю / да там ок» даёт needsDetail=true → находка НЕ закрывается,
+  // агент продолжает спрашивать, а к порогу эскалации она уедет владельцу.
+  // Плюс последний рубеж: даже закрытую словом находку следующий прогон перепроверяет ПО ДАННЫМ —
+  // если факт не исчез, она вернётся с пометкой «СНОВА (2-й раз)».
+  if (taskId && out.status === "claims_done" && out.needsDetail === false) {
+    const t0 = open.find((t) => t.id === taskId);
+    if (t0 && t0.source === "mop-agent") {
+      try { await closeMopFinding(taskId, "rop_reported", out.note || text, t0.repeatCount || 1); } catch (e) {}
+    }
   }
   const people = await getPeople();
   if (people.rop && people.rop.chatId && out.reply) {
@@ -211,10 +281,28 @@ async function runTick(force) {
   const chat = await getChat();
   const hour = tkHour(), day = tkDay();
   const pinged = [], escalated = [];
+  const autoClosedNotified = [];
+
+  // ── УВЕДОМЛЕНИЕ ОБ АВТО-ЗАКРЫТИИ находок MOP Agent ──
+  // Без него РОП через неделю не поймёт, куда делась задача, которую он не закрывал сам.
+  try {
+    if (people.rop && people.rop.chatId) {
+      for (const f of await getFreshAutoClosed()) {
+        const uz = ((people.rop && people.rop.lang) || "ru") === "uz";
+        const txt = uz
+          ? `✅ <b>Avtomatik yopildi</b>\n\n«${f.title}»\n\nTekshiruvda muammo qayta tasdiqlanmadi — ma'lumotlarda u endi ko'rinmayapti. Sizdan hech narsa talab qilinmaydi.`
+          : `✅ <b>Автоматически закрыто</b>\n\n«${f.title}»\n\nПри проверке проблема больше не подтвердилась — в данных её уже нет. От вас ничего не требуется.`;
+        const r = await sendTg("rop", people.rop.chatId, txt);
+        if (r.ok) { await pushChat({ role: "agent", text: txt, taskId: f.id }); autoClosedNotified.push(f.title); }
+      }
+    }
+  } catch (e) { /* не блокируем тик */ }
 
   for (const t of open) {
     const s = st[t.id] || {};
-    const near = t.daysLeft != null && t.daysLeft <= cfg.remindBeforeDays; // срок близко или прошёл
+    // Находка MOP Agent — это уже готовая задача с фактом, её отдаём РОПу сразу при обнаружении,
+    // а не за remindBeforeDays до срока (у точечных срок вообще «до конца дня»).
+    const near = t.source === "mop-agent" || (t.daysLeft != null && t.daysLeft <= cfg.remindBeforeDays);
     if (!near && !force) continue;
 
     // 1) ПИНГ РОПу — один раз в день по задаче, в рабочие часы
@@ -244,9 +332,10 @@ async function runTick(force) {
     if (timeReached && hadTimeToAnswer && !repliedToday && !alreadyEscalatedToday && !t.done && s2.pingDay === day) {
       // статус — только факты, без суждений о человеке
       let status;
-      if (t.hoursOverdue > 0) status = `просрочена на ${Math.round(t.hoursOverdue)} ч (срок был ${t.deadline})`;
+      if (t.hoursOverdue > 0) status = `просрочена на ${Math.round(t.hoursOverdue)} ч (срок был ${t.deadlineLabel || t.deadline})`;
       else if (s2.state === "in_progress") status = "в процессе, результата пока нет";
       else status = "не начата (нет ни отметки о выполнении, ни ответа)";
+      const tag = scopeTag(t); // владелец видит: это находка по отделу или по конкретному человеку
       const conv = chat.filter((m) => m.taskId === t.id);
       const esc = {
         id: "esc_" + Date.now() + "_" + t.id, taskId: t.id, title: t.title, deadline: t.deadline || "не задан",
@@ -260,7 +349,7 @@ async function runTick(force) {
         const convTxt = conv.length
           ? conv.map((m) => `${m.role === "rop" ? "РОП" : "Агент"}: ${m.text}`).join("\n\n")
           : "(переписки не было — РОП не отвечал)";
-        const txt = `⚠️ <b>Эскалация Task-агента</b>\n\n<b>Задача:</b> ${t.title}\n<b>Срок:</b> ${t.deadline || "не задан"}\n<b>Статус:</b> ${status}\n\n<b>Переписка с РОПом (дословно):</b>\n${convTxt}`;
+        const txt = `⚠️ <b>Эскалация Task-агента</b>\n${tag ? `${tag}\n` : ""}\n<b>Задача:</b> ${t.title}\n<b>Срок:</b> ${t.deadlineLabel || t.deadline || "не задан"}\n<b>Статус:</b> ${status}\n\n<b>Переписка с РОПом (дословно):</b>\n${convTxt}`;
         await sendTg("owner", people.owner.chatId, txt);
       }
       st[t.id] = { ...s2, escalatedDay: day, escalatedAt: Date.now() };
@@ -268,7 +357,7 @@ async function runTick(force) {
     }
   }
   await rsetJSON(K.status, st);
-  return { ok: true, tashkentHour: hour, openTasks: open.length, pinged, escalated };
+  return { ok: true, tashkentHour: hour, openTasks: open.length, pinged, escalated, autoClosedNotified };
 }
 
 export default async function handler(req, res) {
@@ -286,10 +375,12 @@ export default async function handler(req, res) {
 
   try {
     if (action === "state") {
-      const [tasks, st, esc, chat, cfg, people] = await Promise.all([
+      const [tasks, st, esc, chat, cfg, people, mopRun] = await Promise.all([
         loadSalesTasks(), rgetJSON(K.status, {}), rgetJSON(K.escalations, []), getChat(), getConfig(), getPeople(),
+        getMopLastRun().catch(() => null),
       ]);
       res.status(200).json({ ok: true, tasks, status: st, escalations: esc.slice(-40).reverse(), chat: chat.slice(-120), config: cfg, people,
+        mopAgent: mopRun, // последний прогон Агента Г + по каким метрикам он молчит
         now: { tashkentHour: tkHour(), tashkentDay: tkDay() } });
       return;
     }

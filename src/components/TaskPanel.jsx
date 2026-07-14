@@ -1,9 +1,35 @@
 // src/components/TaskPanel.jsx — вкладка «Task Agent» (Агент В) внутри /dev-agent.
 // Задачи ОП со сроками, переписка агента с РОПом (дословно), эскалации, подключение ботов.
 import React, { useEffect, useState } from 'react'
-import { taskAgent } from '../lib/api.js'
+import { taskAgent, mopAgent } from '../lib/api.js'
 
 const fmtTime = (ts) => { try { return new Date(ts).toLocaleString('ru', { day: '2-digit', month: '2-digit', hour: '2-digit', minute: '2-digit' }) } catch (e) { return '' } }
+
+// Задачи РОПа приходят ДВУМЯ потоками в одном списке: план Hunter AI и находки MOP Agent (Агент Г).
+// Бейдж отличает «наладить процесс в отделе» от «поговори с конкретным человеком».
+function ScopeBadge({ t }) {
+  if (t.source !== 'mop-agent') return null
+  const dept = t.scope === 'department'
+  return (
+    <span style={{
+      fontSize: 11, fontWeight: 600, padding: '2px 7px', borderRadius: 6, whiteSpace: 'nowrap',
+      color: dept ? 'var(--gold)' : 'var(--accent)', background: dept ? 'var(--gold-bg)' : 'var(--card2)',
+    }}>
+      {dept ? '🏢 по отделу' : `👤 ${t.mop || 'по МОПу'}`}
+    </span>
+  )
+}
+// Срок находки может быть часовым («до конца дня») — показываем label, а не только дату.
+function deadlineText(t) {
+  if (t.done) return 'выполнена'
+  if (t.hoursOverdue > 0) {
+    const h = Math.round(t.hoursOverdue)
+    return h < 48 ? `просрочена на ${h} ч` : `просрочена на ${Math.round(h / 24)} дн`
+  }
+  if (t.deadlineLabel) return `срок: ${t.deadlineLabel}`
+  if (t.deadline) return `срок ${t.deadline} · осталось ${t.daysLeft} дн`
+  return 'без срока'
+}
 
 export default function TaskPanel() {
   const [st, setSt] = useState(null)
@@ -23,6 +49,16 @@ export default function TaskPanel() {
   function flash(m) { setToast(m); setTimeout(() => setToast(''), 2000) }
 
   async function tick() { if (busy) return; setBusy('tick'); try { const d = await taskAgent.tick(true); if (d && d.ok) { await load(); flash(`Пингов: ${(d.pinged || []).length} · эскалаций: ${(d.escalated || []).length}`) } else flash((d && d.error) || 'Ошибка') } catch (e) { flash('Нет связи') } setBusy('') }
+  // Прогон Агента Г вручную: пересобрать находки по МОПам (в проде это делает cron каждый час в :30)
+  async function scanMops() {
+    if (busy) return; setBusy('mop')
+    try {
+      const d = await mopAgent.run()
+      if (d && d.ok) { await load(); flash(`Находок: ${d.open} · новых ${d.added} · авто-закрыто ${d.autoClosed}`) }
+      else flash((d && d.error) || 'Ошибка')
+    } catch (e) { flash('Нет связи') }
+    setBusy('')
+  }
   async function setupBots() { if (busy) return; setBusy('setup'); try { const d = await taskAgent.botSetup(); await load(); flash(d && d.ok ? 'Webhook’и прописаны' : 'Ошибка настройки') } catch (e) { flash('Нет связи') } setBusy('') }
   async function testBot(who) { setBusy('test'); try { const d = await taskAgent.botTest(who); flash(d && d.ok ? 'Сообщение отправлено' : ((d && d.result && d.result.error) || 'Не отправилось')) } catch (e) { flash('Нет связи') } setBusy('') }
   async function reset() { if (!window.confirm('Сбросить переписку, статусы и эскалации Task-агента?')) return; setBusy('reset'); try { await taskAgent.reset(); await load(); flash('Сброшено') } catch (e) {} setBusy('') }
@@ -35,6 +71,7 @@ export default function TaskPanel() {
   const chat = (st && st.chat) || []
   const people = (st && st.people) || {}
   const cfg = (st && st.config) || {}
+  const mop = st && st.mopAgent
   const codes = (bots && bots.codes) || {}
   const botInfo = (bots && bots.bots) || {}
 
@@ -52,6 +89,7 @@ export default function TaskPanel() {
         </div>
         <div className="ga-actions">
           <button className="da-btn" disabled={!!busy} onClick={tick}>{busy === 'tick' ? '…' : 'Прогнать сейчас'}</button>
+          <button className="da-btn ghost" disabled={!!busy} onClick={scanMops}>{busy === 'mop' ? '…' : 'Проверить МОПов'}</button>
           <button className="da-btn ghost" disabled={!!busy} onClick={setupBots}>{busy === 'setup' ? '…' : 'Настроить ботов'}</button>
           <button className="da-btn ghost" disabled={!!busy} onClick={reset}>Сбросить</button>
         </div>
@@ -80,21 +118,47 @@ export default function TaskPanel() {
           })}
         </div>
 
-        {/* ЗАДАЧИ ОП */}
+        {/* НАХОДКИ MOP AGENT — что агент проверил и по чему промолчал */}
+        {mop && (
+          <div className="ga-metric" style={{ marginBottom: 14 }}>
+            <b>MOP Agent (Агент Г)</b> <span style={{ color: 'var(--txt3)', fontSize: 12 }}>· прогон {fmtTime(mop.at)}</span>
+            <div style={{ fontSize: 12, color: 'var(--txt3)', marginTop: 4, lineHeight: 1.6 }}>
+              находок открыто: {mop.open} (по отделу {mop.department} · по МОПам {mop.mop})
+              {mop.autoClosed > 0 ? ` · авто-закрыто в этот прогон: ${mop.autoClosed}` : ''}
+              {(mop.skipped || []).map((s, i) => (
+                <div key={i} style={{ color: 'var(--gold)', marginTop: 3 }}>🔇 молчит — {s}</div>
+              ))}
+            </div>
+          </div>
+        )}
+
+        {/* ЗАДАЧИ ОП — единый поток: план + находки MOP Agent */}
         <div className="ga-sec-h">Задачи отдела продаж <span className="da-count">{tasks.length}</span></div>
         {!tasks.length && <div className="ga-empty">План ещё не создан — задач ОП нет. Создай план в разделе «Советник».</div>}
         {tasks.map((t) => {
           const s = status[t.id] || {}
           const overdue = t.hoursOverdue > 0 && !t.done
           const conv = taskChat(t.id)
+          const isMop = t.source === 'mop-agent'
           return (
-            <div key={t.id} className="ga-hyp">
-              <div className="ga-hyp-top" style={{ justifyContent: 'space-between' }}>
-                <span style={{ fontWeight: 600, fontSize: 14 }}>{t.done ? '✓ ' : ''}{t.title}</span>
-                <span style={{ fontSize: 12, color: t.done ? 'var(--green)' : (overdue ? 'var(--red)' : 'var(--txt3)') }}>
-                  {t.done ? 'выполнена' : (t.deadline ? (overdue ? `просрочена на ${Math.round(t.hoursOverdue / 24)} дн` : `срок ${t.deadline} · осталось ${t.daysLeft} дн`) : 'без срока')}
+            <div key={t.id} className="ga-hyp" style={isMop ? { borderLeft: `3px solid ${t.scope === 'department' ? 'var(--gold)' : 'var(--accent)'}` } : undefined}>
+              <div className="ga-hyp-top" style={{ justifyContent: 'space-between', gap: 8 }}>
+                <span style={{ fontWeight: 600, fontSize: 14, display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
+                  <ScopeBadge t={t} />
+                  {t.repeatCount > 1 && (
+                    <span style={{ fontSize: 11, fontWeight: 700, padding: '2px 7px', borderRadius: 6, color: 'var(--red)', background: 'var(--card2)' }}
+                      title="РОП отчитывался, что закрыл — но проблема вернулась в данные">
+                      ↻ снова, {t.repeatCount}-й раз
+                    </span>
+                  )}
+                  {t.done ? '✓ ' : ''}{t.title}
+                </span>
+                <span style={{ fontSize: 12, whiteSpace: 'nowrap', color: t.done ? 'var(--green)' : (overdue ? 'var(--red)' : 'var(--txt3)') }}>
+                  {deadlineText(t)}
                 </span>
               </div>
+              {isMop && t.why && <div className="ga-hyp-row"><span className="ga-lbl">Факт</span><span>{t.why}</span></div>}
+              {isMop && (t.steps || [])[0] && <div className="ga-hyp-row"><span className="ga-lbl">Предлагаемое действие</span><span>{t.steps[0]}</span></div>}
               <div className="ga-hyp-row"><span className="ga-lbl">Статус у агента</span><span>
                 {s.state === 'in_progress' ? 'РОП: в процессе' : s.state === 'blocked' ? 'РОП: что-то мешает' : s.state === 'claims_done' ? 'РОП говорит, что сделал' : s.pingDay ? 'написали, ответа нет' : 'ещё не трогали'}
                 {s.note ? ` — ${s.note}` : ''}

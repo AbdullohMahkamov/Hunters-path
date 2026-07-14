@@ -9,6 +9,9 @@ const HUNTER_CFG = {
   ownThreshold: 1600000,
   noReachReasonId: 22815982, // "3 marta bog'lanib bo'lmadi"
   reachedSec: 40,      // порог «реального дозвона» (сек). НЕ хардкод — правится в конфиге клиента.
+  // Этапы «не дозвонились» (для MOP Agent: ловим лидов, где разговор БЫЛ, а статус остался этим)
+  noContactStages: ["Bog'lanib bo'lmadi", "Bog'lanib bo'lmadi 2", "O'ylab ko'radidan keyin bog'lanib bo'lmadi"],
+  stalledNoCallHours: 4, // лид в работе N часов, звонков ноль → точечная задача РОПу
   mops: {
     13660834: "Komiljon", 13703650: "Samandar", 13904266: "Abdulla-Legenda",
     13833590: "Begoyim", 13681582: "Abulbositxon",
@@ -35,6 +38,8 @@ async function resolveConfig(org, redisUrl, redisToken) {
     ownThreshold: s.ownThreshold != null ? s.ownThreshold : 0,
     noReachReasonId: s.noReachReasonId != null ? s.noReachReasonId : null,
     reachedSec: s.reachedSec != null ? s.reachedSec : 40, // порог дозвона (сек), дефолт 40
+    noContactStages: s.noContactStages || [],
+    stalledNoCallHours: s.stalledNoCallHours != null ? s.stalledNoCallHours : 4,
     mops: s.mops || {},
   };
 }
@@ -166,11 +171,14 @@ export default async function handler(req, res) {
   try {
     // 1) Найдём pipeline_id воронки HunterAcademy
     let pipelineId = null;
+    const statusNameById = {}; // id этапа → имя (нужно MOP Agent'у: ловим «разговор был, а статус „не дозвонились"»)
     const pr = await fetch(`${base}/leads/pipelines`, { headers: H });
     if (pr.ok) {
       const pd = await pr.json();
-      for (const p of ((pd._embedded && pd._embedded.pipelines) || []))
+      for (const p of ((pd._embedded && pd._embedded.pipelines) || [])) {
         if (p.name === PIPELINE_ID_NAME) pipelineId = p.id;
+        for (const st of ((p._embedded && p._embedded.statuses) || [])) statusNameById[st.id] = st.name;
+      }
     }
     // ЗАЩИТА: без pipelineId фильтр по воронке не применится → метрики соберутся по чужим воронкам.
     // Прерываем, чтобы разовый сбой /pipelines не портил кэш speed.
@@ -425,6 +433,10 @@ export default async function handler(req, res) {
     const suspicious2 = []; // подозрительные по звонкам (этап 2)
     const nowSec2 = Math.floor(Date.now() / 1000);
     const STALL_DAYS = 7; // лид без движения дольше 7 дней = завис
+    // ── для MOP Agent: сырые факты по МОПам (расхождение статус/факт, лиды без звонка) ──
+    const mopIssues = [];
+    const NO_CONTACT_STAGES = new Set(cfg.noContactStages || []);
+    const STALLED_NO_CALL_HOURS = cfg.stalledNoCallHours != null ? cfg.stalledNoCallHours : 4;
     // ДЕТЕКТОР ТЕЛЕФОНИИ (на КЛИЕНТА, не на МОПа персонально): лиды без единого звонка в amoCRM,
     // но с другой активностью в CRM (задача/закрытая задача/смена ответственного). Сигнал ВОЗМОЖНОЙ
     // проблемы телефонии на стороне клиента (звонят не через amoCRM / интеграция настроена не полностью).
@@ -519,6 +531,25 @@ export default async function handler(req, res) {
           closed_at: L.closed, created_at: L.created,
           cat: "calls", type: "instant_close", label: "Дозвон и мгновенное закрытие (<2 мин)" });
       }
+      // ═══ ПРОБЛЕМЫ ПО МОПам (для MOP Agent) — ТОЛЬКО ФАКТЫ, без оценок ═══
+      {
+        const stName2 = statusNameById[L.status] || "";
+        const inNoContactStage = NO_CONTACT_STAGES.has(stName2);
+        const lostAsNoReach = (L.status === LOST_STATUS) && (L.lossId === NO_REACH_REASON_ID);
+        // 1) РАСХОЖДЕНИЕ СТАТУСА И ФАКТА: разговор ≥ порога БЫЛ, а лид всё ещё числится «не дозвонились»
+        if (L.reachedReal && (inNoContactStage || lostAsNoReach)) {
+          mopIssues.push({ type: "status_mismatch", mop, leadId: L.id, name: L.name || "",
+            status: stName2 || "закрыт: не дозвонились" });
+        }
+        // 2) ЛИД БЕЗ ЕДИНОГО ЗВОНКА: в работе N+ часов, звонков ноль
+        if (L.status !== SOLD_STATUS && L.status !== LOST_STATUS && (L.calls || 0) === 0 && L.created) {
+          const hrs = Math.floor((nowSec2 - L.created) / 3600);
+          if (hrs >= STALLED_NO_CALL_HOURS) {
+            mopIssues.push({ type: "no_call", mop, leadId: L.id, name: L.name || "", hours: hrs, status: stName2 });
+          }
+        }
+      }
+
       // [ВОРОНКА] лид завис: открыт (не продан/не закрыт), без изменений дольше 7 дней
       if (L.status !== SOLD_STATUS && L.status !== LOST_STATUS && L.updated && (nowSec2 - L.updated) > STALL_DAYS * 24 * 3600) {
         const days = Math.floor((nowSec2 - L.updated) / (24 * 3600));
@@ -594,6 +625,10 @@ export default async function handler(req, res) {
       updatedAt: new Date().toISOString(), period: "Текущий месяц", mops, mopsDay,
       suspicious2: suspicious2.slice(0, 300), telephony,
       reach, // ← единственная корректная метрика дозвона по лидам
+      mopIssues: mopIssues.slice(0, 400), // сырые факты по МОПам для MOP Agent (без суждений)
+      // пороги, по которым эти факты собраны — MOP Agent формулирует ими текст задачи,
+      // чтобы «в течение N ч» в сообщении РОПу и реальный детектор не разъехались
+      mopMeta: { stalledNoCallHours: STALLED_NO_CALL_HOURS, reachedSec: REACHED_SEC },
       _callDiag: {
         notesSeen, callNotesSeen,
         longCallNotes: reachedSet, // ЯВНОЕ ИМЯ: это ЗВОНКИ ≥порога, а НЕ лиды

@@ -155,4 +155,13 @@ export const taskAgent = {
   botTest: (who) => postJSON('/api/tg-bot', { action: 'test', session: getSession(), who }).then((r) => r.json()),
 }
 
+// ===== MOP AGENT (Агент Г — находки по МОПам → задачи РОПу через канал Task Agent) =====
+// Своего UI-раздела у него нет: находки видны в потоке задач Task Agent с бейджами 🏢 / 👤.
+export const mopAgent = {
+  state: () => getJSON('/api/mop-agent?action=state&session=' + encodeURIComponent(getSession())),
+  run: () => postJSON('/api/mop-agent', { action: 'run', session: getSession() }).then((r) => r.json()),
+  close: (id) => postJSON('/api/mop-agent', { action: 'close', session: getSession(), id }).then((r) => r.json()),
+  setConfig: (config) => postJSON('/api/mop-agent', { action: 'set_config', session: getSession(), config }).then((r) => r.json()),
+}
+
 export { postJSON, getJSON }
