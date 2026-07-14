@@ -95,6 +95,32 @@ export default async function handler(req, res) {
   const H = { Authorization: `Bearer ${token}` };
   const base = `https://${SUBDOMAIN}.amocrm.ru/api/v4`;
 
+  // === СПИСОК ЭТАПОВ ВОРОНКИ: ?action=stages&session=... (только админ) ===
+  // Нужен, чтобы ВЫБРАТЬ этапы для dozvonStages, а не хардкодить их в коде.
+  // У каждого клиента своя структура пайплайна, поэтому при онбординге выбор этапов — такая же
+  // двухкликовая настройка в панели, как выбор финального этапа продажи. Этот эндпоинт её и кормит.
+  // Лёгкий: один запрос в amoCRM, тяжёлый расчёт speed не запускается.
+  if (((req.query && req.query.action) || "") === "stages") {
+    const role = await sessionRole(redisUrl, redisToken, (req.query && req.query.session) || "");
+    if (role !== "admin") { res.status(403).json({ error: "admin only" }); return; }
+    const pr = await fetch(`${base}/leads/pipelines`, { headers: H });
+    if (!pr.ok) { res.status(200).json({ ok: false, error: `amoCRM ответил ${pr.status}` }); return; }
+    const pd = await pr.json();
+    const pipelines = ((pd._embedded && pd._embedded.pipelines) || []).map((p) => ({
+      id: p.id, name: p.name, isMain: p.is_main === true,
+      statuses: ((p._embedded && p._embedded.statuses) || [])
+        .sort((a, b) => (a.sort || 0) - (b.sort || 0))
+        .map((s) => ({ id: s.id, name: s.name, sort: s.sort, type: s.type })), // type: 1 = успех, 2 = провал
+    }));
+    res.status(200).json({
+      ok: true, org, pipelineInUse: PIPELINE_ID_NAME,
+      dozvonStages: cfg.dozvonStages || [], // что выбрано сейчас (пусто = метрика не настроена)
+      soldStatus: SOLD_STATUS, lostStatus: LOST_STATUS,
+      pipelines,
+    });
+    return;
+  }
+
   // TZ и начало сегодняшнего дня (Ташкент, UTC+5) — нужно и для звонков, и для дневной статистики.
   // Считаем РАНО: в debug-режиме сужаем выборку событий до сегодняшних, иначе запрос не укладывается в лимит.
   const TZ_OFFSET2 = 5 * 3600;
