@@ -52,7 +52,17 @@ export default function GrowthPanel() {
       <div className="ga-head">
         <div>
           <div className="ga-title">Growth Agent <span className="ga-sub">гипотезы роста · только verified-данные + web search</span></div>
-          {lastRun && <div className="ga-lastrun">последний прогон: {new Date(lastRun.at).toLocaleString('ru')} · поисков {lastRun.searches ?? 0} · {lastRun.tokens ? (lastRun.tokens >= 1000 ? (lastRun.tokens / 1000).toFixed(1) + 'k' : lastRun.tokens) + ' token' : ''}</div>}
+          {lastRun && (
+            <div className="ga-lastrun">
+              {lastRun.runMode && (
+                <span className={'da-runbadge ' + lastRun.runMode} title={lastRun.runReason || ''}>
+                  {lastRun.runMode === 'light' ? '🟢 лёгкая проверка (без web search)' : '🔵 полный анализ'}
+                </span>
+              )}
+              последний прогон: {new Date(lastRun.at).toLocaleString('ru')} · поисков {lastRun.searches ?? 0} · {lastRun.tokens ? (lastRun.tokens >= 1000 ? (lastRun.tokens / 1000).toFixed(1) + 'k' : lastRun.tokens) + ' token' : ''}
+              {lastRun.runReason && <div className="da-runreason">{lastRun.runReason}</div>}
+            </div>
+          )}
         </div>
         <div className="ga-actions">
           <button className="da-btn" disabled={!!busy} onClick={run}>{busy === 'run' ? 'Ищу бенчмарки…' : 'Запустить сейчас'}</button>
