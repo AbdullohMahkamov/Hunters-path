@@ -37,17 +37,36 @@ async function rsetJSON(key, v) { try { await fetch(`${REDIS_URL}/set/${encodeUR
 async function getSession(session) { if (!session) return null; try { const raw = await rget(`session:${session}`); return raw ? JSON.parse(raw) : null; } catch (e) { return null; } }
 
 // ── ОТПРАВКА от имени бота (экспортируется для task-agent.js) ──
-export async function sendTg(botKind, chatId, text) {
+export async function sendTg(botKind, chatId, text, extra) {
   const token = BOT_TOKENS[botKind];
   if (!token || !chatId) return { ok: false, error: "no token or chatId" };
   try {
     const r = await fetch(`https://api.telegram.org/bot${token}/sendMessage`, {
       method: "POST", headers: { "content-type": "application/json" },
-      body: JSON.stringify({ chat_id: chatId, text: String(text).slice(0, 4000), parse_mode: "HTML", disable_web_page_preview: true }),
+      body: JSON.stringify({ chat_id: chatId, text: String(text).slice(0, 4000), parse_mode: "HTML", disable_web_page_preview: true, ...(extra || {}) }),
     });
     const d = await r.json();
     return d && d.ok ? { ok: true, messageId: d.result && d.result.message_id } : { ok: false, error: (d && d.description) || "send failed" };
   } catch (e) { return { ok: false, error: String(e).slice(0, 120) }; }
+}
+
+// ── ЯЗЫК ОБЩЕНИЯ ──
+// Спрашиваем у человека, на каком языке ему удобно, и дальше агент пишет ТОЛЬКО на нём.
+// Хранится в people[kind].lang ('ru' | 'uz').
+const LANG_KB = { reply_markup: { keyboard: [[{ text: "🇷🇺 Русский" }, { text: "🇺🇿 O'zbekcha" }]], resize_keyboard: true, one_time_keyboard: true } };
+const LANG_ASK = "🌐 На каком языке вам удобнее общаться?\n<i>Qaysi tilda muloqot qilish siz uchun qulay?</i>\n\nВыберите вариант ниже — дальше я всегда буду писать на нём.";
+export async function askLang(kind, chatId) { return await sendTg(kind, chatId, LANG_ASK, LANG_KB); }
+// распознаём выбор (кнопка или просто слово)
+function detectLangChoice(text) {
+  const t = String(text || "").toLowerCase();
+  if (/o'zbek|ozbek|oʻzbek|узбек|uz\b|🇺🇿/.test(t)) return "uz";
+  if (/рус|russ|ru\b|🇷🇺/.test(t)) return "ru";
+  return null;
+}
+export async function setPersonLang(kind, lang) {
+  const people = await rgetJSON(K.people, {});
+  if (people[kind]) { people[kind].lang = lang; await rsetJSON(K.people, people); }
+  return people;
 }
 export async function getPeople() { return await rgetJSON(K.people, {}); }
 // добавить сообщение в общий тред с РОПом (taskId — к какой задаче относится, может быть пустым)
@@ -131,6 +150,21 @@ export default async function handler(req, res) {
       return;
     }
 
+    if (action === "ask_lang") {
+      // спросить язык у УЖЕ подключённых (они привязались до появления этого шага)
+      const people = await getPeople();
+      const out = {};
+      for (const kind of ["rop", "owner"]) {
+        const p = people[kind];
+        if (!p || !p.chatId) { out[kind] = "не привязан"; continue; }
+        if (p.lang && !(b.force || q.force)) { out[kind] = `уже выбран: ${p.lang}`; continue; }
+        const r = await askLang(kind, p.chatId);
+        out[kind] = r.ok ? "вопрос отправлен" : ("ошибка: " + r.error);
+      }
+      res.status(200).json({ ok: true, asked: out });
+      return;
+    }
+
     if (action === "test") { // разовая проверка отправки
       const people = await getPeople();
       const who = b.who || q.who || "rop";
@@ -174,6 +208,7 @@ export default async function handler(req, res) {
         ? `🤖 <b>Hunter AI</b> — подключено.\n\nЯ система Hunter AI (не человек). Буду писать вам по задачам отдела продаж: напоминать о сроках, спрашивать статус и фиксировать результат по каждой задаче.\n\nОтвечайте мне прямо здесь — я всё зафиксирую.`
         : `🤖 <b>Hunter AI</b> — подключено.\n\nСюда буду присылать эскалации Task-агента: задача, дословная переписка с РОПом и текущий статус. Решение остаётся за вами.`;
       await sendTg(kind, chatId, hello);
+      await askLang(kind, chatId); // сразу спрашиваем язык общения
       res.status(200).json({ ok: true, bound: kind }); return;
     }
 
@@ -183,6 +218,24 @@ export default async function handler(req, res) {
     if (!bound || bound.chatId !== chatId) {
       await sendTg(kind, chatId, "🤖 <b>Hunter AI</b>\n\nВы не подключены. Отправьте <code>/start КОД</code> (код выдаёт владелец).");
       res.status(200).json({ ok: true, ignored: "not bound" }); return;
+    }
+
+    // ЯЗЫК ещё не выбран → это сообщение считаем ответом на вопрос о языке
+    if (!bound.lang) {
+      const choice = detectLangChoice(text);
+      if (choice) {
+        await setPersonLang(kind, choice);
+        const ok = choice === "uz"
+          ? "✅ Yaxshi, endi siz bilan <b>o'zbek tilida</b> muloqot qilaman."
+          : "✅ Хорошо, дальше буду писать вам <b>по-русски</b>.";
+        await sendTg(kind, chatId, ok, { reply_markup: { remove_keyboard: true } });
+        res.status(200).json({ ok: true, lang: choice }); return;
+      }
+      // не выбрал кнопкой — определяем по его тексту и не задерживаем диалог
+      const auto = /[а-яё]/i.test(text) ? "ru" : "uz";
+      await setPersonLang(kind, auto);
+      // и продолжаем обычную обработку сообщения ниже
+      bound.lang = auto;
     }
 
     if (kind === "rop") {

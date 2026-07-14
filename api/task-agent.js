@@ -110,10 +110,19 @@ function assembleMsg(out) {
   return `${q}\n\n${header}\n${list.map((c) => "— " + String(c).trim()).join("\n")}`;
 }
 
+// язык общения выбирает сам человек (кнопкой в боте); агент обязан его соблюдать
+function langLine(lang) {
+  return lang === "uz"
+    ? "ЯЗЫК ОТВЕТА: пиши ТОЛЬКО на узбекском (латиница). Человек сам выбрал этот язык — другой язык не используй."
+    : "ЯЗЫК ОТВЕТА: пиши ТОЛЬКО по-русски. Человек сам выбрал этот язык — другой язык не используй.";
+}
+
 // ── ПИНГ ПО ЗАДАЧЕ ──
-async function composePing(task, chatHistory) {
+async function composePing(task, chatHistory, lang) {
   const overdue = task.hoursOverdue > 0;
-  const user = `ЗАДАЧА ОТДЕЛА ПРОДАЖ:
+  const user = `${langLine(lang)}
+
+ЗАДАЧА ОТДЕЛА ПРОДАЖ:
 Название: ${task.title}
 Зачем: ${task.why}
 Шаги: ${(task.steps || []).join(" | ")}
@@ -127,11 +136,12 @@ ${chatHistory || "(переписки ещё не было)"}
 Напиши РОПу ОДНО короткое сообщение (2-4 предложения). Если это первое обращение — представься как система Hunter AI. Спроси конкретно про статус ЭТОЙ задачи. Если просрочено — скажи факт спокойно и спроси, что мешает.
 И СРАЗУ приложи подсказку-шаблон: что полезно указать в ответе ИМЕННО ПО ЭТОЙ ЗАДАЧЕ (см. правила в системном промпте). Пункты подстрой под суть задачи — у задачи с измеримым критерием и у задачи про причину задержки списки ДОЛЖНЫ отличаться.
 
-Верни СТРОГО JSON, всё на языке задачи (если задача на узбекском — пиши по-узбекски):
+Верни СТРОГО JSON, весь текст — на ВЫБРАННОМ ЧЕЛОВЕКОМ языке (см. ЯЗЫК ОТВЕТА выше), а не на языке задачи:
 {"question":"текст вопроса","needsDetail":true,"hintHeader":"строка-заголовок подсказки, например «Чтобы я зафиксировал это правильно, укажите:»","checklist":["пункт 1","пункт 2","пункт 3"]}
 needsDetail=false и пустой checklist — только если ждёшь простое да/нет.`;
   let out;
-  try { out = parseJSON(await callModel(SYSTEM_ROP, user, 700)); }
+  // 1400 токенов: вопрос + подсказка (на 700 JSON обрывался и агент сваливался в дефолтный шаблон)
+  try { out = parseJSON(await callModel(SYSTEM_ROP, user, 1400)); }
   catch (e) { out = { question: `Здравствуйте! Я система Hunter AI. Какой статус по задаче «${task.title}»? Срок: ${task.deadline || "не задан"}.`, needsDetail: true, hintHeader: "Чтобы я зафиксировал это правильно, укажите:", checklist: ["статус (сделано / в процессе / не начато)", "если не сделано — что мешает", "когда реально планируете закончить"] }; }
   return assembleMsg(out);
 }
@@ -145,7 +155,11 @@ export async function handleRopReply(text) {
   const chat = await getChat();
   const recent = chat.slice(-16).map((m) => `${m.role === "rop" ? "РОП" : (m.role === "owner" ? "ВЛАДЕЛЕЦ" : "АГЕНТ")}${m.taskId ? ` [задача ${m.taskId}]` : ""}: ${m.text}`).join("\n");
 
-  const user = `ОТКРЫТЫЕ ЗАДАЧИ ОТДЕЛА ПРОДАЖ:
+  const people0 = await getPeople();
+  const ropLang = (people0.rop && people0.rop.lang) || "ru";
+  const user = `${langLine(ropLang)}
+
+ОТКРЫТЫЕ ЗАДАЧИ ОТДЕЛА ПРОДАЖ:
 ${open.map((t) => `- [${t.id}] ${t.title} | срок ${t.deadline || "нет"} ${t.hoursOverdue > 0 ? "(ПРОСРОЧЕНО)" : ""}`).join("\n") || "(открытых задач нет)"}
 
 ПЕРЕПИСКА (последнее):
@@ -208,7 +222,7 @@ async function runTick(force) {
     if (canPing) {
       const hist = chat.filter((m) => m.taskId === t.id).map((m) => `${m.role === "rop" ? "РОП" : "АГЕНТ"}: ${m.text}`).join("\n");
       try {
-        const msg = await composePing(t, hist);
+        const msg = await composePing(t, hist, (people.rop && people.rop.lang) || "ru");
         const r = await sendTg("rop", people.rop.chatId, msg);
         if (r.ok) {
           await pushChat({ role: "agent", text: msg, taskId: t.id });
@@ -288,7 +302,8 @@ export default async function handler(req, res) {
       if (!t) { res.status(404).json({ error: "task not found" }); return; }
       const chat = await getChat();
       const hist = chat.filter((m) => m.taskId === t.id).map((m) => `${m.role === "rop" ? "РОП" : "АГЕНТ"}: ${m.text}`).join("\n");
-      const message = await composePing(t, hist);
+      const pv = await getPeople();
+      const message = await composePing(t, hist, (q.lang || b.lang || (pv.rop && pv.rop.lang) || "ru"));
       res.status(200).json({ ok: true, taskId: t.id, title: t.title, deadline: t.deadline, daysLeft: t.daysLeft, hoursOverdue: t.hoursOverdue, message });
       return;
     }
