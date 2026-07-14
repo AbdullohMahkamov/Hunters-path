@@ -89,6 +89,17 @@ export default async function handler(req, res) {
 
   const H = { Authorization: `Bearer ${token}` };
   const base = `https://${SUBDOMAIN}.amocrm.ru/api/v4`;
+
+  // TZ и начало сегодняшнего дня (Ташкент, UTC+5) — нужно и для звонков, и для дневной статистики.
+  // Считаем РАНО: в debug-режиме сужаем выборку событий до сегодняшних, иначе запрос не укладывается в лимит.
+  const TZ_OFFSET2 = 5 * 3600;
+  const nowLocal2 = new Date(Date.now() + TZ_OFFSET2 * 1000);
+  const dayStart2 = Math.floor(new Date(Date.UTC(nowLocal2.getUTCFullYear(), nowLocal2.getUTCMonth(), nowLocal2.getUTCDate())).getTime() / 1000) - TZ_OFFSET2;
+  // === DEBUG (разовая диагностика, только админ): ?debug=calls&mop=Имя&session=... ===
+  // Сверяем каждое событие звонка за сегодня с фактической нотой (длительностью).
+  // В обычный ответ/кэш не попадает и в лог не пишется.
+  const DEBUG_CALLS = ((req.query && req.query.debug) || "") === "calls";
+  const DEBUG_MOP = (req.query && req.query.mop) || "";
   const now = new Date();
   // monthStart — по календарю Ташкента (UTC+5), консистентно с dayStart2 ниже;
   // иначе фильтр amoCRM терял лиды, созданные 00:00–05:00 1-го числа месяца.
@@ -219,12 +230,14 @@ export default async function handler(req, res) {
     }
 
     // 3) Тянем СОБЫТИЯ месяца пачками: только outgoing_call (звонки), привязка к лидам
+    // В debug-режиме берём только СЕГОДНЯШНИЕ события — иначе месячная выборка не укладывается в лимит времени.
+    const evFrom = DEBUG_CALLS ? dayStart2 : monthStart;
     const evTypes2 = "outgoing_call";
     page = 1; guard = 0;
     while (guard < 120) {
       guard++;
       const url = `${base}/events?filter[type]=${evTypes2}` +
-        `&filter[created_at][from]=${monthStart}&limit=250&page=${page}&order[created_at]=asc`;
+        `&filter[created_at][from]=${evFrom}&limit=250&page=${page}&order[created_at]=asc`;
       const r = await fetch(url, { headers: H });
       if (r.status === 204) break;
       if (!r.ok) break;
@@ -248,9 +261,9 @@ export default async function handler(req, res) {
     }
 
     // 3b) Тянем события СМЕНЫ ОТВЕТСТВЕННОГО — чтобы знать, когда лид назначен на менеджера
-    // (для метрики "первый звонок после назначения")
+    // (для метрики "первый звонок после назначения"). В debug не нужны — пропускаем ради скорости.
     page = 1; guard = 0;
-    while (guard < 60) {
+    while (!DEBUG_CALLS && guard < 60) {
       guard++;
       const url = `${base}/events?filter[type]=entity_responsible_changed` +
         `&filter[created_at][from]=${monthStart}&limit=250&page=${page}&order[created_at]=asc`;
@@ -272,11 +285,6 @@ export default async function handler(req, res) {
       await new Promise(rs => setTimeout(rs, 150));
     }
 
-    // TZ и начало сегодняшнего дня (UTC+5) — нужно и для звонков, и для дневной статистики
-    const TZ_OFFSET2 = 5 * 3600;
-    const nowLocal2 = new Date(Date.now() + TZ_OFFSET2 * 1000);
-    const dayStart2 = Math.floor(new Date(Date.UTC(nowLocal2.getUTCFullYear(), nowLocal2.getUTCMonth(), nowLocal2.getUTCDate())).getTime() / 1000) - TZ_OFFSET2;
-
     // 3a) ЗВОНКИ С ДЛИТЕЛЬНОСТЬЮ — из notes каждого лида (надёжно, как /leads/{id}/notes).
     // Источник данных о звонках — ТОЛЬКО amoCRM API (ноты call_in/call_out, params.duration в сек).
     // Никаких вендор-специфичных интеграций телефонии: клиент сам настраивает свою телефонию так,
@@ -285,12 +293,7 @@ export default async function handler(req, res) {
     // чтобы не перегружать: приоритет — сегодняшние лиды (для метрики «за сегодня»).
     const REACHED_SEC = cfg.reachedSec != null ? cfg.reachedSec : 40; // из конфига клиента, дефолт 40
     let notesSeen = 0, callNotesSeen = 0, reachedSet = 0;
-    // === DEBUG (разовая диагностика, только админ): ?debug=calls&mop=Имя&session=... ===
-    // Собираем сырые ноты звонков за сегодня, чтобы сверить событие звонка с фактической длительностью.
-    // В обычном ответе API этого нет и в лог не пишем.
-    const DEBUG_CALLS = ((req.query && req.query.debug) || "") === "calls";
-    const DEBUG_MOP = (req.query && req.query.mop) || "";
-    const dbgNotesByLead = {}; // lid -> [{ts, dur, type}] только за сегодня
+    const dbgNotesByLead = {}; // lid -> [{ts, dur, type}] только за сегодня (только в debug)
     // собираем ID лидов, у которых были звонки (calls>0) — по ним проверяем длительность
     const leadIdsToCheck = Object.keys(leadInfo).filter(id => {
       const li = leadInfo[id];
