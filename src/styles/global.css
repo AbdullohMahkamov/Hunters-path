@@ -1026,3 +1026,5 @@
   /* Страховка шапки Dev-Agent: не схлопывается, не перекрывается, всегда видна */
   .da-root > .da-top{flex:0 0 auto;position:relative;z-index:5;min-height:52px;}
   .da-tab{font-size:14.5px;}
+  /* Защита: глобальное `body.shell header{display:none!important}` (монолит) не должно прятать шапку Dev-Agent */
+  body.shell .da-root .da-top, .da-root .da-top{display:flex!important;}
