@@ -578,7 +578,28 @@ export default async function handler(req, res) {
 
     // детектор телефонии на КЛИЕНТА: % лидов без звонка, но с активностью в CRM (сигнал возможной проблемы телефонии клиента)
     const telephony = { total: telTotal, noCallButActive: telNoCallButActive, noCallButActivePct: telTotal ? Math.round(telNoCallButActive / telTotal * 100) : 0 };
-    const result = { updatedAt: new Date().toISOString(), period: "Текущий месяц", mops, mopsDay, suspicious2: suspicious2.slice(0, 300), telephony, _callDiag: { notesSeen, callNotesSeen, reachedSet } };
+    // ДОЗВОН ПО ЛИДАМ (правильная метрика): сколько ЛИДОВ имели разговор ≥ REACHED_SEC.
+    // ВАЖНО: reachedSet — это счётчик НОТ (каждый длинный звонок), а НЕ лидов. Раньше он отдавался
+    // агентам как есть, они делили его на кол-во лидов и получали фантомные ~81% «дозвона».
+    const reachedLeadsTotal = mops.reduce((s, m) => s + (m.reached || 0), 0);
+    const leadsTotal = mops.reduce((s, m) => s + (m.leads || 0), 0);
+    const reach = {
+      leads: leadsTotal,
+      reachedLeads: reachedLeadsTotal,
+      reachedPct: leadsTotal ? Math.round(reachedLeadsTotal / leadsTotal * 100) : null,
+      thresholdSec: REACHED_SEC,
+      definition: "лид считается дозвонившимся, если был хотя бы один разговор длиннее порога (по нотам amoCRM)",
+    };
+    const result = {
+      updatedAt: new Date().toISOString(), period: "Текущий месяц", mops, mopsDay,
+      suspicious2: suspicious2.slice(0, 300), telephony,
+      reach, // ← единственная корректная метрика дозвона по лидам
+      _callDiag: {
+        notesSeen, callNotesSeen,
+        longCallNotes: reachedSet, // ЯВНОЕ ИМЯ: это ЗВОНКИ ≥порога, а НЕ лиды
+        _warning: "longCallNotes — счётчик ЗВОНКОВ, не лидов. НЕ делить на количество лидов. Дозвон по лидам — в поле reach.",
+      },
+    };
     await redisSet(redisUrl, redisToken, K("speed"), JSON.stringify(result));
     res.status(200).json({ ok: true, ...result });
   } catch (err) {

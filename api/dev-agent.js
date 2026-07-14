@@ -141,8 +141,29 @@ async function gatherAggregates(cfg) {
       if (!okRange(t.noContactPct, 0, 100)) outOfRange.push({ org, metric: "noContactPct", value: t.noContactPct });
     }
     if (speed) {
-      c.speed = { ageHours: ageH(speed.updatedAt), callDiag: speed._callDiag || null,
+      // ── КОНТАКТ С КЛИЕНТОМ: ДВА РАЗНЫХ ОПРЕДЕЛЕНИЯ. Не путать между собой. ──
+      // Раньше сюда отдавался сырой _callDiag.reachedSet (счётчик ЗВОНКОВ), агент делил его на лиды
+      // и получал фантомные ~81% «дозвона», противоречащие 44% по статусу CRM. Больше не отдаём.
+      const reachedLeads = (speed.reach && speed.reach.reachedLeads != null)
+        ? speed.reach.reachedLeads
+        : (speed.mops || []).reduce((s, m) => s + (m.reached || 0), 0);
+      const speedLeads = (speed.reach && speed.reach.leads != null)
+        ? speed.reach.leads
+        : (speed.mops || []).reduce((s, m) => s + (m.leads || 0), 0);
+      const byCallPct = speedLeads ? Math.round(reachedLeads / speedLeads * 100) : null;
+      const byStatusPct = (dash && dash.totals && dash.totals.noContactPct != null) ? (100 - dash.totals.noContactPct) : null;
+      c.contact = {
+        byCrmStatus: { contactedPct: byStatusPct, source: "dashboard.noContactPct", definition: "лид НЕ лежит в статусе «не дозвонились» (статус выставляет менеджер в CRM)" },
+        byCallDuration: { reachedLeads, leads: speedLeads, contactedPct: byCallPct, source: "speed.reach", definition: "у лида был хотя бы один реальный разговор ≥ порога сек (по нотам amoCRM)" },
+        gapPp: (byStatusPct != null && byCallPct != null) ? Math.abs(byCallPct - byStatusPct) : null,
+        howToRead: "Это ДВА РАЗНЫХ показателя, а не один. Если разговор был, а лид всё ещё в статусе «не дозвонились» — это гигиена CRM (менеджер не обновил статус), а не ошибка расчёта. НИКОГДА не делить счётчик звонков (_callDiag.longCallNotes) на количество лидов — это разные единицы.",
+      };
+      c.speed = { ageHours: ageH(speed.updatedAt),
         today: (speed.mopsDay || []).map((m) => ({ name: m.name, leads: m.leads, reached: m.reached, reachedPct: m.reachedPct, called: m.calledLeads })) };
+      // расхождение двух определений контакта > 10 п.п. → сигнал (лиды с разговором висят в «не дозвонились»)
+      if (c.contact.gapPp != null && c.contact.gapPp > 10) {
+        invariants.push({ name: "contact_status_vs_calls", ok: false, detail: `${org}: по статусу CRM контакт ${byStatusPct}%, по фактическим разговорам ${byCallPct}% — расхождение ${c.contact.gapPp} п.п. Вероятно, часть лидов с реальным разговором осталась в статусе «не дозвонились».` });
+      }
       // out-of-range по МОПам (дозвон>100, отрицательные значения и т.п.)
       for (const m of [...(speed.mops || []), ...(speed.mopsDay || [])]) {
         for (const [k, lo, hi] of [["reachedPct", 0, 100], ["reachPct", 0, 100], ["calledPct", 0, 100], ["tasksDonePct", 0, 100], ["medianFirstCallMin", 0, 1e6], ["reached", 0, 1e7], ["leads", 0, 1e7]]) {
