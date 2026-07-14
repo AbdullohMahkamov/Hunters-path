@@ -518,7 +518,8 @@ export default async function handler(req, res) {
     const NOTES_BUDGET_MS = Math.max(0, timeLeft() - 15000);
     const notesT0 = Date.now();
     const sleep = (ms) => new Promise((rs) => setTimeout(rs, ms));
-    let notesTruncated = 0, notesFailed = 0, notes429 = 0, notesRetried = 0;
+    let notesTruncated = 0, notesFailed = 0, notes429 = 0, notesRetried = 0, notesGone = 0;
+    const notesFailStatus = {}; // код → сколько раз (чтобы не гадать, что именно сломалось)
     let qi = 0;
 
     const readLeadNotes = async (lid) => {
@@ -536,7 +537,21 @@ export default async function handler(req, res) {
         }
         break; // 4xx кроме 429 — повтор не поможет
       }
-      if (!r || (!r.ok && r.status !== 204)) { notesFailed++; return; } // НЕ молча: считаем потерю
+      // ЛИД УДАЛЁН (404/410) — это НЕ потеря данных, это лид, которого больше нет.
+      // Разница принципиальна: «мы не смогли прочитать» → метрике верить нельзя (агент молчит);
+      // «лида больше не существует» → его просто нет в знаменателе, метрика остаётся честной.
+      // Без этого различия 2 удалённых лида из 604 глушили агента по всей метрике — это не
+      // осторожность, а бесполезность: удаляют карточки регулярно, агент молчал бы всегда.
+      if (r && (r.status === 404 || r.status === 410)) {
+        notesGone++;
+        if (leadInfo[lid]) leadInfo[lid]._gone = true; // исключаем из всех расчётов
+        return;
+      }
+      if (!r || (!r.ok && r.status !== 204)) {         // настоящая потеря: 429/5xx исчерпаны, 403, сеть
+        notesFailed++;
+        if (r) notesFailStatus[r.status] = (notesFailStatus[r.status] || 0) + 1;
+        return;
+      }
       if (r.status === 204) return;
       const d = await r.json();
       const notes = (d._embedded && d._embedded.notes) || [];
@@ -664,6 +679,7 @@ export default async function handler(req, res) {
       const L = leadInfo[id];
       const mop = ACTIVE_MOPS[L.resp];
       if (!mop) continue;
+      if (L._gone) continue; // лид удалён из amoCRM — не считаем ни в числителе, ни в знаменателе
       // Лид, долитый ТОЛЬКО ради пула дозвона (создан раньше текущего месяца), в месячные
       // агрегаты не входит — иначе статистика за период поедет: в неё попадут чужие периоды.
       if (L._poolOnly) continue;
@@ -839,6 +855,7 @@ export default async function handler(req, res) {
     for (const id in leadInfo) {
       const L = leadInfo[id];
       if (!L._pool) continue;                     // не на этапах входа → метрика его не касается
+      if (L._gone) continue;                      // лид удалён из amoCRM — не в знаменателе
       const mop = ACTIVE_MOPS[L.resp];
       if (!mop) continue;                         // лид без действующего МОПа (не разобран/уволенный)
       const calledToday = (L._callTs || []).some((ts) => ts >= dayStart2);
@@ -941,15 +958,18 @@ export default async function handler(req, res) {
         longCallNotes: reachedSet, // ЯВНОЕ ИМЯ: это ЗВОНКИ ≥порога, а НЕ лиды
         _warning: "longCallNotes — счётчик ЗВОНКОВ, не лидов. НЕ делить на количество лидов. Дозвон по лидам — в поле reach.",
         // читаемость прогона: сколько лидов проверили на ноты, за сколько, и не оборвались ли по бюджету
-        leadsChecked: toCheck.length - notesTruncated - notesFailed, leadsPlanned: toCheck.length,
+        leadsChecked: toCheck.length - notesTruncated - notesFailed - notesGone, leadsPlanned: toCheck.length,
         leadsWithCalls: leadIdsToCheck.length, leadsCapped, // capped > 0 → потолок срезал лидов
         notesMs, notesTruncated,
         // сбои чтения нот: failed > 0 → дозвон ЗАНИЖЕН, доверять ему нельзя
         notesFailed, notes429, notesRetried, targetRps: NOTES_TARGET_RPS,
+        notesFailStatus, // какие именно коды сломались — чтобы не гадать
+        // удалённые лиды (404/410) — НЕ неполнота: их просто нет, они исключены из расчётов
+        notesGone,
         // если > 0 — часть лидов НЕ прочитана: дозвон и mopIssues занижены, но кэш свежий (это осознанный размен)
         _truncWarning: (notesTruncated > 0 || notesFailed > 0 || leadsCapped > 0)
           ? `Ноты прочитаны НЕ полностью: бюджет ${notesTruncated}, сбои ${notesFailed} (429: ${notes429}), потолок ${leadsCapped}. Дозвон и mopIssues ЗАНИЖЕНЫ — MOP Agent по ним молчит.`
-          : null,
+          : (notesGone > 0 ? `Удалённых лидов: ${notesGone} — исключены из расчётов. На полноту данных не влияет.` : null),
       },
     };
     await redisSet(redisUrl, redisToken, K("speed"), JSON.stringify(result));
