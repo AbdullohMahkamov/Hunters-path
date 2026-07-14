@@ -202,11 +202,26 @@ export default async function handler(req, res) {
     const isWrongNumber = (id) => { const n = lossNameById[id] || ""; return n.includes("xato raqam") || n.includes("неверный номер") || n.includes("неправильн"); };
     const isPhoneOff = (id) => { const n = lossNameById[id] || ""; return n.includes("o'chirilgan") || n.includes("o‘chirilgan") || n.includes("отключ"); };
 
+    // ═══ ЖЁСТКИЙ ОБЩИЙ ДЕДЛАЙН ПРОГОНА ═══
+    // Лимит функции на Vercel — 300с. Если мы в него не влезаем, нас убивают ДО записи кэша,
+    // и наружу это выглядит как «метрики замерли» (так и случилось: кэш стоял 7 часов).
+    // Правило: функция ОБЯЗАНА вернуться и записать кэш. Лучше свежие данные с честной отметкой
+    // «выгружено не полностью» (по ней агенты молчат), чем 504 и вечно старый кэш.
+    // Поэтому каждая фаза выгрузки проверяет дедлайн и прекращает добирать страницы.
+    const RUN_T0 = Date.now();
+    const HARD_BUDGET_MS = 235000; // 235с из 300с; остаток — на расчёты, запись в Redis и ответ
+    const timeLeft = () => HARD_BUDGET_MS - (Date.now() - RUN_T0);
+    const outOfTime = () => timeLeft() <= 0;
+    const T = {}; // тайминги фаз (мс) — видно, куда реально уходит время
+    let leadsTruncated = false, assignTruncated = false;
+
     // 2) Тянем ЛИДЫ месяца: id -> {created_at, responsible, status, price, lossId}
+    const tLeads = Date.now();
     const leadInfo = {};
     let page = 1, guard = 0;
     while (guard < 80) {
       guard++;
+      if (outOfTime()) { leadsTruncated = true; break; }
       let url = `${base}/leads?limit=250&page=${page}&filter[created_at][from]=${monthStart}`;
       if (pipelineId) url += `&filter[pipeline_id]=${pipelineId}`;
       const r = await fetch(url, { headers: H });
@@ -236,6 +251,8 @@ export default async function handler(req, res) {
       page++;
       await new Promise(rs => setTimeout(rs, 150));
     }
+    T.leads = Date.now() - tLeads;
+    T.leadsCount = Object.keys(leadInfo).length;
 
     // 3) Тянем СОБЫТИЯ месяца пачками: только outgoing_call (звонки), привязка к лидам
     // В debug-режиме берём только СЕГОДНЯШНИЕ события — иначе месячная выборка не укладывается в лимит времени.
@@ -247,9 +264,11 @@ export default async function handler(req, res) {
     // звонил, хотя звонки были, их просто не отдали. Поэтому любой обрыв фиксируем флагом,
     // а MOP Agent по такому прогону обязан молчать (см. гейт в mop-agent.js).
     let eventsTruncated = false;
+    const tCallEv = Date.now();
     page = 1; guard = 0;
     while (guard < 120) {
       guard++;
+      if (outOfTime()) { eventsTruncated = true; break; } // не успели — честно помечаем неполноту
       const url = `${base}/events?filter[type]=${evTypes2}` +
         `&filter[created_at][from]=${evFrom}&limit=250&page=${page}&order[created_at]=asc`;
       const r = await fetch(url, { headers: H });
@@ -274,17 +293,24 @@ export default async function handler(req, res) {
       await new Promise(rs => setTimeout(rs, 150));
     }
     if (guard >= 120) eventsTruncated = true; // упёрлись в потолок страниц — событий больше, чем прочитали
+    T.callEvents = Date.now() - tCallEv;
+    T.callEventPages = guard;
 
     // 3b) Тянем события СМЕНЫ ОТВЕТСТВЕННОГО — чтобы знать, когда лид назначен на менеджера
     // (для метрики "первый звонок после назначения"). В debug не нужны — пропускаем ради скорости.
+    // Эта фаза — ВТОРОСТЕПЕННАЯ (нужна только для метрики «первый звонок после назначения»).
+    // Она НЕ кормит детекторы MOP Agent, поэтому при нехватке времени жертвуем именно ей,
+    // а не звонками: приоритет у данных, на которых строятся находки по людям.
+    const tAssign = Date.now();
     page = 1; guard = 0;
     while (!DEBUG_CALLS && guard < 60) {
       guard++;
+      if (outOfTime()) { assignTruncated = true; break; }
       const url = `${base}/events?filter[type]=entity_responsible_changed` +
         `&filter[created_at][from]=${monthStart}&limit=250&page=${page}&order[created_at]=asc`;
       const r = await fetch(url, { headers: H });
       if (r.status === 204) break;
-      if (!r.ok) break;
+      if (!r.ok) { assignTruncated = true; break; }
       const d = await r.json();
       const events = (d._embedded && d._embedded.events) || [];
       for (const e of events) {
@@ -299,6 +325,8 @@ export default async function handler(req, res) {
       page++;
       await new Promise(rs => setTimeout(rs, 150));
     }
+    T.assignEvents = Date.now() - tAssign;
+    T.assignPages = guard;
 
     // 3a) ЗВОНКИ С ДЛИТЕЛЬНОСТЬЮ — из notes каждого лида (надёжно, как /leads/{id}/notes).
     // Источник данных о звонках — ТОЛЬКО amoCRM API (ноты call_in/call_out, params.duration в сек).
@@ -345,7 +373,9 @@ export default async function handler(req, res) {
     //      и КЭШ ВСЁ РАВНО ЗАПИСЫВАЕТСЯ. Свежие данные с частично непрочитанными нотами лучше,
     //      чем 504 и вечно старый кэш. Сколько лидов не дочитали — видно в _callDiag.notesTruncated.
     const NOTES_CONCURRENCY = 6;
-    const NOTES_BUDGET_MS = 150000; // 150с из 300с бюджета функции — остальное на лиды/события/запись
+    // Бюджет нот = сколько осталось от общего дедлайна (минус запас на расчёты и запись).
+    // Ноты идут ПОСЛЕДНИМИ и режутся первыми: они дают только уточнение дозвона, а не сам факт звонка.
+    const NOTES_BUDGET_MS = Math.max(0, timeLeft() - 15000);
     const notesT0 = Date.now();
     let notesTruncated = 0;
     let qi = 0;
@@ -663,10 +693,16 @@ export default async function handler(req, res) {
       // Правило простое: если система чего-то не успела прочитать — это не повод обвинять человека.
       mopMeta: {
         stalledNoCallHours: STALLED_NO_CALL_HOURS, reachedSec: REACHED_SEC,
-        notesComplete: notesTruncated === 0,
-        eventsComplete: !eventsTruncated,
+        // лиды тоже могут быть недокачаны — тогда доверять нельзя вообще ничему по людям
+        notesComplete: notesTruncated === 0 && !leadsTruncated,
+        eventsComplete: !eventsTruncated && !leadsTruncated,
         notesUnread: notesTruncated,
+        leadsComplete: !leadsTruncated,
       },
+      // КУДА УХОДИТ ВРЕМЯ — видно в ответе и в кэше. Без этого прогон падал с 504 «вслепую»:
+      // функцию убивали до ответа, и ни одной цифры о причине наружу не попадало.
+      _timings: { ...T, totalMs: Date.now() - RUN_T0, budgetMs: HARD_BUDGET_MS,
+        truncated: { leads: leadsTruncated, callEvents: eventsTruncated, assignEvents: assignTruncated, notes: notesTruncated } },
       _callDiag: {
         notesSeen, callNotesSeen,
         longCallNotes: reachedSet, // ЯВНОЕ ИМЯ: это ЗВОНКИ ≥порога, а НЕ лиды
