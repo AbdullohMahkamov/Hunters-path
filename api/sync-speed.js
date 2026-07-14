@@ -379,17 +379,39 @@ export default async function handler(req, res) {
     //   2) БЮДЖЕТ ВРЕМЕНИ: как только он исчерпан, чтение нот обрывается, но прогон продолжается
     //      и КЭШ ВСЁ РАВНО ЗАПИСЫВАЕТСЯ. Свежие данные с частично непрочитанными нотами лучше,
     //      чем 504 и вечно старый кэш. Сколько лидов не дочитали — видно в _callDiag.notesTruncated.
+    // ⚠️ РЕЙТ-ЛИМИТ. Первая версия пула гнала 6 воркеров без пауз (~25+ запросов/с при лимите
+    // amoCRM ~7/с). amoCRM отвечал 429, а код делал `if (!r.ok) return` — МОЛЧА выбрасывал лид.
+    // Ноты не прочитаны → reachedReal не выставлен → дозвон занижен. И паспорт при этом врал
+    // notesComplete=true, потому что считал только обрезку по времени, а не СБОИ.
+    // Симптом был противоестественный: прочитали БОЛЬШЕ лидов (602 из 602) — а дозвон УПАЛ
+    // (184 → 165). Чем быстрее гнали, тем больше данных теряли.
+    // Поэтому: пейсим под лимит, ретраим 429/5xx, и КАЖДЫЙ невосстановимый сбой считаем неполнотой.
     const NOTES_CONCURRENCY = 6;
-    // Бюджет нот = сколько осталось от общего дедлайна (минус запас на расчёты и запись).
-    // Ноты идут ПОСЛЕДНИМИ и режутся первыми: они дают только уточнение дозвона, а не сам факт звонка.
+    const NOTES_TARGET_RPS = 6;                                    // ниже лимита amoCRM (~7/с)
+    const GAP_MS = Math.ceil(1000 * NOTES_CONCURRENCY / NOTES_TARGET_RPS); // пауза на воркер
     const NOTES_BUDGET_MS = Math.max(0, timeLeft() - 15000);
     const notesT0 = Date.now();
-    let notesTruncated = 0;
+    const sleep = (ms) => new Promise((rs) => setTimeout(rs, ms));
+    let notesTruncated = 0, notesFailed = 0, notes429 = 0, notesRetried = 0;
     let qi = 0;
 
     const readLeadNotes = async (lid) => {
-      const r = await fetch(`${base}/leads/${lid}/notes?limit=250`, { headers: H });
-      if (!r.ok) return;
+      let r = null;
+      // до 3 попыток: 429 (рейт-лимит) и 5xx — восстановимые, ждём и повторяем
+      for (let attempt = 0; attempt < 3; attempt++) {
+        r = await fetch(`${base}/leads/${lid}/notes?limit=250`, { headers: H });
+        if (r.ok || r.status === 204) break;
+        if (r.status === 429 || r.status >= 500) {
+          if (r.status === 429) notes429++;
+          notesRetried++;
+          const ra = parseInt(r.headers.get("retry-after") || "0", 10);
+          await sleep(ra > 0 ? ra * 1000 : 800 * (attempt + 1)); // бэкофф
+          continue;
+        }
+        break; // 4xx кроме 429 — повтор не поможет
+      }
+      if (!r || (!r.ok && r.status !== 204)) { notesFailed++; return; } // НЕ молча: считаем потерю
+      if (r.status === 204) return;
       const d = await r.json();
       const notes = (d._embedded && d._embedded.notes) || [];
       for (const n of notes) {
@@ -414,7 +436,10 @@ export default async function handler(req, res) {
       while (qi < toCheck.length) {
         if (Date.now() - notesT0 > NOTES_BUDGET_MS) { notesTruncated = toCheck.length - qi; qi = toCheck.length; return; }
         const lid = toCheck[qi++];
-        try { await readLeadNotes(lid); } catch (e) { /* пропускаем сбойный лид */ }
+        const t0 = Date.now();
+        try { await readLeadNotes(lid); } catch (e) { notesFailed++; } // сетевой сбой — тоже потеря, не молчим
+        const spent = Date.now() - t0;
+        if (spent < GAP_MS) await sleep(GAP_MS - spent); // держим совокупный темп ниже лимита amoCRM
       }
     };
     await Promise.all(Array.from({ length: Math.min(NOTES_CONCURRENCY, toCheck.length) }, worker));
@@ -700,11 +725,13 @@ export default async function handler(req, res) {
       // Правило простое: если система чего-то не успела прочитать — это не повод обвинять человека.
       mopMeta: {
         stalledNoCallHours: STALLED_NO_CALL_HOURS, reachedSec: REACHED_SEC,
-        // Полнота нот = не обрезаны по времени И не срезаны потолком И лиды докачаны.
-        // Любая из трёх дыр занижает reachedReal → status_mismatch недостоверен → агент молчит.
-        notesComplete: notesTruncated === 0 && leadsCapped === 0 && !leadsTruncated,
+        // Полнота нот = не обрезаны по времени, не срезаны потолком, лиды докачаны И НИ ОДИН
+        // запрос нот не провалился. Последнее — самое коварное: сбойный лид выглядит как лид
+        // без разговора, то есть занижает дозвон и прячет status_mismatch. Любая из ЧЕТЫРЁХ дыр
+        // → данные неполные → MOP Agent молчит, а не обвиняет человека.
+        notesComplete: notesTruncated === 0 && leadsCapped === 0 && !leadsTruncated && notesFailed === 0,
         eventsComplete: !eventsTruncated && !leadsTruncated,
-        notesUnread: notesTruncated + leadsCapped,
+        notesUnread: notesTruncated + leadsCapped + notesFailed,
         leadsComplete: !leadsTruncated,
       },
       // КУДА УХОДИТ ВРЕМЯ — видно в ответе и в кэше. Без этого прогон падал с 504 «вслепую»:
@@ -716,12 +743,14 @@ export default async function handler(req, res) {
         longCallNotes: reachedSet, // ЯВНОЕ ИМЯ: это ЗВОНКИ ≥порога, а НЕ лиды
         _warning: "longCallNotes — счётчик ЗВОНКОВ, не лидов. НЕ делить на количество лидов. Дозвон по лидам — в поле reach.",
         // читаемость прогона: сколько лидов проверили на ноты, за сколько, и не оборвались ли по бюджету
-        leadsChecked: toCheck.length - notesTruncated, leadsPlanned: toCheck.length,
+        leadsChecked: toCheck.length - notesTruncated - notesFailed, leadsPlanned: toCheck.length,
         leadsWithCalls: leadIdsToCheck.length, leadsCapped, // capped > 0 → потолок срезал лидов
         notesMs, notesTruncated,
+        // сбои чтения нот: failed > 0 → дозвон ЗАНИЖЕН, доверять ему нельзя
+        notesFailed, notes429, notesRetried, targetRps: NOTES_TARGET_RPS,
         // если > 0 — часть лидов НЕ прочитана: дозвон и mopIssues занижены, но кэш свежий (это осознанный размен)
-        _truncWarning: notesTruncated > 0
-          ? `Бюджет чтения нот исчерпан: не дочитано ${notesTruncated} лид(ов). Дозвон и mopIssues занижены. Поднять NOTES_CONCURRENCY или сузить выборку.`
+        _truncWarning: (notesTruncated > 0 || notesFailed > 0 || leadsCapped > 0)
+          ? `Ноты прочитаны НЕ полностью: бюджет ${notesTruncated}, сбои ${notesFailed} (429: ${notes429}), потолок ${leadsCapped}. Дозвон и mopIssues ЗАНИЖЕНЫ — MOP Agent по ним молчит.`
           : null,
       },
     };
