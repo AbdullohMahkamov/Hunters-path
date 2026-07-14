@@ -1072,3 +1072,10 @@
   .plan-gen-dots i:nth-child(3){animation-delay:.4s;}
   .plan-gen-body{font-size:14px;line-height:1.62;color:var(--txt);}
   .plan-gen-body p{margin:0 0 9px;}
+
+  /* Генерация плана — В МОДАЛКЕ поверх раздела «Задачи» (перекрывает прежний inline-вариант) */
+  .plan-gen-ov{position:fixed;inset:0;background:rgba(0,0,0,.5);display:flex;align-items:center;justify-content:center;z-index:120;padding:20px;}
+  .plan-gen-box{background:var(--card);border:1px solid var(--line);border-radius:16px;padding:20px 22px;width:100%;max-width:640px;max-height:80vh;display:flex;flex-direction:column;box-shadow:0 20px 60px rgba(0,0,0,.35);}
+  .plan-gen-box .plan-gen-h{font-size:14px;margin-bottom:12px;flex:0 0 auto;}
+  .plan-gen-box .plan-gen-body{overflow-y:auto;flex:1;min-height:0;}
+  .plan-gen-foot{display:flex;justify-content:flex-end;gap:8px;margin-top:14px;flex:0 0 auto;}
