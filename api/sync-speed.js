@@ -8,6 +8,7 @@ const HUNTER_CFG = {
   lostStatus: 143,     // Yopildi
   ownThreshold: 1600000,
   noReachReasonId: 22815982, // "3 marta bog'lanib bo'lmadi"
+  reachedSec: 40,      // порог «реального дозвона» (сек). НЕ хардкод — правится в конфиге клиента.
   mops: {
     13660834: "Komiljon", 13703650: "Samandar", 13904266: "Abdulla-Legenda",
     13833590: "Begoyim", 13681582: "Abulbositxon",
@@ -33,8 +34,21 @@ async function resolveConfig(org, redisUrl, redisToken) {
     lostStatus: s.lostStatus != null ? s.lostStatus : null,
     ownThreshold: s.ownThreshold != null ? s.ownThreshold : 0,
     noReachReasonId: s.noReachReasonId != null ? s.noReachReasonId : null,
+    reachedSec: s.reachedSec != null ? s.reachedSec : 40, // порог дозвона (сек), дефолт 40
     mops: s.mops || {},
   };
+}
+
+// роль по сессии — нужна только для гейта debug-режима (админ)
+async function sessionRole(url, token, session) {
+  if (!session) return null;
+  try {
+    const r = await fetch(`${url}/get/session:${encodeURIComponent(session)}`, { headers: { Authorization: `Bearer ${token}` } });
+    const d = await r.json();
+    if (!d || d.result == null) return null;
+    const s = JSON.parse(d.result);
+    return s && s.role;
+  } catch (e) { return null; }
 }
 
 async function redisSet(url, token, key, value) {
@@ -269,8 +283,14 @@ export default async function handler(req, res) {
     // чтобы она передавала звонки в его amoCRM. Разговор дольше REACHED_SEC = реальный дозвон.
     // Тянем только по лидам, которые нам нужны (созданные сегодня + за месяц, где были звонки),
     // чтобы не перегружать: приоритет — сегодняшние лиды (для метрики «за сегодня»).
-    const REACHED_SEC = 40;
+    const REACHED_SEC = cfg.reachedSec != null ? cfg.reachedSec : 40; // из конфига клиента, дефолт 40
     let notesSeen = 0, callNotesSeen = 0, reachedSet = 0;
+    // === DEBUG (разовая диагностика, только админ): ?debug=calls&mop=Имя&session=... ===
+    // Собираем сырые ноты звонков за сегодня, чтобы сверить событие звонка с фактической длительностью.
+    // В обычном ответе API этого нет и в лог не пишем.
+    const DEBUG_CALLS = ((req.query && req.query.debug) || "") === "calls";
+    const DEBUG_MOP = (req.query && req.query.mop) || "";
+    const dbgNotesByLead = {}; // lid -> [{ts, dur, type}] только за сегодня
     // собираем ID лидов, у которых были звонки (calls>0) — по ним проверяем длительность
     const leadIdsToCheck = Object.keys(leadInfo).filter(id => {
       const li = leadInfo[id];
@@ -300,14 +320,63 @@ export default async function handler(req, res) {
           callNotesSeen++;
           const p = n.params || {};
           const dur = parseInt(p.duration != null ? p.duration : (p.DURATION || 0), 10) || 0;
+          const nts = n.created_at || 0;
+          // debug: копим сырые ноты звонков за сегодня (для сверки события звонка с длительностью)
+          if (DEBUG_CALLS && nts >= dayStart2) {
+            (dbgNotesByLead[lid] = dbgNotesByLead[lid] || []).push({ ts: nts, dur, type: n.note_type, callStatus: p.call_status != null ? String(p.call_status) : null });
+          }
           if (dur >= REACHED_SEC) {
             leadInfo[lid].reachedReal = true; reachedSet++;
-            if ((n.created_at || 0) >= dayStart2) leadInfo[lid].reachedRealToday = true; // реальный дозвон ИМЕННО сегодня (звонок сегодня ≥40 сек)
+            if (nts >= dayStart2) leadInfo[lid].reachedRealToday = true; // реальный дозвон ИМЕННО сегодня (разговор ≥ REACHED_SEC)
           }
         }
       } catch (e) { /* пропускаем сбойный лид */ }
     }
 
+
+    // === DEBUG-ВЫВОД: сверяем каждое событие звонка за сегодня с фактической нотой (длительностью) ===
+    // Только по query-параметру и только для админа. В обычный ответ/кэш не попадает.
+    if (DEBUG_CALLS) {
+      const role = await sessionRole(redisUrl, redisToken, (req.query && req.query.session) || "");
+      if (role !== "admin") { res.status(403).json({ error: "debug: admin only" }); return; }
+      const hhmm = (ts) => new Date((ts + TZ_OFFSET2) * 1000).toISOString().slice(11, 16);
+      const rows = [];
+      const buckets = { noteMissing: 0, dur0: 0, s1_9: 0, s10_39: 0, s40plus: 0 };
+      for (const id in leadInfo) {
+        const L = leadInfo[id];
+        const mopName = ACTIVE_MOPS[L.resp];
+        if (!mopName) continue;
+        if (DEBUG_MOP && mopName !== DEBUG_MOP) continue;
+        const events = (L._callTs || []).filter((ts) => ts >= dayStart2).sort((a, b) => a - b);
+        if (!events.length) continue;
+        const notes = (dbgNotesByLead[id] || []).slice().sort((a, b) => a.ts - b.ts);
+        const used = new Set();
+        for (const ets of events) {
+          // ищем ноту, ближайшую по времени к событию (окно ±5 мин)
+          let bi = -1, bd = 1e9;
+          notes.forEach((nt, i) => { if (used.has(i)) return; const d = Math.abs(nt.ts - ets); if (d < bd && d <= 300) { bd = d; bi = i; } });
+          const note = bi >= 0 ? (used.add(bi), notes[bi]) : null;
+          const dur = note ? note.dur : null;
+          let verdict;
+          if (!note) { verdict = "НЕТ НОТЫ — событие звонка есть, записи о разговоре нет (подозрение на баг стыковки телефонии)"; buckets.noteMissing++; }
+          else if (dur === 0) { verdict = "0 сек — не взяли трубку"; buckets.dur0++; }
+          else if (dur < 10) { verdict = `${dur} сек — сброс`; buckets.s1_9++; }
+          else if (dur < REACHED_SEC) { verdict = `${dur} сек — короткий разговор (ниже порога ${REACHED_SEC}с)`; buckets.s10_39++; }
+          else { verdict = `${dur} сек — ДОЗВОН (≥${REACHED_SEC}с)`; buckets.s40plus++; }
+          rows.push({ leadId: Number(id), mop: mopName, callAtTashkent: hhmm(ets), eventTs: ets, noteFound: !!note, duration: dur, noteType: note ? note.type : null, callStatus: note ? note.callStatus : null, verdict });
+        }
+      }
+      rows.sort((a, b) => a.eventTs - b.eventTs);
+      const reachedLeads = new Set(rows.filter((r) => r.duration != null && r.duration >= REACHED_SEC).map((r) => r.leadId));
+      const calledLeads = new Set(rows.map((r) => r.leadId));
+      res.status(200).json({
+        ok: true, debug: "calls", mop: DEBUG_MOP || "(все МОПы)", tashkentDay: new Date((dayStart2 + TZ_OFFSET2) * 1000).toISOString().slice(0, 10),
+        reachedSecThreshold: REACHED_SEC,
+        summary: { callEventsToday: rows.length, calledLeads: calledLeads.size, reachedLeads: reachedLeads.size, buckets },
+        calls: rows,
+      });
+      return;
+    }
 
     // 3b) ЗАДАЧИ — через отдельный эндпоинт /tasks (привязаны к лиду через entity_id, entity_type=leads)
     page = 1; guard = 0;
