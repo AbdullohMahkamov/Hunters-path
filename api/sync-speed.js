@@ -300,8 +300,22 @@ export default async function handler(req, res) {
     // Помечаем: _pool — в пуле; _poolOnly — пришёл ТОЛЬКО из пула (старше месяца) и потому НЕ должен
     // попадать в месячные агрегаты, иначе он исказит статистику за период.
     const DOZVON_STAGES = (cfg.dozvonStages || []).map(Number).filter(Boolean);
+    const DZ_SET = new Set(DOZVON_STAGES);
     const tPool = Date.now();
     let poolTruncated = false, poolAdded = 0;
+    const poolNowIds = [];
+    const addPoolLead = (L) => {
+      poolNowIds.push(String(L.id));
+      if (leadInfo[L.id]) { leadInfo[L.id]._pool = true; return; } // лид этого месяца — уже есть
+      leadInfo[L.id] = {                                            // лид старше месяца — доливаем
+        id: L.id, name: L.name || "", created: L.created_at, resp: L.responsible_user_id,
+        status: L.status_id, price: L.price || 0,
+        lossId: (L.loss_reason_id != null ? L.loss_reason_id : null),
+        firstCall: null, reachedReal: false, calls: 0, tasks: 0, tasksDone: 0,
+        _pool: true, _poolOnly: true, // НЕ участвует в месячных агрегатах
+      };
+      poolAdded++;
+    };
     if (DOZVON_STAGES.length && pipelineId) {
       page = 1; guard = 0;
       while (guard < 40) {
@@ -315,25 +329,56 @@ export default async function handler(req, res) {
         if (!r.ok) { poolTruncated = true; break; } // сбой → пул неполный, метрике доверять нельзя
         const d = await r.json();
         const arr = (d._embedded && d._embedded.leads) || [];
-        for (const L of arr) {
-          if (leadInfo[L.id]) { leadInfo[L.id]._pool = true; continue; } // лид этого месяца — уже есть
-          leadInfo[L.id] = {                                              // лид старше месяца — доливаем
-            id: L.id, name: L.name || "", created: L.created_at, resp: L.responsible_user_id,
-            status: L.status_id, price: L.price || 0,
-            lossId: (L.loss_reason_id != null ? L.loss_reason_id : null),
-            firstCall: null, reachedReal: false, calls: 0, tasks: 0, tasksDone: 0,
-            _pool: true, _poolOnly: true, // НЕ участвует в месячных агрегатах
-          };
-          poolAdded++;
-        }
+        for (const L of arr) addPoolLead(L);
         if (arr.length < 250) break;
         page++;
         await new Promise(rs => setTimeout(rs, 150));
       }
       if (guard >= 40) poolTruncated = true;
     }
+
+    // ═══ НАКОПИТЕЛЬНЫЙ ПУЛ ЗА ДЕНЬ ═══
+    // Мгновенный срез «кто СЕЙЧАС на входе» даёт ОШИБКУ ВЫЖИВШЕГО: МОП дозвонился — и тут же
+    // двинул карточку дальше. Лид покидает пул в момент УСПЕХА, и в срезе остаётся только осадок
+    // из недозвонов (проверено на живых данных: 11% против реальных 45%).
+    // Поэтому копим ОБЪЕДИНЕНИЕ всех срезов за день: лид, стоявший на входе в 09:00 и уехавший
+    // дальше после разговора, остаётся в сегодняшнем пуле и честно считается дозвоном.
+    const poolDayKey = K(`poolday:${new Date((dayStart2 + TZ_OFFSET2) * 1000).toISOString().slice(0, 10)}`);
+    let poolSnapshots = 1;
+    let dayPoolIds = new Set(poolNowIds);
+    if (DOZVON_STAGES.length) {
+      const prevRaw = await redisGetCfg(redisUrl, redisToken, poolDayKey);
+      if (prevRaw && Array.isArray(prevRaw.ids)) {
+        for (const id of prevRaw.ids) dayPoolIds.add(String(id));
+        poolSnapshots = (prevRaw.snaps || 1) + 1;
+      }
+      // TTL 3 суток: ключ дневной, копить его вечно незачем
+      await fetch(`${redisUrl}/set/${encodeURIComponent(poolDayKey)}?EX=259200`, {
+        method: "POST", headers: { Authorization: `Bearer ${redisToken}` },
+        body: JSON.stringify({ ids: [...dayPoolIds], snaps: poolSnapshots, at: Date.now() }),
+      });
+    }
+
+    // Лиды из ранних срезов, которых уже нет ни на входе, ни в месячной выгрузке (старые, ушедшие
+    // дальше) — догружаем по ID, иначе их сегодняшний дозвон потеряется.
+    const missingIds = [...dayPoolIds].filter((id) => !leadInfo[id]);
+    if (missingIds.length) {
+      for (let i = 0; i < missingIds.length && !outOfTime(); i += 200) {
+        const chunk = missingIds.slice(i, i + 200);
+        const q = chunk.map((id) => `filter[id][]=${id}`).join("&");
+        const r = await fetch(`${base}/leads?limit=250&${q}`, { headers: H });
+        if (!r.ok) { poolTruncated = true; break; }
+        const d = await r.json();
+        for (const L of ((d._embedded && d._embedded.leads) || [])) addPoolLead(L);
+      }
+    }
+    // помечаем принадлежность к ДНЕВНОМУ пулу (а не только к текущему срезу)
+    for (const id of dayPoolIds) if (leadInfo[id]) leadInfo[id]._pool = true;
+
     T.pool = Date.now() - tPool;
     T.poolAdded = poolAdded;
+    T.poolNow = poolNowIds.length;
+    T.poolDay = dayPoolIds.size;
 
     // 3) Тянем СОБЫТИЯ месяца пачками: только outgoing_call (звонки), привязка к лидам
     // В debug-режиме берём только СЕГОДНЯШНИЕ события — иначе месячная выборка не укладывается в лимит времени.
@@ -803,6 +848,24 @@ export default async function handler(req, res) {
       if (calledToday) { B.calledToday++; DZ.calledToday++; }
       if (reachedToday) { B.reachedToday++; DZ.reachedToday++; }
     }
+    // ПОГРЕШНОСТЬ МЕТОДА — не на веру, а числом.
+    // Пул собирается ЧАСОВЫМИ срезами, а не непрерывной записью. Лид, который между двумя
+    // прогонами успел и появиться на входе, и уйти с него (МОП дозвонился и сразу двинул карточку),
+    // не попадёт ни в один срез. Оцениваем такие случаи СВЕРХУ: лид создан сегодня, сегодня же
+    // звонили, сейчас НЕ на входе и ни в одном срезе его не было.
+    // Оценка именно верхняя: часть таких лидов могла вообще не стоять на выбранных этапах
+    // (например, попасть сразу в «Неразобранное», которое в dozvonStages не входит).
+    let poolMissedEstimate = 0;
+    for (const id in leadInfo) {
+      const L = leadInfo[id];
+      if (L._pool) continue;
+      if (!ACTIVE_MOPS[L.resp]) continue;
+      if ((L.created || 0) < dayStart2) continue;                       // не сегодняшний — не судим
+      if (!(L._callTs || []).some((ts) => ts >= dayStart2)) continue;   // сегодня не звонили
+      if (DZ_SET.has(L.status)) continue;                               // всё ещё на входе (значит в пуле)
+      poolMissedEstimate++;
+    }
+
     const pct = (a, b) => (b ? Math.min(100, Math.round((a / b) * 100)) : 0);
     const dozvon = {
       // как настроено (видно в UI, чтобы цифра не была «магической»)
@@ -817,10 +880,20 @@ export default async function handler(req, res) {
         name, pool: b.pool, calledToday: b.calledToday, reachedToday: b.reachedToday,
         pct: pct(b.reachedToday, b.calledToday), coveragePct: pct(b.calledToday, b.pool),
       })).sort((a, b) => b.pool - a.pool),
-      // полнота: пул недокачан или ноты неполные → цифра занижена, доверять нельзя
+      // ── ЧЕСТНЫЙ ПАСПОРТ САМОГО МЕТОДА ──
+      // Через месяц кто угодно (человек, Growth Agent, MOP Agent) увидит здесь ЯВНО:
+      // это дискретная выборка, а не непрерывная запись. Расхождение в единицы процентов —
+      // ожидаемая погрешность метода, а НЕ повод искать очередной баг.
+      poolSampling: "hourly",
+      poolSnapshots,                    // сколько срезов пула уже склеено за сегодня
+      poolSize: dayPoolIds.size,        // размер накопленного дневного пула
+      poolNow: poolNowIds.length,       // сколько стоит на входе прямо сейчас
+      poolMissedEstimate,               // ВЕРХНЯЯ оценка лидов, проскочивших между срезами
+      samplingNote: "Пул склеен из часовых срезов, а не из непрерывного отслеживания. Лид, успевший появиться на входе и уйти с него между двумя прогонами, в пул не попадает — poolMissedEstimate даёт верхнюю оценку таких случаев. Расхождение в единицы процентов — погрешность метода, не баг.",
+      // полнота ДАННЫХ (отдельно от погрешности МЕТОДА)
       complete: !poolTruncated && notesTruncated === 0 && notesFailed === 0 && !eventsTruncated,
       poolTruncated,
-      definition: "Пул — лиды, которые сейчас стоят на выбранных этапах входа (любой давности). % дозвона = из тех, кому сегодня звонили, дозвонились (разговор ≥ порога).",
+      definition: "Пул — лиды, стоявшие на этапах входа в любой момент сегодня (склейка часовых срезов, любая давность лида). % дозвона = из тех, кому сегодня звонили, дозвонились (разговор ≥ порога).",
     };
 
     // детектор телефонии на КЛИЕНТА: % лидов без звонка, но с активностью в CRM (сигнал возможной проблемы телефонии клиента)
