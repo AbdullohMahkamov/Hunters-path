@@ -307,7 +307,16 @@ export default async function handler(req, res) {
       return ta - tb;
     });
     const MAX_LEADS_CHECK = 600; // потолок, чтобы уложиться в лимит времени (сегодняшние — в начале)
-    const toCheck = leadIdsToCheck.slice(0, MAX_LEADS_CHECK);
+    let toCheck = leadIdsToCheck.slice(0, MAX_LEADS_CHECK);
+    // DEBUG: читаем ноты ТОЛЬКО по лидам нужного МОПа с сегодняшними звонками — иначе запрос не укладывается в лимит
+    if (DEBUG_CALLS) {
+      toCheck = Object.keys(leadInfo).filter((id) => {
+        const li = leadInfo[id];
+        const mn = ACTIVE_MOPS[li.resp];
+        if (!mn || (DEBUG_MOP && mn !== DEBUG_MOP)) return false;
+        return (li._callTs || []).some((ts) => ts >= dayStart2);
+      });
+    }
     for (const lid of toCheck) {
       try {
         const r = await fetch(`${base}/leads/${lid}/notes?limit=250`, { headers: H });
