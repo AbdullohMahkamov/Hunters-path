@@ -1059,3 +1059,5 @@
   .ga-lbl{flex:0 0 142px;}
   .ga-sources{display:grid;grid-template-columns:repeat(auto-fill,minmax(330px,1fr));gap:6px 20px;}
   @media(max-width:900px){.ga-lbl{flex:0 0 100px;}.ga-trans{flex:0 0 62px;min-width:62px;}}
+  /* пункт «Агенты» в бургер-меню — это <a>, а не <button>: выравниваем под остальные пункты */
+  a.menu-item{text-decoration:none;box-sizing:border-box;}
