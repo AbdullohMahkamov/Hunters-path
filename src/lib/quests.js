@@ -448,6 +448,7 @@ export function initQuests() {
   if (_inited) return
   _inited = true
   Object.assign(window, {
+    renderStages, // нужен chat.js: после генерации плана В РАЗДЕЛЕ «ЗАДАЧИ» перерисовываем список
     toggleStage, toggleQuest, toggleCpCard, toggleCpStep, toggleCustomTask, helpCustomStep, helpCustomTask, openTaskReport, toggleHist, setTaskDeadline,
     wizRegenerate, wizReaudit, fightBoss, resetHunt, toggleDop, removeDop,
     openGenerator, closeGenerator, acceptGen, skipGen, askNext, helpQuest,

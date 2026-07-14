@@ -305,11 +305,24 @@ export default function AppShell({ onLogout }) {
 
               <div className="side-group-lbl">{uz ? 'So‘nggi chatlar' : 'Недавние чаты'}</div>
               <div className="side-list" id="sideList">
-                {chats.map((c) => (
-                  <button key={c.id} className={'side-item' + (c.id === state.activeChatId ? ' active' : '')} onClick={() => { state.activeChatId = c.id; save(); force((n) => n + 1); applyTab('chat') }} style={{ display: 'block', width: '100%', textAlign: 'left', border: 'none', background: 'none', color: 'inherit', cursor: 'pointer', padding: '7px 10px', borderRadius: 8, fontSize: 13, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
-                    {c.title || 'Чат'}
-                  </button>
-                ))}
+                {chats.map((c) => {
+                  // подсветка активного чата: inline-стиль перебивал CSS-класс .active (background:none),
+                  // поэтому задаём фон/цвет/жирность прямо здесь — так видно, в каком чате находишься
+                  const isActive = c.id === state.activeChatId && tab === 'chat'
+                  return (
+                    <button key={c.id} className={'side-item' + (isActive ? ' active' : '')} onClick={() => { state.activeChatId = c.id; save(); force((n) => n + 1); applyTab('chat') }}
+                      style={{
+                        display: 'block', width: '100%', textAlign: 'left', border: 'none', cursor: 'pointer',
+                        padding: '7px 10px', borderRadius: 8, fontSize: 13, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis',
+                        background: isActive ? 'var(--card2)' : 'none',
+                        color: isActive ? 'var(--txt)' : 'inherit',
+                        fontWeight: isActive ? 600 : 400,
+                        boxShadow: isActive ? 'inset 2px 0 0 var(--accent)' : 'none',
+                      }}>
+                      {c.title || 'Чат'}
+                    </button>
+                  )
+                })}
               </div>
 
               <div className="side-user">
