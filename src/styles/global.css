@@ -1028,3 +1028,8 @@
   .da-tab{font-size:14.5px;}
   /* Защита: глобальное `body.shell header{display:none!important}` (монолит) не должно прятать шапку Dev-Agent */
   body.shell .da-root .da-top, .da-root .da-top{display:flex!important;}
+  /* Dev-Agent: строка «последний прогон» под вкладками (как у Growth Agent) */
+  .da-head-col{display:flex;flex-direction:column;gap:3px;}
+  .da-lastrun{font-size:11.5px;color:var(--txt3);padding-left:2px;}
+  .da-top{align-items:flex-start;}
+  .da-actions{padding-top:2px;}
