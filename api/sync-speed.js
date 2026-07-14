@@ -352,8 +352,15 @@ export default async function handler(req, res) {
       const tb = isTodayActive(leadInfo[b]) ? 0 : 1;
       return ta - tb;
     });
-    const MAX_LEADS_CHECK = 600; // потолок, чтобы уложиться в лимит времени (сегодняшние — в начале)
+    // ПОТОЛОК лидов для чтения нот. Раньше был 600 и служил защитой от таймаута — но ноты теперь
+    // читаются пулом (26с на 600 лидов вместо ~240с), и от таймаута защищает БЮДЖЕТ ВРЕМЕНИ, а не
+    // этот потолок. Оставляем его высоким — как предохранитель от патологического клиента.
+    // ВАЖНО: если потолок всё же срежет лидов, это ТА ЖЕ неполнота, что и обрезка по времени —
+    // reachedReal у срезанных не посчитан, дозвон занижен. Раньше паспорт этого НЕ ловил и врал
+    // notesComplete=true, хотя 600 — это ровно потолок, а лидов со звонками было больше.
+    const MAX_LEADS_CHECK = 3000;
     let toCheck = leadIdsToCheck.slice(0, MAX_LEADS_CHECK);
+    const leadsCapped = leadIdsToCheck.length - toCheck.length; // > 0 → ноты прочитаны НЕ по всем
     // DEBUG: читаем ноты ТОЛЬКО по лидам нужного МОПа с сегодняшними звонками — иначе запрос не укладывается в лимит
     if (DEBUG_CALLS) {
       toCheck = Object.keys(leadInfo).filter((id) => {
@@ -693,10 +700,11 @@ export default async function handler(req, res) {
       // Правило простое: если система чего-то не успела прочитать — это не повод обвинять человека.
       mopMeta: {
         stalledNoCallHours: STALLED_NO_CALL_HOURS, reachedSec: REACHED_SEC,
-        // лиды тоже могут быть недокачаны — тогда доверять нельзя вообще ничему по людям
-        notesComplete: notesTruncated === 0 && !leadsTruncated,
+        // Полнота нот = не обрезаны по времени И не срезаны потолком И лиды докачаны.
+        // Любая из трёх дыр занижает reachedReal → status_mismatch недостоверен → агент молчит.
+        notesComplete: notesTruncated === 0 && leadsCapped === 0 && !leadsTruncated,
         eventsComplete: !eventsTruncated && !leadsTruncated,
-        notesUnread: notesTruncated,
+        notesUnread: notesTruncated + leadsCapped,
         leadsComplete: !leadsTruncated,
       },
       // КУДА УХОДИТ ВРЕМЯ — видно в ответе и в кэше. Без этого прогон падал с 504 «вслепую»:
@@ -709,6 +717,7 @@ export default async function handler(req, res) {
         _warning: "longCallNotes — счётчик ЗВОНКОВ, не лидов. НЕ делить на количество лидов. Дозвон по лидам — в поле reach.",
         // читаемость прогона: сколько лидов проверили на ноты, за сколько, и не оборвались ли по бюджету
         leadsChecked: toCheck.length - notesTruncated, leadsPlanned: toCheck.length,
+        leadsWithCalls: leadIdsToCheck.length, leadsCapped, // capped > 0 → потолок срезал лидов
         notesMs, notesTruncated,
         // если > 0 — часть лидов НЕ прочитана: дозвон и mopIssues занижены, но кэш свежий (это осознанный размен)
         _truncWarning: notesTruncated > 0
