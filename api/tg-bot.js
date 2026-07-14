@@ -95,20 +95,27 @@ export default async function handler(req, res) {
     }
 
     if (action === "setup") {
-      // прописываем webhook обоим ботам: https://<host>/api/tg-bot?bot=<kind>
+      // Прописываем webhook ВСЕМ трём ботам с одним секретом.
+      // ВАЖНО: бизнес-бот (api/telegram.js, переписка с КЛИЕНТАМИ) тоже проверяет TELEGRAM_WEBHOOK_SECRET —
+      // если задать секрет и не перепрописать ему webhook, он начнёт отбивать апдейты 401 и переписка сломается.
       const host = (req.headers && (req.headers["x-forwarded-host"] || req.headers.host)) || "hunters-path.vercel.app";
       const out = {};
-      for (const kind of ["rop", "owner"]) {
-        if (!BOT_TOKENS[kind]) { out[kind] = { ok: false, error: `нет env TELEGRAM_${kind.toUpperCase()}_BOT_TOKEN` }; continue; }
-        const url = `https://${host}/api/tg-bot?bot=${kind}`;
+      const targets = [
+        { key: "rop", token: BOT_TOKENS.rop, url: `https://${host}/api/tg-bot?bot=rop`, updates: ["message"] },
+        { key: "owner", token: BOT_TOKENS.owner, url: `https://${host}/api/tg-bot?bot=owner`, updates: ["message"] },
+        // бизнес-бот для клиентов — НЕ трогаем его логику, только синхронизируем секрет webhook'а
+        { key: "business", token: process.env.TELEGRAM_BOT_TOKEN || "", url: `https://${host}/api/telegram`, updates: ["business_connection", "business_message", "edited_business_message"] },
+      ];
+      for (const t of targets) {
+        if (!t.token) { out[t.key] = { ok: false, error: "нет токена в env" }; continue; }
         try {
-          const r = await fetch(`https://api.telegram.org/bot${BOT_TOKENS[kind]}/setWebhook`, {
+          const r = await fetch(`https://api.telegram.org/bot${t.token}/setWebhook`, {
             method: "POST", headers: { "content-type": "application/json" },
-            body: JSON.stringify({ url, secret_token: WEBHOOK_SECRET || undefined, allowed_updates: ["message"] }),
+            body: JSON.stringify({ url: t.url, secret_token: WEBHOOK_SECRET || undefined, allowed_updates: t.updates }),
           });
           const d = await r.json();
-          out[kind] = { ok: !!d.ok, url, description: d.description };
-        } catch (e) { out[kind] = { ok: false, error: String(e).slice(0, 100) }; }
+          out[t.key] = { ok: !!d.ok, url: t.url, secured: !!WEBHOOK_SECRET, description: d.description };
+        } catch (e) { out[t.key] = { ok: false, error: String(e).slice(0, 100) }; }
       }
       res.status(200).json({ ok: true, setup: out, codes: await getCodes() });
       return;
