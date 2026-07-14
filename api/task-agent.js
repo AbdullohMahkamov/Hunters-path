@@ -280,6 +280,18 @@ export default async function handler(req, res) {
       return;
     }
     if (action === "tick") { const r = await runTick(!!b.force); res.status(200).json(isAdmin ? r : { ok: !!r.ok, ran: true }); return; }
+    // ПРЕДПРОСМОТР пинга — составить сообщение БЕЗ отправки РОПу (проверка подсказок под разные задачи)
+    if (action === "preview_ping") {
+      const tasks = await loadSalesTasks();
+      let t = tasks.find((x) => x.id === (q.taskId || b.taskId));
+      if (b.synthetic) { const s = b.synthetic; t = { id: s.id || "synthetic", title: s.title, why: s.why || "", steps: s.steps || [], deadline: s.deadline || "", done: false, report: null, daysLeft: daysLeft(s.deadline), hoursOverdue: hoursOverdue(s.deadline) }; }
+      if (!t) { res.status(404).json({ error: "task not found" }); return; }
+      const chat = await getChat();
+      const hist = chat.filter((m) => m.taskId === t.id).map((m) => `${m.role === "rop" ? "РОП" : "АГЕНТ"}: ${m.text}`).join("\n");
+      const message = await composePing(t, hist);
+      res.status(200).json({ ok: true, taskId: t.id, title: t.title, deadline: t.deadline, daysLeft: t.daysLeft, hoursOverdue: t.hoursOverdue, message });
+      return;
+    }
     if (action === "set_config") {
       const cur = await getConfig(); const inc = b.config || {}; const next = { ...cur };
       for (const k of ["escalationHour", "pingFromHour", "remindBeforeDays"]) if (typeof inc[k] === "number" && isFinite(inc[k]) && inc[k] >= 0) next[k] = inc[k];
