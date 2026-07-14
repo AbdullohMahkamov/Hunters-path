@@ -17,6 +17,8 @@
 //   GET  ?action=status&session=...  (admin) — статус привязки + коды + webhook-инфо
 //   POST {action:'unbind', who}      (admin) — отвязать человека
 
+// ВНИМАНИЕ при ротации токенов: env применяется только к НОВЫМ деплоям, а Vercel пропускает
+// коммиты без изменений файлов — пустой коммит деплой НЕ запустит. Нужно реальное изменение.
 const REDIS_URL = process.env.UPSTASH_REDIS_REST_URL;
 const REDIS_TOKEN = process.env.UPSTASH_REDIS_REST_TOKEN;
 const WEBHOOK_SECRET = process.env.TELEGRAM_WEBHOOK_SECRET || "";
