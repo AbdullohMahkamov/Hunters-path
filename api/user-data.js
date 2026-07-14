@@ -130,6 +130,8 @@ export default async function handler(req, res) {
         noReachReasonId: c.noReachReasonId != null ? c.noReachReasonId : null,
         noContactReasons: c.noContactReasons || [],
         noContactStages: c.noContactStages || [],
+        // этапы «входа» для % дозвона — отмечаются чекбоксами при онбординге, правятся в «Метрики»
+        dozvonStages: Array.isArray(c.dozvonStages) ? c.dozvonStages.map(Number).filter(Boolean) : [],
       };
       await fetch(`${url}/set/clientcfg:${c.org}`, {
         method: "POST", headers: { Authorization: `Bearer ${token}` }, body: JSON.stringify(cfg),
@@ -147,6 +149,35 @@ export default async function handler(req, res) {
       await saveClients(list);
       await fetch(`${url}/del/clientcfg:${org}`, { method: "POST", headers: { Authorization: `Bearer ${token}` } });
       res.status(200).json({ ok: true });
+      return;
+    }
+
+    // === НАСТРОЙКА МЕТРИК (этапы дозвона, порог разговора) ===
+    // Ключевое: выбор этапов — НАСТРОЙКА, а не задача разработчика. У каждого клиента своя
+    // структура воронки, и менять этот выбор нужно в два клика из панели, а не коммитом.
+    // hunter: дефолты живут в коде (HUNTER_CFG), а оверрайды — в metricscfg:hunter.
+    // остальные клиенты: поля лежат прямо в clientcfg:<org>.
+    if (action === "metrics-save") {
+      if (sess.role !== "admin") { res.status(403).json({ error: "admin only" }); return; }
+      const org = (req.body && req.body.org) || sess.org || "hunter";
+      const inc = (req.body && req.body.metrics) || {};
+      const patch = {};
+      if (Array.isArray(inc.dozvonStages)) patch.dozvonStages = inc.dozvonStages.map(Number).filter(Boolean);
+      if (inc.reachedSec != null) {
+        const rs = parseInt(inc.reachedSec, 10);
+        if (!(rs > 0 && rs <= 600)) { res.status(400).json({ error: "reachedSec: 1..600 секунд" }); return; }
+        patch.reachedSec = rs;
+      }
+      if (!Object.keys(patch).length) { res.status(400).json({ error: "нечего сохранять" }); return; }
+      const key = org === "hunter" ? "metricscfg:hunter" : `clientcfg:${org}`;
+      const cr = await fetch(`${url}/get/${key}`, { headers: { Authorization: `Bearer ${token}` } });
+      const cd = await cr.json();
+      const cur = (cd && cd.result) ? JSON.parse(cd.result) : {};
+      const next = { ...cur, ...patch };
+      await fetch(`${url}/set/${key}`, {
+        method: "POST", headers: { Authorization: `Bearer ${token}` }, body: JSON.stringify(next),
+      });
+      res.status(200).json({ ok: true, saved: patch });
       return;
     }
 

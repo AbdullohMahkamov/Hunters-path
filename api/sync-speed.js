@@ -12,6 +12,10 @@ const HUNTER_CFG = {
   // Этапы «не дозвонились» (для MOP Agent: ловим лидов, где разговор БЫЛ, а статус остался этим)
   noContactStages: ["Bog'lanib bo'lmadi", "Bog'lanib bo'lmadi 2", "O'ylab ko'radidan keyin bog'lanib bo'lmadi"],
   stalledNoCallHours: 4, // лид в работе N часов, звонков ноль → точечная задача РОПу
+  // ЭТАПЫ ДЛЯ РАСЧЁТА % ДОЗВОНА — только ДЕФОЛТ. Правится из админ-панели (Redis), не в коде:
+  // у каждого клиента своя структура воронки, и выбор этапов — настройка, а не задача разработчика.
+  // Здесь: Yangi LID + Bog'lanib bo'lmadi + Bog'lanib bo'lmadi 2 (этапы «входа» в HunterAcademy).
+  dozvonStages: [83475718, 83475726, 83475730],
   mops: {
     13660834: "Komiljon", 13703650: "Samandar", 13904266: "Abdulla-Legenda",
     13833590: "Begoyim", 13681582: "Abulbositxon",
@@ -27,7 +31,13 @@ async function redisGetCfg(url, token, key) {
 }
 async function resolveConfig(org, redisUrl, redisToken) {
   org = org || "hunter";
-  if (org === "hunter") return { org, token: process.env.AMOCRM_TOKEN, ...HUNTER_CFG };
+  if (org === "hunter") {
+    // Hunter: дефолты живут в коде, но КАЖДЫЙ параметр можно переопределить из админ-панели
+    // (ключ metricscfg:hunter в Redis). Иначе настройку метрик у первого клиента пришлось бы
+    // менять коммитом — а она должна меняться в два клика, как у любого другого клиента.
+    const ov = await redisGetCfg(redisUrl, redisToken, "metricscfg:hunter");
+    return { org, token: process.env.AMOCRM_TOKEN, ...HUNTER_CFG, ...(ov || {}) };
+  }
   const s = await redisGetCfg(redisUrl, redisToken, `clientcfg:${org}`);
   if (!s || !s.subdomain || !s.token) return null;
   return {
@@ -40,6 +50,7 @@ async function resolveConfig(org, redisUrl, redisToken) {
     reachedSec: s.reachedSec != null ? s.reachedSec : 40, // порог дозвона (сек), дефолт 40
     noContactStages: s.noContactStages || [],
     stalledNoCallHours: s.stalledNoCallHours != null ? s.stalledNoCallHours : 4,
+    dozvonStages: Array.isArray(s.dozvonStages) ? s.dozvonStages : [], // этапы «входа» для % дозвона
     mops: s.mops || {},
   };
 }
@@ -115,6 +126,7 @@ export default async function handler(req, res) {
     res.status(200).json({
       ok: true, org, pipelineInUse: PIPELINE_ID_NAME,
       dozvonStages: cfg.dozvonStages || [], // что выбрано сейчас (пусто = метрика не настроена)
+      reachedSec: cfg.reachedSec != null ? cfg.reachedSec : 40,
       soldStatus: SOLD_STATUS, lostStatus: LOST_STATUS,
       pipelines,
     });
@@ -279,6 +291,49 @@ export default async function handler(req, res) {
     }
     T.leads = Date.now() - tLeads;
     T.leadsCount = Object.keys(leadInfo).length;
+
+    // 2b) ПУЛ ДОЗВОНА — лиды, которые СЕЙЧАС стоят на этапах «входа» (dozvonStages).
+    // Критично: пул определяется ТЕКУЩИМ ЭТАПОМ, а не датой создания. Лид, созданный в прошлом
+    // месяце и до сих пор висящий в «Bog'lanib bo'lmadi», обязан быть в пуле — а месячная выгрузка
+    // (filter[created_at][from]=monthStart) его не содержит. Поэтому тянем пул ОТДЕЛЬНО, по фильтру
+    // статусов, без фильтра по дате, и доливаем в leadInfo.
+    // Помечаем: _pool — в пуле; _poolOnly — пришёл ТОЛЬКО из пула (старше месяца) и потому НЕ должен
+    // попадать в месячные агрегаты, иначе он исказит статистику за период.
+    const DOZVON_STAGES = (cfg.dozvonStages || []).map(Number).filter(Boolean);
+    const tPool = Date.now();
+    let poolTruncated = false, poolAdded = 0;
+    if (DOZVON_STAGES.length && pipelineId) {
+      page = 1; guard = 0;
+      while (guard < 40) {
+        guard++;
+        if (outOfTime()) { poolTruncated = true; break; }
+        const stFilter = DOZVON_STAGES
+          .map((sid, i) => `filter[statuses][${i}][pipeline_id]=${pipelineId}&filter[statuses][${i}][status_id]=${sid}`)
+          .join("&");
+        const r = await fetch(`${base}/leads?limit=250&page=${page}&${stFilter}`, { headers: H });
+        if (r.status === 204) break;
+        if (!r.ok) { poolTruncated = true; break; } // сбой → пул неполный, метрике доверять нельзя
+        const d = await r.json();
+        const arr = (d._embedded && d._embedded.leads) || [];
+        for (const L of arr) {
+          if (leadInfo[L.id]) { leadInfo[L.id]._pool = true; continue; } // лид этого месяца — уже есть
+          leadInfo[L.id] = {                                              // лид старше месяца — доливаем
+            id: L.id, name: L.name || "", created: L.created_at, resp: L.responsible_user_id,
+            status: L.status_id, price: L.price || 0,
+            lossId: (L.loss_reason_id != null ? L.loss_reason_id : null),
+            firstCall: null, reachedReal: false, calls: 0, tasks: 0, tasksDone: 0,
+            _pool: true, _poolOnly: true, // НЕ участвует в месячных агрегатах
+          };
+          poolAdded++;
+        }
+        if (arr.length < 250) break;
+        page++;
+        await new Promise(rs => setTimeout(rs, 150));
+      }
+      if (guard >= 40) poolTruncated = true;
+    }
+    T.pool = Date.now() - tPool;
+    T.poolAdded = poolAdded;
 
     // 3) Тянем СОБЫТИЯ месяца пачками: только outgoing_call (звонки), привязка к лидам
     // В debug-режиме берём только СЕГОДНЯШНИЕ события — иначе месячная выборка не укладывается в лимит времени.
@@ -564,6 +619,9 @@ export default async function handler(req, res) {
       const L = leadInfo[id];
       const mop = ACTIVE_MOPS[L.resp];
       if (!mop) continue;
+      // Лид, долитый ТОЛЬКО ради пула дозвона (создан раньше текущего месяца), в месячные
+      // агрегаты не входит — иначе статистика за период поедет: в неё попадут чужие периоды.
+      if (L._poolOnly) continue;
       // исключаем "своих"
       if (L.status === SOLD_STATUS && L.price <= OWN_THRESHOLD) continue;
       const S = stat[mop];
@@ -725,6 +783,46 @@ export default async function handler(req, res) {
       };
     }).sort((a,b)=> (a.medianFirstCallMin??9e9) - (b.medianFirstCallMin??9e9));
 
+    // ═══ % ДОЗВОНА ПО ЭТАПУ ВОРОНКИ (заменяет дневные метрики «по дате создания» / «по дате звонка») ═══
+    // Пул = лиды, которые СЕЙЧАС на этапах входа (dozvonStages), любой давности.
+    // Из пула: скольким звонили СЕГОДНЯ и скольким из них дозвонились (разговор ≥ reachedSec).
+    // Лиды, ушедшие дальше по воронке, в метрику не входят вообще — даже если им сегодня звонили:
+    // метрика мерит РАБОТУ НА ВХОДЕ, а не всю воронку.
+    const dozvonByMop = {};
+    const DZ = { pool: 0, calledToday: 0, reachedToday: 0 };
+    for (const name of Object.values(ACTIVE_MOPS)) dozvonByMop[name] = { pool: 0, calledToday: 0, reachedToday: 0 };
+    for (const id in leadInfo) {
+      const L = leadInfo[id];
+      if (!L._pool) continue;                     // не на этапах входа → метрика его не касается
+      const mop = ACTIVE_MOPS[L.resp];
+      if (!mop) continue;                         // лид без действующего МОПа (не разобран/уволенный)
+      const calledToday = (L._callTs || []).some((ts) => ts >= dayStart2);
+      const reachedToday = !!L.reachedRealToday;  // разговор ≥ порога ИМЕННО сегодня
+      const B = dozvonByMop[mop];
+      B.pool++; DZ.pool++;
+      if (calledToday) { B.calledToday++; DZ.calledToday++; }
+      if (reachedToday) { B.reachedToday++; DZ.reachedToday++; }
+    }
+    const pct = (a, b) => (b ? Math.min(100, Math.round((a / b) * 100)) : 0);
+    const dozvon = {
+      // как настроено (видно в UI, чтобы цифра не была «магической»)
+      stages: DOZVON_STAGES.map((sid) => ({ id: sid, name: statusNameById[sid] || String(sid) })),
+      thresholdSec: REACHED_SEC,
+      configured: DOZVON_STAGES.length > 0,
+      // ГЛАВНАЯ ЦИФРА: из тех, кому сегодня звонили, — скольким дозвонились
+      pool: DZ.pool, calledToday: DZ.calledToday, reachedToday: DZ.reachedToday,
+      pct: pct(DZ.reachedToday, DZ.calledToday),          // % дозвона (из набранных)
+      coveragePct: pct(DZ.calledToday, DZ.pool),          // % пула, который вообще набрали сегодня
+      byMop: Object.entries(dozvonByMop).map(([name, b]) => ({
+        name, pool: b.pool, calledToday: b.calledToday, reachedToday: b.reachedToday,
+        pct: pct(b.reachedToday, b.calledToday), coveragePct: pct(b.calledToday, b.pool),
+      })).sort((a, b) => b.pool - a.pool),
+      // полнота: пул недокачан или ноты неполные → цифра занижена, доверять нельзя
+      complete: !poolTruncated && notesTruncated === 0 && notesFailed === 0 && !eventsTruncated,
+      poolTruncated,
+      definition: "Пул — лиды, которые сейчас стоят на выбранных этапах входа (любой давности). % дозвона = из тех, кому сегодня звонили, дозвонились (разговор ≥ порога).",
+    };
+
     // детектор телефонии на КЛИЕНТА: % лидов без звонка, но с активностью в CRM (сигнал возможной проблемы телефонии клиента)
     const telephony = { total: telTotal, noCallButActive: telNoCallButActive, noCallButActivePct: telTotal ? Math.round(telNoCallButActive / telTotal * 100) : 0 };
     // ДОЗВОН ПО ЛИДАМ (правильная метрика): сколько ЛИДОВ имели разговор ≥ REACHED_SEC.
@@ -742,7 +840,8 @@ export default async function handler(req, res) {
     const result = {
       updatedAt: new Date().toISOString(), period: "Текущий месяц", mops, mopsDay,
       suspicious2: suspicious2.slice(0, 300), telephony,
-      reach, // ← единственная корректная метрика дозвона по лидам
+      reach, // ← дозвон по лидам за МЕСЯЦ (по всем попыткам)
+      dozvon, // ← % дозвона ПО ЭТАПУ ВОРОНКИ (настраивается в панели: dozvonStages)
       mopIssues: mopIssues.slice(0, 400), // сырые факты по МОПам для MOP Agent (без суждений)
       // ПАСПОРТ ПОЛНОТЫ ДАННЫХ — едет вместе с фактами, а не в диагностике сбоку.
       // MOP Agent обязан на него смотреть ДО того, как заводить находку на человека:

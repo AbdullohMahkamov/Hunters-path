@@ -235,11 +235,19 @@ function onPipeChange() {
   const pipe = _probeData.pipelines.find((p) => String(p.id) === String(pid))
   if (!pipe) return
   const opts = pipe.statuses.map((s) => `<option value="${escapeHtml(s.name)}">${escapeHtml(s.name)}</option>`).join('')
+  // Этапы «входа» для % дозвона — отмечаются чекбоксами прямо при онбординге, тем же паттерном,
+  // что и выбор менеджеров. Разработчик для этого не нужен.
+  const stageBoxes = pipe.statuses.map((s) => `
+    <label style="display:flex;gap:7px;align-items:center;font-size:12px;padding:3px;">
+      <input type="checkbox" class="cf_dz" value="${s.id}">${escapeHtml(s.name)}
+    </label>`).join('')
   $('cf_statuses').innerHTML = `
     <div style="font-size:11px;color:var(--txt2);margin-bottom:3px;">Статус «Продажа»</div>
     <select id="cf_sold" style="width:100%;padding:7px;border-radius:7px;border:1px solid var(--line2);background:var(--bg);color:var(--txt);font-size:12.5px;margin-bottom:6px;">${opts}</select>
     <div style="font-size:11px;color:var(--txt2);margin-bottom:3px;">Статус «Отказ/Потеря»</div>
-    <select id="cf_lost" style="width:100%;padding:7px;border-radius:7px;border:1px solid var(--line2);background:var(--bg);color:var(--txt);font-size:12.5px;">${opts}</select>`
+    <select id="cf_lost" style="width:100%;padding:7px;border-radius:7px;border:1px solid var(--line2);background:var(--bg);color:var(--txt);font-size:12.5px;margin-bottom:8px;">${opts}</select>
+    <div style="font-size:11px;color:var(--txt2);margin-bottom:3px;">Этапы для расчёта % дозвона (этапы «входа»: новый лид, не дозвонились)</div>
+    <div style="max-height:140px;overflow-y:auto;border:1px solid var(--line);border-radius:7px;padding:6px;">${stageBoxes}</div>`
 }
 async function saveClient() {
   const g = (id) => { const e = $(id); return e ? e.value.trim() : '' }
@@ -258,6 +266,7 @@ async function saveClient() {
     const mops = {}
     document.querySelectorAll('.cf_mop:checked').forEach((c) => { mops[c.value] = c.getAttribute('data-name') })
     client.mops = mops
+    client.dozvonStages = Array.from(document.querySelectorAll('.cf_dz:checked')).map((c) => Number(c.value))
   }
   const btn = $('cf_saveBtn')
   if (btn) { btn.disabled = true; btn.textContent = 'Сохранение...' }
@@ -267,6 +276,81 @@ async function saveClient() {
     if (d.ok) { alert('Клиент добавлен! Логин: ' + client.login); $('clientForm').style.display = 'none'; loadClientsList() } else alert('Ошибка: ' + (d.error || '—'))
   } catch (e) { alert(String(e)) }
   if (btn) { btn.disabled = false; btn.textContent = 'Сохранить клиента' }
+}
+
+// ===== МЕТРИКИ ДОЗВОНА (админ) =====
+// Выбор этапов воронки, по которым считается % дозвона. Это НАСТРОЙКА, а не код: у каждого
+// клиента своя структура воронки, и менять выбор нужно в два клика, без разработчика.
+// Тот же паттерн, что «Клиенты»: оверлей + императивный innerHTML + window.*-функции.
+let _mx = null
+function openMetricsModal() {
+  const ov = $('metricsOverlay'); if (ov) ov.style.display = 'block'
+  loadMetrics()
+}
+function closeMetricsModal() { const ov = $('metricsOverlay'); if (ov) ov.style.display = 'none' }
+
+async function loadMetrics() {
+  const box = $('metricsBody')
+  box.innerHTML = '<div style="font-size:12px;color:var(--txt3);">Загружаю этапы воронки из amoCRM…</div>'
+  try {
+    const r = await fetch('/api/sync-speed?action=stages&session=' + encodeURIComponent(getSession()))
+    const d = await r.json()
+    if (!d.ok) { box.innerHTML = '<div style="font-size:12px;color:var(--red);">' + escapeHtml(d.error || 'Ошибка') + '</div>'; return }
+    _mx = d
+    renderMetrics()
+  } catch (e) { box.innerHTML = '<div style="font-size:12px;color:var(--red);">Нет связи</div>' }
+}
+
+function renderMetrics() {
+  const d = _mx
+  // работаем с воронкой, которая реально считается системой
+  const pipe = d.pipelines.find((p) => p.name === d.pipelineInUse) || d.pipelines[0]
+  const sel = new Set((d.dozvonStages || []).map(Number))
+  const rows = (pipe.statuses || [])
+    .filter((s) => s.id !== d.soldStatus && s.id !== d.lostStatus) // продажа/потеря — не этапы входа
+    .map((s) => `
+      <label style="display:flex;gap:8px;align-items:center;font-size:12.5px;padding:5px 3px;border-radius:6px;cursor:pointer;">
+        <input type="checkbox" class="mx_st" value="${s.id}" ${sel.has(s.id) ? 'checked' : ''}>
+        <span>${escapeHtml(s.name)}</span>
+        <span style="margin-left:auto;font-size:10.5px;color:var(--txt3);">id ${s.id}</span>
+      </label>`).join('')
+  $('metricsBody').innerHTML = `
+    <div style="font-size:12px;color:var(--txt2);line-height:1.55;margin-bottom:10px;">
+      <b>% дозвона</b> считается по лидам, которые <b>сейчас стоят</b> на отмеченных этапах —
+      независимо от того, когда они созданы. Из них берётся: скольким звонили сегодня и скольким
+      дозвонились. Лиды, ушедшие дальше по воронке, в метрику не входят.
+    </div>
+    <div style="font-size:11px;color:var(--txt2);margin-bottom:4px;">Воронка: <b>${escapeHtml(pipe.name)}</b></div>
+    <div style="border:1px solid var(--line);border-radius:9px;padding:8px;max-height:280px;overflow-y:auto;margin-bottom:12px;">${rows}</div>
+    <div style="font-size:11px;color:var(--txt2);margin-bottom:3px;">Порог разговора (сек) — короче этого не считается дозвоном</div>
+    <input id="mx_sec" type="number" min="1" max="600" value="${d.reachedSec || 40}"
+      style="width:100%;padding:8px;border-radius:8px;border:1px solid var(--line2);background:var(--bg);color:var(--txt);font-size:13px;margin-bottom:12px;">
+    <div id="mx_msg" style="font-size:11.5px;margin-bottom:8px;"></div>
+    <button id="mx_save" onclick="saveMetrics()" style="width:100%;padding:11px;border-radius:9px;background:var(--accent);border:none;color:#fff;font-size:13.5px;font-weight:600;cursor:pointer;">Сохранить</button>
+    <div style="font-size:10.5px;color:var(--txt3);margin-top:8px;line-height:1.5;">
+      Изменения применятся при следующем пересчёте (раз в час) или сразу — кнопкой пересчёта на дашборде.
+    </div>`
+}
+
+async function saveMetrics() {
+  const stages = Array.from(document.querySelectorAll('.mx_st:checked')).map((c) => Number(c.value))
+  const sec = parseInt(($('mx_sec') || {}).value, 10)
+  const msg = $('mx_msg')
+  if (!stages.length) { msg.innerHTML = '<span style="color:var(--red);">Отметьте хотя бы один этап — иначе метрику не по чему считать.</span>'; return }
+  if (!(sec > 0 && sec <= 600)) { msg.innerHTML = '<span style="color:var(--red);">Порог: от 1 до 600 секунд.</span>'; return }
+  const btn = $('mx_save'); if (btn) { btn.disabled = true; btn.textContent = 'Сохраняю…' }
+  try {
+    const r = await fetch('/api/user-data', {
+      method: 'POST', headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({ action: 'metrics-save', session: getSession(), metrics: { dozvonStages: stages, reachedSec: sec } }),
+    })
+    const d = await r.json()
+    msg.innerHTML = d.ok
+      ? '<span style="color:var(--green);">Сохранено: этапов ' + stages.length + ', порог ' + sec + ' сек.</span>'
+      : '<span style="color:var(--red);">' + escapeHtml(d.error || 'Ошибка') + '</span>'
+    if (d.ok && _mx) _mx.dozvonStages = stages
+  } catch (e) { msg.innerHTML = '<span style="color:var(--red);">Нет связи</span>' }
+  if (btn) { btn.disabled = false; btn.textContent = 'Сохранить' }
 }
 
 // ===== ГЕЙМИФИКАЦИЯ (админ) =====
@@ -580,6 +664,7 @@ export function initAdminModals() {
   Object.assign(window, {
     openMopsModal, closeMopsModal, loadMopsList, createMopAccount, deleteMopAccount, setMopRole, saveRaffle, setMopPlan, toggleEditMop, saveMopAccount, saveNiche,
     openClientsModal, closeClientsModal, loadClientsList, deleteClient, openClientForm, cInput, probeClient, onPipeChange, saveClient,
+    openMetricsModal, closeMetricsModal, saveMetrics,
     openGamiModal, closeGamiModal, gamiSwitchTab, saveGami, addCaseItem, removeCaseItem, gamiCaseSum, gamiDeliver, resetGami, resetEconomy, loadGamiBalances, grantPoints, zeroPoints, resetDay, clearInventory,
   })
   // после F5 — вернуть открытую модалку «Геймификация» на нужной вкладке
