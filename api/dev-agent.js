@@ -623,6 +623,16 @@ export default async function handler(req, res) {
       return;
     }
     if (action === "get_config") { res.status(200).json({ ok: true, config: await getConfig() }); return; }
+    // ПРЕДПРОВЕРКА без запуска: какой режим был бы выбран и почему (0 токенов, для UI и отладки)
+    if (action === "precheck") {
+      const cfg0 = await getConfig();
+      const agg0 = await gatherAggregates(cfg0);
+      const git0 = await readGitLog(24);
+      const rm0 = await rgetJSON(K.runmode, null);
+      const dec = await decideRunMode(cfg0, agg0, agg0.invariants || [], (git0.commits || []).length);
+      res.status(200).json({ ok: true, decision: dec, commits24h: (git0.commits || []).length, lastFullDay: rm0 && rm0.lastFullDay, lightStreak: (rm0 && rm0.lightStreak) || 0, limits: { maxLightStreak: cfg0.maxLightStreak, forceFullEveryDays: cfg0.forceFullEveryDays, changeThresholdPct: cfg0.changeThresholdPct } });
+      return;
+    }
     if (action === "verified_funnel") { res.status(200).json({ ok: true, funnel: await getVerifiedFunnel(String(q.org || b.org || "hunter")) }); return; }
     if (action === "set_config") {
       const cur = await getConfig(); const inc = b.config || {};

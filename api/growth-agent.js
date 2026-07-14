@@ -284,6 +284,14 @@ export default async function handler(req, res) {
       return;
     }
     if (action === "get_config") { res.status(200).json({ ok: true, config: await getConfig() }); return; }
+    if (action === "precheck") {
+      const cfg0 = await getConfig();
+      const f0 = await getVerifiedFunnel(cfg0.clientOrg || "hunter");
+      const rm0 = await rgetJSON(K.runmode, null);
+      const dec = await decideGrowthMode(cfg0, f0);
+      res.status(200).json({ ok: true, decision: dec, lastFullDay: rm0 && rm0.lastFullDay, lightStreak: (rm0 && rm0.lightStreak) || 0, limits: { maxLightStreak: cfg0.maxLightStreak, forceFullEveryDays: cfg0.forceFullEveryDays, changeThresholdPct: cfg0.changeThresholdPct } });
+      return;
+    }
     if (action === "set_config") {
       const cur = await getConfig(); const inc = b.config || {}; const next = { ...cur };
       if (typeof inc.clientOrg === "string" && inc.clientOrg.trim()) next.clientOrg = inc.clientOrg.trim();
