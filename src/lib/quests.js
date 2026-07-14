@@ -108,6 +108,34 @@ export function renderStages() {
   renderTaskHistory()
 }
 
+// Дедлайн задачи: ИИ ставит при генерации плана, владелец может поправить.
+// Нужен Task Agent'у — он гоняет РОПа по срокам задач ОП.
+function deadlineInfo(q, uz) {
+  if (!q.deadline) return null
+  const d = new Date(q.deadline + 'T00:00:00')
+  if (isNaN(d)) return null
+  const today = new Date(Date.now() + 5 * 3600000) // Ташкент
+  const t0 = Date.UTC(today.getUTCFullYear(), today.getUTCMonth(), today.getUTCDate())
+  const days = Math.round((d.getTime() - t0) / 86400000)
+  const fmt = d.toLocaleDateString('ru', { day: '2-digit', month: '2-digit' })
+  if (days < 0) return { text: `${fmt} · ${uz ? 'muddati oʻtdi' : 'просрочено'} ${-days} ${uz ? 'kun' : 'дн'}`, color: 'var(--red)' }
+  if (days === 0) return { text: `${fmt} · ${uz ? 'bugun' : 'сегодня'}`, color: 'var(--gold)' }
+  if (days <= 2) return { text: `${fmt} · ${uz ? 'qoldi' : 'осталось'} ${days} ${uz ? 'kun' : 'дн'}`, color: 'var(--gold)' }
+  return { text: `${fmt} · ${uz ? 'qoldi' : 'осталось'} ${days} ${uz ? 'kun' : 'дн'}`, color: 'var(--txt3)' }
+}
+// правка срока владельцем (РОПу не даём — он исполнитель)
+function setTaskDeadline(id) {
+  const cp = state.customPlan; if (!cp) return
+  const q = [...(cp.marketing || []), ...(cp.sales || [])].find((x) => x.id === id); if (!q) return
+  const cur = q.deadline || ''
+  const v = window.prompt('Срок выполнения (ГГГГ-ММ-ДД), пусто — убрать срок:', cur)
+  if (v === null) return
+  const val = String(v).trim()
+  if (val && !/^\d{4}-\d{2}-\d{2}$/.test(val)) { alert('Формат: 2026-07-20'); return }
+  q.deadline = val
+  save(); renderStages()
+}
+
 function renderCustomPlan() {
   const uz = state.lang === 'uz'
   const wrap = $('stages'); if (!wrap) return
@@ -195,7 +223,12 @@ function renderCustomPlan() {
             <div class="s-name">${uz ? 'Bosqich' : 'Этап'} ${bosqich} · ${escapeHtml(q.t)}
               ${on ? `<span class="tag tag-done">${uz ? 'yopildi' : 'закрыт'}</span>` : ''}
             </div>
-            <div class="s-sub">${hasSteps ? `${doneSteps}/${steps.length} ${uz ? 'vazifa' : 'задач'}` : (uz ? '1 vazifa' : '1 задача')}</div>
+            <div class="s-sub">${hasSteps ? `${doneSteps}/${steps.length} ${uz ? 'vazifa' : 'задач'}` : (uz ? '1 vazifa' : '1 задача')}${(() => {
+              const di = deadlineInfo(q, uz)
+              const chip = di && !on ? `<span style="color:${di.color};font-weight:600;"> · ${uz ? 'muddat' : 'срок'}: ${di.text}</span>` : (q.deadline ? '' : `<span style="color:var(--txt3);"> · ${uz ? 'muddatsiz' : 'без срока'}</span>`)
+              const edit = !isRop ? `<button onclick="event.stopPropagation();setTaskDeadline('${q.id}')" style="margin-left:6px;padding:1px 6px;border-radius:6px;border:1px solid var(--line2);background:none;color:var(--txt3);font-size:10.5px;cursor:pointer;">${uz ? 'muddat' : 'срок'}</button>` : ''
+              return chip + edit
+            })()}</div>
           </div>
           <div class="s-chev">▾</div>
         </div>
@@ -415,7 +448,7 @@ export function initQuests() {
   if (_inited) return
   _inited = true
   Object.assign(window, {
-    toggleStage, toggleQuest, toggleCpCard, toggleCpStep, toggleCustomTask, helpCustomStep, helpCustomTask, openTaskReport, toggleHist,
+    toggleStage, toggleQuest, toggleCpCard, toggleCpStep, toggleCustomTask, helpCustomStep, helpCustomTask, openTaskReport, toggleHist, setTaskDeadline,
     wizRegenerate, wizReaudit, fightBoss, resetHunt, toggleDop, removeDop,
     openGenerator, closeGenerator, acceptGen, skipGen, askNext, helpQuest,
   })

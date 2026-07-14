@@ -143,4 +143,16 @@ export const growthAgent = {
   reset: (full) => postJSON('/api/growth-agent', { action: 'reset', session: getSession(), full: !!full }).then((r) => r.json()),
 }
 
+// ===== TASK AGENT (Агент В — дисциплина задач ОП, диалог с РОПом в Telegram) =====
+export const taskAgent = {
+  state: () => getJSON('/api/task-agent?action=state&session=' + encodeURIComponent(getSession())),
+  tick: (force) => postJSON('/api/task-agent', { action: 'tick', session: getSession(), force: !!force }).then((r) => r.json()),
+  setConfig: (config) => postJSON('/api/task-agent', { action: 'set_config', session: getSession(), config }).then((r) => r.json()),
+  reset: () => postJSON('/api/task-agent', { action: 'reset', session: getSession() }).then((r) => r.json()),
+  // боты
+  botStatus: () => getJSON('/api/tg-bot?action=status&session=' + encodeURIComponent(getSession())),
+  botSetup: () => getJSON('/api/tg-bot?action=setup&session=' + encodeURIComponent(getSession())),
+  botTest: (who) => postJSON('/api/tg-bot', { action: 'test', session: getSession(), who }).then((r) => r.json()),
+}
+
 export { postJSON, getJSON }

@@ -23,6 +23,9 @@
     },
     "api/growth-agent.js": {
       "maxDuration": 180
+    },
+    "api/task-agent.js": {
+      "maxDuration": 120
     }
   },
   "crons": [
@@ -57,6 +60,10 @@
     {
       "path": "/api/growth-agent?action=cron_tick&cron=1",
       "schedule": "0 2 * * *"
+    },
+    {
+      "path": "/api/task-agent?action=tick&cron=1",
+      "schedule": "0 4-9 * * *"
     }
   ]
 }
