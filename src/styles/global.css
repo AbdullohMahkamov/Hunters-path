@@ -1033,3 +1033,29 @@
   .da-lastrun{font-size:11.5px;color:var(--txt3);padding-left:2px;}
   .da-top{align-items:flex-start;}
   .da-actions{padding-top:2px;}
+
+  /* ===== Growth Agent — вёрстка: центрирование, ровные карточки, метрики сеткой ===== */
+  .ga-head{max-width:1180px;margin:0 auto;padding:18px 24px 12px;border-bottom:none;}
+  .ga-cfg{max-width:1180px;margin:0 auto 10px;border-radius:12px;border:1px solid var(--line);}
+  .ga-body{max-width:1180px;margin:0 auto;padding:6px 24px 48px;}
+  .ga-sec-h{margin:26px 0 12px;}
+  /* воронка: равные по высоте карточки, ровные колонки переходов */
+  .ga-funnel{padding:18px 20px;border-radius:14px;}
+  .ga-stages{display:flex;align-items:stretch;gap:0;flex-wrap:nowrap;overflow-x:auto;padding-bottom:2px;}
+  .ga-stage{display:flex;align-items:stretch;flex:1;min-width:0;}
+  .ga-stage-box{flex:1;min-width:120px;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:6px;min-height:106px;padding:12px 10px;border-radius:12px;}
+  .ga-stage-name{font-size:12px;line-height:1.3;min-height:31px;display:flex;align-items:center;justify-content:center;text-align:center;}
+  .ga-stage-val{margin:0;font-size:13.5px;font-weight:600;color:var(--txt);}
+  .ga-trans{flex:0 0 84px;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:3px;padding:0;min-width:84px;}
+  /* метрики — сеткой карточек, а не строками текста */
+  .ga-metrics{margin-top:18px;display:grid;grid-template-columns:repeat(auto-fit,minmax(268px,1fr));gap:10px;}
+  .ga-metric{background:var(--bg2);border:1px solid var(--line);border-radius:10px;padding:10px 13px;font-size:13px;line-height:1.55;}
+  .ga-metric.ga-dim{background:transparent;border-style:dashed;}
+  .ga-undiag{margin-top:14px;}
+  .ga-report{margin-top:18px;padding:16px 18px;border-radius:14px;}
+  /* гипотезы — ровная сетка «подпись → значение» */
+  .ga-hyp{padding:16px 18px;border-radius:14px;margin-bottom:14px;}
+  .ga-hyp-row{padding:7px 0;align-items:flex-start;}
+  .ga-lbl{flex:0 0 142px;}
+  .ga-sources{display:grid;grid-template-columns:repeat(auto-fill,minmax(330px,1fr));gap:6px 20px;}
+  @media(max-width:900px){.ga-lbl{flex:0 0 100px;}.ga-trans{flex:0 0 62px;min-width:62px;}}
