@@ -92,7 +92,14 @@ export async function runMopAgent() {
   const speed = await rgetJSON(ORG === "hunter" ? "speed" : `speed:${ORG}`, null);
   if (!speed) return { ok: false, error: "нет данных speed" };
 
-  // TRUST: звонковые данные надёжны? Если нет — по звонковым пунктам МОЛЧИМ.
+  // ── ДВА НЕЗАВИСИМЫХ ГЕЙТА ПЕРЕД ЛЮБОЙ НАХОДКОЙ ──
+  // Гейт 1 — TRUST LAYER: доверяем ли мы звонковым метрикам клиента в принципе.
+  // Гейт 2 — ПОЛНОТА ЭТОГО ПРОГОНА: успела ли система дочитать данные, на которых стоит детектор.
+  // Второй важнее по последствиям: неполные данные создают находку ИЗ НИЧЕГО.
+  // Пример: amoCRM оборвал выдачу событий → у лида calls=0 → «менеджер не звонил» → обвинение
+  // человека в том, чего система просто не прочитала. Такого быть не должно НИКОГДА.
+  // Поэтому гейты раздельные, по детекторам: молчим ровно по той метрике, где данных не хватает,
+  // а не глушим агента целиком.
   const funnel = await getVerifiedFunnel(ORG);
   const callStage = (funnel.stages || []).find((s) => /дозвон/i.test(s.stage));
   const callsVerified = callStage && callStage.trust === "verified";
@@ -104,18 +111,34 @@ export async function runMopAgent() {
   // чтобы формулировка задачи и реальный детектор не разъехались
   const meta = speed.mopMeta || {};
   const NO_CALL_H = meta.stalledNoCallHours != null ? meta.stalledNoCallHours : 4;
+
+  // Старый кэш (записан до появления паспорта полноты) — полноту НЕ подтверждает.
+  // Отсутствие доказательства полноты трактуем как неполноту: молчать безопаснее, чем обвинять.
+  const notesComplete = meta.notesComplete === true;
+  const eventsComplete = meta.eventsComplete === true;
+  // status_mismatch стоит на reachedReal, а он читается ТОЛЬКО из нот
+  const canMismatch = callsVerified && notesComplete;
+  // no_call стоит на счётчике calls, а он приходит ТОЛЬКО из событий
+  const canNoCall = callsVerified && eventsComplete;
+  if (callsVerified && !notesComplete) {
+    skipped.push(`расхождение статуса и факта: ноты дочитаны не полностью${meta.notesUnread ? ` (не прочитано ${meta.notesUnread} лид(ов))` : " (кэш без отметки о полноте)"} — молчим, чтобы не обвинить человека в непрочитанном`);
+  }
+  if (callsVerified && !eventsComplete) {
+    skipped.push("лиды без звонка: события звонков выгружены не полностью — молчим, иначе можно обвинить в «не звонил» того, чьи звонки просто не догрузились");
+  }
+  const ALLOWED = { status_mismatch: canMismatch, no_call: canNoCall };
+
   const prev = await rgetJSON(K.findings, []);
   const history = await rgetJSON(K.history, []);
   const nowMs = Date.now();
 
-  // 1) ГРУППИРУЕМ сырые факты по (тип, МОП)
+  // 1) ГРУППИРУЕМ сырые факты по (тип, МОП) — только те типы, по которым данные полные
   const byTypeMop = {};
-  if (callsVerified) {
-    for (const it of issues) {
-      if (!it.mop || !it.type) continue;
-      const k = it.type + "|" + it.mop;
-      (byTypeMop[k] = byTypeMop[k] || { type: it.type, mop: it.mop, items: [] }).items.push(it);
-    }
+  for (const it of issues) {
+    if (!it.mop || !it.type) continue;
+    if (!ALLOWED[it.type]) continue; // данных не хватает → факт не превращаем в обвинение
+    const k = it.type + "|" + it.mop;
+    (byTypeMop[k] = byTypeMop[k] || { type: it.type, mop: it.mop, items: [] }).items.push(it);
   }
 
   // 2) КЛАССИФИКАЦИЯ: по отделу (2+ МОПа ИЛИ 3+ повтора за неделю) vs точечная
@@ -233,6 +256,10 @@ export async function runMopAgent() {
   const autoClosed = [];
   for (const f of prevOpen) {
     if (freshKeys.has(key(f))) continue;
+    // НЕ ЗАКРЫВАЕМ то, чего в этот прогон не проверяли: если по типу стоял гейт (данные неполные
+    // или trust не verified), отсутствие факта означает «не смотрели», а НЕ «проблема решена».
+    // Иначе агент бы отрапортовал РОПу «✅ больше не подтвердилось», просто не заглянув в данные.
+    if (!ALLOWED[f.type]) { merged.push(f); continue; }
     autoClosed.push({ ...f, status: "auto_closed", closedAt: nowMs, closeReason: "при проверке проблема больше не подтвердилась" });
   }
 

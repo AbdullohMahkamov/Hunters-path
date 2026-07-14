@@ -241,14 +241,20 @@ export default async function handler(req, res) {
     // В debug-режиме берём только СЕГОДНЯШНИЕ события — иначе месячная выборка не укладывается в лимит времени.
     const evFrom = DEBUG_CALLS ? dayStart2 : monthStart;
     const evTypes2 = "outgoing_call";
+    // ПОЛНОТА СОБЫТИЙ ЗВОНКОВ — критична: из них берётся счётчик calls, а на нём стоит детектор
+    // «лид без единого звонка». Если amoCRM оборвёт выдачу (429/500) и мы просто выйдем из цикла,
+    // у лидов с недокачанных страниц останется calls=0 — и агент обвинит МОПа в том, что тот НЕ
+    // звонил, хотя звонки были, их просто не отдали. Поэтому любой обрыв фиксируем флагом,
+    // а MOP Agent по такому прогону обязан молчать (см. гейт в mop-agent.js).
+    let eventsTruncated = false;
     page = 1; guard = 0;
     while (guard < 120) {
       guard++;
       const url = `${base}/events?filter[type]=${evTypes2}` +
         `&filter[created_at][from]=${evFrom}&limit=250&page=${page}&order[created_at]=asc`;
       const r = await fetch(url, { headers: H });
-      if (r.status === 204) break;
-      if (!r.ok) break;
+      if (r.status === 204) break;               // 204 = данных больше нет → выборка ПОЛНАЯ
+      if (!r.ok) { eventsTruncated = true; break; } // сбой API → данные НЕПОЛНЫЕ, звонки недосчитаны
       const d = await r.json();
       const events = (d._embedded && d._embedded.events) || [];
       for (const e of events) {
@@ -267,6 +273,7 @@ export default async function handler(req, res) {
       page++;
       await new Promise(rs => setTimeout(rs, 150));
     }
+    if (guard >= 120) eventsTruncated = true; // упёрлись в потолок страниц — событий больше, чем прочитали
 
     // 3b) Тянем события СМЕНЫ ОТВЕТСТВЕННОГО — чтобы знать, когда лид назначен на менеджера
     // (для метрики "первый звонок после назначения"). В debug не нужны — пропускаем ради скорости.
@@ -328,30 +335,53 @@ export default async function handler(req, res) {
         return (li._callTs || []).some((ts) => ts >= dayStart2);
       });
     }
-    for (const lid of toCheck) {
-      try {
-        const r = await fetch(`${base}/leads/${lid}/notes?limit=250`, { headers: H });
-        if (!r.ok) continue;
-        const d = await r.json();
-        const notes = (d._embedded && d._embedded.notes) || [];
-        for (const n of notes) {
-          notesSeen++;
-          if (n.note_type !== "call_out" && n.note_type !== "call_in") continue;
-          callNotesSeen++;
-          const p = n.params || {};
-          const dur = parseInt(p.duration != null ? p.duration : (p.DURATION || 0), 10) || 0;
-          const nts = n.created_at || 0;
-          // debug: копим сырые ноты звонков за сегодня (для сверки события звонка с длительностью)
-          if (DEBUG_CALLS && nts >= dayStart2) {
-            (dbgNotesByLead[lid] = dbgNotesByLead[lid] || []).push({ ts: nts, dur, type: n.note_type, callStatus: p.call_status != null ? String(p.call_status) : null });
-          }
-          if (dur >= REACHED_SEC) {
-            leadInfo[lid].reachedReal = true; reachedSet++;
-            if (nts >= dayStart2) leadInfo[lid].reachedRealToday = true; // реальный дозвон ИМЕННО сегодня (разговор ≥ REACHED_SEC)
-          }
+    // ЧТЕНИЕ НОТ — ПАРАЛЛЕЛЬНО, С ПУЛОМ И БЮДЖЕТОМ ВРЕМЕНИ.
+    // История: раньше ноты тянулись строго по одной (600 лидов × ~0.4с ≈ 240с) — вместе с лидами
+    // и событиями функция вылезала за лимит Vercel (300с), падала с 504 и НЕ ДОХОДИЛА до записи
+    // кэша. Снаружи это выглядело как «метрики замерли»: дашборд и агенты часами читали старый
+    // speed. Поэтому здесь два предохранителя:
+    //   1) пул из NOTES_CONCURRENCY воркеров (amoCRM держит ~7 запросов/с — берём 6, с запасом);
+    //   2) БЮДЖЕТ ВРЕМЕНИ: как только он исчерпан, чтение нот обрывается, но прогон продолжается
+    //      и КЭШ ВСЁ РАВНО ЗАПИСЫВАЕТСЯ. Свежие данные с частично непрочитанными нотами лучше,
+    //      чем 504 и вечно старый кэш. Сколько лидов не дочитали — видно в _callDiag.notesTruncated.
+    const NOTES_CONCURRENCY = 6;
+    const NOTES_BUDGET_MS = 150000; // 150с из 300с бюджета функции — остальное на лиды/события/запись
+    const notesT0 = Date.now();
+    let notesTruncated = 0;
+    let qi = 0;
+
+    const readLeadNotes = async (lid) => {
+      const r = await fetch(`${base}/leads/${lid}/notes?limit=250`, { headers: H });
+      if (!r.ok) return;
+      const d = await r.json();
+      const notes = (d._embedded && d._embedded.notes) || [];
+      for (const n of notes) {
+        notesSeen++;
+        if (n.note_type !== "call_out" && n.note_type !== "call_in") continue;
+        callNotesSeen++;
+        const p = n.params || {};
+        const dur = parseInt(p.duration != null ? p.duration : (p.DURATION || 0), 10) || 0;
+        const nts = n.created_at || 0;
+        // debug: копим сырые ноты звонков за сегодня (для сверки события звонка с длительностью)
+        if (DEBUG_CALLS && nts >= dayStart2) {
+          (dbgNotesByLead[lid] = dbgNotesByLead[lid] || []).push({ ts: nts, dur, type: n.note_type, callStatus: p.call_status != null ? String(p.call_status) : null });
         }
-      } catch (e) { /* пропускаем сбойный лид */ }
-    }
+        if (dur >= REACHED_SEC) {
+          leadInfo[lid].reachedReal = true; reachedSet++;
+          if (nts >= dayStart2) leadInfo[lid].reachedRealToday = true; // реальный дозвон ИМЕННО сегодня (разговор ≥ REACHED_SEC)
+        }
+      }
+    };
+
+    const worker = async () => {
+      while (qi < toCheck.length) {
+        if (Date.now() - notesT0 > NOTES_BUDGET_MS) { notesTruncated = toCheck.length - qi; qi = toCheck.length; return; }
+        const lid = toCheck[qi++];
+        try { await readLeadNotes(lid); } catch (e) { /* пропускаем сбойный лид */ }
+      }
+    };
+    await Promise.all(Array.from({ length: Math.min(NOTES_CONCURRENCY, toCheck.length) }, worker));
+    const notesMs = Date.now() - notesT0;
 
 
     // === DEBUG-ВЫВОД: сверяем каждое событие звонка за сегодня с фактической нотой (длительностью) ===
@@ -626,13 +656,28 @@ export default async function handler(req, res) {
       suspicious2: suspicious2.slice(0, 300), telephony,
       reach, // ← единственная корректная метрика дозвона по лидам
       mopIssues: mopIssues.slice(0, 400), // сырые факты по МОПам для MOP Agent (без суждений)
-      // пороги, по которым эти факты собраны — MOP Agent формулирует ими текст задачи,
-      // чтобы «в течение N ч» в сообщении РОПу и реальный детектор не разъехались
-      mopMeta: { stalledNoCallHours: STALLED_NO_CALL_HOURS, reachedSec: REACHED_SEC },
+      // ПАСПОРТ ПОЛНОТЫ ДАННЫХ — едет вместе с фактами, а не в диагностике сбоку.
+      // MOP Agent обязан на него смотреть ДО того, как заводить находку на человека:
+      //  notesComplete=false  → reachedReal недосчитан → status_mismatch НЕДОСТОВЕРЕН (молчать)
+      //  eventsComplete=false → calls недосчитан      → no_call НЕДОСТОВЕРЕН (молчать)
+      // Правило простое: если система чего-то не успела прочитать — это не повод обвинять человека.
+      mopMeta: {
+        stalledNoCallHours: STALLED_NO_CALL_HOURS, reachedSec: REACHED_SEC,
+        notesComplete: notesTruncated === 0,
+        eventsComplete: !eventsTruncated,
+        notesUnread: notesTruncated,
+      },
       _callDiag: {
         notesSeen, callNotesSeen,
         longCallNotes: reachedSet, // ЯВНОЕ ИМЯ: это ЗВОНКИ ≥порога, а НЕ лиды
         _warning: "longCallNotes — счётчик ЗВОНКОВ, не лидов. НЕ делить на количество лидов. Дозвон по лидам — в поле reach.",
+        // читаемость прогона: сколько лидов проверили на ноты, за сколько, и не оборвались ли по бюджету
+        leadsChecked: toCheck.length - notesTruncated, leadsPlanned: toCheck.length,
+        notesMs, notesTruncated,
+        // если > 0 — часть лидов НЕ прочитана: дозвон и mopIssues занижены, но кэш свежий (это осознанный размен)
+        _truncWarning: notesTruncated > 0
+          ? `Бюджет чтения нот исчерпан: не дочитано ${notesTruncated} лид(ов). Дозвон и mopIssues занижены. Поднять NOTES_CONCURRENCY или сузить выборку.`
+          : null,
       },
     };
     await redisSet(redisUrl, redisToken, K("speed"), JSON.stringify(result));
