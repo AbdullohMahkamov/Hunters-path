@@ -24,7 +24,7 @@ const REDIS_TOKEN = process.env.UPSTASH_REDIS_REST_TOKEN;
 const AKEY = process.env.ANTHROPIC_API_KEY;
 const MODEL = "claude-sonnet-5";
 
-const K = { hypotheses: "growthagent:hypotheses", tested: "growthagent:tested", sources: "growthagent:sources", lastRun: "growthagent:lastRun", config: "growthagent:config" };
+const K = { hypotheses: "growthagent:hypotheses", tested: "growthagent:tested", sources: "growthagent:sources", lastRun: "growthagent:lastRun", config: "growthagent:config", runmode: "growthagent:runmode" };
 const CAP = { hypotheses: 40, tested: 120, sources: 120 };
 
 // Дефолт-конфиг. Пороги/частота — не хардкод, через админку (growthagent:config).
@@ -35,6 +35,10 @@ const DEFAULT_CONFIG = {
   cronDay: 1,                                           // для weekly: 1=Пн (МСК)
   webMaxSearches: 4,                                    // 3-4 запроса за прогон
   searchDedupDays: 3,                                   // не повторять тему поиска, если искалась за N дней
+  // ── ЛЁГКИЙ / ПОЛНЫЙ ПРОГОН (поверх cadence — потолок частоты не отменяется) ──
+  maxLightStreak: 2,       // не больше 2 лёгких подряд → на 3-й обязательно полный (с web_search)
+  forceFullEveryDays: 7,   // абсолютный предохранитель
+  changeThresholdPct: 10,  // существенное относительное изменение метрики воронки
 };
 
 async function rget(key) { try { const r = await fetch(`${REDIS_URL}/get/${encodeURIComponent(key)}`, { headers: { Authorization: `Bearer ${REDIS_TOKEN}` } }); const d = await r.json(); return d && d.result != null ? d.result : null; } catch (e) { return null; } }
@@ -118,16 +122,84 @@ async function callModelWithSearch(system, user, webMax) {
   return { content: d.content || [], tokens: (u.input_tokens || 0) + (u.output_tokens || 0) };
 }
 
-async function runGrowth() {
+// ── PRECHECK: лёгкий или полный прогон? (дёшево, БЕЗ модели и БЕЗ web_search) ──
+// Поверх cadence: агент не может сделать БОЛЬШЕ прогонов, только ДЕШЕВЛЕ.
+// Сравниваем с отпечатком последнего ПОЛНОГО прогона (не со вчера) — иначе медленный дрейф
+// конверсии по чуть-чуть каждый день никогда не пробил бы порог.
+function funnelFingerprint(funnel) {
+  const f = { bottleneck: null, bottleneckPct: null, dropPct: null, avgCheckMedian: null, convDelta: null, stages: {} };
+  if (!funnel) return f;
+  if (funnel.bottleneck) { f.bottleneck = funnel.bottleneck.transition; f.bottleneckPct = funnel.bottleneck.pct; }
+  if (funnel.maxDropOff) f.dropPct = funnel.maxDropOff.dropPct;
+  if (funnel.avgCheck) f.avgCheckMedian = funnel.avgCheck.median;
+  if (funnel.dynamics && funnel.dynamics.conv) f.convDelta = funnel.dynamics.conv.delta;
+  for (const s of (funnel.stages || [])) if (s.transitionFromPrev) f.stages[s.transitionFromPrev.name] = s.transitionFromPrev.pct;
+  return f;
+}
+function diffFunnel(prev, cur, thrPct) {
+  const out = [];
+  if (prev.bottleneck !== cur.bottleneck) out.push(`узкое место сместилось: «${prev.bottleneck || "—"}» → «${cur.bottleneck || "—"}»`);
+  const rel = (a, b) => (a == null || b == null) ? null : (a === 0 ? (b === 0 ? 0 : 100) : Math.abs((b - a) / a) * 100);
+  for (const [k, label] of [["bottleneckPct", "конверсия узкого места"], ["dropPct", "максимальный отток"], ["avgCheckMedian", "медианный чек"]]) {
+    const r = rel(prev[k], cur[k]);
+    if (r != null && r >= thrPct) out.push(`${label}: ${prev[k]} → ${cur[k]} (${Math.round(r)}%)`);
+  }
+  for (const name of Object.keys(cur.stages || {})) {
+    const r = rel((prev.stages || {})[name], cur.stages[name]);
+    if (r != null && r >= thrPct) out.push(`переход «${name}»: ${prev.stages[name]}% → ${cur.stages[name]}%`);
+  }
+  return out;
+}
+async function decideGrowthMode(cfg, funnel) {
+  const rm = await rgetJSON(K.runmode, null);
+  const streak = (rm && rm.lightStreak) || 0;
+  if (!rm || !rm.snapshot) return { mode: "full", reason: "первый прогон — не с чем сравнивать", streak };
+  const daysSinceFull = (Date.now() - (rm.lastFullAt || 0)) / 86400000;
+  if (daysSinceFull >= (cfg.forceFullEveryDays || 7)) return { mode: "full", reason: `прошло ${Math.floor(daysSinceFull)} дн с последнего полного — обязательный полный прогон`, streak };
+  if (streak >= (cfg.maxLightStreak || 2)) return { mode: "full", reason: `${streak} лёгких прогона подряд — по правилу дальше полный`, streak };
+  const changes = diffFunnel(rm.snapshot, funnelFingerprint(funnel), cfg.changeThresholdPct || 10);
+  if (changes.length) return { mode: "full", reason: "изменилось: " + changes.slice(0, 3).join("; "), streak };
+  return { mode: "light", reason: `воронка не изменилась с полного прогона от ${rm.lastFullDay || "?"}`, streak, lastFullDay: rm.lastFullDay };
+}
+
+async function runGrowth(forceFull) {
   const cfg = await getConfig();
   const org = cfg.clientOrg || "hunter";
   const funnel = await getVerifiedFunnel(org);
+  const decision = forceFull ? { mode: "full", reason: "ручной запуск" } : await decideGrowthMode(cfg, funnel);
   // темы, уже искавшиеся за последние searchDedupDays дней — не повторять
   const sources = await rgetJSON(K.sources, []);
   const cutoff = Date.now() - (cfg.searchDedupDays || 3) * 86400000;
   const recentQueries = sources.filter((s) => (s.at || 0) >= cutoff && s.query).map((s) => s.query);
   const tested = await rgetJSON(K.tested, []);
   const openHyps = await rgetJSON(K.hypotheses, []);
+
+  // ── ЛЁГКИЙ ПРОГОН: БЕЗ web_search (это ~80% стоимости). Модель только сверяется с воронкой
+  //    и уже найденными источниками, новых гипотез из воздуха не выдумывает.
+  if (decision.mode === "light") {
+    const lightUser = `РЕЖИМ: ЛЁГКАЯ ПРОВЕРКА — web search сегодня НЕ делаем.
+Причина: ${decision.reason}.
+
+ВОРОНКА (не изменилась): ${JSON.stringify(funnel)}
+ОТКРЫТЫЕ ГИПОТЕЗЫ: ${JSON.stringify(openHyps.map((h) => ({ cause: h.cause, confidence: h.confidence })))}
+УЖЕ ПРОВЕРЕНО: ${JSON.stringify(tested.map((t) => ({ cause: t.cause, result: t.result })))}
+
+Напиши КОРОТКИЙ отчёт (2-4 строки) простым человеческим языком: что проверил, почему полный анализ с поиском бенчмарков сегодня не нужен, и остаётся ли узкое место тем же. НЕ придумывай новых гипотез — новых данных нет. Только текст, без JSON.`;
+    const r = await fetch("https://api.anthropic.com/v1/messages", {
+      method: "POST", headers: { "content-type": "application/json", "x-api-key": AKEY, "anthropic-version": "2023-06-01" },
+      body: JSON.stringify({ model: MODEL, max_tokens: 700, system: SYSTEM, messages: [{ role: "user", content: lightUser }] }),
+    });
+    const d = await r.json(); const u = d.usage || {};
+    const lightTokens = (u.input_tokens || 0) + (u.output_tokens || 0);
+    const lightText = (d.content || []).filter((b) => b.type === "text").map((b) => b.text).join("").trim();
+    const rm = await rgetJSON(K.runmode, {});
+    await rsetJSON(K.runmode, { ...rm, lightStreak: (decision.streak || 0) + 1, lastLightAt: Date.now() });
+    const report = `🟢 Лёгкая проверка (web search пропущен)\nПричина: ${decision.reason}\n\n${lightText}`;
+    await rsetJSON(K.lastRun, { day: dayKey(), week: weekKey(), at: Date.now(), report, undiagnosable: (funnel && funnel.undiagnosable) || [], tokens: lightTokens, searches: 0, hypCount: openHyps.length, runMode: "light", runReason: decision.reason });
+    return { ok: true, runMode: "light", reason: decision.reason, report, hypotheses: openHyps.length, searches: 0, newSources: 0, tokens: lightTokens };
+  }
+
+  // ── ПОЛНЫЙ ПРОГОН: с web_search ──
   const user = buildUser({ funnel, niche: cfg.niche, recentQueries, tested, openHyps });
   const { content, tokens } = await callModelWithSearch(SYSTEM, user, cfg.webMaxSearches);
   const { text, searchLog } = extractWeb(content);
@@ -164,8 +236,10 @@ async function runGrowth() {
 
   const report = (out.report || "Прогон завершён.").trim();
   const undiagnosable = Array.isArray(out.undiagnosable) ? out.undiagnosable : [];
-  await rsetJSON(K.lastRun, { day: dayKey(), week: weekKey(), at: Date.now(), report, undiagnosable, tokens, searches: searchLog.length, hypCount: hypotheses.length });
-  return { ok: true, report, undiagnosable, hypotheses: hypotheses.length, newSources: newSourceEntries.length, searches: searchLog.length, tokens };
+  await rsetJSON(K.lastRun, { day: dayKey(), week: weekKey(), at: Date.now(), report, undiagnosable, tokens, searches: searchLog.length, hypCount: hypotheses.length, runMode: "full", runReason: decision.reason });
+  // ПОЛНЫЙ прогон → фиксируем отпечаток воронки, обнуляем счётчик лёгких (сравнение идёт с ним, а не со вчера)
+  await rsetJSON(K.runmode, { lastFullAt: Date.now(), lastFullDay: dayKey(), lightStreak: 0, snapshot: funnelFingerprint(funnel) });
+  return { ok: true, runMode: "full", reason: decision.reason, report, undiagnosable, hypotheses: hypotheses.length, newSources: newSourceEntries.length, searches: searchLog.length, tokens };
 }
 
 // cron-tick: частота через cadence (daily сейчас, weekly позже) — дедуп по дню/неделе
@@ -221,7 +295,7 @@ export default async function handler(req, res) {
     }
     // прогон: cron-триггер (не админ) НЕ отдаёт отчёт в ответе — только факт; полный результат только админу
     if (action === "run" || action === "cron_tick") {
-      const r = action === "cron_tick" ? await cronTick() : await runGrowth();
+      const r = action === "cron_tick" ? await cronTick() : await runGrowth(true); // ручной запуск — всегда полный
       res.status(200).json(isAdmin ? r : { ok: !!r.ok, ran: !!(r.ok && !r.skipped) });
       return;
     }

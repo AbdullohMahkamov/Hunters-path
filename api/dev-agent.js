@@ -23,7 +23,7 @@ const MODEL = "claude-sonnet-5";
 const K = {
   findings: "devagent:findings", hypotheses: "devagent:hypotheses", decisions: "devagent:decisions",
   fixed: "devagent:fixed", chat: "devagent:chat", conflog: "devagent:conflog",
-  config: "devagent:config", idmap: "devagent:idmap",
+  config: "devagent:config", idmap: "devagent:idmap", runmode: "devagent:runmode",
   quota: (d) => `devagent:quota:${d}`, series: (name, org) => `devagent:series:${name}:${org}`,
 };
 const CAP = { findings: 60, hypotheses: 60, decisions: 200, fixed: 120, chat: 240, conflog: 300, series: 30 };
@@ -36,6 +36,10 @@ const DEFAULT_CONFIG = {
   nightlyDailyLimit: 1,    // плановых (cron) вызовов Claude в сутки
   minEvidenceConfirm: 3,   // минимум независимых наблюдений для статуса confirmed
   spinMinSample: 60,       // минимум круток кейса, чтобы судить о шансах
+  // ── ЛЁГКИЙ / ПОЛНЫЙ ПРОГОН (экономия API, поверх quota — потолок не отменяется) ──
+  maxLightStreak: 3,       // не больше 3 лёгких прогонов подряд → на 4-й обязательно полный
+  forceFullEveryDays: 7,   // абсолютный предохранитель: полный прогон минимум раз в неделю
+  changeThresholdPct: 10,  // относительное изменение метрики, которое считаем существенным
 };
 
 async function rget(key) {
@@ -124,8 +128,9 @@ const okRange = (v, lo, hi) => v == null || (v >= lo && v <= hi);
 async function gatherAggregates(cfg) {
   const orgs = await listOrgs();
   const perClient = [];
-  const outOfRange = [];       // метрики вне логического диапазона
+  const outOfRange = [];        // метрики вне логического диапазона
   const telephonySuspects = []; // клиенты с возможной проблемой телефонии
+  const invariants = [];        // авто-проверки (ok:false = аномалия). Были потеряны при рефакторинге — вернул.
   const caseOdds = [];          // сверка шансов кейса с фактом
   const callVolume = [];        // объём звонков за сутки vs 14д (ряд агента)
 
@@ -201,7 +206,7 @@ async function gatherAggregates(cfg) {
     }
     perClient.push(c);
   }
-  return { perClient, outOfRange, telephonySuspects, caseOdds, callVolume, orgsScanned: orgs.length, time: timeContext() };
+  return { perClient, outOfRange, telephonySuspects, caseOdds, callVolume, invariants, orgsScanned: orgs.length, time: timeContext() };
 }
 
 // ── DATA TRUST LAYER ────────────────────────────────────────────────────────────────
@@ -308,6 +313,64 @@ async function readGitLog(hours) {
   } catch (e) { return { available: false, note: String(e), commits: [] }; }
 }
 
+// ── PRECHECK: лёгкий или полный прогон? (дёшево, БЕЗ вызова модели) ─────────────────
+// Встроен ПОВЕРХ quota: агент не может сделать БОЛЬШЕ прогонов, только ДЕШЕВЛЕ.
+// Сравниваем с отпечатком последнего ПОЛНОГО прогона (а не со вчера) — иначе медленный дрейф
+// метрик по чуть-чуть каждый день никогда не пробил бы порог («варёная лягушка»).
+function fingerprint(agg, invariants) {
+  const f = {
+    invariantsBad: (invariants || []).filter((i) => !i.ok).length,
+    outOfRange: (agg.outOfRange || []).length,
+    telSuspects: (agg.telephonySuspects || []).length,
+    clients: {}, callDrop: {},
+  };
+  for (const c of (agg.perClient || [])) {
+    const d = c.dashboard || {}, ct = c.contact || {};
+    f.clients[c.org] = {
+      leads: d.leads ?? null, sold: d.sold ?? null, conv: d.conv ?? null, avgCheck: d.avgCheck ?? null,
+      contactByCall: (ct.byCallDuration && ct.byCallDuration.contactedPct) ?? null,
+      contactByStatus: (ct.byCrmStatus && ct.byCrmStatus.contactedPct) ?? null,
+    };
+  }
+  for (const v of (agg.callVolume || [])) f.callDrop[v.org] = v.dropPct ?? null;
+  return f;
+}
+// что именно изменилось существенно (список причин; пусто = спокойно)
+function diffFingerprint(prev, cur, thrPct) {
+  const out = [];
+  if (cur.invariantsBad > (prev.invariantsBad || 0)) out.push(`новых нарушений инвариантов: ${cur.invariantsBad - (prev.invariantsBad || 0)}`);
+  if (cur.outOfRange > (prev.outOfRange || 0)) out.push(`новых метрик вне диапазона: ${cur.outOfRange - (prev.outOfRange || 0)}`);
+  if (cur.telSuspects > (prev.telSuspects || 0)) out.push(`новых клиентов с сигналом телефонии: ${cur.telSuspects - (prev.telSuspects || 0)}`);
+  const rel = (a, b) => (a == null || b == null) ? null : (a === 0 ? (b === 0 ? 0 : 100) : Math.abs((b - a) / a) * 100);
+  for (const org of Object.keys(cur.clients || {})) {
+    const p = (prev.clients || {})[org], c = cur.clients[org];
+    if (!p) { out.push(`новый клиент в обзоре: ${org}`); continue; }
+    for (const k of ["leads", "sold", "conv", "avgCheck", "contactByCall", "contactByStatus"]) {
+      const r = rel(p[k], c[k]);
+      if (r != null && r >= thrPct) out.push(`${org}: ${k} ${p[k]} → ${c[k]} (${Math.round(r)}%)`);
+    }
+  }
+  for (const org of Object.keys(cur.callDrop || {})) {
+    const p = (prev.callDrop || {})[org], c = cur.callDrop[org];
+    if (c != null && (p == null || Math.abs(c - p) >= thrPct)) out.push(`${org}: обвал звонков ${p ?? "—"} → ${c}%`);
+  }
+  return out;
+}
+async function decideRunMode(cfg, agg, invariants, gitCommitCount) {
+  const rm = await rgetJSON(K.runmode, null);
+  const streak = (rm && rm.lightStreak) || 0;
+  if (!rm || !rm.snapshot) return { mode: "full", reason: "первый прогон — не с чем сравнивать", streak };
+  const daysSinceFull = (Date.now() - (rm.lastFullAt || 0)) / 86400000;
+  // ЖЁСТКИЕ ПРАВИЛА (агент их не отменяет)
+  if (daysSinceFull >= (cfg.forceFullEveryDays || 7)) return { mode: "full", reason: `прошло ${Math.floor(daysSinceFull)} дн с последнего полного — обязательный полный прогон`, streak };
+  if (streak >= (cfg.maxLightStreak || 3)) return { mode: "full", reason: `${streak} лёгких прогона подряд — по правилу дальше полный`, streak };
+  // ТРИГГЕРЫ ПОЛНОГО
+  if (gitCommitCount > 0) return { mode: "full", reason: `за сутки ${gitCommitCount} новых коммит(ов) в коде`, streak };
+  const changes = diffFingerprint(rm.snapshot, fingerprint(agg, invariants), cfg.changeThresholdPct || 10);
+  if (changes.length) return { mode: "full", reason: "изменилось: " + changes.slice(0, 3).join("; "), streak };
+  return { mode: "light", reason: `метрики не изменились с полного прогона от ${rm.lastFullDay || "?"}`, streak, lastFullDay: rm.lastFullDay };
+}
+
 // ── СИСТЕМНЫЙ ПРОМПТ ────────────────────────────────────────────────────────────────
 const SYSTEM = `Ты — технический ревизор Hunter AI, тиражируемого SaaS для аналитики отделов продаж на базе amoCRM (много клиентов). Твоя работа — находить проблемы в системе раньше, чем их найдёт клиент.
 
@@ -382,6 +445,7 @@ fixed (уже исправлено): ${JSON.stringify(memory.fixed.map((f) => f.
 4) Клиенты с возможной проблемой телефонии (% лидов без звонка, но с активностью > порога): ${JSON.stringify(agg.telephonySuspects)}
    (это сигнал на СТОРОНЕ КЛИЕНТА, не повод обвинять сотрудника)
 5) Обзор по клиентам: ${JSON.stringify(agg.perClient)}
+6) АВТО-ИНВАРИАНТЫ (наши проверки; ok:false = аномалия): ${JSON.stringify(agg.invariants || [])}
 
 ИЗМЕНЕНИЯ В КОДЕ за 24ч:
 commits: ${git.available ? JSON.stringify(git.commits) : "(git недоступен: " + git.note + ")"}
@@ -452,6 +516,32 @@ async function runNightly(mode, viaCron) {
   const memory = await readMemory();
   const agg = await gatherAggregates(cfg);
   const git = await readGitLog(mode === "weekly" ? 24 * 7 : 24);
+
+  // ── РЕШЕНИЕ: ЛЁГКИЙ ИЛИ ПОЛНЫЙ ПРОГОН ──
+  // Недельная ревизия памяти — ВСЕГДА полная (это её смысл). Ручной запуск админом — тоже.
+  let decision = { mode: "full", reason: mode === "weekly" ? "недельная ревизия — всегда полная" : "ручной запуск" };
+  if (mode !== "weekly" && viaCron) decision = await decideRunMode(cfg, agg, agg.invariants || [], (git.commits || []).length);
+
+  if (decision.mode === "light") {
+    // ЛЁГКИЙ: сокращённый анализ — без git-diff и без разворота по клиентам, малый лимит токенов
+    const lightRaw = `РЕЖИМ: ЛЁГКАЯ ПРОВЕРКА (полный анализ сегодня не нужен).
+Причина: ${decision.reason}.
+Твоя память (findings/hypotheses) прилагается. Новых наблюдений нет — evidence добавить неоткуда.
+
+findings: ${JSON.stringify(memory.findings)}
+hypotheses: ${JSON.stringify(memory.hypotheses)}
+Свежая сводка: ${JSON.stringify({ invariants: (agg.invariants || []).filter((i) => !i.ok), outOfRange: agg.outOfRange, telephonySuspects: agg.telephonySuspects, time: agg.time })}
+
+Напиши КОРОТКИЙ отчёт (2-4 строки) человеческим языком: что проверил, почему полный анализ не потребовался, и есть ли что-то, что всё же стоит держать в поле зрения. НЕ выдумывай новых находок — данных для них нет. Только текст, без JSON.`;
+    const { text: lightText, tokens: lightTokens } = await callModel(SYSTEM, anonymize(lightRaw, map), 800);
+    await bumpQuota("nightly");
+    const rm = await rgetJSON(K.runmode, {});
+    await rsetJSON(K.runmode, { ...rm, lightStreak: (decision.streak || 0) + 1, lastLightAt: Date.now() });
+    const report = `🟢 Лёгкая проверка (полный анализ не потребовался)\nПричина: ${decision.reason}\n\n${deanonymize(lightText, map)}`;
+    await pushChat("agent", report, { kind: mode === "weekly" ? "weekly" : "nightly", runMode: "light", runReason: decision.reason, tokens: lightTokens, stats: { findings: memory.findings.length, hypotheses: memory.hypotheses.length } });
+    return { ok: true, runMode: "light", reason: decision.reason, report, findings: memory.findings.length, hypotheses: memory.hypotheses.length, tokens: lightTokens };
+  }
+
   const rawContent = buildNightlyContent({ memory, agg, git, weekly: mode === "weekly" });
   const content = anonymize(rawContent, map); // реальные имена НЕ уходят в модель
   const { text, tokens } = await callModel(SYSTEM, content, 8000);
@@ -471,11 +561,17 @@ async function runNightly(mode, viaCron) {
   hypotheses = [...demoted, ...hypotheses].slice(0, CAP.hypotheses);
   findings = findings.slice(0, CAP.findings);
   await Promise.all([rsetJSON(K.findings, findings), rsetJSON(K.hypotheses, hypotheses), rsetJSON(K.conflog, conflog.slice(-CAP.conflog))]);
+  // ПОЛНЫЙ прогон → фиксируем отпечаток агрегатов и обнуляем счётчик лёгких.
+  // Сравнение в precheck идёт именно с этим снимком (а не со вчера) — так медленный дрейф накапливается.
+  await rsetJSON(K.runmode, {
+    lastFullAt: Date.now(), lastFullDay: todayKey(), lightStreak: 0,
+    snapshot: fingerprint(agg, agg.invariants || []),
+  });
   const report = deanonymize((out.report || "Прогон завершён.").trim(), map);
   const questions = (Array.isArray(out.questions_for_human) ? out.questions_for_human : []).map((q) => deanonymize(q, map));
   const prompts = (Array.isArray(out.suggested_prompts) ? out.suggested_prompts.slice(0, 8) : []).map((p) => ({ title: deanonymize(p.title || "Фикс", map), prompt: deanonymize(p.prompt || "", map) }));
-  await pushChat("agent", report, { kind: mode === "weekly" ? "weekly" : "nightly", tokens, questions, suggested_prompts: prompts, stats: { findings: findings.length, hypotheses: hypotheses.length, outOfRange: agg.outOfRange.length, telephonySuspects: agg.telephonySuspects.length } });
-  return { ok: true, report, findings: findings.length, hypotheses: hypotheses.length, questions, suggested_prompts: prompts, tokens };
+  await pushChat("agent", report, { kind: mode === "weekly" ? "weekly" : "nightly", runMode: "full", runReason: decision.reason, tokens, questions, suggested_prompts: prompts, stats: { findings: findings.length, hypotheses: hypotheses.length, outOfRange: agg.outOfRange.length, telephonySuspects: agg.telephonySuspects.length } });
+  return { ok: true, runMode: "full", reason: decision.reason, report, findings: findings.length, hypotheses: hypotheses.length, questions, suggested_prompts: prompts, tokens };
 }
 
 // ── ДНЕВНАЯ ПЕРЕПИСКА ────────────────────────────────────────────────────────────────
