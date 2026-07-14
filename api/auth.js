@@ -2,9 +2,14 @@
 // Витринная версия для одного клиента. Данные общие (org=hunter).
 import crypto from "crypto";
 
-// Дефолтный пароль админа. Можно переопределить переменной ADMIN_PASSWORD в Vercel.
+// Пароль админа берётся ТОЛЬКО из env ADMIN_PASSWORD (задан в Vercel prod).
+// Дефолт "12345678" оставлен исключительно как аварийный fallback для локальной разработки:
+// в проде без заданного ADMIN_PASSWORD вход админа блокируется, чтобы дефолт не стал дырой.
 function adminPassword() {
-  return process.env.ADMIN_PASSWORD || "12345678";
+  const pw = process.env.ADMIN_PASSWORD;
+  if (pw) return pw;
+  if (process.env.NODE_ENV === "production") return null; // в проде без env — входа нет
+  return "12345678"; // только вне прода
 }
 
 async function redisSet(url, token, key, value, ttlSec) {
@@ -66,7 +71,12 @@ export default async function handler(req, res) {
 
     // Вход админа по паролю (витрина hunter — как было)
     if (action === "admin") {
-      if ((password || "") !== adminPassword()) {
+      const expected = adminPassword();
+      if (!expected) { // прод без ADMIN_PASSWORD — вход закрыт, дефолт не работает
+        res.status(200).json({ ok: false, error: "Вход админа не настроен (нет ADMIN_PASSWORD)" });
+        return;
+      }
+      if ((password || "") !== expected) {
         res.status(200).json({ ok: false, error: "Неверный пароль" });
         return;
       }
