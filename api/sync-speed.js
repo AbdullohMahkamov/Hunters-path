@@ -239,6 +239,10 @@ export default async function handler(req, res) {
     // хелперы: распознать причину по названию
     const isWrongNumber = (id) => { const n = lossNameById[id] || ""; return n.includes("xato raqam") || n.includes("неверный номер") || n.includes("неправильн"); };
     const isPhoneOff = (id) => { const n = lossNameById[id] || ""; return n.includes("o'chirilgan") || n.includes("o‘chirilgan") || n.includes("отключ"); };
+    const isDubl = (id) => { const n = lossNameById[id] || ""; return n.includes("dubl") || n.includes("дубл"); };
+    // БРАК ДАННЫХ (неверный номер / дубль) — НЕ реальный лид. То же, что fakeNumReasons в месячном sync.js:
+    // исключаем из ДНЕВНОГО знаменателя дозвона (D.leads → reachedPct и leadsToday для цели дозвона в gamification).
+    const isFakeNum = (li) => !!(li && li.lossId != null && (isWrongNumber(li.lossId) || isDubl(li.lossId)));
 
     // ═══ ЖЁСТКИЙ ОБЩИЙ ДЕДЛАЙН ПРОГОНА ═══
     // Лимит функции на Vercel — 300с. Если мы в него не влезаем, нас убивают ДО записи кэша,
@@ -660,7 +664,7 @@ export default async function handler(req, res) {
     for (const name of Object.values(ACTIVE_MOPS)) {
       stat[name] = { leads:0, firstCallTimes:[], firstCallAssignTimes:[], reached:0, callsTotal:0, withTask:0,
                      closedEarly:0, noReachClosed:0, tasksTotal:0, tasksDone:0 };
-      statDay[name] = { leads:0, firstCallTimes:[], firstCallAssignTimes:[], callsTotal:0, withTask:0, tasksTotal:0, tasksDone:0, reached:0, calledLeads:0 };
+      statDay[name] = { leads:0, firstCallTimes:[], firstCallAssignTimes:[], callsTotal:0, withTask:0, tasksTotal:0, tasksDone:0, reached:0, calledLeads:0, fakeNums:0 };
     }
 
     const suspicious2 = []; // подозрительные по звонкам (этап 2)
@@ -720,7 +724,10 @@ export default async function handler(req, res) {
       const inTodayStat = callsToday > 0 || leadCreatedToday;
       if (inTodayStat) {
         const D = statDay[mop];
-        D.leads++;                              // ВСЕ лиды с сегодняшней активностью (единый знаменатель)
+        if (isFakeNum(L)) {
+          D.fakeNums++;                         // брак (неверный номер/дубль) — НЕ реальный лид: вне ДНЕВНОГО знаменателя дозвона (как в месячном)
+        } else {
+        D.leads++;                              // реальные лиды с сегодняшней активностью (единый знаменатель)
         D.callsTotal += callsToday;
         if (callsToday > 0) D.calledLeads++;    // сегодня звонили по этому лиду
         if (L.reachedRealToday) D.reached++; // реальный дозвон СЕГОДНЯ (разговор ≥40 сек именно сегодня)
@@ -740,6 +747,7 @@ export default async function handler(req, res) {
             const minsA = workingMinutes(assignTs, L.firstCall);
             if (minsA >= 0 && minsA < 60*24*14) D.firstCallAssignTimes.push(minsA);
           }
+        }
         }
       }
       // РЕАЛЬНЫЙ ДОЗВОН — только если был разговор ≥ REACHED_SEC (40 сек)
@@ -828,6 +836,7 @@ export default async function handler(req, res) {
       return {
         name,
         leads: D.leads,
+        fakeNums: D.fakeNums || 0, // нереальные номера сегодня (неверный номер + дубль), исключены из дневного знаменателя дозвона
         fastFirstCalls: D.firstCallTimes.filter(mn => mn < 15).length, // быстрый 1-й звонок сегодня (для геймификации)
         firstCallTimesDay: D.firstCallTimes.map(x => Math.round(x)).slice(0, 300), // времена 1-го звонка (мин) по сегодняшним лидам — для SLA-счётчика
         medianFirstCallMin: medMin !== null ? Math.round(medMin) : null,

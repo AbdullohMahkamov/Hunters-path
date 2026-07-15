@@ -410,8 +410,10 @@ function renderDiscipline(sp) {
     const c = (ok, bad) => ok ? 'var(--green)' : (bad ? 'var(--red)' : 'var(--txt2)')
     const doneDisplay = m.tasksTotal ? `${m.tasksDonePct}% <span style="color:var(--txt3);font-weight:400;">(${m.tasksDone} из ${m.tasksTotal})</span>` : '<span style="color:var(--txt3);font-weight:400;">нет задач</span>'
     let reachAbs = '', fakeNote = ''
-    if (isToday && m.reached != null && m.leads) {
-      reachAbs = ` <span style="font-size:10px;color:var(--txt3);">(${m.reached} из ${m.leads})</span>`
+    if (isToday) {
+      if (m.reached != null && m.leads) reachAbs = ` <span style="font-size:10px;color:var(--txt3);">(${m.reached} из ${m.leads})</span>`
+      const fnD = m.fakeNums || 0 // нереальные номера сегодня (неверный номер + дубль), исключены из дневного знаменателя дозвона
+      if (fnD) fakeNote = ` <span style="font-size:10px;color:var(--txt3);">· ${fnD} ${uz ? 'notoʻgʻri raqam' : 'нереальных номеров'}</span>`
     } else if (!isToday) {
       const dashMops = (window._dashData && window._dashData.mopsByConv) || []
       const dm = dashMops.find((x) => x.name === m.name)
@@ -421,7 +423,7 @@ function renderDiscipline(sp) {
       if (fn) fakeNote = ` <span style="font-size:10px;color:var(--txt3);">· ${fn} ${uz ? 'notoʻgʻri raqam' : 'нереальных номеров'}</span>`
     }
     const reachCell = isToday
-      ? `<div>📞 % дозвона${hintIcon('reach')}: <b style="color:${reach != null ? c(reachOk, reachBad) : 'var(--txt3)'}">${reach != null ? reach + '%' : '—'}</b>${reachAbs}${m.calledLeads != null ? ` <span style="font-size:10px;color:var(--txt3);">· звонили ${m.calledLeads}</span>` : ''}</div>`
+      ? `<div>📞 % дозвона${hintIcon('reach')}: <b style="color:${reach != null ? c(reachOk, reachBad) : 'var(--txt3)'}">${reach != null ? reach + '%' : '—'}</b>${reachAbs}${m.calledLeads != null ? ` <span style="font-size:10px;color:var(--txt3);">· звонили ${m.calledLeads}</span>` : ''}${fakeNote}</div>`
       : `<div>📞 % дозвона${hintIcon('reach')}: <b style="color:${reach != null ? c(reachOk, reachBad) : 'var(--txt3)'}">${reach != null ? reach + '%' : '—'}</b>${reachAbs}${fakeNote}</div>`
     return `<div style="background:var(--card);border:1px solid var(--line);border-radius:10px;padding:11px 12px;margin-bottom:9px;">
       <div style="font-size:14px;font-weight:600;margin-bottom:7px;">${escapeHtml(m.name)} <span style="font-size:11px;color:var(--txt3);font-weight:400;">· ${m.leads} ${uz ? 'lid' : 'лидов'}</span></div>
