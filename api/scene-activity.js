@@ -49,6 +49,7 @@ async function build(cfg, opts) {
   const winMin = cfg.absentMin + 5;
   const from = Math.floor(Date.now() / 1000) - winMin * 60;
   const lastByUser = {};
+  const lastEventByUser = {}; // диагностика: детали последнего события {type, entity_type, entity_id, created_at}
   let truncated = false, page = 1;
   while (page <= 6) {
     let r;
@@ -58,7 +59,13 @@ async function build(cfg, opts) {
     if (!r.ok) { truncated = true; break; }
     const d = await r.json();
     const events = (d._embedded && d._embedded.events) || [];
-    for (const e of events) { const u = e.created_by; if ((e.created_at || 0) > (lastByUser[u] || 0)) lastByUser[u] = e.created_at; }
+    for (const e of events) {
+      const u = e.created_by;
+      if ((e.created_at || 0) > (lastByUser[u] || 0)) {
+        lastByUser[u] = e.created_at;
+        lastEventByUser[u] = { type: e.type, entity_type: e.entity_type, entity_id: e.entity_id, created_at: e.created_at };
+      }
+    }
     if (events.length < 100) break;
     page++;
   }
@@ -83,7 +90,11 @@ async function build(cfg, opts) {
     return { name, pose: "leave", state: "absent", minAgo, noData: false };
   });
 
-  return { ok: true, at: Date.now(), truncated, offHours, bypassSuspected: bypass, cfg, items };
+  // диагностика последнего события по каждому МОПу (только в preview — см. handler; в state не отдаём)
+  const lastEvents = {};
+  for (const [uid, name] of Object.entries(MOPS)) lastEvents[name] = lastEventByUser[uid] || null;
+
+  return { ok: true, at: Date.now(), truncated, offHours, bypassSuspected: bypass, cfg, items, lastEvents };
 }
 
 // ── ЖУРНАЛ: фиксируем момент ВХОДА в новое состояние (для отчёта «кто когда активен/отсутствовал») ──

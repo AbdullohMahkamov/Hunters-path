@@ -67,7 +67,7 @@ export default function ScenePanel({ active = true }) {
         id, el, spr: el.querySelector('.scn-spr'), bub: el.querySelector('.scn-bub'), zzz: el.querySelector('.scn-zzz'), fsign: el.querySelector('.scn-fsign'), flab: el.querySelector('.scn-fsign i'),
         decorative, x, y, tx: x, ty: y, dir: 'down', walking: false, frame: 0, ft: 0, waiting: false, queue: [], nextPause: 0, nextFlag: 0, curFlag: 0, arrived: false, pauseUntil: 0,
         bubOn: false, bubUntil: 0, bubHideUntil: 1500 + Math.random() * 3000, pts: null, home: null, homeDir: 'down',
-        sayWork: '', sayWait: '', phrase: null, actState: 'active', exitY: 240, hidden: false, // active|inactive|absent|unknown|idle
+        sayWork: '', sayWait: '', phrase: null, actState: 'loading', exitY: 240, hidden: false, // loading(нейтр. до 1-го ответа)|active|inactive|absent|unknown
       }
       a.spr.style.backgroundImage = 'url(' + imgFor(id) + ')'
       return a
