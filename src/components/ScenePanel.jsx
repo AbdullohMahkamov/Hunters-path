@@ -67,13 +67,14 @@ export default function ScenePanel({ active = true }) {
         id, el, spr: el.querySelector('.scn-spr'), bub: el.querySelector('.scn-bub'), zzz: el.querySelector('.scn-zzz'), fsign: el.querySelector('.scn-fsign'), flab: el.querySelector('.scn-fsign i'),
         decorative, x, y, tx: x, ty: y, dir: 'down', walking: false, frame: 0, ft: 0, waiting: false, queue: [], nextPause: 0, nextFlag: 0, curFlag: 0, arrived: false, pauseUntil: 0,
         bubOn: false, bubUntil: 0, bubHideUntil: 1500 + Math.random() * 3000, pts: null, home: null, homeDir: 'down',
-        sayWork: '', sayWait: '', phrase: null, actState: 'loading', exitY: 240, hidden: false, // loading(нейтр. до 1-го ответа)|active|inactive|absent|unknown
+        sayWork: '', sayWait: '', phrase: null, actState: 'loading', exitY: 240, hidden: false, // ПОЗА: loading(нейтр. до 1-го ответа)|active|inactive|absent|unknown
+        presence: 'present', // ПРИСУТСТВИЕ (независимо от позы): unknown|present|absent. Декоративные стартуют 'unknown' → не рендерятся до 1-го ответа
       }
       a.spr.style.backgroundImage = 'url(' + imgFor(id) + ')'
       return a
     }
     for (const id of agentIds) { const z = ZONES[id]; A[id] = mk(id, z.pts[0][0], z.pts[0][1], false, NAME[id], ACC[id]); A[id].pts = z.pts; A[id].sayWork = NAME[id] }
-    DECOR.forEach((d, i) => { const a = mk(d.id, d.home[0], d.home[1], true, d.name, '#b0aa9c'); a.home = d.home; a.homeDir = d.dir; a.dir = d.dir; a.bubHideUntil = 2500 + i * 2500; A[d.id] = a })
+    DECOR.forEach((d, i) => { const a = mk(d.id, d.home[0], d.home[1], true, d.name, '#b0aa9c'); a.home = d.home; a.homeDir = d.dir; a.dir = d.dir; a.bubHideUntil = 2500 + i * 2500; if (/^mop[1-5]$/.test(d.id)) { a.presence = 'unknown'; a.hidden = true; a.el.style.display = 'none' } A[d.id] = a }) // только отслеживаемые МОПы скрыты до 1-го ответа; РОП (не в scene-activity) виден всегда
     const ALL = Object.values(A)
 
     function draw(a) {
@@ -163,20 +164,37 @@ export default function ScenePanel({ active = true }) {
         for (const f of flows) { if (f.at > lastFlowAt) { const key = FLOW_KEY[`${f.from}>${f.to}`]; if (key) triggerFlow(key); lastFlowAt = Math.max(lastFlowAt, f.at) } }
       } catch (e) { /* нет события — нет встречи */ }
     }
-    // ПОЗА МОПов из активности в CRM (scene-activity) — читаем it.POSE (не state; state идёт в журнал).
-    // pose: active(покачивание) / inactive(💤) / leave(выход за дверь) / unknown(«?» у стола).
+    // ПОЗА + ПРИСУТСТВИЕ МОПов из активности в CRM (scene-activity) — читаем it.POSE (state идёт в журнал).
+    // pose: active(покачивание) / inactive(💤) / leave(нет на месте) / unknown(«?» у стола).
+    // ПРИСУТСТВИЕ независимо от позы: пока presence==='unknown' актёр СКРЫТ (не рендерится). Первый реальный
+    // ответ ставит present (на место) или absent (не показываем). Мелькания дефолтной позиции при F5 нет.
     async function pollActivity() {
       try {
         const r = await fetch('/api/scene-activity?action=state&session=' + encodeURIComponent(getSession()))
         const d = await r.json(); if (!d || !d.items) return
         for (const it of d.items) {
           const dec = DECOR.find((x) => x.name === it.name); if (!dec || !A[dec.id]) continue
-          const st = it.pose === 'leave' ? 'absent' : (it.pose || it.state) // leave → сценовый actState 'absent' (уход из комнаты)
-          const a = A[dec.id], prev = a.actState; a.actState = st
-          if (prev === 'absent' && it.state !== 'absent') { a.hidden = false; a.el.style.display = ''; a.x = a.home[0]; a.y = a.exitY; a.arrived = false; goPath(a, [[a.home[0], a.home[1], 4000]]) } // вернулся → входит и идёт к столу
-          else if (it.state === 'absent' && prev !== 'absent') { a.arrived = false; goPath(a, [[a.home[0], a.exitY, 0]]) } // уходит к выходу немедленно
+          const a = A[dec.id]
+          const wantAbsent = it.pose === 'leave'
+          const pose = wantAbsent ? 'absent' : (it.pose || 'unknown') // сценовая поза
+          const wasUnknown = a.presence === 'unknown'
+          if (wantAbsent) {
+            a.actState = 'absent'
+            if (wasUnknown || a.presence === 'absent') { // никогда не показывали (или уже отсутствует) → просто скрыт, БЕЗ анимации ухода
+              a.presence = 'absent'; a.hidden = true; a.el.style.display = 'none'; a.x = a.home[0]; a.y = a.exitY; a.tx = a.x; a.ty = a.y; a.arrived = true
+            } else { // был present → анимация ухода к выходу
+              a.presence = 'absent'; a.arrived = false; goPath(a, [[a.home[0], a.exitY, 0]])
+            }
+          } else {
+            a.actState = pose
+            if (wasUnknown) { // первое появление — сразу на рабочем месте, без прохода
+              a.presence = 'present'; a.hidden = false; a.el.style.display = ''; a.x = a.home[0]; a.y = a.home[1]; a.tx = a.x; a.ty = a.y; a.dir = a.homeDir; a.arrived = true; a.pauseUntil = 0
+            } else if (a.presence === 'absent') { // вернулся из отсутствия → входит и идёт к столу
+              a.presence = 'present'; a.hidden = false; a.el.style.display = ''; a.x = a.home[0]; a.y = a.exitY; a.arrived = false; goPath(a, [[a.home[0], a.home[1], 4000]])
+            } else { a.presence = 'present' } // уже present — только поза (actState выше)
+          }
         }
-      } catch (e) { /* нет данных — поза не меняется */ }
+      } catch (e) { /* нет данных — присутствие/поза не меняются (остаются как были, декоративные — скрыты) */ }
     }
     pollAgents(); pollBubbles(); pollFlows(); pollActivity()
     timers.push(setInterval(pollAgents, 15000))   // статус/находки агентов
