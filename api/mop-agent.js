@@ -36,6 +36,34 @@ const DEFAULT_CONFIG = {
   // ── ПОРОГИ НАХОДОК ──
   minMismatchPerMop: 1,  // от скольки расхождений статус/факт заводить точечную задачу
   minNoCallPerMop: 2,    // от скольки лидов без звонка заводить точечную задачу
+
+  // ═══════════════ ДЕТЕКТОР «ЛИД БЕЗ ЕДИНОГО ЗВОНКА» — ОТКЛЮЧЁН ═══════════════
+  // ВЫКЛЮЧЕН 14.07.2026. Причина — НЕ баг кода, а ПОДТВЕРЖДЁННАЯ ДЫРА В ТЕЛЕФОНИИ:
+  //   диагностика 14.07.2026 (26 звонков из отчёта «Мои Звонки», разобраны поштучно):
+  //   звонки, сделанные с ЛИЧНЫХ телефонов МОПов через приложение «Мои Звонки», в amoCRM
+  //   НЕ ПОПАДАЮТ ВООБЩЕ — 0 из 26. Все найденные в CRM ноты оказались от Utel и принадлежали
+  //   ДРУГИМ звонкам (не совпадали ни длительность, ни менеджер).
+  // Следствие: лид, которому реально звонили с личного телефона, для системы выглядит как
+  // «ни одного звонка». Детектор обвинил бы человека в том, что он НЕ звонил, хотя он звонил.
+  // Выключено для ВСЕХ МОПов, не только для тех, у кого это заметнее по объёму: дыра системная,
+  // сработать может у любого.
+  //
+  // ПОЧЕМУ МОЛЧАНИЕ, А НЕ ПЕРЕФОРМУЛИРОВКА («нет звонка в amoCRM» вместо «не звонил»):
+  // нейтральной такая фраза выглядит только для того, кто ЗНАЕТ про дыру. РОП и МОП контекста
+  // не видят и прочтут её как «система не подтверждает, что ты звонил» — психологически это
+  // неотличимо от обвинения. Формулировка не спасает от неверного вывода.
+  //
+  // КОГДА ВКЛЮЧАТЬ ОБРАТНО: только после проверки, что звонки с личных телефонов долетают до CRM.
+  // Критерий: повторить диагностику (взять свежий отчёт «Мои Звонки», сверить с нотами amoCRM
+  // по номеру и времени ±10 мин) и убедиться, что звонки НАХОДЯТСЯ. Дополнительно должен упасть
+  // telephony.noCallButActivePct (сейчас 9% — 59 лидов с активностью в CRM, но без звонков).
+  // Второй предохранитель ниже (telephonyGate) сработает сам, даже если этот флаг включат руками.
+  noCallEnabled: false,
+  noCallDisabledAt: "2026-07-14",
+  noCallDisabledReason: "Подтверждённая дыра в телефонии: звонки с личных телефонов МОПов («Мои Звонки») не попадают в amoCRM (диагностика 14.07.2026: 0 из 26 долетело). Детектор обвинял бы людей в том, что они не звонили, хотя звонили. Включить обратно только после проверки, что звонки с личных долетают до CRM.",
+  // Предохранитель на будущее: даже при noCallEnabled=true молчим, если данные говорят,
+  // что звонки идут мимо CRM (speed.telephony.callsBypassSuspected).
+  telephonyGate: true,
   // ── СРОКИ (ДЕТЕРМИНИРОВАННЫЕ ПРАВИЛА, не LLM — предсказуемость важнее гибкости) ──
   endOfDayHour: 18,      // «до конца рабочего дня» (Ташкент)
   nextDayHour: 12,       // «завтра до 12:00» (Ташкент)
@@ -110,6 +138,7 @@ export async function runMopAgent() {
   // пороги берём из тех же данных, по которым собраны факты (конфиг клиента в sync-speed),
   // чтобы формулировка задачи и реальный детектор не разъехались
   const meta = speed.mopMeta || {};
+  const tel = speed.telephony || {}; // детектор «звонки идут мимо CRM» — теперь ГЕЙТ, а не справка
   const NO_CALL_H = meta.stalledNoCallHours != null ? meta.stalledNoCallHours : 4;
 
   // Старый кэш (записан до появления паспорта полноты) — полноту НЕ подтверждает.
@@ -118,15 +147,30 @@ export async function runMopAgent() {
   const eventsComplete = meta.eventsComplete === true;
   // status_mismatch стоит на reachedReal, а он читается ТОЛЬКО из нот
   const canMismatch = callsVerified && notesComplete;
-  // no_call стоит на счётчике calls, а он приходит ТОЛЬКО из событий
-  const canNoCall = callsVerified && eventsComplete;
   if (callsVerified && !notesComplete) {
     skipped.push(`расхождение статуса и факта: ноты дочитаны не полностью${meta.notesUnread ? ` (не прочитано ${meta.notesUnread} лид(ов))` : " (кэш без отметки о полноте)"} — молчим, чтобы не обвинить человека в непрочитанном`);
   }
-  if (callsVerified && !eventsComplete) {
+
+  // ── no_call: ДВЕ ПРИЧИНЫ МОЛЧАТЬ, И ОНИ РАЗНЫЕ ──
+  // (а) СТРУКТУРНАЯ: детектор отключён / звонки идут мимо CRM. Это не «данные не докачались»,
+  //     а «мерить нечем в принципе». Уже заведённые находки такого типа надо АННУЛИРОВАТЬ —
+  //     они построены на неверной посылке.
+  // (б) ВРЕМЕННАЯ: события не докачались в этот прогон. Находки остаются открытыми, просто
+  //     сейчас не проверяем.
+  const telephonyBypass = cfg.telephonyGate !== false && (meta.callsBypassSuspected === true || tel.callsBypassSuspected === true);
+  const noCallDisabled = !cfg.noCallEnabled || telephonyBypass; // структурно мерить нечем
+  const canNoCall = !noCallDisabled && callsVerified && eventsComplete;
+
+  if (!cfg.noCallEnabled) {
+    skipped.push(`лиды без звонка: ДЕТЕКТОР ОТКЛЮЧЁН ${cfg.noCallDisabledAt || ""} — ${cfg.noCallDisabledReason || "причина не указана"}`);
+  } else if (telephonyBypass) {
+    skipped.push(`лиды без звонка: данные показывают, что звонки идут МИМО CRM (${meta.telephonyPct != null ? meta.telephonyPct + "% лидов с активностью, но без единого звонка" : "детектор телефонии"}) — молчим, иначе обвиним в «не звонил» того, кто звонил с личного телефона`);
+  } else if (callsVerified && !eventsComplete) {
     skipped.push("лиды без звонка: события звонков выгружены не полностью — молчим, иначе можно обвинить в «не звонил» того, чьи звонки просто не догрузились");
   }
   const ALLOWED = { status_mismatch: canMismatch, no_call: canNoCall };
+  // типы, по которым мерить нечем СТРУКТУРНО (не временно) — их находки аннулируем, а не держим
+  const STRUCTURALLY_OFF = { no_call: noCallDisabled };
 
   const prev = await rgetJSON(K.findings, []);
   const history = await rgetJSON(K.history, []);
@@ -254,7 +298,16 @@ export async function runMopAgent() {
   // 4) АВТО-ЗАКРЫТИЕ: находка была, а сейчас не воспроизводится → закрываем.
   //    ⚠️ ОБЯЗАТЕЛЬНО уведомляем РОПа в треде, иначе задача «просто исчезнет» и он не поймёт куда.
   const autoClosed = [];
+  const invalidated = [];
   for (const f of prevOpen) {
+    // СТРУКТУРНО ОТКЛЮЧЁННЫЙ ТИП: находка построена на посылке, которая оказалась неверной
+    // (звонки идут мимо CRM). Её нельзя ни держать открытой, ни «авто-закрыть как решённую» —
+    // проблема не решена, она просто НИКОГДА НЕ БЫЛА ДОКАЗАНА. Аннулируем с честной причиной.
+    if (STRUCTURALLY_OFF[f.type]) {
+      invalidated.push({ ...f, status: "invalidated", closedAt: nowMs,
+        closeReason: cfg.noCallDisabledReason || "детектор отключён: данные о звонках недостоверны" });
+      continue;
+    }
     if (freshKeys.has(key(f))) continue;
     // НЕ ЗАКРЫВАЕМ то, чего в этот прогон не проверяли: если по типу стоял гейт (данные неполные
     // или trust не verified), отсутствие факта означает «не смотрели», а НЕ «проблема решена».
@@ -264,7 +317,7 @@ export async function runMopAgent() {
   }
 
   const closedOld = prev.filter((f) => f.status !== "open");
-  const all = [...merged, ...autoClosed, ...closedOld].slice(-CAP.findings);
+  const all = [...merged, ...autoClosed, ...invalidated, ...closedOld].slice(-CAP.findings);
   await rsetJSON(K.findings, all);
 
   // история (для подсчёта повторов «3+ раза за неделю»)
@@ -274,6 +327,9 @@ export async function runMopAgent() {
   const out = {
     ok: true, at: nowMs, tashkentDay: tkDay(),
     open: merged.length, added: added.length, autoClosed: autoClosed.length,
+    invalidated: invalidated.length, // находки, снятые из-за отключённого детектора (не «решены»)
+    invalidatedList: invalidated.map((f) => ({ scope: f.scope, title: f.title, why: f.closeReason })),
+    telephony: { pct: tel.noCallButActivePct, bypassSuspected: !!tel.callsBypassSuspected, warning: tel.warning || null },
     department: merged.filter((f) => f.scope === "department").length,
     mop: merged.filter((f) => f.scope === "mop").length,
     skipped, // что не проверяли из-за trust — агент по этим метрикам МОЛЧИТ
@@ -291,10 +347,14 @@ export async function getOpenMopFindings() {
   const all = await rgetJSON(K.findings, []);
   return all.filter((f) => f.status === "open");
 }
-// Task Agent вызывает после уведомления РОПа об авто-закрытии — чтобы не слать дважды
+// Task Agent вызывает после уведомления РОПа — чтобы не слать дважды.
+// Два РАЗНЫХ повода снять задачу, и врать про них нельзя:
+//   auto_closed  — проблема при проверке не подтвердилась (реально ушла)
+//   invalidated  — детектор отключён, находка построена на неверной посылке (проблема НЕ решена,
+//                  она просто никогда не была доказана). Сообщение обязано отличаться.
 export async function getFreshAutoClosed() {
   const all = await rgetJSON(K.findings, []);
-  const fresh = all.filter((f) => f.status === "auto_closed" && !f.ropNotified);
+  const fresh = all.filter((f) => (f.status === "auto_closed" || f.status === "invalidated") && !f.ropNotified);
   if (fresh.length) {
     const ids = new Set(fresh.map((f) => f.id));
     await rsetJSON(K.findings, all.map((f) => ids.has(f.id) ? { ...f, ropNotified: true } : f));

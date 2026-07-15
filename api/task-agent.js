@@ -288,10 +288,22 @@ async function runTick(force) {
   try {
     if (people.rop && people.rop.chatId) {
       for (const f of await getFreshAutoClosed()) {
+        // Не пишем про задачу, которую РОП НИКОГДА НЕ ВИДЕЛ: сообщение «задача снята» о задаче,
+        // которой ему не присылали, — это шум и повод для недоумения.
+        if (!(st[f.id] && st[f.id].pingDay)) continue;
         const uz = ((people.rop && people.rop.lang) || "ru") === "uz";
-        const txt = uz
-          ? `✅ <b>Avtomatik yopildi</b>\n\n«${f.title}»\n\nTekshiruvda muammo qayta tasdiqlanmadi — ma'lumotlarda u endi ko'rinmayapti. Sizdan hech narsa talab qilinmaydi.`
-          : `✅ <b>Автоматически закрыто</b>\n\n«${f.title}»\n\nПри проверке проблема больше не подтвердилась — в данных её уже нет. От вас ничего не требуется.`;
+        let txt;
+        if (f.status === "invalidated") {
+          // ЧЕСТНО: проблема НЕ решена — она оказалась недоказуемой (данные ненадёжны).
+          // Выдать это за «всё исправилось» значило бы соврать в самой доверительной точке.
+          txt = uz
+            ? `⚠️ <b>Vazifa bekor qilindi</b>\n\n«${f.title}»\n\nBu muammo hal qilingani uchun emas — uni tekshirish uchun ma'lumotlar ishonchsiz bo'lib chiqdi. Sizdan hech narsa talab qilinmaydi.`
+            : `⚠️ <b>Задача снята</b>\n\n«${f.title}»\n\nНе потому что решена — а потому что данные, на которых она построена, оказались недостоверными. От вас ничего не требуется.`;
+        } else {
+          txt = uz
+            ? `✅ <b>Avtomatik yopildi</b>\n\n«${f.title}»\n\nTekshiruvda muammo qayta tasdiqlanmadi — ma'lumotlarda u endi ko'rinmayapti. Sizdan hech narsa talab qilinmaydi.`
+            : `✅ <b>Автоматически закрыто</b>\n\n«${f.title}»\n\nПри проверке проблема больше не подтвердилась — в данных её уже нет. От вас ничего не требуется.`;
+        }
         const r = await sendTg("rop", people.rop.chatId, txt);
         if (r.ok) { await pushChat({ role: "agent", text: txt, taskId: f.id }); autoClosedNotified.push(f.title); }
       }

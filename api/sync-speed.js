@@ -913,8 +913,25 @@ export default async function handler(req, res) {
       definition: "Пул — лиды, стоявшие на этапах входа в любой момент сегодня (склейка часовых срезов, любая давность лида). % дозвона = из тех, кому сегодня звонили, дозвонились (разговор ≥ порога).",
     };
 
-    // детектор телефонии на КЛИЕНТА: % лидов без звонка, но с активностью в CRM (сигнал возможной проблемы телефонии клиента)
-    const telephony = { total: telTotal, noCallButActive: telNoCallButActive, noCallButActivePct: telTotal ? Math.round(telNoCallButActive / telTotal * 100) : 0 };
+    // ДЕТЕКТОР ТЕЛЕФОНИИ — теперь не «информационный сигнал», а ГЕЙТ.
+    // 14.07.2026 подтверждено диагностикой: звонки, сделанные с ЛИЧНЫХ телефонов МОПов через
+    // приложение «Мои Звонки», в amoCRM НЕ ПОПАДАЮТ ВООБЩЕ (проверено 26 звонков — 0 долетело;
+    // все ноты в CRM оказались от Utel и принадлежали другим звонкам). Для системы такой звонок
+    // не существует. Значит счётчик calls занижен, и детектор «лид без единого звонка» может
+    // обвинить человека, который звонил — просто мимо CRM.
+    // Этот детектор ровно об этом и сигналил (лид без звонков, но с активностью в CRM), но был
+    // информационным и веса не имел. Теперь его показание — основание МОЛЧАТЬ.
+    const telPct = telTotal ? Math.round(telNoCallButActive / telTotal * 100) : 0;
+    const TEL_BYPASS_PCT = cfg.telephonyBypassPct != null ? cfg.telephonyBypassPct : 5;
+    const telephony = {
+      total: telTotal, noCallButActive: telNoCallButActive, noCallButActivePct: telPct,
+      // ГЛАВНОЕ ПОЛЕ: подозрение, что звонки идут мимо CRM → метрикам звонков верить нельзя
+      callsBypassSuspected: telPct >= TEL_BYPASS_PCT,
+      thresholdPct: TEL_BYPASS_PCT,
+      warning: telPct >= TEL_BYPASS_PCT
+        ? `${telNoCallButActive} лид(ов) (${telPct}%) имеют активность в CRM, но НИ ОДНОГО звонка. Похоже, часть звонков идёт мимо amoCRM (личные телефоны / «Мои Звонки»). Метрика звонков ЗАНИЖЕНА, детектор «лид без звонка» отключён.`
+        : null,
+    };
     // ДОЗВОН ПО ЛИДАМ (правильная метрика): сколько ЛИДОВ имели разговор ≥ REACHED_SEC.
     // ВАЖНО: reachedSet — это счётчик НОТ (каждый длинный звонок), а НЕ лидов. Раньше он отдавался
     // агентам как есть, они делили его на кол-во лидов и получали фантомные ~81% «дозвона».
@@ -948,6 +965,11 @@ export default async function handler(req, res) {
         eventsComplete: !eventsTruncated && !leadsTruncated,
         notesUnread: notesTruncated + leadsCapped + notesFailed,
         leadsComplete: !leadsTruncated,
+        // Звонки могут идти МИМО CRM (личные телефоны). Данные при этом «полные» с точки зрения
+        // amoCRM — просто звонка там нет. Никакой паспорт полноты этого не поймает, поэтому
+        // сигнал вынесен отдельным полем: по нему MOP Agent обязан молчать про «не звонил».
+        callsBypassSuspected: telPct >= TEL_BYPASS_PCT,
+        telephonyPct: telPct,
       },
       // КУДА УХОДИТ ВРЕМЯ — видно в ответе и в кэше. Без этого прогон падал с 504 «вслепую»:
       // функцию убивали до ответа, и ни одной цифры о причине наружу не попадало.
