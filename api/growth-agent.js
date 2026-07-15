@@ -44,6 +44,9 @@ const DEFAULT_CONFIG = {
 async function rget(key) { try { const r = await fetch(`${REDIS_URL}/get/${encodeURIComponent(key)}`, { headers: { Authorization: `Bearer ${REDIS_TOKEN}` } }); const d = await r.json(); return d && d.result != null ? d.result : null; } catch (e) { return null; } }
 async function rgetJSON(key, dflt) { const raw = await rget(key); if (raw == null) return dflt; try { return JSON.parse(raw); } catch (e) { return dflt; } }
 async function rsetJSON(key, v) { try { await fetch(`${REDIS_URL}/set/${encodeURIComponent(key)}`, { method: "POST", headers: { Authorization: `Bearer ${REDIS_TOKEN}` }, body: JSON.stringify(v) }); return true; } catch (e) { return false; } }
+// scene: лёгкий лог РЕАЛЬНОГО события передачи данных между агентами (для визуализации на сцене).
+// Капнутый список scene:flows — сцена его поллит и рисует «пакет» только если событие было.
+async function logFlow(from, to) { try { const a = await rgetJSON("scene:flows", []); a.push({ at: Date.now(), from, to }); await rsetJSON("scene:flows", a.slice(-20)); } catch (e) {} }
 async function rdel(key) { try { await fetch(`${REDIS_URL}/del/${encodeURIComponent(key)}`, { method: "POST", headers: { Authorization: `Bearer ${REDIS_TOKEN}` } }); } catch (e) {} }
 async function getSession(session) { if (!session) return null; try { const raw = await rget(`session:${session}`); return raw ? JSON.parse(raw) : null; } catch (e) { return null; } }
 
@@ -166,6 +169,7 @@ async function runGrowth(forceFull) {
   const cfg = await getConfig();
   const org = cfg.clientOrg || "hunter";
   const funnel = await getVerifiedFunnel(org);
+  await logFlow("dev-agent", "growth-agent"); // РЕАЛЬНАЯ передача: Growth прочитал verified-воронку Dev-Agent
   const decision = forceFull ? { mode: "full", reason: "ручной запуск" } : await decideGrowthMode(cfg, funnel);
   // темы, уже искавшиеся за последние searchDedupDays дней — не повторять
   const sources = await rgetJSON(K.sources, []);

@@ -1,0 +1,17 @@
+Ассеты пиксель-арт сцены агентов Hunter AI
+==========================================
+
+Автор: LimeZu — https://limezu.itch.io
+
+Использованные паки (приобретены, коммерческая лицензия):
+  • Modern Interiors  — персонажи (characters/*.png: спрайт-листы idle/walk в 4 направлениях)
+  • Modern Office - Revamped — офисная мебель и полы (office/*.png)
+
+Лицензия LimeZu требует указания авторства. НЕ перепродавать ассеты как отдельный продукт.
+Подробности лицензии — в файлах LICENSE.txt внутри оригинальных паков.
+
+Подбор персонажей под 4 агентов (Premade_Character номер → агент, цвет одежды):
+  dev.png    = Premade_Character_01  (синяя рубашка)   → Dev-Agent
+  growth.png = Premade_Character_15  (зелёная рубашка) → Growth Agent
+  task.png   = Premade_Character_06  (янтарная)        → Task Agent
+  mop.png    = Premade_Character_05  (фиолетовая)      → MOP Agent
