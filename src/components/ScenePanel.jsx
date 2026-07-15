@@ -163,15 +163,16 @@ export default function ScenePanel({ active = true }) {
         for (const f of flows) { if (f.at > lastFlowAt) { const key = FLOW_KEY[`${f.from}>${f.to}`]; if (key) triggerFlow(key); lastFlowAt = Math.max(lastFlowAt, f.at) } }
       } catch (e) { /* нет события — нет встречи */ }
     }
-    // ПОЗА МОПов из активности в CRM (scene-activity): active/inactive/absent/idle/unknown. Кэш 5 мин.
-    // unknown = persistent нейтральное «неизвестно» (в т.ч. когда callsBypassSuspected глушит absent — «нет данных», НЕ отсутствие).
+    // ПОЗА МОПов из активности в CRM (scene-activity) — читаем it.POSE (не state; state идёт в журнал).
+    // pose: active(покачивание) / inactive(💤) / leave(выход за дверь) / unknown(«?» у стола).
     async function pollActivity() {
       try {
         const r = await fetch('/api/scene-activity?action=state&session=' + encodeURIComponent(getSession()))
         const d = await r.json(); if (!d || !d.items) return
         for (const it of d.items) {
           const dec = DECOR.find((x) => x.name === it.name); if (!dec || !A[dec.id]) continue
-          const a = A[dec.id], prev = a.actState; a.actState = it.state
+          const st = it.pose === 'leave' ? 'absent' : (it.pose || it.state) // leave → сценовый actState 'absent' (уход из комнаты)
+          const a = A[dec.id], prev = a.actState; a.actState = st
           if (prev === 'absent' && it.state !== 'absent') { a.hidden = false; a.el.style.display = ''; a.x = a.home[0]; a.y = a.exitY; a.arrived = false; goPath(a, [[a.home[0], a.home[1], 4000]]) } // вернулся → входит и идёт к столу
           else if (it.state === 'absent' && prev !== 'absent') { a.arrived = false; goPath(a, [[a.home[0], a.exitY, 0]]) } // уходит к выходу немедленно
         }

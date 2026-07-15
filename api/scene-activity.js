@@ -1,27 +1,25 @@
 // /api/scene-activity.js — АКТИВНОСТЬ МОПов В CRM → состояние ПОЗЫ + ЖУРНАЛ входа/выхода из состояний.
 // Презентационный слой, ОТДЕЛЬНЫЙ от пузырей-фраз (scene-bubbles.js) — не смешивать.
 //
-// СОСТОЯНИЯ (по «последнему действию в amoCRM», ЛЮБОЙ тип события: статус/звонок/заметка/задача):
-//   active   — < activeMin мин  → персонаж работает (idle-покачивание у стола)
-//   inactive — activeMin..absentMin (по умолч. 5-30) → бездействие у стола (значок «zzz»), остаётся на месте
-//   absent   — >= absentMin мин  → покидает комнату (выход за дверь), не отображается до след. действия
-//   idle     — вне рабочих часов → нейтральный простой, без выводов (офис не работает)
-//   unknown  — данных нет/ненадёжны → нейтральное «неизвестно», позу не трогаем
+// Каждый item несёт ДВА поля (по «последнему действию в amoCRM», ЛЮБОЙ тип события):
+//   pose  — ЧТО ДЕЛАЕТ ПЕРСОНАЖ В СЦЕНЕ:
+//           active(<activeMin)=покачивание · inactive(activeMin..absentMin)=«zzz» у стола ·
+//           leave(>=absentMin ИЛИ нет активности ИЛИ ночь)=выход за дверь · unknown(труркация)=«?» у стола
+//   state — ЧТО ПИШЕТСЯ В ЖУРНАЛ (запись для реальных выводов о людях):
+//           active/inactive/absent/offHours(ночь≠прогул)/unknown(нет данных)
 //
 // ══════════════════════════════════════════════════════════════════════════════════════════════
-// ⚠️ ЖЁСТКОЕ УСЛОВИЕ ПЕРВОЙ ВЕРСИИ (НЕ опция, НЕ за флагом, включено по умолчанию):
-//   Пока callsBypassSuspected === true (подтверждённая дыра — звонки идут мимо CRM через личный
-//   телефон), состояние "absent" НЕ ПРИМЕНЯЕТСЯ. Вместо физического выхода — persistent "unknown",
-//   а в ЖУРНАЛЕ период помечается noData:true (reason:"bypass") = «нет данных», НЕ «отсутствие».
-//   Причина: известный факт этого дня — Komiljon и, вероятно, другие работают с личных телефонов,
-//   чей трафик не долетает до CRM. Без этого условия журнал в первый же день задокументирует
-//   реально работающих людей как «отсутствовавших».
-//   ПРИМЕЧАНИЕ: callsBypassSuspected сейчас ГЛОБАЛЬНЫЙ сигнал телефонии (не per-MOP), поэтому пока он
-//   true — absent подавляется для ВСЕХ МОПов (консервативно). Это безопаснее, чем per-MOP: см. [[data-completeness-passport]].
+// ⚠️ РАЗВЕДЕНИЕ ПОЗЫ И ЖУРНАЛА (решение владельца 15.07 — поверх прежнего жёсткого условия):
+//   • ПОЗА: персонаж ВЫХОДИТ из комнаты после absentMin ВСЕГДА. callsBypassSuspected на позу НЕ влияет
+//     (владелец выбрал «выход всегда, игнор bypass» — чтобы сцена ночью пустела, а не стояла).
+//   • ЖУРНАЛ: жёсткое условие СОХРАНЕНО. Пока callsBypassSuspected === true (звонки идут мимо CRM через
+//     личный телефон — Komiljon и др.), в ЗАПИСИ период = "unknown"/noData:true reason:"bypass" =
+//     «нет данных», НЕ «отсутствие». Причина прежняя: не документировать реально работающих как прогул.
+//     Ночь пишется как "offHours" (не absent), чтобы дневной отчёт не считал нерабочее время отсутствием.
+//   ПРИМЕЧАНИЕ: callsBypassSuspected — ГЛОБАЛЬНЫЙ сигнал телефонии (не per-MOP). См. [[data-completeness-passport]].
+//   ⚠️ Если владелец захочет, чтобы и ЖУРНАЛ писал прямое "absent" при bypass — заменить ветку
+//     `if (bypass) ... state:"unknown"` на state:"absent". Это перевернёт прежнее жёсткое условие ОСОЗНАННО.
 // ══════════════════════════════════════════════════════════════════════════════════════════════
-//
-// ⚠️ ЧЕСТНОСТЬ: активность В CRM ≠ работает ли человек (см. условие выше). Свой trust-гейт: при
-//    труркации событий состояние = unknown (позу не трогаем, в журнале noData reason:"truncation").
 const REDIS_URL = process.env.UPSTASH_REDIS_REST_URL;
 const REDIS_TOKEN = process.env.UPSTASH_REDIS_REST_TOKEN;
 const SUBDOMAIN = "huntercademy";
@@ -70,16 +68,19 @@ async function build(cfg, opts) {
   const offHours = !forceOnHours && (tkHour < cfg.workStartHour || tkHour >= cfg.workEndHour);
   const now = Math.floor(Date.now() / 1000);
 
+  // pose = что делает персонаж в СЦЕНЕ; state = что пишется в ЖУРНАЛ (запись для реальных выводов).
+  // Решение владельца (15.07): ПОЗА выходит из комнаты после absentMin ВСЕГДА — bypass позу НЕ трогает.
+  // ЖУРНАЛ: жёсткое условие СОХРАНЕНО — при bypass период = "unknown"/нет данных, НЕ "отсутствие".
   const items = Object.entries(MOPS).map(([uid, name]) => {
-    if (truncated) return { name, state: "unknown", minAgo: null, noData: true, reason: "truncation" };
-    if (offHours) return { name, state: "idle", minAgo: null, noData: false };
+    if (truncated) return { name, pose: "unknown", state: "unknown", minAgo: null, noData: true, reason: "truncation" }; // не видим — не выгоняем, «?» у стола
     const last = lastByUser[uid];
     const minAgo = last ? Math.round((now - last) / 60) : null;
-    if (minAgo != null && minAgo < cfg.activeMin) return { name, state: "active", minAgo, noData: false };
-    if (minAgo != null && minAgo < cfg.absentMin) return { name, state: "inactive", minAgo, noData: false };
-    // >= absentMin → был бы "absent". ЖЁСТКОЕ УСЛОВИЕ: при bypass → unknown/noData, НЕ absent.
-    if (bypass) return { name, state: "unknown", minAgo, noData: true, reason: "bypass" };
-    return { name, state: "absent", minAgo, noData: false };
+    if (minAgo != null && minAgo < cfg.activeMin) return { name, pose: "active", state: "active", minAgo, noData: false };
+    if (minAgo != null && minAgo < cfg.absentMin) return { name, pose: "inactive", state: "inactive", minAgo, noData: false };
+    // >= absentMin (или активности нет вовсе) → персонаж ВЫХОДИТ (pose:leave), bypass позу не трогает.
+    if (offHours) return { name, pose: "leave", state: "offHours", minAgo, noData: false };                 // журнал: ночь ≠ прогул
+    if (bypass)   return { name, pose: "leave", state: "unknown", minAgo, noData: true, reason: "bypass" };  // журнал: «нет данных», НЕ отсутствие
+    return { name, pose: "leave", state: "absent", minAgo, noData: false };
   });
 
   return { ok: true, at: Date.now(), truncated, offHours, bypassSuspected: bypass, cfg, items };
