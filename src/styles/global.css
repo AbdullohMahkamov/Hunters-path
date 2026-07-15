@@ -1175,5 +1175,11 @@
   .scn-name{position:absolute;left:50%;top:33px;transform:translateX(-50%);font-size:4.4px;font-weight:700;color:#2a2620;background:#f4f1e8;border:.6px solid var(--nc,#b0aa9c);border-radius:2px;padding:.4px 2px;white-space:nowrap;box-shadow:0 .5px 1px rgba(0,0,0,.28);z-index:6;}
   .scn-fsign{position:absolute;left:50%;top:-9px;transform:translateX(-50%) scale(.5);transform-origin:bottom center;display:flex;align-items:center;gap:1px;background:#ffd24a;color:#5b4a1e;border:.5px solid #7a5a10;border-radius:2px;padding:.4px 1.4px;font-size:4px;font-weight:700;white-space:nowrap;opacity:0;transition:opacity .3s,transform .3s;box-shadow:0 0 3px 1px #ffd24a88;pointer-events:none;z-index:998;}
   .scn-fsign.on{opacity:1;transform:translateX(-50%) scale(1);}
-    .scn-actor.scn-still .scn-spr{animation:none!important;} /* quiet — нейтральный простой без покачивания */
-  @media (prefers-reduced-motion:reduce){.scn-actor.idle .scn-spr{animation:none;}}
+    .scn-actor.scn-still .scn-spr{animation:none!important;} /* inactive/unknown/idle — без покачивания */
+  /* значок над головой: НЕ АКТИВЕН → 💤 (сонный), НЕИЗВЕСТНО → ? (нейтральный, приглушённый) */
+  .scn-zzz{position:absolute;left:50%;top:-7px;transform:translateX(-50%) scale(.55);transform-origin:bottom center;font-size:6px;line-height:1;opacity:0;transition:opacity .3s,transform .3s;pointer-events:none;z-index:997;}
+  .scn-zzz.on{opacity:1;transform:translateX(-50%) scale(1);}
+  .scn-zzz-zzz{animation:scn-zbob 2.4s ease-in-out infinite;}
+  .scn-zzz-unknown{width:7px;height:7px;border-radius:50%;background:#8a94a6;color:#fff;font-size:5px;font-weight:800;text-align:center;line-height:7px;opacity:.72;box-shadow:0 0 2px rgba(0,0,0,.3);}
+  @keyframes scn-zbob{0%,100%{transform:translateX(-50%) translateY(0) scale(1);}50%{transform:translateX(-50%) translateY(-1.5px) scale(1);}}
+  @media (prefers-reduced-motion:reduce){.scn-actor.idle .scn-spr{animation:none;}.scn-zzz-zzz{animation:none;}}

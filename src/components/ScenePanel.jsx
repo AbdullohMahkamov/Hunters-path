@@ -61,13 +61,13 @@ export default function ScenePanel({ active = true }) {
     const A = {}, agentIds = Object.keys(ZONES)
     function mk(id, x, y, decorative, disp, border) {
       const el = document.createElement('div'); el.className = 'scn-actor'
-      el.innerHTML = '<div class="scn-bub"></div><div class="scn-fsign"><span>✉</span><i></i></div><div class="scn-spr"></div><div class="scn-name" style="--nc:' + border + '">' + disp + '</div>'
+      el.innerHTML = '<div class="scn-bub"></div><div class="scn-zzz"></div><div class="scn-fsign"><span>✉</span><i></i></div><div class="scn-spr"></div><div class="scn-name" style="--nc:' + border + '">' + disp + '</div>'
       scaler.appendChild(el)
       const a = {
-        id, el, spr: el.querySelector('.scn-spr'), bub: el.querySelector('.scn-bub'), fsign: el.querySelector('.scn-fsign'), flab: el.querySelector('.scn-fsign i'),
+        id, el, spr: el.querySelector('.scn-spr'), bub: el.querySelector('.scn-bub'), zzz: el.querySelector('.scn-zzz'), fsign: el.querySelector('.scn-fsign'), flab: el.querySelector('.scn-fsign i'),
         decorative, x, y, tx: x, ty: y, dir: 'down', walking: false, frame: 0, ft: 0, waiting: false, queue: [], nextPause: 0, nextFlag: 0, curFlag: 0, arrived: false, pauseUntil: 0,
         bubOn: false, bubUntil: 0, bubHideUntil: 1500 + Math.random() * 3000, pts: null, home: null, homeDir: 'down',
-        sayWork: '', sayWait: '', phrase: null, actState: 'active', // active|away|quiet|idle|unknown (из scene-activity)
+        sayWork: '', sayWait: '', phrase: null, actState: 'active', exitY: 240, hidden: false, // active|inactive|absent|unknown|idle
       }
       a.spr.style.backgroundImage = 'url(' + imgFor(id) + ')'
       return a
@@ -82,7 +82,13 @@ export default function ScenePanel({ active = true }) {
       a.spr.style.backgroundPosition = (-(col * 16)) + 'px ' + (-blockY) + 'px'
       a.el.style.left = (a.x - 8) + 'px'; a.el.style.top = (a.y - 32) + 'px'; a.el.style.zIndex = Math.round(a.y)
       a.el.classList.toggle('idle', !a.walking)
-      a.el.classList.toggle('scn-still', a.decorative && a.actState === 'quiet') // quiet → без покачивания (нейтральный простой)
+      // покачивание ТОЛЬКО в active; inactive/unknown/idle — стоит спокойно
+      a.el.classList.toggle('scn-still', a.decorative && a.actState !== 'active')
+      if (a.zzz) { // значок над головой: НЕ АКТИВЕН → «zzz»; неизвестно → «?»; иначе скрыт
+        const icon = a.decorative && !a.walking ? (a.actState === 'inactive' ? 'zzz' : a.actState === 'unknown' ? 'unknown' : '') : ''
+        a.zzz.className = 'scn-zzz' + (icon ? ' on scn-zzz-' + icon : '')
+        if (icon) a.zzz.textContent = icon === 'zzz' ? '💤' : '?'
+      }
       a.fsign.classList.toggle('on', !a.walking && a.curFlag === 'flow' && performance.now() < a.pauseUntil)
     }
     for (const a of ALL) draw(a)
@@ -90,9 +96,9 @@ export default function ScenePanel({ active = true }) {
     const goPath = (a, steps) => { const f = steps[0]; a.tx = f[0]; a.ty = f[1]; a.nextPause = f[2] || 0; a.nextFlag = f[3] || 0; a.arrived = false; a.queue = steps.slice(1) }
     const randWP = (a) => { const p = a.pts; let w; do { w = p[(Math.random() * p.length) | 0] } while (w[0] === a.tx && w[1] === a.ty && p.length > 1); return w }
     function decide(a) { if (a.waiting) { goPath(a, [[...ZONES[a.id].att, 900]]); return } goPath(a, [[...randWP(a), 1400 + Math.random() * 2600]]) }
-    // МОП: только в состоянии away иногда отходит к кулеру/принтеру; active/quiet/idle — стоит у стола
+    // МОП: absent → уходит к выходу (вниз за пределы комнаты) и скрывается; остальные — стоит у стола
     function decideDecor(a) {
-      if (a.actState === 'away' && Math.random() < 0.5) { const m = AMENITY[(Math.random() * AMENITY.length) | 0]; goPath(a, [[m[0], m[1], 2600 + Math.random() * 1800], [a.home[0], a.home[1], 4000 + Math.random() * 4000]]) }
+      if (a.actState === 'absent') goPath(a, [[a.home[0], a.exitY, 0]])
       else goPath(a, [[a.home[0], a.home[1], 4000 + Math.random() * 4000]])
     }
     function bubble(a, t) {
@@ -120,6 +126,8 @@ export default function ScenePanel({ active = true }) {
           if (!a.arrived) { a.arrived = true; a.pauseUntil = t + (a.nextPause || 0); a.curFlag = a.nextFlag; a.nextFlag = 0; if (a.waiting && a.curFlag !== 'flow') a.dir = 'down' }
           // МОП у своего стола — лицом к монитору
           if (a.decorative && a.curFlag !== 'flow' && Math.abs(a.x - a.home[0]) < 2 && Math.abs(a.y - a.home[1]) < 2) a.dir = a.homeDir
+          // absent дошёл до выхода → скрыть (за дверью, не отображается до след. действия в CRM)
+          if (a.decorative && a.actState === 'absent' && a.y >= a.exitY - 2 && !a.hidden) { a.hidden = true; a.el.style.display = 'none' }
           if (t >= a.pauseUntil) { if (a.queue.length) { const n = a.queue.shift(); a.tx = n[0]; a.ty = n[1]; a.nextPause = n[2] || 0; a.nextFlag = n[3] || 0; a.arrived = false } else (a.decorative ? decideDecor(a) : decide(a)) }
         }
         bubble(a, t); draw(a)
@@ -155,12 +163,18 @@ export default function ScenePanel({ active = true }) {
         for (const f of flows) { if (f.at > lastFlowAt) { const key = FLOW_KEY[`${f.from}>${f.to}`]; if (key) triggerFlow(key); lastFlowAt = Math.max(lastFlowAt, f.at) } }
       } catch (e) { /* нет события — нет встречи */ }
     }
-    // ПОЗА МОПов из активности в CRM (scene-activity): active/away/quiet/idle/unknown. Тот же кэш 5 мин.
+    // ПОЗА МОПов из активности в CRM (scene-activity): active/inactive/absent/idle/unknown. Кэш 5 мин.
+    // unknown = persistent нейтральное «неизвестно» (в т.ч. когда callsBypassSuspected глушит absent — «нет данных», НЕ отсутствие).
     async function pollActivity() {
       try {
         const r = await fetch('/api/scene-activity?action=state&session=' + encodeURIComponent(getSession()))
         const d = await r.json(); if (!d || !d.items) return
-        for (const it of d.items) { const dec = DECOR.find((x) => x.name === it.name); if (dec && A[dec.id] && it.state !== 'unknown') A[dec.id].actState = it.state } // unknown → позу не трогаем
+        for (const it of d.items) {
+          const dec = DECOR.find((x) => x.name === it.name); if (!dec || !A[dec.id]) continue
+          const a = A[dec.id], prev = a.actState; a.actState = it.state
+          if (prev === 'absent' && it.state !== 'absent') { a.hidden = false; a.el.style.display = ''; a.x = a.home[0]; a.y = a.exitY; a.arrived = false; goPath(a, [[a.home[0], a.home[1], 4000]]) } // вернулся → входит и идёт к столу
+          else if (it.state === 'absent' && prev !== 'absent') { a.arrived = false; goPath(a, [[a.home[0], a.exitY, 0]]) } // уходит к выходу немедленно
+        }
       } catch (e) { /* нет данных — поза не меняется */ }
     }
     pollAgents(); pollBubbles(); pollFlows(); pollActivity()
