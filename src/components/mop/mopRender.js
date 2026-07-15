@@ -260,7 +260,7 @@ export function renderMopStats(_mopData) {
 
   const cards = []
   cards.push(card(`${ic('chart')} ${mt('myFunnel')}`,
-    tile(me.leads, mt('leads')) + tile(me.reachPct + '%', mt('reach'), metricColor(me.reachPct, 60, true)) + tile(me.sold + ' ' + mt('pcs'), mt('salesW')) + tile(me.conv + '%', mt('conv'), metricColor(me.conv, 3, true))))
+    tile(me.leads, mt('leads')) + tile(me.reachPct + '%' + (me.fakeNums ? ` <span style="font-size:9px;color:var(--txt3);font-weight:400;" title="${mt('fakeNums')}">·${me.fakeNums}</span>` : ''), mt('reach'), metricColor(me.reachPct, 60, true)) + tile(me.sold + ' ' + mt('pcs'), mt('salesW')) + tile(me.conv + '%', mt('conv'), metricColor(me.conv, 3, true))))
   cards.push(card(`${ic('clock')} ${mt('myDiscipline')}`,
     tile(fcm, mt('firstCall'), metricColor(me.firstCallMin, 30, false)) + tile(me.taskRate != null ? me.taskRate + '%' : '—', mt('tasks'), metricColor(me.taskRate, 70, true))))
   if (losing) {

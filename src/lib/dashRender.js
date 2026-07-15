@@ -118,7 +118,7 @@ export function applyLiveDash(d) {
         <div class="mop-bar-wrap"><div class="mop-bar" style="width:${Math.round(Math.min(100, m.conv / 3.5 * 100))}%;background:${m.conv >= 2.5 ? 'var(--green)' : (m.conv < 1.3 ? 'var(--red)' : 'var(--accent)')};"></div></div>
         <div class="mop-val" style="color:${m.conv >= 2.5 ? 'var(--green)' : (m.conv < 1.3 ? 'var(--red)' : 'var(--txt)')};">${m.conv}%</div>
       </div>
-      <div style="font-size:11px;color:var(--txt3);margin-top:3px;margin-left:130px;">${m.leads} лидов · ${m.sold} продаж · дозвон ${m.reachPct}%</div>
+      <div style="font-size:11px;color:var(--txt3);margin-top:3px;margin-left:130px;">${m.leads} лидов · ${m.sold} продаж · дозвон ${m.reachPct}%${m.fakeNums ? ` · ${m.fakeNums} нереальных номеров` : ''}</div>
     </div>`).join('') || '<div style="font-size:12px;color:var(--txt3);">Нет данных</div>'
 
   const probs = (per === 'all' && d.problemsAll ? d.problemsAll : d.problems) || []
@@ -409,17 +409,20 @@ function renderDiscipline(sp) {
     const doneBad = (m.tasksDonePct || 0) < 40
     const c = (ok, bad) => ok ? 'var(--green)' : (bad ? 'var(--red)' : 'var(--txt2)')
     const doneDisplay = m.tasksTotal ? `${m.tasksDonePct}% <span style="color:var(--txt3);font-weight:400;">(${m.tasksDone} из ${m.tasksTotal})</span>` : '<span style="color:var(--txt3);font-weight:400;">нет задач</span>'
-    let reachAbs = ''
+    let reachAbs = '', fakeNote = ''
     if (isToday && m.reached != null && m.leads) {
       reachAbs = ` <span style="font-size:10px;color:var(--txt3);">(${m.reached} из ${m.leads})</span>`
     } else if (!isToday) {
       const dashMops = (window._dashData && window._dashData.mopsByConv) || []
       const dm = dashMops.find((x) => x.name === m.name)
-      if (dm && dm.reached != null && dm.leads) { reachAbs = ` <span style="font-size:10px;color:var(--txt3);">(${dm.reached} из ${dm.leads})</span>` } else if (m.reached != null && m.leads) { reachAbs = ` <span style="font-size:10px;color:var(--txt3);">(${m.reached} из ${m.leads})</span>` }
+      const denom = (dm && dm.reachDenom != null) ? dm.reachDenom : (dm ? dm.leads : m.leads) // знаменатель дозвона = реальные лиды (без брака)
+      if (dm && dm.reached != null && denom) { reachAbs = ` <span style="font-size:10px;color:var(--txt3);">(${dm.reached} из ${denom})</span>` } else if (m.reached != null && m.leads) { reachAbs = ` <span style="font-size:10px;color:var(--txt3);">(${m.reached} из ${m.leads})</span>` }
+      const fn = (dm && dm.fakeNums) || 0 // нереальные номера (Xato raqam + Dubl), исключены из знаменателя — показываем отдельно, не прячем
+      if (fn) fakeNote = ` <span style="font-size:10px;color:var(--txt3);">· ${fn} ${uz ? 'notoʻgʻri raqam' : 'нереальных номеров'}</span>`
     }
     const reachCell = isToday
       ? `<div>📞 % дозвона${hintIcon('reach')}: <b style="color:${reach != null ? c(reachOk, reachBad) : 'var(--txt3)'}">${reach != null ? reach + '%' : '—'}</b>${reachAbs}${m.calledLeads != null ? ` <span style="font-size:10px;color:var(--txt3);">· звонили ${m.calledLeads}</span>` : ''}</div>`
-      : `<div>📞 % дозвона${hintIcon('reach')}: <b style="color:${reach != null ? c(reachOk, reachBad) : 'var(--txt3)'}">${reach != null ? reach + '%' : '—'}</b>${reachAbs}</div>`
+      : `<div>📞 % дозвона${hintIcon('reach')}: <b style="color:${reach != null ? c(reachOk, reachBad) : 'var(--txt3)'}">${reach != null ? reach + '%' : '—'}</b>${reachAbs}${fakeNote}</div>`
     return `<div style="background:var(--card);border:1px solid var(--line);border-radius:10px;padding:11px 12px;margin-bottom:9px;">
       <div style="font-size:14px;font-weight:600;margin-bottom:7px;">${escapeHtml(m.name)} <span style="font-size:11px;color:var(--txt3);font-weight:400;">· ${m.leads} ${uz ? 'lid' : 'лидов'}</span></div>
       <div style="display:grid;grid-template-columns:1fr 1fr;gap:6px 12px;font-size:12px;">

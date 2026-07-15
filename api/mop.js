@@ -161,7 +161,7 @@ export default async function handler(req, res) {
       const speedMops = (speed && speed.mops) ? speed.mops : [];
       const byId = {};
       (cache.mopsBySales || []).forEach(m => { byId[m.id] = { ...m }; });
-      (cache.mopsByConv || []).forEach(m => { if (byId[m.id]) { byId[m.id].leads = m.leads; byId[m.id].conv = m.conv; byId[m.id].reachPct = m.reachPct; } });
+      (cache.mopsByConv || []).forEach(m => { if (byId[m.id]) { byId[m.id].leads = m.leads; byId[m.id].conv = m.conv; byId[m.id].reachPct = m.reachPct; byId[m.id].fakeNums = m.fakeNums || 0; } });
       speedMops.forEach(m => {
         // speed-мопы имеют только name (без id) — матчим по имени, т.к. id мопа = имя
         const key = m.id != null ? m.id : m.name;
@@ -179,6 +179,7 @@ export default async function handler(req, res) {
         soldToday: m.soldToday || 0, revenueToday: m.revenueToday || 0,
         leads: m.leads || 0, conv: m.conv || 0,
         reachPct: m.reachPct != null ? m.reachPct : (m.reachRate || 0),
+        fakeNums: m.fakeNums || 0, // нереальные номера (Xato raqam + Dubl), исключены из знаменателя дозвона
         firstCallMin: m.medianFirstCallMin != null ? m.medianFirstCallMin : null,
         taskRate: m.taskRate != null ? m.taskRate : null,
         plan: plans[m.id] || 0,

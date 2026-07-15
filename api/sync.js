@@ -29,6 +29,8 @@ const HUNTER_CFG = {
     "Ruxsat berishmadi", "Dubl",
   ],
   noContactStages: ["Bog'lanib bo'lmadi", "Bog'lanib bo'lmadi 2"],
+  fakeNumReasons: ["Xato raqam", "Dubl"],   // брак данных (неверный номер, дубль) — ВОН из знаменателя дозвона
+  contactedReasons: ["Ruxsat berishmadi"],  // контакт БЫЛ (не дали разрешение) — считать дозвоном, не недозвоном
 };
 
 async function redisGetCfg(url, token, key) {
@@ -59,6 +61,8 @@ async function resolveConfig(org, redisUrl, redisToken) {
     mops: stored.mops || {},
     noContactReasons: stored.noContactReasons || [],
     noContactStages: stored.noContactStages || [],
+    fakeNumReasons: stored.fakeNumReasons || [],
+    contactedReasons: stored.contactedReasons || [],
   };
 }
 
@@ -96,6 +100,8 @@ export default async function handler(req, res) {
   const ACTIVE_MOPS = cfg.mops || {};
   const NO_CONTACT_REASONS = new Set(cfg.noContactReasons || []);
   const NO_CONTACT_STAGES = new Set(cfg.noContactStages || []);
+  const FAKE_NUM_REASONS = new Set(cfg.fakeNumReasons || []);    // Xato raqam, Dubl — исключаем из знаменателя дозвона
+  const CONTACTED_REASONS = new Set(cfg.contactedReasons || []); // Ruxsat berishmadi — контакт был, это дозвон
   // ключи кэша с префиксом клиента (чтобы данные клиентов не смешивались)
   const K = (name) => org === "hunter" ? name : `${name}:${org}`;
 
@@ -350,19 +356,30 @@ export default async function handler(req, res) {
 
       // === МЕТРИКИ КОМАНДЫ: только пятёрка ===
       if (mop) {
-        if (!byMop[mop]) byMop[mop] = { leads: 0, sold: 0, revenue: 0, noContact: 0, soldToday: 0, revenueToday: 0, ncReasons: {}, ncStages: {}, denomStages: {} };
+        if (!byMop[mop]) byMop[mop] = { leads: 0, sold: 0, revenue: 0, noContact: 0, soldToday: 0, revenueToday: 0, ncReasons: {}, ncStages: {}, denomStages: {}, fakeNums: 0, contacted: 0 };
 
         // ЗА МЕСЯЦ: объём лидов и дозвон — по созданным в этом месяце
         if (createdThisMonth) {
-          byMop[mop].leads++;
-          byMop[mop].denomStages[stName] = (byMop[mop].denomStages[stName] || 0) + 1; // ДИАГ: состав знаменателя по текущему этапу
+          byMop[mop].leads++;                                                          // ВСЕ лиды (объём и конверсия НЕ трогаем)
+          byMop[mop].denomStages[stName] = (byMop[mop].denomStages[stName] || 0) + 1;  // _diag: состав знаменателя по этапу
+          // причина потери (нужна для классификации брака/контакта)
+          let reason = "";
           if (stName === CLOSED_LOST) {
-            let reason = "";
             const lossId = L.loss_reason_id || (L._embedded && L._embedded.loss_reason && L._embedded.loss_reason[0] && L._embedded.loss_reason[0].id);
             if (lossId && lossName[lossId]) reason = lossName[lossId];
-            if (NO_CONTACT_REASONS.has(reason)) { noContact++; byMop[mop].noContact++; byMop[mop].ncReasons[reason] = (byMop[mop].ncReasons[reason] || 0) + 1; } // ДИАГ: недозвон по причине потери
+          }
+          if (stName === CLOSED_LOST && FAKE_NUM_REASONS.has(reason)) {
+            // (1) БРАК ДАННЫХ (неверный номер / дубль) — исключаем ТОЛЬКО из знаменателя ДОЗВОНА (reachDenom = leads - fakeNums). leads/conv остаются.
+            byMop[mop].fakeNums++;
+            byMop[mop].ncReasons[reason] = (byMop[mop].ncReasons[reason] || 0) + 1; // _diag: видно, что и сколько исключили
+          } else if (stName === CLOSED_LOST && CONTACTED_REASONS.has(reason)) {
+            // (2) КОНТАКТ БЫЛ (не дали разрешение) — это ДОЗВОН: в знаменателе, НЕ в недозвоне (не трогаем noContact)
+            byMop[mop].contacted++;
+          } else if (stName === CLOSED_LOST && NO_CONTACT_REASONS.has(reason)) {
+            // (3/4) прочие причины потери (в т.ч. Telefon o'chirilgan) — недозвон как есть
+            noContact++; byMop[mop].noContact++; byMop[mop].ncReasons[reason] = (byMop[mop].ncReasons[reason] || 0) + 1;
           } else if (NO_CONTACT_STAGES.has(stName)) {
-            noContact++; byMop[mop].noContact++; byMop[mop].ncStages[stName] = (byMop[mop].ncStages[stName] || 0) + 1; // ДИАГ: недозвон по этапу
+            noContact++; byMop[mop].noContact++; byMop[mop].ncStages[stName] = (byMop[mop].ncStages[stName] || 0) + 1;
           }
         }
         // ЗА ОКНО АУДИТА: лиды и недозвон
@@ -508,10 +525,13 @@ export default async function handler(req, res) {
       soldToday: v.soldToday || 0,
       revenueToday: v.revenueToday || 0,
       conv: v.leads > 0 ? +(v.sold / v.leads * 100).toFixed(2) : 0,
-      reachPct: v.leads > 0 ? +((v.leads - v.noContact) / v.leads * 100).toFixed(0) : 0, // % дозвона
-      reached: Math.max(0, v.leads - v.noContact), // сколько дозвонились (штук)
+      // % дозвона: знаменатель = реальные лиды (leads - брак), «не дали разрешение» = дозвон (не в noContact). leads/conv НЕ трогаем.
+      reachPct: (v.leads - (v.fakeNums || 0)) > 0 ? +(((v.leads - (v.fakeNums || 0) - v.noContact) / (v.leads - (v.fakeNums || 0))) * 100).toFixed(0) : 0,
+      reached: Math.max(0, v.leads - (v.fakeNums || 0) - v.noContact), // сколько дозвонились (штук)
+      reachDenom: Math.max(0, v.leads - (v.fakeNums || 0)),           // знаменатель дозвона (реальные лиды) — для показа «X из Y»
+      fakeNums: v.fakeNums || 0, // нереальные номера (Xato raqam + Dubl), исключены из знаменателя дозвона — показываем отдельно
       dealCycleDays: medianOf(mopDurations[name]), // медианный цикл сделки «создан→продан» по МОПу (дни)
-      _diag: { noContact: v.noContact, ncReasons: v.ncReasons, ncStages: v.ncStages, denomStages: v.denomStages }, // ДИАГ (read-only): состав недозвона и знаменателя
+      _diag: { noContact: v.noContact, ncReasons: v.ncReasons, ncStages: v.ncStages, denomStages: v.denomStages, fakeNums: v.fakeNums || 0, contacted: v.contacted || 0 }, // ДИАГ (read-only)
     }));
     const mopsByConv = [...mops].sort((a, b) => b.conv - a.conv);
     const mopsBySales = [...mops].sort((a, b) => b.sold - a.sold);
