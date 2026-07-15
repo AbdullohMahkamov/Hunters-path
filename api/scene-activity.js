@@ -159,6 +159,51 @@ export default async function handler(req, res) {
   const action = q.action || b.action || "state";
   const cfg = { ...DEFAULT_CFG, ...(await rgetJSON("sceneactivity:config", null) || {}) };
 
+  // taskdiag (админ, read-only): по каждому task_added за окно достаём РЕАЛЬНОГО автора задачи (GET /tasks/{id}).
+  // Цель: отличить «человек создал задачу» (created_by = id МОПа) от «бот/воронка создали ЗА него» (created_by = 0).
+  if (action === "taskdiag") {
+    if ((await sessionRole(q.session || b.session)) !== "admin") { res.status(403).json({ error: "admin only" }); return; }
+    const token = process.env.AMOCRM_TOKEN;
+    const H = { Authorization: `Bearer ${token}` };
+    const base = `https://${SUBDOMAIN}.amocrm.ru/api/v4`;
+    const hrs = Math.min(48, Math.max(1, parseInt(q.diagHours || b.diagHours || "12", 10) || 12));
+    const from = Math.floor(Date.now() / 1000) - hrs * 3600;
+    const found = []; // {taskId, evBy, evAt}
+    let page = 1;
+    while (page <= 8) {
+      let r;
+      try { r = await fetch(`${base}/events?limit=100&page=${page}&order[created_at]=desc&filter[created_at][from]=${from}&filter[type]=task_added`, { headers: H }); }
+      catch (e) { break; }
+      if (r.status === 204 || !r.ok) break;
+      const d = await r.json();
+      const events = (d._embedded && d._embedded.events) || [];
+      for (const e of events) if (e.type === "task_added" && e.entity_type === "task") found.push({ taskId: e.entity_id, evBy: e.created_by, evAt: e.created_at });
+      if (events.length < 100) break;
+      page++;
+    }
+    const nameOf = (uid) => uid === 0 ? "робот/система(0)" : (MOPS[uid] || ("user:" + uid));
+    const ids = [...new Set(found.map((f) => f.taskId))].slice(0, 25);
+    const tasks = [];
+    for (const id of ids) {
+      try {
+        const r = await fetch(`${base}/tasks/${id}`, { headers: H });
+        if (!r.ok) continue;
+        const t = await r.json();
+        const ev = found.find((f) => f.taskId === id);
+        tasks.push({
+          taskId: id, entity_type: t.entity_type, entity_id: t.entity_id, task_type_id: t.task_type_id, is_completed: t.is_completed,
+          text: (t.text || "").slice(0, 80),
+          eventAttributedTo: nameOf(ev ? ev.evBy : -1), // кому событие приписало task_added
+          taskCreatedBy: nameOf(t.created_by),           // кто РЕАЛЬНО создал задачу (0 = бот/система)
+          responsible: nameOf(t.responsible_user_id),    // на кого задача назначена
+          botCreated: t.created_by === 0,
+        });
+      } catch (e) {}
+    }
+    res.status(200).json({ ok: true, windowHours: hrs, taskAddedTotal: found.length, uniqueTasks: ids.length, tasks });
+    return;
+  }
+
   // журнал за день (админ) — для отчёта
   if (action === "journal") {
     if ((await sessionRole(q.session || b.session)) !== "admin") { res.status(403).json({ error: "admin only" }); return; }
