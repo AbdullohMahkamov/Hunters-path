@@ -38,7 +38,9 @@ const ROOM_LABELS = [{ t: 'Техническая', x: 78, y: 42 }, { t: 'Ана
 const DIRCOL = { left: 0, up: 6, right: 12, down: 18 }
 // logFlow (from>to) → ключ FLOWS
 const FLOW_KEY = { 'dev-agent>growth-agent': 'd2g', 'mop-agent>task-agent': 'm2t' }
-const imgFor = (id) => id.startsWith('mop') || id === 'rop' ? `/assets/scene/characters/decor/${id}.png` : `/assets/scene/characters/${id}.png`
+// декоративные — mop1..5 и rop (в /decor/); агенты — dev/growth/task/mop (в /characters/).
+// ВАЖНО: агент 'mop' (Супервайзер) НЕ decor — иначе тянулся бы несуществующий decor/mop.png и спрайт пропадал.
+const imgFor = (id) => (/^mop[1-5]$/.test(id) || id === 'rop') ? `/assets/scene/characters/decor/${id}.png` : `/assets/scene/characters/${id}.png`
 
 export default function ScenePanel({ active = true }) {
   const hostRef = useRef(null)
@@ -49,7 +51,8 @@ export default function ScenePanel({ active = true }) {
     // ── разметка ──
     host.innerHTML = '<div class="scn-scaler"><img class="scn-room" src="/assets/scene/room.png" width="352" height="224" alt="office"></div>'
     const scaler = host.querySelector('.scn-scaler')
-    function fit() { const w = host.clientWidth || 640; const s = w / RW; scaler.style.transform = 'scale(' + s + ')'; scaler.style.width = RW + 'px'; scaler.style.height = RH + 'px'; host.style.height = (RH * s) + 'px' }
+    // на всю доступную область: масштаб по min(ширина, высота), центрирование даёт flex у .scn-host
+    function fit() { const availW = (host.clientWidth || 640) - 16, availH = (host.clientHeight || 400) - 16; const s = Math.max(1, Math.min(availW / RW, availH / RH)); scaler.style.transform = 'scale(' + s + ')' }
     const onResize = () => fit(); window.addEventListener('resize', onResize)
     for (const L of ROOM_LABELS) { const d = document.createElement('div'); d.className = 'scn-rlabel'; d.textContent = L.t; d.style.left = L.x + 'px'; d.style.top = L.y + 'px'; scaler.appendChild(d) }
 
