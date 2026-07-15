@@ -35,6 +35,7 @@ const SYSTEM = `Сформулируй ОДНУ короткую фразу дл
 НЕ добавляй ничего, чего нет в данных — никаких предположений о настроении, усталости, мотивации или личных качествах человека.
 Если фактов мало или они нейтральны (просто идёт обычная работа) — верни нейтральную фразу про факт занятости, не выдумывай деталей.
 Если в фактах есть находка «разговор был, статус не обновлён» — можно нейтрально указать на неё как на ФАКТ (не обвинение: не «забыл/схалтурил»).
+Числа пиши ЦИФРАМИ (14, а не «четырнадцать»).
 Верни ТОЛЬКО фразу — без кавычек, без пояснений, без имени. По-русски.
 Примеры допустимого (≤6 слов): «16 лидов в работе», «статус не обновлён», «в работе».`;
 
@@ -57,6 +58,13 @@ function factsFor(name, speed) {
   return facts;
 }
 
+// детерминированная фраза строго из фактов — фолбэк, если модель недоступна ИЛИ вышла за 6 слов
+function factPhrase(f) {
+  if (f.leadsInWork != null && f.statusMismatch != null) return `${f.leadsInWork} лидов, ${f.statusMismatch} без статуса`;
+  if (f.leadsInWork != null) return `${f.leadsInWork} лидов в работе`;
+  if (f.statusMismatch != null) return `${f.statusMismatch} лидов без статуса`;
+  return "в работе";
+}
 function factsToPrompt(f) {
   const lines = [`Менеджер: ${f.name}.`];
   if (f.leadsInWork != null) lines.push(`Лидов в работе сегодня: ${f.leadsInWork}.`);
@@ -76,11 +84,10 @@ async function build(force) {
     const f = factsFor(name, speed);
     let phrase = "";
     try { phrase = await callModel(SYSTEM, factsToPrompt(f), 40); }
-    catch (e) { phrase = f.leadsInWork != null ? `${f.leadsInWork} лидов в работе` : "в работе"; } // фолбэк без модели
+    catch (e) { phrase = factPhrase(f); } // модель недоступна → детерминированный факт
     phrase = phrase.replace(/^["'«»]+|["'«».]+$/g, "").trim();
-    // подстраховка на жёсткий лимит ≤6 слов (если модель всё же превысит — обрезаем)
-    const words = phrase.split(/\s+/).filter(Boolean);
-    if (words.length > 6) phrase = words.slice(0, 6).join(" ");
+    // жёсткий лимит ≤6 слов: НЕ обрезаем (это ломает фразу), а заменяем на детерминированный факт
+    if (phrase.split(/\s+/).filter(Boolean).length > 6 || phrase.length < 2) phrase = factPhrase(f);
     out.push({ name, facts: f, phrase });
   }
   await rsetJSON("scenebubbles:hunter", { at: Date.now(), items: out }, CACHE_MIN * 60);
