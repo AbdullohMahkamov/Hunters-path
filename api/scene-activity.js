@@ -35,6 +35,41 @@ async function rset(key, v) { try { await fetch(`${REDIS_URL}/set/${encodeURICom
 async function rsetTTL(key, v, ttlSec) { try { await fetch(`${REDIS_URL}/set/${encodeURIComponent(key)}?EX=${ttlSec}`, { method: "POST", headers: { Authorization: `Bearer ${REDIS_TOKEN}` }, body: JSON.stringify(v) }); } catch (e) {} }
 async function sessionRole(session) { if (!session) return null; try { const raw = await rget(`session:${encodeURIComponent(session)}`); return raw ? JSON.parse(raw).role : null; } catch (e) { return null; } }
 
+// ДИАГНОСТИКА (только preview): последнее событие каждого МОПа за широкое окно (не привязано к порогу позы),
+// чтобы разобрать ПРИРОДУ активности даже если событие старше 35-мин окна. Возвращает {имя: {type,entity_type,entity_id,created_at,value_after}}.
+async function diagLastEvents(hoursBack) {
+  const token = process.env.AMOCRM_TOKEN;
+  const H = { Authorization: `Bearer ${token}` };
+  const base = `https://${SUBDOMAIN}.amocrm.ru/api/v4`;
+  const from = Math.floor(Date.now() / 1000) - hoursBack * 3600;
+  const lastEv = {};
+  let page = 1;
+  while (page <= 8) { // порядок created_at desc → новейшее событие юзера в первых страницах, даже если оборвём
+    let r;
+    try { r = await fetch(`${base}/events?limit=100&page=${page}&order[created_at]=desc&filter[created_at][from]=${from}`, { headers: H }); }
+    catch (e) { break; }
+    if (r.status === 204 || !r.ok) break;
+    const d = await r.json();
+    const events = (d._embedded && d._embedded.events) || [];
+    for (const e of events) {
+      const u = e.created_by;
+      const cur = lastEv[u];
+      if (!cur || (e.created_at || 0) > cur.created_at) {
+        const va = e.value_after && e.value_after[0] ? e.value_after[0] : null;
+        lastEv[u] = { type: e.type, entity_type: e.entity_type, entity_id: e.entity_id, created_at: e.created_at, value_after: va };
+      }
+    }
+    if (events.length < 100) break;
+    page++;
+  }
+  const out = {};
+  for (const [uid, name] of Object.entries(MOPS)) {
+    const ev = lastEv[uid];
+    out[name] = ev ? { ...ev, minAgo: Math.round((Math.floor(Date.now() / 1000) - ev.created_at) / 60) } : null;
+  }
+  return out;
+}
+
 async function build(cfg, opts) {
   const forceOnHours = !!(opts && opts.forceOnHours); // админ-диагностика: пропустить off-hours, чтобы увидеть гейт absent/bypass в нерабочее время (журнал НЕ пишем)
   const token = process.env.AMOCRM_TOKEN;
@@ -137,6 +172,9 @@ export default async function handler(req, res) {
     const r = await build(cfg, { forceOnHours: force });
     if (!force) await updateJournal(r.items);
     else r.probe = "forceOnHours: off-hours пропущен для проверки гейта; журнал НЕ записан";
+    const hrs = Math.min(48, Math.max(1, parseInt(q.diagHours || b.diagHours || "12", 10) || 12));
+    r.lastEvents = await diagLastEvents(hrs); // широкое окно: последнее событие каждого МОПа + его minAgo/type
+    r.diagWindowHours = hrs;
     res.status(200).json(r); return;
   }
   // state — кэш для сцены (5 мин). Журнал обновляется при каждой пересборке.
