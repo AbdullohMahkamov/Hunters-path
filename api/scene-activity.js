@@ -37,7 +37,8 @@ async function rset(key, v) { try { await fetch(`${REDIS_URL}/set/${encodeURICom
 async function rsetTTL(key, v, ttlSec) { try { await fetch(`${REDIS_URL}/set/${encodeURIComponent(key)}?EX=${ttlSec}`, { method: "POST", headers: { Authorization: `Bearer ${REDIS_TOKEN}` }, body: JSON.stringify(v) }); } catch (e) {} }
 async function sessionRole(session) { if (!session) return null; try { const raw = await rget(`session:${encodeURIComponent(session)}`); return raw ? JSON.parse(raw).role : null; } catch (e) { return null; } }
 
-async function build(cfg) {
+async function build(cfg, opts) {
+  const forceOnHours = !!(opts && opts.forceOnHours); // админ-диагностика: пропустить off-hours, чтобы увидеть гейт absent/bypass в нерабочее время (журнал НЕ пишем)
   const token = process.env.AMOCRM_TOKEN;
   const H = { Authorization: `Bearer ${token}` };
   const base = `https://${SUBDOMAIN}.amocrm.ru/api/v4`;
@@ -66,7 +67,7 @@ async function build(cfg) {
   if (page > 6) truncated = true;
 
   const tkHour = new Date(Date.now() + 5 * 3600000).getUTCHours();
-  const offHours = tkHour < cfg.workStartHour || tkHour >= cfg.workEndHour;
+  const offHours = !forceOnHours && (tkHour < cfg.workStartHour || tkHour >= cfg.workEndHour);
   const now = Math.floor(Date.now() / 1000);
 
   const items = Object.entries(MOPS).map(([uid, name]) => {
@@ -120,7 +121,10 @@ export default async function handler(req, res) {
   }
   if (action === "preview") { // админ: пересобрать + зафиксировать журнал + вернуть детали
     if ((await sessionRole(q.session || b.session)) !== "admin") { res.status(403).json({ error: "admin only" }); return; }
-    const r = await build(cfg); await updateJournal(r.items);
+    const force = q.force === "1" || b.force === "1"; // read-only диагностика: игнорировать off-hours, журнал НЕ трогать
+    const r = await build(cfg, { forceOnHours: force });
+    if (!force) await updateJournal(r.items);
+    else r.probe = "forceOnHours: off-hours пропущен для проверки гейта; журнал НЕ записан";
     res.status(200).json(r); return;
   }
   // state — кэш для сцены (5 мин). Журнал обновляется при каждой пересборке.
