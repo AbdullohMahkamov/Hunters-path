@@ -34,6 +34,8 @@ const FLOWS = {
   d2g: { from: 'dev', to: 'growth', sHand: [128, 66], rHand: [128, 178], label: 'воронка' },
   m2t: { from: 'mop', to: 'task', sHand: [262, 180], rHand: [238, 180], label: 'находки' },
 }
+// точки «отлучки» для состояния away (кулер / принтер отдела продаж)
+const AMENITY = [[176, 150], [316, 196]]
 const ROOM_LABELS = [{ t: 'Техническая', x: 78, y: 42 }, { t: 'Аналитика', x: 78, y: 138 }, { t: 'Отдел продаж', x: 250, y: 42 }]
 const DIRCOL = { left: 0, up: 6, right: 12, down: 18 }
 // logFlow (from>to) → ключ FLOWS
@@ -65,7 +67,7 @@ export default function ScenePanel({ active = true }) {
         id, el, spr: el.querySelector('.scn-spr'), bub: el.querySelector('.scn-bub'), fsign: el.querySelector('.scn-fsign'), flab: el.querySelector('.scn-fsign i'),
         decorative, x, y, tx: x, ty: y, dir: 'down', walking: false, frame: 0, ft: 0, waiting: false, queue: [], nextPause: 0, nextFlag: 0, curFlag: 0, arrived: false, pauseUntil: 0,
         bubOn: false, bubUntil: 0, bubHideUntil: 1500 + Math.random() * 3000, pts: null, home: null, homeDir: 'down',
-        sayWork: '', sayWait: '', phrase: null,
+        sayWork: '', sayWait: '', phrase: null, actState: 'active', // active|away|quiet|idle|unknown (из scene-activity)
       }
       a.spr.style.backgroundImage = 'url(' + imgFor(id) + ')'
       return a
@@ -80,6 +82,7 @@ export default function ScenePanel({ active = true }) {
       a.spr.style.backgroundPosition = (-(col * 16)) + 'px ' + (-blockY) + 'px'
       a.el.style.left = (a.x - 8) + 'px'; a.el.style.top = (a.y - 32) + 'px'; a.el.style.zIndex = Math.round(a.y)
       a.el.classList.toggle('idle', !a.walking)
+      a.el.classList.toggle('scn-still', a.decorative && a.actState === 'quiet') // quiet → без покачивания (нейтральный простой)
       a.fsign.classList.toggle('on', !a.walking && a.curFlag === 'flow' && performance.now() < a.pauseUntil)
     }
     for (const a of ALL) draw(a)
@@ -87,8 +90,18 @@ export default function ScenePanel({ active = true }) {
     const goPath = (a, steps) => { const f = steps[0]; a.tx = f[0]; a.ty = f[1]; a.nextPause = f[2] || 0; a.nextFlag = f[3] || 0; a.arrived = false; a.queue = steps.slice(1) }
     const randWP = (a) => { const p = a.pts; let w; do { w = p[(Math.random() * p.length) | 0] } while (w[0] === a.tx && w[1] === a.ty && p.length > 1); return w }
     function decide(a) { if (a.waiting) { goPath(a, [[...ZONES[a.id].att, 900]]); return } goPath(a, [[...randWP(a), 1400 + Math.random() * 2600]]) }
+    // МОП: только в состоянии away иногда отходит к кулеру/принтеру; active/quiet/idle — стоит у стола
+    function decideDecor(a) {
+      if (a.actState === 'away' && Math.random() < 0.5) { const m = AMENITY[(Math.random() * AMENITY.length) | 0]; goPath(a, [[m[0], m[1], 2600 + Math.random() * 1800], [a.home[0], a.home[1], 4000 + Math.random() * 4000]]) }
+      else goPath(a, [[a.home[0], a.home[1], 4000 + Math.random() * 4000]])
+    }
     function bubble(a, t) {
-      if (a.decorative) return
+      if (a.decorative) { // ФАКТИЧЕСКИЙ пузырь МОПа (scene-bubbles) — независимо от позы
+        if (!a.phrase) return
+        if (a.bubOn) { if (t > a.bubUntil) { a.bubOn = false; a.bub.classList.remove('on'); a.bubHideUntil = t + 10000 + Math.random() * 8000 } }
+        else if (t > a.bubHideUntil) { a.bubOn = true; a.bub.textContent = a.phrase; a.bub.classList.remove('wait'); a.bub.classList.add('on'); a.bubUntil = t + 4200 }
+        return
+      }
       if (a.bubOn) { if (t > a.bubUntil) { a.bubOn = false; a.bub.classList.remove('on'); a.bubHideUntil = t + 5000 + Math.random() * 5000 } }
       else if (t > a.bubHideUntil) {
         const txt = a.waiting ? (a.sayWait || a.sayWork) : a.sayWork
@@ -100,20 +113,14 @@ export default function ScenePanel({ active = true }) {
     function tick(t) {
       if (!last) last = t; const dt = Math.min(50, t - last); last = t
       for (const a of ALL) {
-        if (a.decorative) {
-          a.walking = false; a.dir = a.homeDir
-          if (a.phrase) { // ФАКТИЧЕСКИЙ пузырь МОПа (scene-bubbles): показать ~4с, спрятать, повторить
-            if (a.bubOn) { if (t > a.bubUntil) { a.bubOn = false; a.bub.classList.remove('on'); a.bubHideUntil = t + 10000 + Math.random() * 8000 } }
-            else if (t > a.bubHideUntil) { a.bubOn = true; a.bub.textContent = a.phrase; a.bub.classList.add('on'); a.bubUntil = t + 4200 }
-          }
-          draw(a); continue
-        }
         const dx = a.tx - a.x, dy = a.ty - a.y, d = Math.hypot(dx, dy)
         if (d > ARR) { const s = SPEED * dt / 1000, k = Math.min(1, s / d); a.x += dx * k; a.y += dy * k; a.walking = true; a.arrived = false; a.dir = Math.abs(dx) > Math.abs(dy) ? (dx < 0 ? 'left' : 'right') : (dy < 0 ? 'up' : 'down'); a.ft += dt; if (a.ft > FRAME_MS) { a.ft = 0; a.frame = (a.frame + 1) % 6 } }
         else {
           a.walking = false; a.frame = 0
           if (!a.arrived) { a.arrived = true; a.pauseUntil = t + (a.nextPause || 0); a.curFlag = a.nextFlag; a.nextFlag = 0; if (a.waiting && a.curFlag !== 'flow') a.dir = 'down' }
-          if (t >= a.pauseUntil) { if (a.queue.length) { const n = a.queue.shift(); a.tx = n[0]; a.ty = n[1]; a.nextPause = n[2] || 0; a.nextFlag = n[3] || 0; a.arrived = false } else decide(a) }
+          // МОП у своего стола — лицом к монитору
+          if (a.decorative && a.curFlag !== 'flow' && Math.abs(a.x - a.home[0]) < 2 && Math.abs(a.y - a.home[1]) < 2) a.dir = a.homeDir
+          if (t >= a.pauseUntil) { if (a.queue.length) { const n = a.queue.shift(); a.tx = n[0]; a.ty = n[1]; a.nextPause = n[2] || 0; a.nextFlag = n[3] || 0; a.arrived = false } else (a.decorative ? decideDecor(a) : decide(a)) }
         }
         bubble(a, t); draw(a)
       }
@@ -148,10 +155,19 @@ export default function ScenePanel({ active = true }) {
         for (const f of flows) { if (f.at > lastFlowAt) { const key = FLOW_KEY[`${f.from}>${f.to}`]; if (key) triggerFlow(key); lastFlowAt = Math.max(lastFlowAt, f.at) } }
       } catch (e) { /* нет события — нет встречи */ }
     }
-    pollAgents(); pollBubbles(); pollFlows()
+    // ПОЗА МОПов из активности в CRM (scene-activity): active/away/quiet/idle/unknown. Тот же кэш 5 мин.
+    async function pollActivity() {
+      try {
+        const r = await fetch('/api/scene-activity?action=state&session=' + encodeURIComponent(getSession()))
+        const d = await r.json(); if (!d || !d.items) return
+        for (const it of d.items) { const dec = DECOR.find((x) => x.name === it.name); if (dec && A[dec.id] && it.state !== 'unknown') A[dec.id].actState = it.state } // unknown → позу не трогаем
+      } catch (e) { /* нет данных — поза не меняется */ }
+    }
+    pollAgents(); pollBubbles(); pollFlows(); pollActivity()
     timers.push(setInterval(pollAgents, 15000))   // статус/находки агентов
     timers.push(setInterval(pollBubbles, 5 * 60000)) // пузыри МОПов (кэш 5 мин)
     timers.push(setInterval(pollFlows, 12000))     // события передачи данных
+    timers.push(setInterval(pollActivity, 5 * 60000)) // активность → поза (кэш 5 мин)
 
     fit()
     return () => { stopped = true; cancelAnimationFrame(raf); timers.forEach(clearInterval); window.removeEventListener('resize', onResize); if (host) host.innerHTML = '' }
