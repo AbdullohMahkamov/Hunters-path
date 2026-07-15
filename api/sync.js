@@ -350,18 +350,19 @@ export default async function handler(req, res) {
 
       // === МЕТРИКИ КОМАНДЫ: только пятёрка ===
       if (mop) {
-        if (!byMop[mop]) byMop[mop] = { leads: 0, sold: 0, revenue: 0, noContact: 0, soldToday: 0, revenueToday: 0 };
+        if (!byMop[mop]) byMop[mop] = { leads: 0, sold: 0, revenue: 0, noContact: 0, soldToday: 0, revenueToday: 0, ncReasons: {}, ncStages: {}, denomStages: {} };
 
         // ЗА МЕСЯЦ: объём лидов и дозвон — по созданным в этом месяце
         if (createdThisMonth) {
           byMop[mop].leads++;
+          byMop[mop].denomStages[stName] = (byMop[mop].denomStages[stName] || 0) + 1; // ДИАГ: состав знаменателя по текущему этапу
           if (stName === CLOSED_LOST) {
             let reason = "";
             const lossId = L.loss_reason_id || (L._embedded && L._embedded.loss_reason && L._embedded.loss_reason[0] && L._embedded.loss_reason[0].id);
             if (lossId && lossName[lossId]) reason = lossName[lossId];
-            if (NO_CONTACT_REASONS.has(reason)) { noContact++; byMop[mop].noContact++; }
+            if (NO_CONTACT_REASONS.has(reason)) { noContact++; byMop[mop].noContact++; byMop[mop].ncReasons[reason] = (byMop[mop].ncReasons[reason] || 0) + 1; } // ДИАГ: недозвон по причине потери
           } else if (NO_CONTACT_STAGES.has(stName)) {
-            noContact++; byMop[mop].noContact++;
+            noContact++; byMop[mop].noContact++; byMop[mop].ncStages[stName] = (byMop[mop].ncStages[stName] || 0) + 1; // ДИАГ: недозвон по этапу
           }
         }
         // ЗА ОКНО АУДИТА: лиды и недозвон
@@ -510,6 +511,7 @@ export default async function handler(req, res) {
       reachPct: v.leads > 0 ? +((v.leads - v.noContact) / v.leads * 100).toFixed(0) : 0, // % дозвона
       reached: Math.max(0, v.leads - v.noContact), // сколько дозвонились (штук)
       dealCycleDays: medianOf(mopDurations[name]), // медианный цикл сделки «создан→продан» по МОПу (дни)
+      _diag: { noContact: v.noContact, ncReasons: v.ncReasons, ncStages: v.ncStages, denomStages: v.denomStages }, // ДИАГ (read-only): состав недозвона и знаменателя
     }));
     const mopsByConv = [...mops].sort((a, b) => b.conv - a.conv);
     const mopsBySales = [...mops].sort((a, b) => b.sold - a.sold);
