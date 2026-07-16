@@ -45,16 +45,15 @@ export default async function handler(req, res) {
     for (const it of items) {
       try {
         if (!it.link || !it.crm_manager_id) { out.push({ leadId: it.leadId || null, ok: false, error: "нужны link и crm_manager_id" }); continue; }
-        const ar = await fetch(it.link, { signal: AbortSignal.timeout(30000) });
-        if (!ar.ok) { out.push({ leadId: it.leadId, ok: false, error: `скачивание аудио: HTTP ${ar.status}` }); continue; }
-        const buf = Buffer.from(await ar.arrayBuffer());
+        // DeepSales поддерживает audio_url — передаём ссылку на запись, он сам её скачивает
+        // (запись Utel публична, CORS *). Легче, чем качать+заливать через нас.
         const fd = new FormData();
-        fd.append("file", new Blob([buf], { type: "audio/wav" }), `call_${it.leadId || "x"}.wav`);
+        fd.append("audio_url", it.link);
         fd.append("crm_manager_id", String(it.crm_manager_id));
         const r = await fetch(`${DS}/api/crm/audio-analyze`, { method: "POST", headers: { Authorization: basic, Accept: "application/json" }, body: fd, signal: AbortSignal.timeout(90000) });
         let body; try { body = await r.json(); } catch (e) { body = { _text: (await r.text().catch(() => "")).slice(0, 200) }; }
         const aid = body.audio_id || body.id || (body.data && (body.data.audio_id || body.data.id)) || null;
-        out.push({ leadId: it.leadId, ok: r.status < 300, status: r.status, audio_id: aid, bytes: buf.length, seconds: it.duration || null, resp: body });
+        out.push({ leadId: it.leadId, ok: r.status < 300, status: r.status, audio_id: aid, seconds: it.duration || null, resp: body });
       } catch (e) { out.push({ leadId: it.leadId, ok: false, error: String(e).slice(0, 140) }); }
       await sleep(1200); // 60/мин dashboard — с запасом
     }
