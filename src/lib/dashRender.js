@@ -107,15 +107,16 @@ export function applyLiveDash(d) {
   set('mkNoContact', (noContactVal != null ? noContactVal : 0) + '%')
   loadOverviewExtras()
 
-  // Топ по продажам — по ВЫРУЧКЕ (сортировка, бар и значение)
-  const bySales = [...(d.mopsBySales || [])].sort((a, b) => (b.revenue || 0) - (a.revenue || 0))
-  const maxRev = Math.max(1, ...bySales.map((m) => m.revenue || 0))
+  // Топ по продажам. Есть выручка → по выручке; выручка не отслеживается → по КОЛИЧЕСТВУ продаж.
+  const topVal = (m) => _revTracked ? (m.revenue || 0) : (m.sold || 0)
+  const bySales = [...(d.mopsBySales || [])].sort((a, b) => topVal(b) - topVal(a))
+  const maxTop = Math.max(1, ...bySales.map(topVal))
   const topEl = document.getElementById('topSalesChart')
   if (topEl) topEl.innerHTML = bySales.map((m, i) => `
     <div class="mop-row">
       <div class="mop-name">${i + 1}. ${escapeHtml(m.name)}</div>
-      <div class="mop-bar-wrap"><div class="mop-bar" style="width:${Math.round((m.revenue || 0) / maxRev * 100)}%;background:var(--accent);"></div></div>
-      <div class="mop-val">${fmtSum(m.revenue || 0)}</div>
+      <div class="mop-bar-wrap"><div class="mop-bar" style="width:${Math.round(topVal(m) / maxTop * 100)}%;background:var(--accent);"></div></div>
+      <div class="mop-val">${_revTracked ? fmtSum(m.revenue || 0) : ((m.sold || 0) + (uzL ? ' sotuv' : ' прод.'))}</div>
     </div>`).join('') || '<div style="font-size:12px;color:var(--txt3);">Нет данных за месяц</div>'
 
   renderPlanFact(d)
@@ -153,6 +154,13 @@ function renderForecast(d) {
   _lastDashData = d
   const box = document.getElementById('forecastChart'); if (!box) return
   const uz = state.lang === 'uz'
+  // Выручка не отслеживается (CRM не отдаёт оплаты) → денежный прогноз/цель бессмысленны. Не показываем.
+  if (!_revTracked) {
+    box.innerHTML = `<div style="background:var(--card);border:1px solid var(--line);border-radius:10px;padding:16px;font-size:12.5px;color:var(--txt2);line-height:1.5;">${uz
+      ? 'Tushum kuzatilmaydi — CRM to‘lov summalarini bermayapti, shu sabab pul bo‘yicha prognoz/maqsad ko‘rsatilmaydi. Sotuvlar soni, konversiya va dozvon metrikalar yuqoridagi bo‘limlarda.'
+      : 'Выручка не отслеживается — CRM не передаёт суммы оплат, поэтому денежный прогноз и цель не показываются. Метрики по количеству продаж, конверсии и дозвону — в разделах выше.'}</div>`
+    return
+  }
   const t = (d && d.totals) || {}
   const earned = t.revenue || 0
   const goal = getGoal()
@@ -274,6 +282,8 @@ function renderVelocity(d) {
 
 function renderPlanFact(d) {
   const box = document.getElementById('planFactChart'); if (!box) return
+  const uzPF = state.lang === 'uz'
+  if (!_revTracked) { box.innerHTML = `<div style="font-size:12px;color:var(--txt3);padding:6px 0;">${uzPF ? 'Tushum kuzatilmaydi — pul rejasi/fakti mavjud emas.' : 'Выручка не отслеживается — план/факт по деньгам недоступен.'}</div>`; return }
   const mops = d.mopsBySales || []
   if (!mops.length) { box.innerHTML = '<div style="font-size:12px;color:var(--txt3);">Нет данных. Обновите из amoCRM.</div>'; return }
   const goal = getGoal()

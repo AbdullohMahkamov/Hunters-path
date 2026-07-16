@@ -123,8 +123,10 @@ export default function AppShell({ onLogout }) {
   // роль РОПа: скрыть чувствительные блоки внутри дашборда (applyRole, 1:1 по IDs)
   useEffect(() => {
     if (!bootedRef.current) return
+    // Финансы — пока hunter-only (одна таблица Google Sheets). Прячем от РОПа И от клиентов (не hunter),
+    // чтобы клиент не видел финансы Hunter Academy. Per-org финансы — отдельная задача.
     const finTab = document.getElementById('dtab-finance')
-    if (finTab) finTab.style.display = isRop ? 'none' : ''
+    if (finTab) finTab.style.display = (isRop || org !== 'hunter') ? 'none' : ''
     const prof = document.getElementById('kpiProfit')
     if (prof && prof.closest('.dcard')) prof.closest('.dcard').style.display = isRop ? 'none' : ''
     const salesSum = document.getElementById('overviewSalesSum')

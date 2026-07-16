@@ -291,6 +291,7 @@ export default async function handler(req, res) {
     // ЗАЩИТА: РОП не имеет доступа к финансам (чувствительные данные владельца)
     const session = (req.body && req.body.session) || (req.query && req.query.session) || "";
     const rurl = process.env.UPSTASH_REDIS_REST_URL, rtok = process.env.UPSTASH_REDIS_REST_TOKEN;
+    let sessOrg = "hunter";
     if (session && rurl) {
       try {
         const sr = await fetch(`${rurl}/get/session:${encodeURIComponent(session)}`, { headers: { Authorization: `Bearer ${rtok}` } });
@@ -298,9 +299,13 @@ export default async function handler(req, res) {
         if (sd && sd.result) {
           const info = JSON.parse(sd.result);
           if (info && info.role === "rop") { res.status(403).json({ error: "forbidden", msg: "Финансы недоступны для этой роли" }); return; }
+          if (info && info.org) sessOrg = info.org;
         }
       } catch (e) { /* если проверка не удалась — продолжаем, фронт всё равно скрывает */ }
     }
+    // Финансы читаются из ОДНОЙ зашитой таблицы Hunter Academy. Для любой другой org отдаём пусто,
+    // иначе клиент увидел бы финансы Hunter Academy (кросс-теннант утечка). Per-org финансы — отдельно.
+    if (sessOrg !== "hunter") { res.status(200).json({ ok: true, notConfigured: true, org: sessOrg }); return; }
 
     const action = (req.body && req.body.action) || (req.query && req.query.action) || "";
     const curMonth = new Date().getMonth() + 1;
