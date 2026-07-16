@@ -33,8 +33,9 @@ const DEFAULT_CONFIG = {
   niche: "онлайн-образование, продажа онлайн-курсов (edtech), B2C",
   cadence: process.env.GROWTH_CADENCE || "weekly",      // 'weekly' (MVP, снижение расходов: 1 прогон/нед) | 'daily' — через env GROWTH_CADENCE
   cronDay: 1,                                           // для weekly: 1=Пн (МСК)
-  webMaxSearches: 4,                                    // 3-4 запроса за прогон
+  webMaxSearches: 2,                                    // 2 запроса за прогон (снижение расходов; было 4)
   searchDedupDays: 3,                                   // не повторять тему поиска, если искалась за N дней
+  searchEveryDays: 14,                                  // web-поиск бенчмарков не чаще раза в N дней; между ними полный прогон БЕЗ поиска
   // ── ЛЁГКИЙ / ПОЛНЫЙ ПРОГОН (поверх cadence — потолок частоты не отменяется) ──
   maxLightStreak: 2,       // не больше 2 лёгких подряд → на 3-й обязательно полный (с web_search)
   forceFullEveryDays: 7,   // абсолютный предохранитель
@@ -124,6 +125,16 @@ async function callModelWithSearch(system, user, webMax) {
   const d = await r.json(); const u = d.usage || {};
   return { content: d.content || [], tokens: (u.input_tokens || 0) + (u.output_tokens || 0) };
 }
+// Полный прогон БЕЗ web_search (в недели между поисками): анализ на verified-воронке + уже найденных источниках. Дешевле — нет ~50k токенов результатов поиска.
+async function callModelPlain(system, user, maxTokens) {
+  const r = await fetch("https://api.anthropic.com/v1/messages", {
+    method: "POST", headers: { "content-type": "application/json", "x-api-key": AKEY, "anthropic-version": "2023-06-01" },
+    body: JSON.stringify({ model: MODEL, max_tokens: maxTokens, system, messages: [{ role: "user", content: user }] }),
+  });
+  if (!r.ok) { const t = await r.text(); throw new Error(`Anthropic ${r.status}: ${t.slice(0, 400)}`); }
+  const d = await r.json(); const u = d.usage || {};
+  return { content: d.content || [], tokens: (u.input_tokens || 0) + (u.output_tokens || 0) };
+}
 
 // ── PRECHECK: лёгкий или полный прогон? (дёшево, БЕЗ модели и БЕЗ web_search) ──
 // Поверх cadence: агент не может сделать БОЛЬШЕ прогонов, только ДЕШЕВЛЕ.
@@ -203,9 +214,19 @@ async function runGrowth(forceFull) {
     return { ok: true, runMode: "light", reason: decision.reason, report, hypotheses: openHyps.length, searches: 0, newSources: 0, tokens: lightTokens };
   }
 
-  // ── ПОЛНЫЙ ПРОГОН: с web_search ──
-  const user = buildUser({ funnel, niche: cfg.niche, recentQueries, tested, openHyps });
-  const { content, tokens } = await callModelWithSearch(SYSTEM, user, cfg.webMaxSearches);
+  // ── ПОЛНЫЙ ПРОГОН ──
+  // web-поиск бенчмарков не чаще раза в searchEveryDays; в недели МЕЖДУ поисками — полный анализ БЕЗ поиска
+  const rm0 = await rgetJSON(K.runmode, {});
+  const searchDue = !rm0.lastSearchAt || (Date.now() - rm0.lastSearchAt) >= (cfg.searchEveryDays || 14) * 86400000;
+  const baseUser = buildUser({ funnel, niche: cfg.niche, recentQueries, tested, openHyps });
+  const user = searchDue ? baseUser
+    : `РЕЖИМ: полный анализ БЕЗ нового web-поиска (внешние бенчмарки искали недавно, следующий поиск позже по расписанию).
+Опирайся на verified-воронку и УЖЕ найденные источники (в блоке ниже). Можешь уточнить/переоценить существующие гипотезы, но НЕ ссылайся на новые внешние бенчмарки, которых нет.
+
+${baseUser}`;
+  const { content, tokens } = searchDue
+    ? await callModelWithSearch(SYSTEM, user, cfg.webMaxSearches)
+    : await callModelPlain(SYSTEM, user, 4000);
   const { text, searchLog } = extractWeb(content);
   let out; try { out = parseJSON(text); } catch (e) { return { ok: false, error: "parse_failed", raw: text.slice(0, 500) }; }
 
@@ -242,7 +263,7 @@ async function runGrowth(forceFull) {
   const undiagnosable = Array.isArray(out.undiagnosable) ? out.undiagnosable : [];
   await rsetJSON(K.lastRun, { day: dayKey(), week: weekKey(), at: Date.now(), report, undiagnosable, tokens, searches: searchLog.length, hypCount: hypotheses.length, runMode: "full", runReason: decision.reason });
   // ПОЛНЫЙ прогон → фиксируем отпечаток воронки, обнуляем счётчик лёгких (сравнение идёт с ним, а не со вчера)
-  await rsetJSON(K.runmode, { lastFullAt: Date.now(), lastFullDay: dayKey(), lightStreak: 0, snapshot: funnelFingerprint(funnel) });
+  await rsetJSON(K.runmode, { lastFullAt: Date.now(), lastFullDay: dayKey(), lightStreak: 0, snapshot: funnelFingerprint(funnel), lastSearchAt: searchDue ? Date.now() : (rm0.lastSearchAt || null) });
   return { ok: true, runMode: "full", reason: decision.reason, report, undiagnosable, hypotheses: hypotheses.length, newSources: newSourceEntries.length, searches: searchLog.length, tokens };
 }
 
@@ -308,7 +329,7 @@ export default async function handler(req, res) {
       if (typeof inc.clientOrg === "string" && inc.clientOrg.trim()) next.clientOrg = inc.clientOrg.trim();
       if (typeof inc.niche === "string" && inc.niche.trim()) next.niche = inc.niche.trim();
       if (inc.cadence === "daily" || inc.cadence === "weekly") next.cadence = inc.cadence;
-      for (const k of ["cronDay", "webMaxSearches", "searchDedupDays"]) if (typeof inc[k] === "number" && isFinite(inc[k]) && inc[k] >= 0) next[k] = inc[k];
+      for (const k of ["cronDay", "webMaxSearches", "searchDedupDays", "searchEveryDays"]) if (typeof inc[k] === "number" && isFinite(inc[k]) && inc[k] >= 0) next[k] = inc[k];
       await rsetJSON(K.config, next);
       res.status(200).json({ ok: true, config: next }); return;
     }
