@@ -218,13 +218,25 @@ async function probeClient() {
     if (!d.ok) { box.innerHTML = '<div style="font-size:11.5px;color:var(--red);">' + (d.error || 'Ошибка связи') + '</div>'; return }
     _probeData = d
     const pipeOpts = d.pipelines.map((p) => `<option value="${p.id}">${escapeHtml(p.name)}</option>`).join('')
+    const lr = d.lossReasons || []
+    const rBox = (cls) => lr.length
+      ? lr.map((r) => `<label style="display:flex;gap:7px;align-items:center;font-size:12px;padding:3px;"><input type="checkbox" class="${cls}" value="${r.id}" data-name="${escapeHtml(r.name)}">${escapeHtml(r.name)}</label>`).join('')
+      : '<div style="font-size:11px;color:var(--txt3);">Причины потери в amoCRM не найдены (можно добавить позже)</div>'
     box.innerHTML = `<div style="background:var(--card);border:1px solid var(--green);border-radius:8px;padding:10px;margin:6px 0;">
-      <div style="font-size:11.5px;color:var(--green);margin-bottom:8px;">✓ Связь есть! Воронок: ${d.pipelines.length}, менеджеров: ${d.users.length}</div>
+      <div style="font-size:11.5px;color:var(--green);margin-bottom:8px;">✓ Связь есть! Воронок: ${d.pipelines.length}, менеджеров: ${d.users.length}, причин потери: ${lr.length}</div>
       <div style="font-size:11px;color:var(--txt2);margin-bottom:3px;">Воронка</div>
       <select id="cf_pipe" onchange="onPipeChange()" style="width:100%;padding:7px;border-radius:7px;border:1px solid var(--line2);background:var(--bg);color:var(--txt);font-size:12.5px;margin-bottom:8px;">${pipeOpts}</select>
       <div id="cf_statuses"></div>
       <div style="font-size:11px;color:var(--txt2);margin:8px 0 3px;">Менеджеры (отметьте продажников)</div>
       <div id="cf_users" style="max-height:140px;overflow-y:auto;border:1px solid var(--line);border-radius:7px;padding:6px;">${d.users.map((u) => `<label style="display:flex;gap:7px;align-items:center;font-size:12px;padding:3px;"><input type="checkbox" class="cf_mop" value="${u.id}" data-name="${escapeHtml(u.name)}">${escapeHtml(u.name)}</label>`).join('')}</div>
+      <div style="border-top:1px dashed var(--line);margin-top:10px;padding-top:8px;">
+        <div style="font-size:11px;color:var(--txt2);margin-bottom:3px;">«Не дозвонились» — причины потери (нужно для % дозвона)</div>
+        <div style="max-height:120px;overflow-y:auto;border:1px solid var(--line);border-radius:7px;padding:6px;">${rBox('cf_ncr')}</div>
+        <div style="font-size:11px;color:var(--txt2);margin:8px 0 3px;">Брак данных — неверный номер / дубль (исключить из дозвона)</div>
+        <div style="max-height:100px;overflow-y:auto;border:1px solid var(--line);border-radius:7px;padding:6px;">${rBox('cf_fake')}</div>
+        <div style="font-size:11px;color:var(--txt2);margin:8px 0 3px;">Контакт БЫЛ — «не дали разрешение» и т.п. (считать дозвоном)</div>
+        <div style="max-height:100px;overflow-y:auto;border:1px solid var(--line);border-radius:7px;padding:6px;">${rBox('cf_contacted')}</div>
+      </div>
     </div>`
     onPipeChange()
   } catch (e) { box.innerHTML = '<div style="font-size:11.5px;color:var(--red);">' + String(e) + '</div>' }
@@ -241,13 +253,19 @@ function onPipeChange() {
     <label style="display:flex;gap:7px;align-items:center;font-size:12px;padding:3px;">
       <input type="checkbox" class="cf_dz" value="${s.id}">${escapeHtml(s.name)}
     </label>`).join('')
+  const ncBoxes = pipe.statuses.map((s) => `
+    <label style="display:flex;gap:7px;align-items:center;font-size:12px;padding:3px;">
+      <input type="checkbox" class="cf_nc" value="${escapeHtml(s.name)}">${escapeHtml(s.name)}
+    </label>`).join('')
   $('cf_statuses').innerHTML = `
     <div style="font-size:11px;color:var(--txt2);margin-bottom:3px;">Статус «Продажа»</div>
     <select id="cf_sold" style="width:100%;padding:7px;border-radius:7px;border:1px solid var(--line2);background:var(--bg);color:var(--txt);font-size:12.5px;margin-bottom:6px;">${opts}</select>
     <div style="font-size:11px;color:var(--txt2);margin-bottom:3px;">Статус «Отказ/Потеря»</div>
     <select id="cf_lost" style="width:100%;padding:7px;border-radius:7px;border:1px solid var(--line2);background:var(--bg);color:var(--txt);font-size:12.5px;margin-bottom:8px;">${opts}</select>
     <div style="font-size:11px;color:var(--txt2);margin-bottom:3px;">Этапы для расчёта % дозвона (этапы «входа»: новый лид, не дозвонились)</div>
-    <div style="max-height:140px;overflow-y:auto;border:1px solid var(--line);border-radius:7px;padding:6px;">${stageBoxes}</div>`
+    <div style="max-height:140px;overflow-y:auto;border:1px solid var(--line);border-radius:7px;padding:6px;margin-bottom:8px;">${stageBoxes}</div>
+    <div style="font-size:11px;color:var(--txt2);margin-bottom:3px;">Этапы «не дозвонились» (лид завис = разговора не было)</div>
+    <div style="max-height:120px;overflow-y:auto;border:1px solid var(--line);border-radius:7px;padding:6px;">${ncBoxes}</div>`
 }
 async function saveClient() {
   const g = (id) => { const e = $(id); return e ? e.value.trim() : '' }
@@ -263,10 +281,22 @@ async function saveClient() {
     const pipe = _probeData.pipelines.find((p) => String(p.id) === String($('cf_pipe').value))
     if (pipe) client.pipeline = pipe.name
     client.sold = g('cf_sold'); client.lost = g('cf_lost')
+    // id статусов продажи/потери (sync-speed работает по id, не по имени)
+    const st = (pipe && pipe.statuses) || []
+    const soldS = st.find((s) => s.name === client.sold), lostS = st.find((s) => s.name === client.lost)
+    client.soldStatus = soldS ? soldS.id : null
+    client.lostStatus = lostS ? lostS.id : null
     const mops = {}
     document.querySelectorAll('.cf_mop:checked').forEach((c) => { mops[c.value] = c.getAttribute('data-name') })
     client.mops = mops
     client.dozvonStages = Array.from(document.querySelectorAll('.cf_dz:checked')).map((c) => Number(c.value))
+    // «не дозвонились» этапы (имена) + причины потери по категориям (имена; id — для noReachReasonId)
+    client.noContactStages = Array.from(document.querySelectorAll('.cf_nc:checked')).map((c) => c.value)
+    client.noContactReasons = Array.from(document.querySelectorAll('.cf_ncr:checked')).map((c) => c.getAttribute('data-name'))
+    client.fakeNumReasons = Array.from(document.querySelectorAll('.cf_fake:checked')).map((c) => c.getAttribute('data-name'))
+    client.contactedReasons = Array.from(document.querySelectorAll('.cf_contacted:checked')).map((c) => c.getAttribute('data-name'))
+    const ncrIds = Array.from(document.querySelectorAll('.cf_ncr:checked')).map((c) => Number(c.value))
+    client.noReachReasonId = ncrIds.length ? ncrIds[0] : null
   }
   const btn = $('cf_saveBtn')
   if (btn) { btn.disabled = true; btn.textContent = 'Сохранение...' }

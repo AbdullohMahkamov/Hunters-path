@@ -130,6 +130,8 @@ export default async function handler(req, res) {
         noReachReasonId: c.noReachReasonId != null ? c.noReachReasonId : null,
         noContactReasons: c.noContactReasons || [],
         noContactStages: c.noContactStages || [],
+        fakeNumReasons: Array.isArray(c.fakeNumReasons) ? c.fakeNumReasons : [],   // брак (неверный номер/дубль) — вон из знаменателя дозвона
+        contactedReasons: Array.isArray(c.contactedReasons) ? c.contactedReasons : [], // контакт был (не дали разрешение) — считать дозвоном
         // этапы «входа» для % дозвона — отмечаются чекбоксами при онбординге, правятся в «Метрики»
         dozvonStages: Array.isArray(c.dozvonStages) ? c.dozvonStages.map(Number).filter(Boolean) : [],
       };
@@ -201,7 +203,10 @@ export default async function handler(req, res) {
         const ur = await fetch(`${base}/users?limit=250`, { headers: H });
         const ud = ur.ok ? await ur.json() : {};
         const users = ((ud._embedded && ud._embedded.users) || []).map(u => ({ id: u.id, name: u.name }));
-        res.status(200).json({ ok: true, pipelines, users });
+        // причины потери — для «не дозвонились» / брак (неверный номер, дубль) / «контакт был»
+        let lossReasons = [];
+        try { const lr = await fetch(`${base}/leads/loss_reasons?limit=250`, { headers: H }); if (lr.ok) { const ld = await lr.json(); lossReasons = ((ld._embedded && ld._embedded.loss_reasons) || []).map(x => ({ id: x.id, name: x.name })); } } catch (e) {}
+        res.status(200).json({ ok: true, pipelines, users, lossReasons });
       } catch (e) {
         res.status(200).json({ ok: false, error: String(e && e.message || e) });
       }
