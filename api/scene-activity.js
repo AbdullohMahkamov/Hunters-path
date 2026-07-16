@@ -2,9 +2,9 @@
 // Презентационный слой, ОТДЕЛЬНЫЙ от пузырей-фраз (scene-bubbles.js) — не смешивать.
 //
 // Каждый item несёт ДВА поля (по «последнему действию в amoCRM», ЛЮБОЙ тип события):
-//   pose  — ЧТО ДЕЛАЕТ ПЕРСОНАЖ В СЦЕНЕ:
-//           active(<activeMin)=покачивание · inactive(activeMin..absentMin)=«zzz» у стола ·
-//           leave(>=absentMin ИЛИ нет активности ИЛИ ночь)=выход за дверь · unknown(труркация)=«?» у стола
+//   pose  — ЧТО ДЕЛАЕТ ПЕРСОНАЖ В СЦЕНЕ (пороги: активен <15мин · спит 15-60 · ушёл >60):
+//           active(<activeMin=15)=покачивание · inactive(activeMin..absentMin=15..60)=«zzz» у стола ·
+//           leave(>=absentMin=60 ИЛИ нет активности ИЛИ ночь)=выход за дверь · unknown(труркация)=«?» у стола
 //   state — ЧТО ПИШЕТСЯ В ЖУРНАЛ (запись для реальных выводов о людях):
 //           active/inactive/absent/offHours(ночь≠прогул)/unknown(нет данных)
 //
@@ -27,7 +27,7 @@ const MOPS = { 13660834: "Komiljon", 13703650: "Samandar", 13904266: "Abdulla-Le
 const CACHE_MIN = 2; // 2 мин (было 5): сцена быстрее ловит возврат МОПа к работе — меньше лаг «вернулся, а фигурки нет»
 const JOURNAL_CAP = 800;
 // ПОРОГИ — в Redis (sceneactivity:config), здесь дефолты.
-const DEFAULT_CFG = { activeMin: 5, absentMin: 30, workStartHour: 9, workEndHour: 19 };
+const DEFAULT_CFG = { activeMin: 15, absentMin: 60, workStartHour: 9, workEndHour: 19 }; // активен <15мин · спит 15-60 · ушёл >60
 
 async function rget(key) { try { const r = await fetch(`${REDIS_URL}/get/${encodeURIComponent(key)}`, { headers: { Authorization: `Bearer ${REDIS_TOKEN}` } }); const d = await r.json(); return d && d.result != null ? d.result : null; } catch (e) { return null; } }
 async function rgetJSON(key, dflt) { const raw = await rget(key); if (raw == null) return dflt; try { return JSON.parse(raw); } catch (e) { return dflt; } }
@@ -86,7 +86,7 @@ async function build(cfg, opts) {
   const lastByUser = {};
   const lastEventByUser = {}; // диагностика: детали последнего события {type, entity_type, entity_id, created_at}
   let truncated = false, page = 1;
-  while (page <= 6) {
+  while (page <= 10) { // потолок страниц поднят 6→10: окно выросло до 65 мин (absentMin 60+5), чтобы не ловить ложную труркацию в час пик
     let r;
     try { r = await fetch(`${base}/events?limit=100&page=${page}&order[created_at]=desc&filter[created_at][from]=${from}`, { headers: H }); }
     catch (e) { truncated = true; break; }
@@ -104,7 +104,7 @@ async function build(cfg, opts) {
     if (events.length < 100) break;
     page++;
   }
-  if (page > 6) truncated = true;
+  if (page > 10) truncated = true;
 
   const tkHour = new Date(Date.now() + 5 * 3600000).getUTCHours();
   const offHours = !forceOnHours && (tkHour < cfg.workStartHour || tkHour >= cfg.workEndHour);
