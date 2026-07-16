@@ -290,7 +290,7 @@ export default async function handler(req, res) {
       if (lr && lr.name) lossMap[lr.name] = { id: lr.id != null ? String(lr.id) : lr.name, name: lr.name };
     }
     const statuses = Object.values(statusMap);
-    const users = employees.map((e) => ({ id: String(e.id), name: e.name || String(e.id) }));
+    const users = employees.map((e) => ({ id: String(e.id), name: e.name || String(e.id), role: e.role || null }));
     res.status(200).json({
       ok: true, source: "unified", is_complete: data.is_complete !== false,
       counts: { leads: leads.length, calls: (data.calls || []).length, employees: employees.length },
