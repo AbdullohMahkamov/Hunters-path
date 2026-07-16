@@ -386,6 +386,7 @@ export default async function handler(req, res) {
   const sess = await getSession(q.session || b.session);
   const isAdmin = !!sess && sess.role === "admin";
   if (!isAdmin && !(action === "run" && isCron)) { res.status(403).json({ error: "admin only (или cron с секретом)" }); return; }
+  const org = (sess && sess.org) || "hunter"; // per-org: админ клиента видит/правит свою память
 
   try {
     if (action === "state") {
