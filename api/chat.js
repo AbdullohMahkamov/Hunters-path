@@ -203,17 +203,12 @@ function statusCounts(arr, field) { const m = {}; for (const x of arr || []) { c
 // ЧТЕНИЕ агентов (шаг 1): компактный, источник-подписанный, trust-флагнутый дайджест 4 агентов + геймификации.
 // Переиспользует их state()-бандлы. Источники ОСТАЮТСЯ РАЗЛИЧИМЫ (не сливаются). Гейты передаются явно.
 async function agentsBlock(org, speed) {
-  // ИЗОЛЯЦИЯ МЕЖДУ КЛИЕНТАМИ: dev/growth/task пока НЕ per-org (общая/hunter память) → включаем ТОЛЬКО для
-  // суперадмина (org hunter), иначе клиент увидел бы данные Hunter Academy. mop/gamification уже per-org → org сессии.
-  const isHunter = org === "hunter";
-  let dev, growth, task, mopOpen, mopRun, mopCfg, bal;
+  let dev, growth, task, mopOpen, mopClosed, mopRun, mopCfg, bal;
   try {
-    [dev, growth, task, mopOpen, mopRun, mopCfg, bal] = await Promise.all([
-      isHunter ? getDevStateBundle().catch(() => null) : null,
-      isHunter ? getGrowthStateBundle({ skipFunnel: true }).catch(() => null) : null,
-      isHunter ? getTaskStateBundle().catch(() => null) : null,
-      getOpenMopFindings(org).catch(() => []), getMopLastRun(org).catch(() => null),
-      getMopConfig(org).catch(() => null), getBalancesSummary(org).catch(() => []),
+    [dev, growth, task, mopOpen, mopClosed, mopRun, mopCfg, bal] = await Promise.all([
+      getDevStateBundle().catch(() => null), getGrowthStateBundle({ skipFunnel: true }).catch(() => null), getTaskStateBundle().catch(() => null),
+      getOpenMopFindings().catch(() => []), getFreshAutoClosed().catch(() => []), getMopLastRun().catch(() => null),
+      getMopConfig().catch(() => null), getBalancesSummary(org).catch(() => []),
     ]);
   } catch (e) { return ""; }
 
@@ -244,7 +239,7 @@ async function agentsBlock(org, speed) {
   } else s += `\n[Тренер] состояние сейчас недоступно.\n`;
 
   s += `\n[Супервайзер / MOP Agent] — находки по отделу/конкретным МОПам → вливаются в задачи Тренера.\n`;
-  s += `• Открытых находок: ${(mopOpen || []).length}.\n`;
+  s += `• Открытых находок: ${(mopOpen || []).length}, автозакрытых недавно: ${(mopClosed || []).length}.\n`;
   for (const f of (mopOpen || []).slice(0, 4)) s += `   — [${f.scope}/${f.type}] ${shortT(f.title, 90)}\n`;
   if (mopCfg && mopCfg.noCallEnabled === false) s += `   ⚠ ГЕЙТ: детектор «не звонил» (no_call) ВЫКЛЮЧЕН — ${shortT(mopCfg.noCallDisabledReason, 150)} → вывод «МОП не звонил» ДЕЛАТЬ НЕЛЬЗЯ.\n`;
 

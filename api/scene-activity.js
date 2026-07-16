@@ -34,8 +34,6 @@ async function rgetJSON(key, dflt) { const raw = await rget(key); if (raw == nul
 async function rset(key, v) { try { await fetch(`${REDIS_URL}/set/${encodeURIComponent(key)}`, { method: "POST", headers: { Authorization: `Bearer ${REDIS_TOKEN}` }, body: JSON.stringify(v) }); } catch (e) {} }
 async function rsetTTL(key, v, ttlSec) { try { await fetch(`${REDIS_URL}/set/${encodeURIComponent(key)}?EX=${ttlSec}`, { method: "POST", headers: { Authorization: `Bearer ${REDIS_TOKEN}` }, body: JSON.stringify(v) }); } catch (e) {} }
 async function sessionRole(session) { if (!session) return null; try { const raw = await rget(`session:${encodeURIComponent(session)}`); return raw ? JSON.parse(raw).role : null; } catch (e) { return null; } }
-// Сцена жёстко привязана к Hunter Academy (хардкод поддомена/токена/списка МОПов) — отдавать её можно ТОЛЬКО суперадмину.
-async function isSuperAdmin(session) { if (!session) return false; try { const raw = await rget(`session:${encodeURIComponent(session)}`); const s = raw ? JSON.parse(raw) : null; return !!(s && s.role === "admin" && s.org === "hunter"); } catch (e) { return false; } }
 
 // ДИАГНОСТИКА (только preview): последнее событие каждого МОПа за широкое окно (не привязано к порогу позы),
 // чтобы разобрать ПРИРОДУ активности даже если событие старше 35-мин окна. Возвращает {имя: {type,entity_type,entity_id,created_at,value_after}}.
@@ -198,8 +196,6 @@ export default async function handler(req, res) {
   if (!REDIS_URL || !REDIS_TOKEN) { res.status(500).json({ error: "no redis" }); return; }
   const q = req.query || {}, b = req.body || {};
   const action = q.action || b.action || "state";
-  // ⛔ ВСЯ сцена — только суперадмин (hunter-hardcoded: поддомен/токен/МОПы). Иначе клиент увидел бы данные Hunter Academy.
-  if (!(await isSuperAdmin(q.session || b.session))) { res.status(403).json({ error: "superadmin only — сцена привязана к Hunter Academy" }); return; }
   const cfg = { ...DEFAULT_CFG, ...(await rgetJSON("sceneactivity:config", null) || {}) };
 
   // taskdiag (админ, read-only): по каждому task_added за окно достаём РЕАЛЬНОГО автора задачи (GET /tasks/{id}).

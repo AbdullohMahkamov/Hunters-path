@@ -618,7 +618,7 @@ export default async function handler(req, res) {
     ? (authHeader === `Bearer ${cronSecret}`)
     : (!isProd && (q.cron === "1" || b.cron === true));
   const sess = await getSession(q.session || b.session);
-  const isAdmin = !!sess && sess.role === "admin" && sess.org === "hunter"; // dev-agent — системный ревизор всей системы (все org, де-обезличено): ТОЛЬКО суперадмин
+  const isAdmin = !!sess && sess.role === "admin";
   const cronActions = new Set(["nightly", "weekly_review"]);
   if (!isAdmin && !(cronActions.has(action) && isCron)) { res.status(403).json({ error: "admin only (или cron с секретом)" }); return; }
 

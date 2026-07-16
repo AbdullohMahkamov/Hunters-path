@@ -45,7 +45,7 @@ export default async function handler(req, res) {
       const d = await r.json();
       if (!d || d.result == null) { res.status(200).json({ ok: false }); return; }
       const info = JSON.parse(d.result);
-      res.status(200).json({ ok: true, ...info, superadmin: !!(info.role === "admin" && info.org === "hunter") });
+      res.status(200).json({ ok: true, ...info });
       return;
     }
 
@@ -65,7 +65,7 @@ export default async function handler(req, res) {
       const sessToken = crypto.randomBytes(24).toString("hex");
       const info = { role: "demo", org: demo.org, demoName: demo.name };
       await redisSet(redisUrl, redisToken, `session:${sessToken}`, JSON.stringify(info), 30 * 24 * 3600);
-      res.status(200).json({ ok: true, session: sessToken, ...info, superadmin: !!(info.role === "admin" && info.org === "hunter") });
+      res.status(200).json({ ok: true, session: sessToken, ...info });
       return;
     }
 
@@ -83,7 +83,7 @@ export default async function handler(req, res) {
       const sessToken = crypto.randomBytes(24).toString("hex");
       const info = { role: "admin", org: "hunter" };
       await redisSet(redisUrl, redisToken, `session:${sessToken}`, JSON.stringify(info), 30 * 24 * 3600);
-      res.status(200).json({ ok: true, session: sessToken, ...info, superadmin: !!(info.role === "admin" && info.org === "hunter") });
+      res.status(200).json({ ok: true, session: sessToken, ...info });
       return;
     }
 
@@ -107,7 +107,7 @@ export default async function handler(req, res) {
       const sessToken = crypto.randomBytes(24).toString("hex");
       const info = { role: c.role || "admin", org: c.org, clientName: c.name || c.org };
       await redisSet(redisUrl, redisToken, `session:${sessToken}`, JSON.stringify(info), 30 * 24 * 3600);
-      res.status(200).json({ ok: true, session: sessToken, ...info, superadmin: !!(info.role === "admin" && info.org === "hunter") });
+      res.status(200).json({ ok: true, session: sessToken, ...info });
       return;
     }
 
@@ -131,7 +131,7 @@ export default async function handler(req, res) {
       const sessToken = crypto.randomBytes(24).toString("hex");
       const info = { role: "mop", org: m.org || "hunter", mopId: m.mopId, mopName: m.name, login: m.login };
       await redisSet(redisUrl, redisToken, `session:${sessToken}`, JSON.stringify(info), 30 * 24 * 3600);
-      res.status(200).json({ ok: true, session: sessToken, ...info, superadmin: !!(info.role === "admin" && info.org === "hunter") });
+      res.status(200).json({ ok: true, session: sessToken, ...info });
       return;
     }
 
@@ -146,7 +146,7 @@ export default async function handler(req, res) {
       const sessToken = crypto.randomBytes(24).toString("hex");
       const info = { role: "rop", org: "hunter" };
       await redisSet(redisUrl, redisToken, `session:${sessToken}`, JSON.stringify(info), 30 * 24 * 3600);
-      res.status(200).json({ ok: true, session: sessToken, ...info, superadmin: !!(info.role === "admin" && info.org === "hunter") });
+      res.status(200).json({ ok: true, session: sessToken, ...info });
       return;
     }
 

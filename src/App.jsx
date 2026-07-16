@@ -33,7 +33,7 @@ export default function App() {
         try {
           const d = await auth.check(s)
           if (!cancelled && d && d.ok) {
-            setRoleOrg(d.role || '', d.org || '', { mopId: d.mopId, mopName: d.mopName, clientName: d.clientName, demoName: d.demoName })
+            setRoleOrg(d.role || '', d.org || '', { mopId: d.mopId, mopName: d.mopName })
             setPhase(d.role === 'mop' ? 'mop' : 'app')
             return
           }
@@ -61,9 +61,9 @@ export default function App() {
     // на /dev-agent без входа — сначала логин, после входа останемся на этом маршруте
     return <Login onLoggedIn={handleLoggedIn} />
   }
-  // Внутренний маршрут /dev-agent — только для СУПЕР-админа (hunter). Клиента-владельца уводим на главную.
+  // Внутренний маршрут /dev-agent — только для админа. Иначе уводим на главную.
   if (isDevAgentRoute()) {
-    if (sess.role === 'admin' && sess.org === 'hunter') {
+    if (sess.role === 'admin') {
       return (
         <Suspense fallback={null}>
           <DevAgent onLogout={handleLogout} />

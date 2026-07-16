@@ -29,9 +29,6 @@
     },
     "api/mop-agent.js": {
       "maxDuration": 60
-    },
-    "api/ingest.js": {
-      "maxDuration": 60
     }
   },
   "crons": [

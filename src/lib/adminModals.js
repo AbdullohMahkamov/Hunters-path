@@ -183,9 +183,7 @@ function cInput(id, label, ph) {
   return `<div><div style="font-size:11px;color:var(--txt2);margin-bottom:3px;">${label}</div>
     <input id="${id}" placeholder="${ph}" style="width:100%;padding:8px 10px;border-radius:8px;border:1px solid var(--line2);background:var(--card);color:var(--txt);font-size:13px;box-sizing:border-box;"></div>`
 }
-let _clientSource = 'amocrm'
 function openClientForm() {
-  _clientSource = 'amocrm'; _probeData = null
   const f = $('clientForm')
   f.style.display = 'block'
   f.innerHTML = `
@@ -193,9 +191,10 @@ function openClientForm() {
     <div style="display:flex;flex-direction:column;gap:8px;">
       ${cInput('cf_name', 'Название', 'Автошкола Драйв')}
       ${cInput('cf_org', 'Код (латиницей, без пробелов)', 'avtodrive')}
-      <div><div style="font-size:11px;color:var(--txt2);margin-bottom:3px;">Источник данных</div>
-        <div id="cf_srcToggle" style="display:flex;gap:6px;"></div></div>
-      <div id="cf_conn" style="display:flex;flex-direction:column;gap:8px;"></div>
+      ${cInput('cf_sub', 'Субдомен amoCRM', 'avtodrive')}
+      ${cInput('cf_token', 'Токен доступа amoCRM', '')}
+      <button onclick="probeClient()" style="padding:9px;border-radius:8px;background:var(--card);border:1px solid var(--accent);color:var(--accent);font-size:12.5px;font-weight:600;cursor:pointer;">Проверить связь и подтянуть воронки</button>
+      <div id="cf_probe"></div>
       ${cInput('cf_login', 'Логин для клиента', 'avtodrive')}
       ${cInput('cf_pass', 'Пароль для клиента', '')}
       <div style="border-top:1px solid var(--line);margin-top:6px;padding-top:10px;">
@@ -205,71 +204,27 @@ function openClientForm() {
     </div>
     <button onclick="saveClient()" id="cf_saveBtn" style="width:100%;margin-top:12px;padding:11px;border-radius:9px;background:var(--accent);border:none;color:#fff;font-size:13.5px;font-weight:600;cursor:pointer;">Сохранить клиента</button>
   `
-  renderSourceToggle(); renderConnFields()
 }
-function renderSourceToggle() {
-  const t = $('cf_srcToggle'); if (!t) return
-  const btn = (src, label) => `<button onclick="setClientSource('${src}')" style="flex:1;padding:8px;border-radius:8px;font-size:12.5px;font-weight:600;cursor:pointer;border:1px solid ${_clientSource === src ? 'var(--accent)' : 'var(--line2)'};background:${_clientSource === src ? 'var(--accent)' : 'var(--card)'};color:${_clientSource === src ? '#fff' : 'var(--txt2)'};">${label}</button>`
-  t.innerHTML = btn('amocrm', 'amoCRM') + btn('unified', 'Unified (своя CRM)')
-}
-// amoCRM: субдомен/токен. Unified: URL мостика + apiKey (docs/hunter-ai-integration-spec.md).
-function renderConnFields() {
-  const c = $('cf_conn'); if (!c) return
-  const probeBtn = (txt) => `<button onclick="probeClient()" style="padding:9px;border-radius:8px;background:var(--card);border:1px solid var(--accent);color:var(--accent);font-size:12.5px;font-weight:600;cursor:pointer;">${txt}</button><div id="cf_probe"></div>`
-  if (_clientSource === 'unified') {
-    c.innerHTML = `${cInput('cf_bridge', 'URL мостика (bridgeUrl)', 'https://crm.company.com/hunter/export')}
-      ${cInput('cf_apikey', 'API-ключ (apiKey)', 'hunter_live_...')}
-      <div style="font-size:10.5px;color:var(--txt3);margin-top:-2px;">Единый формат по спеке интеграции. <a onclick="useMockBridge()" style="color:var(--accent);cursor:pointer;text-decoration:underline;">Подставить тестовый мостик (mock_bridge)</a></div>
-      ${probeBtn('Проверить связь и подтянуть пример данных')}`
-  } else {
-    c.innerHTML = `${cInput('cf_sub', 'Субдомен amoCRM', 'avtodrive')}
-      ${cInput('cf_token', 'Токен доступа amoCRM', '')}
-      ${probeBtn('Проверить связь и подтянуть воронки')}`
-  }
-}
-function setClientSource(src) { _clientSource = (src === 'unified') ? 'unified' : 'amocrm'; _probeData = null; renderSourceToggle(); renderConnFields() }
-function useMockBridge() { const b = $('cf_bridge'), k = $('cf_apikey'); if (b) b.value = window.location.origin + '/api/ingest?action=mock_bridge'; if (k) k.value = 'mock_test_key' }
 let _probeData = null
 async function probeClient() {
-  const box = $('cf_probe'); if (!box) return
-  const err = (m) => { box.innerHTML = '<div style="font-size:11.5px;color:var(--red);">' + m + '</div>' }
+  const sub = $('cf_sub').value.trim()
+  const token = $('cf_token').value.trim()
+  const box = $('cf_probe')
+  if (!sub || !token) { box.innerHTML = '<div style="font-size:11.5px;color:var(--red);">Введите субдомен и токен</div>'; return }
   box.innerHTML = '<div style="font-size:11.5px;color:var(--txt3);">Проверяю...</div>'
   try {
-    let d
-    if (_clientSource === 'unified') {
-      const bridgeUrl = ($('cf_bridge') ? $('cf_bridge').value.trim() : '')
-      const apiKey = ($('cf_apikey') ? $('cf_apikey').value.trim() : '')
-      if (!bridgeUrl || !apiKey) { err('Введите URL мостика и API-ключ'); return }
-      const r = await fetch('/api/ingest', { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ action: 'ingest_probe', session: getSession(), bridgeUrl, apiKey }) })
-      d = await r.json()
-    } else {
-      const sub = ($('cf_sub') ? $('cf_sub').value.trim() : '')
-      const token = ($('cf_token') ? $('cf_token').value.trim() : '')
-      if (!sub || !token) { err('Введите субдомен и токен'); return }
-      const r = await fetch('/api/user-data', { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ action: 'client-probe', session: getSession(), subdomain: sub, token }) })
-      d = await r.json()
-    }
-    if (!d.ok) { err((d.error || 'Ошибка связи') + (d.detail ? (' — ' + d.detail) : '')); return }
+    const r = await fetch('/api/user-data', { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ action: 'client-probe', session: getSession(), subdomain: sub, token }) })
+    const d = await r.json()
+    if (!d.ok) { box.innerHTML = '<div style="font-size:11.5px;color:var(--red);">' + (d.error || 'Ошибка связи') + '</div>'; return }
     _probeData = d
-    renderProbeBox(d)
-    onPipeChange()
-  } catch (e) { err(String(e)) }
-}
-// Общий рендер результата probe — из формы {pipelines, users, lossReasons}. Одинаков для amoCRM и unified.
-function renderProbeBox(d) {
-  const box = $('cf_probe'); if (!box) return
-  const pipeOpts = d.pipelines.map((p) => `<option value="${p.id}">${escapeHtml(p.name)}</option>`).join('')
-  const lr = d.lossReasons || []
-  const rBox = (cls) => lr.length
-    ? lr.map((r) => `<label style="display:flex;gap:7px;align-items:center;font-size:12px;padding:3px;"><input type="checkbox" class="${cls}" value="${r.id}" data-name="${escapeHtml(r.name)}">${escapeHtml(r.name)}</label>`).join('')
-    : '<div style="font-size:11px;color:var(--txt3);">Причины потери не найдены (можно добавить позже)</div>'
-  const head = d.source === 'unified'
-    ? `✓ Пример получен: лидов ${d.counts.leads}, звонков ${d.counts.calls}, менеджеров ${d.counts.employees}, причин потери ${lr.length}${d.is_complete === false ? ' · ⚠ мостик пометил данные неполными' : ''}`
-    : `✓ Связь есть! Воронок: ${d.pipelines.length}, менеджеров: ${d.users.length}, причин потери: ${lr.length}`
-  const pipeLabel = d.source === 'unified' ? 'Статусы (одна воронка unified)' : 'Воронка'
-  box.innerHTML = `<div style="background:var(--card);border:1px solid var(--green);border-radius:8px;padding:10px;margin:6px 0;">
-      <div style="font-size:11.5px;color:var(--green);margin-bottom:8px;">${head}</div>
-      <div style="font-size:11px;color:var(--txt2);margin-bottom:3px;">${pipeLabel}</div>
+    const pipeOpts = d.pipelines.map((p) => `<option value="${p.id}">${escapeHtml(p.name)}</option>`).join('')
+    const lr = d.lossReasons || []
+    const rBox = (cls) => lr.length
+      ? lr.map((r) => `<label style="display:flex;gap:7px;align-items:center;font-size:12px;padding:3px;"><input type="checkbox" class="${cls}" value="${r.id}" data-name="${escapeHtml(r.name)}">${escapeHtml(r.name)}</label>`).join('')
+      : '<div style="font-size:11px;color:var(--txt3);">Причины потери в amoCRM не найдены (можно добавить позже)</div>'
+    box.innerHTML = `<div style="background:var(--card);border:1px solid var(--green);border-radius:8px;padding:10px;margin:6px 0;">
+      <div style="font-size:11.5px;color:var(--green);margin-bottom:8px;">✓ Связь есть! Воронок: ${d.pipelines.length}, менеджеров: ${d.users.length}, причин потери: ${lr.length}</div>
+      <div style="font-size:11px;color:var(--txt2);margin-bottom:3px;">Воронка</div>
       <select id="cf_pipe" onchange="onPipeChange()" style="width:100%;padding:7px;border-radius:7px;border:1px solid var(--line2);background:var(--bg);color:var(--txt);font-size:12.5px;margin-bottom:8px;">${pipeOpts}</select>
       <div id="cf_statuses"></div>
       <div style="font-size:11px;color:var(--txt2);margin:8px 0 3px;">Менеджеры (отметьте продажников)</div>
@@ -283,6 +238,8 @@ function renderProbeBox(d) {
         <div style="max-height:100px;overflow-y:auto;border:1px solid var(--line);border-radius:7px;padding:6px;">${rBox('cf_contacted')}</div>
       </div>
     </div>`
+    onPipeChange()
+  } catch (e) { box.innerHTML = '<div style="font-size:11.5px;color:var(--red);">' + String(e) + '</div>' }
 }
 function onPipeChange() {
   if (!_probeData) return
@@ -309,24 +266,17 @@ function onPipeChange() {
     <div style="max-height:140px;overflow-y:auto;border:1px solid var(--line);border-radius:7px;padding:6px;margin-bottom:8px;">${stageBoxes}</div>
     <div style="font-size:11px;color:var(--txt2);margin-bottom:3px;">Этапы «не дозвонились» (лид завис = разговора не было)</div>
     <div style="max-height:120px;overflow-y:auto;border:1px solid var(--line);border-radius:7px;padding:6px;">${ncBoxes}</div>`
-  // unified: статусы несут type won/lost → предвыбираем финальные автоматически (amoCRM type не отдаёт → без изменений)
-  const wonS = pipe.statuses.find((s) => s.type === 'won')
-  const lostS = pipe.statuses.find((s) => s.type === 'lost')
-  if (wonS && $('cf_sold')) $('cf_sold').value = wonS.name
-  if (lostS && $('cf_lost')) $('cf_lost').value = lostS.name
 }
 async function saveClient() {
   const g = (id) => { const e = $(id); return e ? e.value.trim() : '' }
   const client = {
     name: g('cf_name'), org: g('cf_org').toLowerCase().replace(/[^a-z0-9_-]/g, ''),
+    subdomain: g('cf_sub'), token: g('cf_token'),
     login: g('cf_login'), password: g('cf_pass'), role: 'admin',
   }
-  if (_clientSource === 'unified') { client.source = 'unified'; client.bridgeUrl = g('cf_bridge'); client.apiKey = g('cf_apikey') }
-  else { client.source = 'amocrm'; client.subdomain = g('cf_sub'); client.token = g('cf_token') }
   const sheetRaw = g('cf_sheet')
   if (sheetRaw) { const mm = sheetRaw.match(/\/d\/([a-zA-Z0-9_-]+)/); client.financeSheetId = mm ? mm[1] : sheetRaw.trim() }
-  const connOk = _clientSource === 'unified' ? (client.bridgeUrl && client.apiKey) : (client.subdomain && client.token)
-  if (!client.name || !client.org || !connOk || !client.login || !client.password) { alert('Заполните все поля' + (_clientSource === 'unified' ? ' (URL мостика и ключ)' : '')); return }
+  if (!client.name || !client.org || !client.subdomain || !client.token || !client.login || !client.password) { alert('Заполните все поля'); return }
   if (_probeData) {
     const pipe = _probeData.pipelines.find((p) => String(p.id) === String($('cf_pipe').value))
     if (pipe) client.pipeline = pipe.name
@@ -339,8 +289,7 @@ async function saveClient() {
     const mops = {}
     document.querySelectorAll('.cf_mop:checked').forEach((c) => { mops[c.value] = c.getAttribute('data-name') })
     client.mops = mops
-    // unified: id статусов — строки ("new"/"closed"); amoCRM: числовые. Не коэрсим unified в Number (даст NaN).
-    client.dozvonStages = Array.from(document.querySelectorAll('.cf_dz:checked')).map((c) => _clientSource === 'unified' ? c.value : Number(c.value))
+    client.dozvonStages = Array.from(document.querySelectorAll('.cf_dz:checked')).map((c) => Number(c.value))
     // «не дозвонились» этапы (имена) + причины потери по категориям (имена; id — для noReachReasonId)
     client.noContactStages = Array.from(document.querySelectorAll('.cf_nc:checked')).map((c) => c.value)
     client.noContactReasons = Array.from(document.querySelectorAll('.cf_ncr:checked')).map((c) => c.getAttribute('data-name'))
@@ -744,7 +693,7 @@ export function initAdminModals() {
   _inited = true
   Object.assign(window, {
     openMopsModal, closeMopsModal, loadMopsList, createMopAccount, deleteMopAccount, setMopRole, saveRaffle, setMopPlan, toggleEditMop, saveMopAccount, saveNiche,
-    openClientsModal, closeClientsModal, loadClientsList, deleteClient, openClientForm, cInput, probeClient, onPipeChange, saveClient, setClientSource, useMockBridge,
+    openClientsModal, closeClientsModal, loadClientsList, deleteClient, openClientForm, cInput, probeClient, onPipeChange, saveClient,
     openMetricsModal, closeMetricsModal, saveMetrics,
     openGamiModal, closeGamiModal, gamiSwitchTab, saveGami, addCaseItem, removeCaseItem, gamiCaseSum, gamiDeliver, resetGami, resetEconomy, loadGamiBalances, grantPoints, zeroPoints, resetDay, clearInventory,
   })

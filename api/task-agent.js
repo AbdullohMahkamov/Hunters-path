@@ -398,7 +398,7 @@ export default async function handler(req, res) {
   const authHeader = (req.headers && (req.headers.authorization || req.headers.Authorization)) || "";
   const isCron = cronSecret ? (authHeader === `Bearer ${cronSecret}`) : (!isProd && (q.cron === "1" || b.cron === true));
   const sess = await getSession(q.session || b.session);
-  const isAdmin = !!sess && sess.role === "admin" && sess.org === "hunter"; // task пока не per-org (доставка через tg-bot) → ТОЛЬКО суперадмин (позже: своя org клиента)
+  const isAdmin = !!sess && sess.role === "admin";
   if (!isAdmin && !(action === "tick" && isCron)) { res.status(403).json({ error: "admin only (или cron с секретом)" }); return; }
 
   try {

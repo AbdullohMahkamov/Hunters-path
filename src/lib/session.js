@@ -52,10 +52,6 @@ export function setRoleOrg(role, org, extra = {}) {
   store.org = org || ''
   if ('mopId' in extra) store.mopId = extra.mopId
   if ('mopName' in extra) store.mopName = extra.mopName
-  // clientName/demoName нужно переносить при восстановлении сессии (check), иначе имя владельца-клиента
-  // теряется и в шапке показывается дефолт «Абдуллох» (имя владельца hunter).
-  if ('clientName' in extra) store.clientName = extra.clientName
-  if ('demoName' in extra) store.demoName = extra.demoName
   emit()
 }
 

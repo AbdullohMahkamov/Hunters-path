@@ -19,11 +19,9 @@ import { getVerifiedFunnel } from "./dev-agent.js";
 
 const REDIS_URL = process.env.UPSTASH_REDIS_REST_URL;
 const REDIS_TOKEN = process.env.UPSTASH_REDIS_REST_TOKEN;
+const ORG = "hunter"; // тест-фаза: один клиент. Архитектурно расширяемо (параметр org).
 
-// Память per-org: hunter — без суффикса (обратная совместимость), остальные клиенты — :${org}.
-// Тот же паттерн суффикса и тот же реестр clients:list, что у Dev-Agent (listOrgs).
 const K = { findings: "mopagent:findings", config: "mopagent:config", history: "mopagent:history", lastrun: "mopagent:lastrun" };
-const mk = (base, org) => (org && org !== "hunter") ? `${base}:${org}` : base;
 const CAP = { findings: 120, history: 400 };
 
 const DEFAULT_CONFIG = {
@@ -81,8 +79,7 @@ async function rgetJSON(key, dflt) { const raw = await rget(key); if (raw == nul
 async function rsetJSON(key, v) { try { await fetch(`${REDIS_URL}/set/${encodeURIComponent(key)}`, { method: "POST", headers: { Authorization: `Bearer ${REDIS_TOKEN}` }, body: JSON.stringify(v) }); return true; } catch (e) { return false; } }
 async function rdel(key) { try { await fetch(`${REDIS_URL}/del/${encodeURIComponent(key)}`, { method: "POST", headers: { Authorization: `Bearer ${REDIS_TOKEN}` } }); } catch (e) {} }
 async function getSession(session) { if (!session) return null; try { const raw = await rget(`session:${session}`); return raw ? JSON.parse(raw) : null; } catch (e) { return null; } }
-async function listOrgs() { const clients = await rgetJSON("clients:list", []); const orgs = ["hunter"]; for (const c of (clients || [])) if (c && c.org && !orgs.includes(c.org)) orgs.push(c.org); return orgs; }
-export async function getMopConfig(org) { const c = await rgetJSON(mk(K.config, org), null); return { ...DEFAULT_CONFIG, ...(c || {}) }; }
+export async function getMopConfig() { const c = await rgetJSON(K.config, null); return { ...DEFAULT_CONFIG, ...(c || {}) }; }
 
 const tkNow = () => new Date(Date.now() + 5 * 3600000);         // Ташкент
 const tkHour = () => tkNow().getUTCHours();
@@ -116,11 +113,11 @@ function deadlineInDays(cfg, days) {
 }
 
 // ── ПРОГОН: собрать находки, классифицировать, обновить память ──
-export async function runMopAgent(org = "hunter") {
-  const cfg = await getMopConfig(org);
+export async function runMopAgent() {
+  const cfg = await getMopConfig();
   if (!cfg.enabled) return { ok: true, skipped: "выключен" };
 
-  const speed = await rgetJSON(mk("speed", org), null);
+  const speed = await rgetJSON(ORG === "hunter" ? "speed" : `speed:${ORG}`, null);
   if (!speed) return { ok: false, error: "нет данных speed" };
 
   // ── ДВА НЕЗАВИСИМЫХ ГЕЙТА ПЕРЕД ЛЮБОЙ НАХОДКОЙ ──
@@ -131,7 +128,7 @@ export async function runMopAgent(org = "hunter") {
   // человека в том, чего система просто не прочитала. Такого быть не должно НИКОГДА.
   // Поэтому гейты раздельные, по детекторам: молчим ровно по той метрике, где данных не хватает,
   // а не глушим агента целиком.
-  const funnel = await getVerifiedFunnel(org);
+  const funnel = await getVerifiedFunnel(ORG);
   const callStage = (funnel.stages || []).find((s) => /дозвон/i.test(s.stage));
   const callsVerified = callStage && callStage.trust === "verified";
   const skipped = [];
@@ -175,8 +172,8 @@ export async function runMopAgent(org = "hunter") {
   // типы, по которым мерить нечем СТРУКТУРНО (не временно) — их находки аннулируем, а не держим
   const STRUCTURALLY_OFF = { no_call: noCallDisabled };
 
-  const prev = await rgetJSON(mk(K.findings, org), []);
-  const history = await rgetJSON(mk(K.history, org), []);
+  const prev = await rgetJSON(K.findings, []);
+  const history = await rgetJSON(K.history, []);
   const nowMs = Date.now();
 
   // 1) ГРУППИРУЕМ сырые факты по (тип, МОП) — только те типы, по которым данные полные
@@ -321,11 +318,11 @@ export async function runMopAgent(org = "hunter") {
 
   const closedOld = prev.filter((f) => f.status !== "open");
   const all = [...merged, ...autoClosed, ...invalidated, ...closedOld].slice(-CAP.findings);
-  await rsetJSON(mk(K.findings, org), all);
+  await rsetJSON(K.findings, all);
 
   // история (для подсчёта повторов «3+ раза за неделю»)
   for (const f of added) history.push({ type: f.type, mop: f.mop || null, scope: f.scope, at: nowMs });
-  await rsetJSON(mk(K.history, org), history.slice(-CAP.history));
+  await rsetJSON(K.history, history.slice(-CAP.history));
 
   const out = {
     ok: true, at: nowMs, tashkentDay: tkDay(),
@@ -339,15 +336,15 @@ export async function runMopAgent(org = "hunter") {
     addedList: added.map((f) => ({ scope: f.scope, title: f.title, deadlineLabel: f.deadlineLabel })),
     autoClosedList: autoClosed.map((f) => ({ scope: f.scope, title: f.title })),
   };
-  await rsetJSON(mk(K.lastrun, org), out);
+  await rsetJSON(K.lastrun, out);
   return out;
 }
 
 // Для UI: последний прогон + по каким метрикам агент промолчал (trust layer)
-export async function getMopLastRun(org) { return await rgetJSON(mk(K.lastrun, org), null); }
+export async function getMopLastRun() { return await rgetJSON(K.lastrun, null); }
 // Task Agent читает это, чтобы влить находки в общий список задач РОПа
-export async function getOpenMopFindings(org) {
-  const all = await rgetJSON(mk(K.findings, org), []);
+export async function getOpenMopFindings() {
+  const all = await rgetJSON(K.findings, []);
   return all.filter((f) => f.status === "open");
 }
 // Task Agent вызывает после уведомления РОПа — чтобы не слать дважды.
@@ -355,20 +352,20 @@ export async function getOpenMopFindings(org) {
 //   auto_closed  — проблема при проверке не подтвердилась (реально ушла)
 //   invalidated  — детектор отключён, находка построена на неверной посылке (проблема НЕ решена,
 //                  она просто никогда не была доказана). Сообщение обязано отличаться.
-export async function getFreshAutoClosed(org) {
-  const all = await rgetJSON(mk(K.findings, org), []);
+export async function getFreshAutoClosed() {
+  const all = await rgetJSON(K.findings, []);
   const fresh = all.filter((f) => (f.status === "auto_closed" || f.status === "invalidated") && !f.ropNotified);
   if (fresh.length) {
     const ids = new Set(fresh.map((f) => f.id));
-    await rsetJSON(mk(K.findings, org), all.map((f) => ids.has(f.id) ? { ...f, ropNotified: true } : f));
+    await rsetJSON(K.findings, all.map((f) => ids.has(f.id) ? { ...f, ropNotified: true } : f));
   }
   return fresh;
 }
 // how: "rop_reported" (РОП сказал в Telegram, что сделал) | "closed" (закрыто вручную из UI)
 // repeatCount сохраняем в закрытой записи — по нему следующий прогон поймёт, что это уже N-й круг.
-export async function closeMopFinding(id, how, note, repeatCount, org) {
-  const all = await rgetJSON(mk(K.findings, org), []);
-  await rsetJSON(mk(K.findings, org), all.map((f) => f.id === id
+export async function closeMopFinding(id, how, note, repeatCount) {
+  const all = await rgetJSON(K.findings, []);
+  await rsetJSON(K.findings, all.map((f) => f.id === id
     ? { ...f, status: how || "closed", closedAt: Date.now(), closeNote: note || f.closeNote || "",
         repeatCount: repeatCount || f.repeatCount || 1 }
     : f));
@@ -386,11 +383,10 @@ export default async function handler(req, res) {
   const sess = await getSession(q.session || b.session);
   const isAdmin = !!sess && sess.role === "admin";
   if (!isAdmin && !(action === "run" && isCron)) { res.status(403).json({ error: "admin only (или cron с секретом)" }); return; }
-  const org = (sess && sess.org) || "hunter"; // per-org: админ клиента видит/правит свою память
 
   try {
     if (action === "state") {
-      const [all, cfg] = await Promise.all([rgetJSON(mk(K.findings, org), []), getMopConfig(org)]);
+      const [all, cfg] = await Promise.all([rgetJSON(K.findings, []), getMopConfig()]);
       res.status(200).json({
         ok: true, config: cfg,
         open: all.filter((f) => f.status === "open"),
@@ -399,21 +395,18 @@ export default async function handler(req, res) {
       });
       return;
     }
-    if (action === "run") {
-      if (isCron) { const orgs = await listOrgs(); const rs = []; for (const o of orgs) rs.push(await runMopAgent(o)); res.status(200).json({ ok: true, ran: orgs.length, orgs }); return; }
-      const r = await runMopAgent(org); res.status(200).json(isAdmin ? r : { ok: !!r.ok, ran: true }); return;
-    }
-    if (action === "close") { await closeMopFinding(b.id, "closed", null, null, org); res.status(200).json({ ok: true }); return; }
+    if (action === "run") { const r = await runMopAgent(); res.status(200).json(isAdmin ? r : { ok: !!r.ok, ran: true }); return; }
+    if (action === "close") { await closeMopFinding(b.id, "closed"); res.status(200).json({ ok: true }); return; }
     if (action === "set_config") {
-      const cur = await getMopConfig(org); const inc = b.config || {}; const next = { ...cur };
+      const cur = await getMopConfig(); const inc = b.config || {}; const next = { ...cur };
       for (const k of ["deptMinMops", "deptMinRepeats", "repeatWindowDays", "minMismatchPerMop", "minNoCallPerMop", "endOfDayHour", "nextDayHour", "deptDeadlineDays"]) {
         if (typeof inc[k] === "number" && isFinite(inc[k]) && inc[k] >= 0) next[k] = inc[k];
       }
       if (typeof inc.enabled === "boolean") next.enabled = inc.enabled;
-      await rsetJSON(mk(K.config, org), next);
+      await rsetJSON(K.config, next);
       res.status(200).json({ ok: true, config: next }); return;
     }
-    if (action === "reset") { await Promise.all([rdel(mk(K.findings, org)), rdel(mk(K.history, org))]); res.status(200).json({ ok: true, reset: true }); return; }
+    if (action === "reset") { await Promise.all([rdel(K.findings), rdel(K.history)]); res.status(200).json({ ok: true, reset: true }); return; }
     res.status(400).json({ error: "unknown action" });
   } catch (err) {
     res.status(200).json({ ok: false, error: String(err && err.message || err) });

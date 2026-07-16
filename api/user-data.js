@@ -107,23 +107,19 @@ export default async function handler(req, res) {
     if (action === "client-save") {
       if (!isSuperAdmin) { res.status(403).json({ error: "forbidden" }); return; }
       const c = (req.body && req.body.client) || {};
-      const source = (c.source === "unified") ? "unified" : "amocrm"; // источник данных: amoCRM или unified-мостик по нашей спеке
-      const baseMissing = !c.org || !c.login || !c.password;
-      if (source === "amocrm" ? (baseMissing || !c.subdomain || !c.token) : (baseMissing || !c.bridgeUrl || !c.apiKey)) {
-        res.status(400).json({ error: source === "amocrm" ? "org, subdomain, token, login, password обязательны" : "org, bridgeUrl, apiKey, login, password обязательны (unified)" }); return;
+      if (!c.org || !c.subdomain || !c.token || !c.login || !c.password) {
+        res.status(400).json({ error: "org, subdomain, token, login, password обязательны" }); return;
       }
       if (c.org === "hunter") { res.status(400).json({ error: "org 'hunter' зарезервирован" }); return; }
       // 1) реестр логинов (для auth)
       const list = await getClients();
       const idx = list.findIndex(x => x.org === c.org);
-      const entry = { org: c.org, name: c.name || c.org, login: c.login, password: c.password, role: c.role || "admin", source, subdomain: c.subdomain || "", token: c.token || "" };
+      const entry = { org: c.org, name: c.name || c.org, login: c.login, password: c.password, role: c.role || "admin", subdomain: c.subdomain, token: c.token };
       if (idx >= 0) list[idx] = entry; else list.push(entry);
       await saveClients(list);
-      // 2) конфиг клиента (для sync/sync-speed/activity ИЛИ ingest)
+      // 2) конфиг клиента (для sync/sync-speed/activity)
       const cfg = {
-        source,                                                   // "amocrm" | "unified" — resolveConfig/диспетчер разводит sync vs ingest
-        subdomain: c.subdomain || "", token: c.token || "",        // amocrm: доступ к amoCRM
-        bridgeUrl: c.bridgeUrl || "", apiKey: c.apiKey || "",      // unified: мостик клиента по docs/hunter-ai-integration-spec.md
+        subdomain: c.subdomain, token: c.token,
         pipeline: c.pipeline || "", sold: c.sold || "", lost: c.lost || "",
         ownThreshold: c.ownThreshold != null ? c.ownThreshold : 0,
         adsetFieldId: c.adsetFieldId || null,
@@ -136,11 +132,8 @@ export default async function handler(req, res) {
         noContactStages: c.noContactStages || [],
         fakeNumReasons: Array.isArray(c.fakeNumReasons) ? c.fakeNumReasons : [],   // брак (неверный номер/дубль) — вон из знаменателя дозвона
         contactedReasons: Array.isArray(c.contactedReasons) ? c.contactedReasons : [], // контакт был (не дали разрешение) — считать дозвоном
-        // этапы «входа» для % дозвона — отмечаются чекбоксами при онбординге, правятся в «Метрики».
-        // amoCRM: id статусов числовые → Number. unified: id — строки ("new","closed") → храним как строки.
-        dozvonStages: Array.isArray(c.dozvonStages)
-          ? (source === "unified" ? c.dozvonStages.map(String).filter(Boolean) : c.dozvonStages.map(Number).filter(Boolean))
-          : [],
+        // этапы «входа» для % дозвона — отмечаются чекбоксами при онбординге, правятся в «Метрики»
+        dozvonStages: Array.isArray(c.dozvonStages) ? c.dozvonStages.map(Number).filter(Boolean) : [],
       };
       await fetch(`${url}/set/clientcfg:${c.org}`, {
         method: "POST", headers: { Authorization: `Bearer ${token}` }, body: JSON.stringify(cfg),
@@ -156,14 +149,7 @@ export default async function handler(req, res) {
       let list = await getClients();
       list = list.filter(x => x.org !== org);
       await saveClients(list);
-      // Чистим ВСЁ, что привязано к org: конфиг, сырьё ingest, курсор Pull и кэши.
-      // Иначе удаление+пересоздание того же org слило бы старое сырьё с новым (merge по id).
-      const del = (k) => fetch(`${url}/del/${encodeURIComponent(k)}`, { method: "POST", headers: { Authorization: `Bearer ${token}` } });
-      await Promise.all([
-        del(`clientcfg:${org}`),
-        del(`ingest:${org}:leads`), del(`ingest:${org}:calls`), del(`ingest:${org}:employees`), del(`ingest:${org}:lastPull`),
-        del(`dashboard:${org}`), del(`speed:${org}`),
-      ]);
+      await fetch(`${url}/del/clientcfg:${org}`, { method: "POST", headers: { Authorization: `Bearer ${token}` } });
       res.status(200).json({ ok: true });
       return;
     }
@@ -175,21 +161,20 @@ export default async function handler(req, res) {
     // остальные клиенты: поля лежат прямо в clientcfg:<org>.
     if (action === "metrics-save") {
       if (sess.role !== "admin") { res.status(403).json({ error: "admin only" }); return; }
-      const org = (isSuperAdmin && req.body && req.body.org) ? req.body.org : (sess.org || "hunter"); // клиент — ТОЛЬКО своя org (раньше принимал любой body.org — дыра); суперадмин может указать чужую
+      const org = (req.body && req.body.org) || sess.org || "hunter";
       const inc = (req.body && req.body.metrics) || {};
-      const key = org === "hunter" ? "metricscfg:hunter" : `clientcfg:${org}`;
-      const cr = await fetch(`${url}/get/${key}`, { headers: { Authorization: `Bearer ${token}` } });
-      const cd = await cr.json();
-      const cur = (cd && cd.result) ? JSON.parse(cd.result) : {};
       const patch = {};
-      // unified: id статусов — строки; amoCRM: числа (см. client-save)
-      if (Array.isArray(inc.dozvonStages)) patch.dozvonStages = (cur.source === "unified") ? inc.dozvonStages.map(String).filter(Boolean) : inc.dozvonStages.map(Number).filter(Boolean);
+      if (Array.isArray(inc.dozvonStages)) patch.dozvonStages = inc.dozvonStages.map(Number).filter(Boolean);
       if (inc.reachedSec != null) {
         const rs = parseInt(inc.reachedSec, 10);
         if (!(rs > 0 && rs <= 600)) { res.status(400).json({ error: "reachedSec: 1..600 секунд" }); return; }
         patch.reachedSec = rs;
       }
       if (!Object.keys(patch).length) { res.status(400).json({ error: "нечего сохранять" }); return; }
+      const key = org === "hunter" ? "metricscfg:hunter" : `clientcfg:${org}`;
+      const cr = await fetch(`${url}/get/${key}`, { headers: { Authorization: `Bearer ${token}` } });
+      const cd = await cr.json();
+      const cur = (cd && cd.result) ? JSON.parse(cd.result) : {};
       const next = { ...cur, ...patch };
       await fetch(`${url}/set/${key}`, {
         method: "POST", headers: { Authorization: `Bearer ${token}` }, body: JSON.stringify(next),

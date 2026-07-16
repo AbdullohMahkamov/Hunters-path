@@ -31,9 +31,6 @@ export default function AppShell({ onLogout }) {
   const org = sess.org
   const isRop = role === 'rop'
   const isAdmin = role === 'admin'
-  // супер-админ (hunter) vs владелец-клиент: «Клиенты» (все тенанты) и «Агенты» (системный ревизор всех org)
-  // — только супер-админ. МОПы/Метрики/Геймификация — per-org, доступны любому владельцу.
-  const isSuperAdmin = isAdmin && org === 'hunter'
 
   const [tab, setTab] = useState('chat')
   const [secOpen, setSecOpen] = useState(false) // выпадашка «Меню»
@@ -123,10 +120,8 @@ export default function AppShell({ onLogout }) {
   // роль РОПа: скрыть чувствительные блоки внутри дашборда (applyRole, 1:1 по IDs)
   useEffect(() => {
     if (!bootedRef.current) return
-    // Финансы — пока hunter-only (одна таблица Google Sheets). Прячем от РОПа И от клиентов (не hunter),
-    // чтобы клиент не видел финансы Hunter Academy. Per-org финансы — отдельная задача.
     const finTab = document.getElementById('dtab-finance')
-    if (finTab) finTab.style.display = (isRop || org !== 'hunter') ? 'none' : ''
+    if (finTab) finTab.style.display = isRop ? 'none' : ''
     const prof = document.getElementById('kpiProfit')
     if (prof && prof.closest('.dcard')) prof.closest('.dcard').style.display = isRop ? 'none' : ''
     const salesSum = document.getElementById('overviewSalesSum')
@@ -262,12 +257,12 @@ export default function AppShell({ onLogout }) {
                   <div className={'sec-dropdown' + (secOpen ? ' open' : '')} id="secDropdown">
                     <button className={'menu-item' + (tab === 'dash' ? ' active' : '')} onClick={() => goSection('dash')}><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round"><path d="M3 3v18h18" /><rect x="7" y="10" width="3" height="8" /><rect x="12" y="6" width="3" height="12" /><rect x="17" y="13" width="3" height="5" /></svg>{uz ? 'Dashboard' : 'Дашборд'}</button>
                     <button className={'menu-item' + (tab === 'tg' ? ' active' : '')} onClick={() => goSection('tg')}><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round"><path d="M21 3L3 10l6 2 2 6 3-4 5 4z" /></svg>Telegram</button>
-                    {isSuperAdmin && <button className="menu-item" onClick={() => { setSecOpen(false); window.openClientsModal && window.openClientsModal() }}><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round"><path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2" /><circle cx="9" cy="7" r="4" /><path d="M23 21v-2a4 4 0 0 0-3-3.87M16 3.13a4 4 0 0 1 0 7.75" /></svg>{uz ? 'Mijozlar' : 'Клиенты'}</button>}
+                    {isAdmin && <button className="menu-item" onClick={() => { setSecOpen(false); window.openClientsModal && window.openClientsModal() }}><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round"><path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2" /><circle cx="9" cy="7" r="4" /><path d="M23 21v-2a4 4 0 0 0-3-3.87M16 3.13a4 4 0 0 1 0 7.75" /></svg>{uz ? 'Mijozlar' : 'Клиенты'}</button>}
                     {isAdmin && <button className="menu-item" onClick={() => { setSecOpen(false); window.openMopsModal && window.openMopsModal() }}><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round"><circle cx="12" cy="8" r="4" /><path d="M4 20a8 8 0 0 1 16 0" /></svg>{uz ? 'MOPlar (kabinetlar)' : 'МОПы (кабинеты)'}</button>}
                     {isAdmin && <button className="menu-item" onClick={() => { setSecOpen(false); window.openMetricsModal && window.openMetricsModal() }}><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round"><path d="M3 3v18h18" /><path d="M7 15l3-4 3 3 5-7" /><circle cx="7" cy="15" r="1" /><circle cx="18" cy="7" r="1" /></svg>{uz ? 'Metrikalar' : 'Метрики'}</button>}
                     {isAdmin && <button className="menu-item" onClick={() => { setSecOpen(false); window.openGamiModal && window.openGamiModal() }}><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round"><path d="M12 2l2.5 4.5L20 8l-4 4 1 6-5-3-5 3 1-6-4-4 5.5-1.5z" /></svg>{uz ? 'Geymifikatsiya' : 'Геймификация'}</button>}
                     {/* Внутренние ИИ-агенты (Dev / Growth / Task) — отдельный защищённый маршрут /dev-agent, только админ */}
-                    {isSuperAdmin && <a className="menu-item" href="/dev-agent" onClick={() => setSecOpen(false)}><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round"><rect x="4" y="8" width="16" height="12" rx="2" /><path d="M12 8V4M9 4h6" /><circle cx="9" cy="14" r="1" /><circle cx="15" cy="14" r="1" /><path d="M2 13v3M22 13v3" /></svg>{uz ? 'Agentlar' : 'Агенты'}</a>}
+                    {isAdmin && <a className="menu-item" href="/dev-agent" onClick={() => setSecOpen(false)}><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round"><rect x="4" y="8" width="16" height="12" rx="2" /><path d="M12 8V4M9 4h6" /><circle cx="9" cy="14" r="1" /><circle cx="15" cy="14" r="1" /><path d="M2 13v3M22 13v3" /></svg>{uz ? 'Agentlar' : 'Агенты'}</a>}
                   </div>
                 </div>
                 <div className="side-brand" onClick={() => applyTab('chat')} style={{ cursor: 'pointer' }} title="Hunter AI"><div className="side-logo">H</div><span>Hunter AI</span></div>
