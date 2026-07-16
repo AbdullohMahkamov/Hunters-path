@@ -568,7 +568,8 @@ export default async function handler(req, res) {
         const nts = n.created_at || 0;
         // debug: копим сырые ноты звонков за сегодня (для сверки события звонка с длительностью)
         if (DEBUG_CALLS && nts >= dayStart2) {
-          (dbgNotesByLead[lid] = dbgNotesByLead[lid] || []).push({ ts: nts, dur, type: n.note_type, callStatus: p.call_status != null ? String(p.call_status) : null });
+          // link/pkeys — только для разовой диагностики формата ссылки на аудиозапись (DeepSales-интеграция)
+          (dbgNotesByLead[lid] = dbgNotesByLead[lid] || []).push({ ts: nts, dur, type: n.note_type, callStatus: p.call_status != null ? String(p.call_status) : null, link: p.link || p.LINK || null, pkeys: Object.keys(p) });
         }
         if (dur >= REACHED_SEC) {
           leadInfo[lid].reachedReal = true; reachedSet++;
@@ -620,7 +621,7 @@ export default async function handler(req, res) {
           else if (dur < 10) { verdict = `${dur} сек — сброс`; buckets.s1_9++; }
           else if (dur < REACHED_SEC) { verdict = `${dur} сек — короткий разговор (ниже порога ${REACHED_SEC}с)`; buckets.s10_39++; }
           else { verdict = `${dur} сек — ДОЗВОН (≥${REACHED_SEC}с)`; buckets.s40plus++; }
-          rows.push({ leadId: Number(id), mop: mopName, callAtTashkent: hhmm(ets), eventTs: ets, noteFound: !!note, duration: dur, noteType: note ? note.type : null, callStatus: note ? note.callStatus : null, verdict });
+          rows.push({ leadId: Number(id), mop: mopName, callAtTashkent: hhmm(ets), eventTs: ets, noteFound: !!note, duration: dur, noteType: note ? note.type : null, callStatus: note ? note.callStatus : null, link: note ? note.link : null, pkeys: note ? note.pkeys : null, verdict });
         }
       }
       rows.sort((a, b) => a.eventTs - b.eventTs);
