@@ -24,7 +24,7 @@ const REDIS_URL = process.env.UPSTASH_REDIS_REST_URL;
 const REDIS_TOKEN = process.env.UPSTASH_REDIS_REST_TOKEN;
 const SUBDOMAIN = "huntercademy";
 const MOPS = { 13660834: "Komiljon", 13703650: "Samandar", 13904266: "Abdulla-Legenda", 13833590: "Begoyim", 13681582: "Abulbositxon" };
-const CACHE_MIN = 5;
+const CACHE_MIN = 2; // 2 мин (было 5): сцена быстрее ловит возврат МОПа к работе — меньше лаг «вернулся, а фигурки нет»
 const JOURNAL_CAP = 800;
 // ПОРОГИ — в Redis (sceneactivity:config), здесь дефолты.
 const DEFAULT_CFG = { activeMin: 5, absentMin: 30, workStartHour: 9, workEndHour: 19 };

@@ -200,7 +200,7 @@ export default function ScenePanel({ active = true }) {
     timers.push(setInterval(pollAgents, 15000))   // статус/находки агентов
     timers.push(setInterval(pollBubbles, 5 * 60000)) // пузыри МОПов (кэш 5 мин)
     timers.push(setInterval(pollFlows, 12000))     // события передачи данных
-    timers.push(setInterval(pollActivity, 5 * 60000)) // активность → поза (кэш 5 мин)
+    timers.push(setInterval(pollActivity, 2 * 60000)) // активность → поза/присутствие (кэш 2 мин — быстрее ловим возврат МОПа)
 
     fit()
     return () => { stopped = true; cancelAnimationFrame(raf); timers.forEach(clearInterval); window.removeEventListener('resize', onResize); if (host) host.innerHTML = '' }
