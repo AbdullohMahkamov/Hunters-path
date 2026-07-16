@@ -4,7 +4,12 @@
 // работает без изменений. Звонки приходят напрямую → нет машинерии нот/событий/пейсинга amoCRM.
 //
 // Шаг 2: ядро (чистый computeMetrics + накопление сырья + runIngest) + админ-тест ingest_test.
-// Шаг 3 добавит Pull (bridgeUrl) и Push (webhook). Шаг 4 — тест на мок-данных.
+// Шаг 3: Pull (тянем из bridgeUrl по Bearer apiKey, инкремент по updated_since) + Push (webhook
+//        с HMAC-подписью X-Hunter-Signature). Оба проверяют is_complete: неполные данные метятся
+//        (mopMeta.complete=false) и НЕ двигают курсор Pull — окно перечитается в следующий раз.
+import crypto from "crypto";
+// bodyParser выключен: HMAC Push считается по СЫРОМУ телу запроса (as-sent), поэтому JSON парсим сами.
+export const config = { api: { bodyParser: false } };
 
 const REDIS_URL = process.env.UPSTASH_REDIS_REST_URL;
 const REDIS_TOKEN = process.env.UPSTASH_REDIS_REST_TOKEN;
@@ -12,7 +17,19 @@ const REDIS_TOKEN = process.env.UPSTASH_REDIS_REST_TOKEN;
 async function rget(key) { try { const r = await fetch(`${REDIS_URL}/get/${encodeURIComponent(key)}`, { headers: { Authorization: `Bearer ${REDIS_TOKEN}` } }); const d = await r.json(); return d && d.result != null ? d.result : null; } catch (e) { return null; } }
 async function rgetJSON(key, dflt) { const raw = await rget(key); if (raw == null) return dflt; try { return JSON.parse(raw); } catch (e) { return dflt; } }
 async function rsetJSON(key, v) { try { await fetch(`${REDIS_URL}/set/${encodeURIComponent(key)}`, { method: "POST", headers: { Authorization: `Bearer ${REDIS_TOKEN}` }, body: JSON.stringify(v) }); return true; } catch (e) { return false; } }
-async function isSuperAdmin(session) { if (!session) return false; try { const raw = await rget(`session:${encodeURIComponent(session)}`); const s = raw ? JSON.parse(raw) : null; return !!(s && s.role === "admin" && s.org === "hunter"); } catch (e) { return false; } }
+async function getSession(session) { if (!session) return null; try { const raw = await rget(`session:${session}`); return raw ? JSON.parse(raw) : null; } catch (e) { return null; } }
+async function isSuperAdmin(session) { const s = await getSession(session); return !!(s && s.role === "admin" && s.org === "hunter"); }
+// cron-триггер — Authorization: Bearer $CRON_SECRET (как у остальных агентов)
+function isCronReq(req) { const s = process.env.CRON_SECRET || ""; if (!s) return false; const ah = (req.headers && (req.headers.authorization || req.headers.Authorization)) || ""; return ah === `Bearer ${s}`; }
+// сравнение подписей в постоянное время (защита от timing-атак)
+function safeEq(a, b) { const ba = Buffer.from(String(a), "utf8"), bb = Buffer.from(String(b), "utf8"); if (ba.length !== bb.length) return false; try { return crypto.timingSafeEqual(ba, bb); } catch (e) { return false; } }
+// сырое тело запроса (bodyParser выключен) — нужно для HMAC Push; для GET вернёт ""
+async function readRaw(req) {
+  if (typeof req.body === "string") return req.body;
+  if (req.body && Buffer.isBuffer(req.body)) return req.body.toString("utf8");
+  if (req.body && typeof req.body === "object") { try { return JSON.stringify(req.body); } catch (e) { /* fallthrough */ } }
+  try { const chunks = []; for await (const c of req) chunks.push(typeof c === "string" ? Buffer.from(c) : c); return Buffer.concat(chunks).toString("utf8"); } catch (e) { return ""; }
+}
 
 const TZ = 5 * 3600000; // Ташкент
 const median = (arr) => { const v = (arr || []).filter((x) => x != null); if (!v.length) return null; const s = [...v].sort((a, b) => a - b); const m = Math.floor(s.length / 2); return s.length % 2 ? s[m] : (s[m - 1] + s[m]) / 2; };
@@ -203,22 +220,100 @@ export async function runIngest(org, unified, isComplete, nowMs) {
     totals: { leads: dashboard.totals.leads, sold: dashboard.totals.sold, conv: dashboard.totals.conv } };
 }
 
+// Тестовый мок-мостик в формате docs/hunter-ai-integration-spec.md (фейковые данные, read-only).
+// Позволяет проверить Pull без реального эндпоинта клиента: bridgeUrl мок-org указывает сюда.
+const MOCK_BRIDGE = {
+  is_complete: true,
+  generated_at: "2026-07-15T09:35:00Z",
+  employees: [{ id: "1", name: "Alisher", role: "sales" }, { id: "2", name: "Dilnoza", role: "sales" }],
+  leads: [
+    { id: "10", created_at: "2026-07-05T08:00:00Z", updated_at: "2026-07-10T08:00:00Z", responsible_employee_id: "1", contact_phone: "+998900000010", status: { id: "200", name: "Won", type: "won" }, loss_reason: null, payment: { is_paid: true, amount: 5000000, currency: "UZS", paid_at: "2026-07-15T06:00:00Z" } },
+    { id: "11", created_at: "2026-07-15T05:00:00Z", updated_at: "2026-07-15T05:00:00Z", responsible_employee_id: "1", contact_phone: "+998900000011", status: { id: "101", name: "New", type: "open" }, loss_reason: null, payment: null },
+    { id: "12", created_at: "2026-07-14T08:00:00Z", updated_at: "2026-07-14T08:00:00Z", responsible_employee_id: "1", contact_phone: "+998900000012", status: { id: "999", name: "Closed", type: "lost" }, loss_reason: { id: "1", name: "Dubl" }, payment: null },
+    { id: "20", created_at: "2026-07-08T08:00:00Z", updated_at: "2026-07-08T08:00:00Z", responsible_employee_id: "2", contact_phone: "+998900000020", status: { id: "300", name: "NoAnswer", type: "open" }, loss_reason: null, payment: null },
+    { id: "21", created_at: "2026-07-09T08:00:00Z", updated_at: "2026-07-09T08:00:00Z", responsible_employee_id: "2", contact_phone: "+998900000021", status: { id: "400", name: "Closed", type: "lost" }, loss_reason: { id: "2", name: "RefusedTalked" }, payment: null },
+    { id: "22", created_at: "2026-07-13T08:00:00Z", updated_at: "2026-07-13T08:00:00Z", responsible_employee_id: "2", contact_phone: "+998900000022", status: { id: "300", name: "NoAnswer", type: "open" }, loss_reason: null, payment: null },
+  ],
+  calls: [
+    { id: "c1", lead_id: "10", employee_id: "1", direction: "outbound", started_at: "2026-07-05T08:30:00Z", duration_seconds: 120, answered: true },
+    { id: "c2", lead_id: "11", employee_id: "1", direction: "outbound", started_at: "2026-07-15T05:30:00Z", duration_seconds: 90, answered: true },
+    { id: "c3", lead_id: "20", employee_id: "2", direction: "outbound", started_at: "2026-07-08T09:00:00Z", duration_seconds: 5, answered: false },
+    { id: "c4", lead_id: "22", employee_id: "2", direction: "outbound", started_at: "2026-07-13T09:00:00Z", duration_seconds: 60, answered: true },
+  ],
+};
+
 export default async function handler(req, res) {
   res.setHeader("Cache-Control", "no-store");
   if (!REDIS_URL || !REDIS_TOKEN) { res.status(500).json({ error: "no redis" }); return; }
-  const q = req.query || {}, b = req.body || {};
+  const raw = await readRaw(req);
+  let b = {}; if (raw) { try { b = JSON.parse(raw); } catch (e) { b = {}; } }
+  const q = req.query || {};
   const action = q.action || b.action || "";
 
-  // ingest_test (суперадмин): принять inline unified-payload, прогнать runIngest, вернуть результат.
-  // Для шага 4 (тест на мок-данных). Pull (bridgeUrl) и Push (webhook) — шаг 3.
+  // мок-мостик (read-only фикстура, spec-формат) — цель bridgeUrl при тесте Pull
+  if (action === "mock_bridge") { res.status(200).json(MOCK_BRIDGE); return; }
+
+  // ── PUSH (webhook мостика): POST с телом {is_complete, employees, leads, calls}. ──
+  // Аутентификация — HMAC-SHA256 сырого тела ключом клиента (X-Hunter-Signature: sha256=<hex>).
+  // Машина-к-машине, БЕЗ сессии. Курсор Pull не трогаем (у Push своя доставка изменений).
+  if (action === "ingest_push") {
+    const org = String(q.org || b.org || "");
+    const clientcfg = org ? await rgetJSON(`clientcfg:${org}`, null) : null;
+    if (!clientcfg || clientcfg.source !== "unified") { res.status(404).json({ error: "unified-org не найден" }); return; }
+    if (!clientcfg.apiKey) { res.status(400).json({ error: "у org нет apiKey" }); return; }
+    const sig = (req.headers && (req.headers["x-hunter-signature"] || req.headers["X-Hunter-Signature"])) || "";
+    const expected = "sha256=" + crypto.createHmac("sha256", clientcfg.apiKey).update(raw || "", "utf8").digest("hex");
+    if (!safeEq(sig, expected)) { res.status(401).json({ error: "bad signature" }); return; }
+    const isComplete = b.is_complete !== false;
+    const r = await runIngest(org, { employees: b.employees, leads: b.leads, calls: b.calls }, isComplete, Date.now());
+    res.status(r.ok ? 200 : 400).json({ ...r, mode: "push", isComplete, note: b.note || null });
+    return;
+  }
+
+  // ── PULL (мы сами тянем из мостика): GET/POST, триггерит cron ИЛИ суперадмин ИЛИ владелец своей org. ──
+  // Инкремент по updated_since (курсор ingest:${org}:lastPull). Курсор двигаем ТОЛЬКО при is_complete=true —
+  // иначе окно перечитается, чтобы недостающие записи долетели.
+  if (action === "ingest_pull") {
+    const org = String(q.org || b.org || "");
+    const sess = await getSession(q.session || b.session);
+    const isSuper = !!(sess && sess.role === "admin" && sess.org === "hunter");
+    const isOwner = !!(sess && sess.org === org && (sess.role === "admin" || sess.role === "rop"));
+    if (!(isCronReq(req) || isSuper || isOwner)) { res.status(403).json({ error: "нет прав на pull" }); return; }
+    const clientcfg = org ? await rgetJSON(`clientcfg:${org}`, null) : null;
+    if (!clientcfg || clientcfg.source !== "unified") { res.status(400).json({ error: "unified-org не найден" }); return; }
+    const { bridgeUrl, apiKey } = clientcfg;
+    if (!bridgeUrl || !apiKey) { res.status(400).json({ error: "мостик не настроен (bridgeUrl/apiKey)" }); return; }
+    let target; try { target = new URL(bridgeUrl); } catch (e) { res.status(400).json({ error: "bridgeUrl невалиден" }); return; }
+    const since = await rgetJSON(`ingest:${org}:lastPull`, null); // ISO прошлого успешного pull
+    if (since) target.searchParams.set("updated_since", since);
+    // тянем с таймаутом — чужой мостик может зависнуть
+    const ctrl = new AbortController(); const timer = setTimeout(() => ctrl.abort(), 25000);
+    let data;
+    try {
+      const r = await fetch(target.toString(), { headers: { Authorization: `Bearer ${apiKey}`, Accept: "application/json" }, signal: ctrl.signal });
+      clearTimeout(timer);
+      if (!r.ok) { res.status(502).json({ error: `мостик вернул ${r.status}`, detail: (await r.text().catch(() => "")).slice(0, 300) }); return; }
+      data = await r.json();
+    } catch (e) { clearTimeout(timer); res.status(502).json({ error: "мостик недоступен", detail: String(e).slice(0, 200) }); return; }
+    const isComplete = data.is_complete !== false;
+    const result = await runIngest(org, { employees: data.employees, leads: data.leads, calls: data.calls }, isComplete, Date.now());
+    if (!result.ok) { res.status(400).json({ ...result, mode: "pull" }); return; }
+    // курсор двигаем только при полных данных (иначе перечитаем окно)
+    let cursorAdvanced = false;
+    if (isComplete) { await rsetJSON(`ingest:${org}:lastPull`, data.generated_at || new Date().toISOString()); cursorAdvanced = true; }
+    res.status(200).json({ ...result, mode: "pull", isComplete, note: data.note || null, cursorAdvanced, since: since || null });
+    return;
+  }
+
+  // ── ingest_test (суперадмин): inline unified-payload → runIngest. Тест на мок-данных (шаг 4). ──
   if (action === "ingest_test") {
     if (!(await isSuperAdmin(q.session || b.session))) { res.status(403).json({ error: "superadmin only" }); return; }
     const org = String(b.org || q.org || "");
     if (!org || org === "hunter") { res.status(400).json({ error: "нужен org (не hunter)" }); return; }
     const payload = b.payload || {};
     const r = await runIngest(org, payload, payload.is_complete !== false, b.nowMs || Date.now());
-    res.status(200).json(r); return;
+    res.status(r.ok ? 200 : 400).json(r); return;
   }
 
-  res.status(501).json({ error: "ingest: Pull/Push — шаг 3; сейчас доступен только ingest_test (суперадмин)" });
+  res.status(400).json({ error: "unknown action (ingest_pull | ingest_push | ingest_test)" });
 }

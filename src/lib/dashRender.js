@@ -2,7 +2,7 @@
 // Работает на реальном DOM статического скелета дашборда (те же id). Числа/логика 1:1.
 // Раздел «Маркетинг» (renderAdsets, meta-ads) переносится позже — здесь не вызывается.
 import { state, getGoal } from './appState.js'
-import { getSession, getRole, orgQ } from './session.js'
+import { getSession, getRole, getOrg, orgQ } from './session.js'
 // getRole используется в reviewSusp (by: роль ревьюера)
 import { escapeHtml } from './format.js'
 
@@ -655,6 +655,21 @@ async function syncAll() {
   if (icon) icon.classList.add('spinning')
   if (lbl) lbl.textContent = 'Обновляю...'
   try {
+    // unified-org (кастомная CRM): данные приходят не из amoCRM, а через ingest — тянем Pull из мостика клиента.
+    const unified = !!(window._dashData && window._dashData.speed && window._dashData.speed._source === 'unified')
+    if (unified) {
+      const r = await fetch('/api/ingest?action=ingest_pull&org=' + encodeURIComponent(getOrg()) + '&session=' + encodeURIComponent(getSession()))
+      const d = await r.json()
+      if (d && d.ok) {
+        if (typeof window.__reloadDashboard === 'function') await window.__reloadDashboard()
+        if (lbl) lbl.textContent = d.isComplete ? 'Готово ✓' : 'Частично: мостик отдал неполные данные'
+      } else {
+        if (lbl) lbl.textContent = (d && d.error) ? ('Мостик: ' + d.error) : 'Нет связи с мостиком'
+      }
+      if (icon) icon.classList.remove('spinning')
+      setTimeout(() => { if (lbl) lbl.textContent = 'Обновить'; syncingAll = false }, 2500)
+      return
+    }
     const r = await fetch('/api/sync' + orgQ())
     const d = await r.json()
     if (d && d.ok && typeof window.__reloadDashboard === 'function') await window.__reloadDashboard()
