@@ -29,6 +29,9 @@
     },
     "api/mop-agent.js": {
       "maxDuration": 60
+    },
+    "api/deepsales.js": {
+      "maxDuration": 300
     }
   },
   "crons": [
