@@ -157,25 +157,34 @@ async function updateJournal(items) {
 // Интервалы клипаются к запрошенному ташкентскому дню и суммируются по состояниям.
 function tkDayStr(ms) { return new Date(ms + 5 * 3600000).toISOString().slice(0, 10); }
 function tkHM(ms) { return new Date(ms + 5 * 3600000).toISOString().slice(11, 16); }
-async function buildReport(dayStr, nowMs) {
+async function buildReport(dayStr, nowMs, cfg) {
   const log = await rgetJSON("sceneactivity:journal", []);
   const dayStart = Date.parse(dayStr + "T00:00:00Z") - 5 * 3600000; // ташкентская полночь в UTC ms
   const dayEnd = dayStart + 24 * 3600000;
+  const workFrom = dayStart + (cfg.workStartHour || 9) * 3600000; // рабочие часы (Ташкент) в UTC ms
+  const workTo = dayStart + (cfg.workEndHour || 19) * 3600000;
   const byMop = {};
   for (const e of log) (byMop[e.mop] = byMop[e.mop] || []).push(e);
   const mops = {};
   for (const [mop, arr] of Object.entries(byMop)) {
     arr.sort((a, b) => a.at - b.at);
-    const totals = { active: 0, inactive: 0, absent: 0, offHours: 0, noData: 0 };
+    const totals = { active: 0, inactive: 0, absent: 0, offHours: 0, notObserved: 0, noData: 0 };
     const intervals = [];
+    const push = (a, z, bk, label, reason) => { const m = Math.round((z - a) / 60000); if (m <= 0) return; totals[bk] = (totals[bk] || 0) + m; intervals.push({ state: label, reason: reason || null, from: tkHM(a), to: tkHM(z), min: m }); };
     for (let i = 0; i < arr.length; i++) {
       const from = arr[i].at, to = i + 1 < arr.length ? arr[i + 1].at : nowMs;
       const s = Math.max(from, dayStart), en = Math.min(to, dayEnd);
       if (en <= s) continue;
-      const min = Math.round((en - s) / 60000);
-      const bucket = arr[i].noData ? "noData" : arr[i].state; // «нет данных» держим отдельно от absent
-      totals[bucket] = (totals[bucket] || 0) + min;
-      intervals.push({ state: arr[i].noData ? "нет данных" : arr[i].state, reason: arr[i].reason || null, from: tkHM(s), to: tkHM(en), min });
+      if (arr[i].state === "offHours") {
+        // РАЗДЕЛЯЕМ: метка offHours внутри рабочих часов = «НЕ НАБЛЮДАЛИ» (журнал не опрашивали), вне 9-19 = реально «вне часов»
+        if (s < Math.min(en, workFrom)) push(s, Math.min(en, workFrom), "offHours", "вне часов");
+        const ws = Math.max(s, workFrom), we = Math.min(en, workTo);
+        if (ws < we) push(ws, we, "notObserved", "не наблюдали");
+        if (Math.max(s, workTo) < en) push(Math.max(s, workTo), en, "offHours", "вне часов");
+      } else {
+        const bucket = arr[i].noData ? "noData" : arr[i].state;
+        push(s, en, bucket, arr[i].noData ? "нет данных" : arr[i].state, arr[i].reason);
+      }
     }
     if (intervals.length) mops[mop] = { totals, intervals };
   }
@@ -246,17 +255,22 @@ export default async function handler(req, res) {
     if ((await sessionRole(q.session || b.session)) !== "admin") { res.status(403).json({ error: "admin only" }); return; }
     const now = Date.now();
     const day = String(q.date || b.date || tkDayStr(now));
-    const mops = await buildReport(day, now);
+    const mops = await buildReport(day, now, cfg);
     const hm = (m) => { m = Math.round(m || 0); const h = Math.floor(m / 60), mm = m % 60; return (h ? h + "ч " : "") + mm + "м"; };
     const summary = Object.entries(mops).map(([name, r]) => {
       const t = r.totals, inCrm = (t.active || 0) + (t.inactive || 0);
       return `${name}: активность в CRM ${hm(inCrm)} (активен ${hm(t.active)}, «спит» ${hm(t.inactive)})`
         + (t.absent ? ` · ушёл ${hm(t.absent)}` : "")
         + (t.noData ? ` · НЕТ ДАННЫХ ${hm(t.noData)}` : "")
+        + (t.notObserved ? ` · НЕ НАБЛЮДАЛИ ${hm(t.notObserved)}` : "")
         + (t.offHours ? ` · вне часов ${hm(t.offHours)}` : "");
     });
     res.status(200).json({ ok: true, date: day, mops, summary,
-      note: "СПРАВКА, не обвинение и не основание для задач РОПу. «Нет данных» ≠ «отсутствие»: пока callsBypassSuspected, тишина в CRM может быть звонками с личных телефонов (не долетают до amoCRM). Журнал пишется, только когда открыта сцена/метрики (кэш 2 мин) — пропуски = не наблюдали, а не «бездельничал». «Активность в CRM» = было действие в CRM в пределах часа, НЕ «сидел за столом»." });
+      note: "СПРАВКА, не обвинение и не основание для задач РОПу. Ярлыки-оговорки:"
+        + " • «НЕ НАБЛЮДАЛИ» — рабочее время (9–19), но сцену/метрики в этот момент не опрашивали → журнал не писался. Это НЕ бездействие в рабочие часы, а отсутствие наблюдения."
+        + " • «вне часов» — реальное нерабочее время (19:00–09:00)."
+        + " • «НЕТ ДАННЫХ» ≠ «отсутствие»: пока callsBypassSuspected, тишина в CRM может быть звонками с личных телефонов (не долетают до amoCRM)."
+        + " • «активность в CRM» = было действие в CRM в пределах часа, НЕ «сидел за столом»." });
     return;
   }
   if (action === "preview") { // админ: пересобрать + зафиксировать журнал + вернуть детали
