@@ -158,10 +158,16 @@ export function computeMetrics(raw, cfg, isComplete, nowMs) {
   const DZagg = mopIds.reduce((a, id) => { const b = dz[String(id)]; a.pool += b.pool; a.calledToday += b.calledToday; a.reachedToday += b.reachedToday; return a; }, { pool: 0, calledToday: 0, reachedToday: 0 });
   const pct = (a, b) => (b ? Math.min(100, Math.round(a / b * 100)) : 0);
   const updatedAt = new Date(nowMs).toISOString();
+  // валюта клиента — по факту оплат (самая частая payment.currency), иначе из конфига, иначе UZS.
+  // Дашборд форматирует деньги по этому полю (B&H в USD, а не в сумах).
+  const curCount = {};
+  for (const L of (raw.leads || [])) { const cur = L.payment && L.payment.currency; if (cur) curCount[cur] = (curCount[cur] || 0) + 1; }
+  const currency = Object.keys(curCount).sort((a, b) => curCount[b] - curCount[a])[0] || cfg.currency || "UZS";
 
   const dashboard = {
-    updatedAt, period: "Текущий месяц",
+    updatedAt, period: "Текущий месяц", currency,
     totals: {
+      currency,
       leads: totalLeads, sold: soldTeam, revenue: revenueTeam, newSalesRevenue: revenueTeam, soldTeam, revenueTeam,
       conv, avgCheck, avgCheckMedian: avgCheck, noContactPct, ownExcluded: 0,
       dealCycleMedianDays, paidReceiptCount: null, goal: null,
@@ -173,7 +179,7 @@ export function computeMetrics(raw, cfg, isComplete, nowMs) {
     suspicious: [],
   };
   const speed = {
-    updatedAt, period: "Текущий месяц", mops: speedMops, mopsDay,
+    updatedAt, period: "Текущий месяц", currency, mops: speedMops, mopsDay,
     mopIssues: mopIssues.slice(0, 400),
     reach: { reachedLeads: speedMops.reduce((s, m) => s + m.reached, 0), leads: totalLeads },
     dozvon: { pool: DZagg.pool, calledToday: DZagg.calledToday, reachedToday: DZagg.reachedToday, pct: pct(DZagg.reachedToday, DZagg.calledToday), coveragePct: pct(DZagg.calledToday, DZagg.pool),

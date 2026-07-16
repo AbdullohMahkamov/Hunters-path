@@ -136,8 +136,11 @@ export default async function handler(req, res) {
         noContactStages: c.noContactStages || [],
         fakeNumReasons: Array.isArray(c.fakeNumReasons) ? c.fakeNumReasons : [],   // брак (неверный номер/дубль) — вон из знаменателя дозвона
         contactedReasons: Array.isArray(c.contactedReasons) ? c.contactedReasons : [], // контакт был (не дали разрешение) — считать дозвоном
-        // этапы «входа» для % дозвона — отмечаются чекбоксами при онбординге, правятся в «Метрики»
-        dozvonStages: Array.isArray(c.dozvonStages) ? c.dozvonStages.map(Number).filter(Boolean) : [],
+        // этапы «входа» для % дозвона — отмечаются чекбоксами при онбординге, правятся в «Метрики».
+        // amoCRM: id статусов числовые → Number. unified: id — строки ("new","closed") → храним как строки.
+        dozvonStages: Array.isArray(c.dozvonStages)
+          ? (source === "unified" ? c.dozvonStages.map(String).filter(Boolean) : c.dozvonStages.map(Number).filter(Boolean))
+          : [],
       };
       await fetch(`${url}/set/clientcfg:${c.org}`, {
         method: "POST", headers: { Authorization: `Bearer ${token}` }, body: JSON.stringify(cfg),
@@ -174,18 +177,19 @@ export default async function handler(req, res) {
       if (sess.role !== "admin") { res.status(403).json({ error: "admin only" }); return; }
       const org = (isSuperAdmin && req.body && req.body.org) ? req.body.org : (sess.org || "hunter"); // клиент — ТОЛЬКО своя org (раньше принимал любой body.org — дыра); суперадмин может указать чужую
       const inc = (req.body && req.body.metrics) || {};
+      const key = org === "hunter" ? "metricscfg:hunter" : `clientcfg:${org}`;
+      const cr = await fetch(`${url}/get/${key}`, { headers: { Authorization: `Bearer ${token}` } });
+      const cd = await cr.json();
+      const cur = (cd && cd.result) ? JSON.parse(cd.result) : {};
       const patch = {};
-      if (Array.isArray(inc.dozvonStages)) patch.dozvonStages = inc.dozvonStages.map(Number).filter(Boolean);
+      // unified: id статусов — строки; amoCRM: числа (см. client-save)
+      if (Array.isArray(inc.dozvonStages)) patch.dozvonStages = (cur.source === "unified") ? inc.dozvonStages.map(String).filter(Boolean) : inc.dozvonStages.map(Number).filter(Boolean);
       if (inc.reachedSec != null) {
         const rs = parseInt(inc.reachedSec, 10);
         if (!(rs > 0 && rs <= 600)) { res.status(400).json({ error: "reachedSec: 1..600 секунд" }); return; }
         patch.reachedSec = rs;
       }
       if (!Object.keys(patch).length) { res.status(400).json({ error: "нечего сохранять" }); return; }
-      const key = org === "hunter" ? "metricscfg:hunter" : `clientcfg:${org}`;
-      const cr = await fetch(`${url}/get/${key}`, { headers: { Authorization: `Bearer ${token}` } });
-      const cd = await cr.json();
-      const cur = (cd && cd.result) ? JSON.parse(cd.result) : {};
       const next = { ...cur, ...patch };
       await fetch(`${url}/set/${key}`, {
         method: "POST", headers: { Authorization: `Bearer ${token}` }, body: JSON.stringify(next),

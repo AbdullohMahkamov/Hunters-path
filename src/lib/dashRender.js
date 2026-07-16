@@ -17,6 +17,15 @@ let _discData = null
 let overviewExtrasLoaded = false
 let ovFinYear = null, ovFinMonth = null
 
+// Валюта текущего дашборда (из кэша: dashboard.currency). UZS — без юнита (как было, hunter не тронут);
+// USD — префикс «$». Задаётся при загрузке данных (см. window._dashData = d).
+let _dashCurrency = 'UZS'
+export function setDashCurrency(c) { _dashCurrency = c || 'UZS' }
+// полный формат суммы с юнитом (для мест, где раньше был хардкод «сум»)
+export function fmtCur(n, uz) {
+  const num = new Intl.NumberFormat('ru-RU').format(Math.round(Number(n) || 0))
+  return _dashCurrency === 'USD' ? '$' + num : num + ' ' + (uz ? "so'm" : 'сум')
+}
 export function fmtSum(n) {
   n = Number(n) || 0
   const neg = n < 0; const a = Math.abs(n)
@@ -24,7 +33,8 @@ export function fmtSum(n) {
   if (a >= 1000000) s = (a / 1000000).toFixed(a >= 10000000 ? 0 : 1).replace('.', ',') + 'М'
   else if (a >= 1000) s = Math.round(a / 1000) + 'К'
   else s = String(a)
-  return (neg ? '-' : '') + s
+  const body = (neg ? '-' : '') + s
+  return _dashCurrency === 'USD' ? '$' + body : body
 }
 
 function fmtMin(m) {
@@ -54,6 +64,7 @@ function countWorkdays(year, month, workdays) {
 
 export function applyLiveDash(d) {
   window._dashData = d
+  setDashCurrency(d && (d.currency || (d.totals && d.totals.currency)))
   const t = d.totals
   const set = (id, v) => { const e = document.getElementById(id); if (e) e.textContent = v }
   const per = window._dashPeriod || 'month'
@@ -294,7 +305,7 @@ async function loadOverviewExtras() {
 function renderOverviewMoney() {
   const uz = state.lang === 'uz'
   const per = window._dashPeriod || 'month'
-  const fmt = (n) => n == null ? '—' : new Intl.NumberFormat('ru-RU').format(Math.round(n)) + ' ' + (uz ? "so'm" : 'сум')
+  const fmt = (n) => n == null ? '—' : fmtCur(n, uz)
   const set = (id, v) => { const e = document.getElementById(id); if (e) e.textContent = v }
   let profShown, profH
   if (per === 'all' && ovFinYear && ovFinYear.length) {
@@ -522,7 +533,7 @@ function editForecastGoal() {
 const AMO_BASE = 'https://huntercademy.amocrm.ru/leads/detail/'
 let suspCatFilter = null
 let suspHistoryMode = false
-function fmtSuspSum(n) { return n ? new Intl.NumberFormat('ru-RU').format(n) + ' сум' : 'нет бюджета' }
+function fmtSuspSum(n) { return n ? fmtCur(n, state.lang === 'uz') : 'нет бюджета' }
 function fmtSuspDate(unix) { if (!unix) return ''; const d = new Date(unix * 1000); return d.toLocaleDateString('ru-RU') }
 function openSuspModal(cat) { suspCatFilter = cat || null; suspHistoryMode = false; document.getElementById('suspOverlay').style.display = 'block'; renderSuspModal() }
 function closeSuspModal() { document.getElementById('suspOverlay').style.display = 'none' }

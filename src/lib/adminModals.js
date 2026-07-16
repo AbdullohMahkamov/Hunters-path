@@ -339,7 +339,8 @@ async function saveClient() {
     const mops = {}
     document.querySelectorAll('.cf_mop:checked').forEach((c) => { mops[c.value] = c.getAttribute('data-name') })
     client.mops = mops
-    client.dozvonStages = Array.from(document.querySelectorAll('.cf_dz:checked')).map((c) => Number(c.value))
+    // unified: id статусов — строки ("new"/"closed"); amoCRM: числовые. Не коэрсим unified в Number (даст NaN).
+    client.dozvonStages = Array.from(document.querySelectorAll('.cf_dz:checked')).map((c) => _clientSource === 'unified' ? c.value : Number(c.value))
     // «не дозвонились» этапы (имена) + причины потери по категориям (имена; id — для noReachReasonId)
     client.noContactStages = Array.from(document.querySelectorAll('.cf_nc:checked')).map((c) => c.value)
     client.noContactReasons = Array.from(document.querySelectorAll('.cf_ncr:checked')).map((c) => c.getAttribute('data-name'))
