@@ -184,6 +184,19 @@ function liveBlock(d, fin, realGoal, workdays, tg) {
   return s;
 }
 
+async function setCache(key, value, ttlSec) {
+  const url = process.env.UPSTASH_REDIS_REST_URL, token = process.env.UPSTASH_REDIS_REST_TOKEN;
+  if (!url || !token) return;
+  try { await fetch(`${url}/set/${encodeURIComponent(key)}?EX=${ttlSec}`, { method: "POST", headers: { Authorization: `Bearer ${token}` }, body: JSON.stringify(value) }); } catch (e) {}
+}
+// Тривиальное сообщение (приветствие/благодарность/подтверждение) целиком — без бизнес-сути.
+// Такие идут на Haiku и БЕЗ тяжёлого контекста (agentsBlock+live). Консервативно: только сплошной ack ≤40 симв.
+function isTrivial(msg) {
+  const m = String(msg || "").trim().toLowerCase();
+  if (!m) return true;
+  if (m.length > 40) return false;
+  return /^(привет\w*|здравствуй\w*|assalom\w*|salom|салом|хай|hi|hello|спасибо|спс|благодар\w*|рахмат|raxmat|rahmat|ок(ей)?|ok(ay)?|хорошо|понятно|ясно|принято|отлично|супер|давай|👍|🙏|❤️|\s|[.!?,)])+$/.test(m);
+}
 function shortT(s, n) { s = String(s || ""); return s.length > n ? s.slice(0, n) + "…" : s; }
 function statusCounts(arr, field) { const m = {}; for (const x of arr || []) { const k = x[field] || "?"; m[k] = (m[k] || 0) + 1; } const e = Object.entries(m); return e.length ? e.map(([k, v]) => k + ":" + v).join(", ") : "—"; }
 
@@ -271,6 +284,11 @@ export default async function handler(req, res) {
     // === УМНЫЕ ВОПРОСЫ: AI находит проблемы и предлагает, что спросить ===
     if (action === "smart-questions") {
       if (!cache || !cache.totals) { res.status(200).json({ ok: true, questions: [] }); return; }
+      // КЭШ: пересчитываем Sonnet только когда сменился снимок дашборда (обновляется раз в час), а не на каждый рендер
+      const sqKey = `chatsmartq:${org}:${lang === "uz" ? "uz" : "ru"}`;
+      const upd = cache.updatedAt || 0;
+      const prevSq = await readCache(sqKey, null);
+      if (prevSq && prevSq.forUpdatedAt === upd && Array.isArray(prevSq.questions)) { res.status(200).json({ ok: true, questions: prevSq.questions, cached: true }); return; }
       const qSystem = `Ты — директор по продажам. Смотришь данные бизнеса и находишь 3-4 ПРОБЛЕМЫ или зоны внимания, которые владелец сам не заметил бы.
 Для каждой сформулируй КОРОТКИЙ вопрос (3-6 слов) от лица владельца ("Почему...", "Кто...", "Куда...", "Успеваем ли..."), который он захочет нажать.
 Срочность: "hot" (горит, теряем деньги) или "warn" (внимание).
@@ -295,7 +313,9 @@ export default async function handler(req, res) {
       let questions = [];
       try { questions = JSON.parse(txt); } catch (e) { questions = []; }
       if (!Array.isArray(questions)) questions = [];
-      res.status(200).json({ ok: true, questions: questions.slice(0, 4) });
+      const out = questions.slice(0, 4);
+      await setCache(sqKey, { questions: out, forUpdatedAt: upd }, 7200); // держим до смены снимка (backstop 2ч)
+      res.status(200).json({ ok: true, questions: out });
       return;
     }
 
@@ -363,13 +383,17 @@ export default async function handler(req, res) {
 
     let progressNote = "";
 
-    // ЧТЕНИЕ агентов (шаг 1): компактный дайджест 4 агентов + геймификации + trust-флаги — дописываем в системный промпт
-    const agents = await agentsBlock(org, speed);
+    // ТРИВИАЛЬНОЕ сообщение (приветствие/благодарность/подтверждение) → Haiku и БЕЗ тяжёлого контекста.
+    // Содержательные вопросы про агентов/метрики → Sonnet + ПОЛНЫЙ контекст (live + agentsBlock) — как было, ради этого чат и ценен.
+    const lastMsg = Array.isArray(messages) && messages.length ? String(messages[messages.length - 1].content || "") : "";
+    const trivial = isTrivial(lastMsg);
+    const agents = trivial ? "" : await agentsBlock(org, speed); // для тривиального пропускаем сбор состояния агентов (и ~40 чтений Redis)
+    const ctx = trivial ? "" : (live + agents);
 
     const anthropicReq = {
-      model: "claude-sonnet-5",
+      model: trivial ? "claude-haiku-4-5-20251001" : "claude-sonnet-5",
       max_tokens: 2500,
-      system: SYSTEM + progressNote + live + agents,
+      system: SYSTEM + progressNote + ctx,
       messages: messages,
       stream: true,
     };
