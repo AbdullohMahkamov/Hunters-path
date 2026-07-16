@@ -204,6 +204,16 @@ needsDetail=false и пустой checklist — только если ждёшь
 }
 
 // ── ОБРАБОТКА ОТВЕТА РОПа (вызывается из tg-bot webhook) ──
+// Экспортируемый бандл состояния — РОВНО то, что отдаёт action:"state". Для чат-советника (без дублирования сбора).
+export async function getTaskStateBundle() {
+  const [tasks, st, esc, chat, cfg, people, mopRun, flows] = await Promise.all([
+    loadSalesTasks(), rgetJSON(K.status, {}), rgetJSON(K.escalations, []), getChat(), getConfig(), getPeople(),
+    getMopLastRun().catch(() => null), rgetJSON("scene:flows", []),
+  ]);
+  return { tasks, status: st, escalations: esc.slice(-40).reverse(), chat: chat.slice(-120), config: cfg, people,
+    mopAgent: mopRun, flows: flows.slice(-8), now: { tashkentHour: tkHour(), tashkentDay: tkDay() } };
+}
+
 export async function handleRopReply(text) {
   const cfg = await getConfig();
   if (!cfg.enabled || !AKEY) return;
@@ -391,14 +401,8 @@ export default async function handler(req, res) {
 
   try {
     if (action === "state") {
-      const [tasks, st, esc, chat, cfg, people, mopRun, flows] = await Promise.all([
-        loadSalesTasks(), rgetJSON(K.status, {}), rgetJSON(K.escalations, []), getChat(), getConfig(), getPeople(),
-        getMopLastRun().catch(() => null), rgetJSON("scene:flows", []),
-      ]);
-      res.status(200).json({ ok: true, tasks, status: st, escalations: esc.slice(-40).reverse(), chat: chat.slice(-120), config: cfg, people,
-        mopAgent: mopRun, // последний прогон Агента Г + по каким метрикам он молчит
-        flows: flows.slice(-8), // РЕАЛЬНЫЕ события передачи данных между агентами (для сцены)
-        now: { tashkentHour: tkHour(), tashkentDay: tkDay() } });
+      const b = await getTaskStateBundle();
+      res.status(200).json({ ok: true, ...b });
       return;
     }
     if (action === "tick") { const r = await runTick(!!b.force); res.status(200).json(isAdmin ? r : { ok: !!r.ok, ran: true }); return; }

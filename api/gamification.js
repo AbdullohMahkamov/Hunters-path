@@ -216,6 +216,17 @@ async function saveMopState(org, mopId, st) {
 }
 function balanceOf(st) { return Math.max(0, (st.carry || 0) + (st.earnedMonth || 0) + (st.bonus || 0) - (st.spent || 0)); }
 
+// Экспорт для чат-советника: баллы/уровни всех МОПов org (то же, что action:"list_balances", без дублирования).
+export async function getBalancesSummary(org) {
+  org = org || "hunter";
+  try {
+    const accounts = JSON.parse((await redisGet("mops:accounts")) || "[]").filter(a => (a.org || "hunter") === org);
+    const out = [];
+    for (const a of accounts) { const st = await getMopState(org, a.mopId); out.push({ name: a.name || a.login, balance: balanceOf(st), level: st.level || 0, earnedMonth: st.earnedMonth || 0 }); }
+    return out;
+  } catch (e) { return []; }
+}
+
 // Лента живых дропов отдела (для «forcedrop»-тикера).
 async function getDrops(org) {
   const raw = await redisGet(`gamification:drops:${org}`);

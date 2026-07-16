@@ -260,6 +260,15 @@ async function cronTick() {
   return await runGrowth();
 }
 
+// Экспортируемый бандл состояния — РОВНО то, что отдаёт action:"state". Для чат-советника (без дублирования сбора).
+export async function getGrowthStateBundle(opts) {
+  const cfg = await getConfig();
+  const [hyps, tested, sources, lastRun] = await Promise.all([rgetJSON(K.hypotheses, []), rgetJSON(K.tested, []), rgetJSON(K.sources, []), rgetJSON(K.lastRun, null)]);
+  let funnel = null;
+  if (!(opts && opts.skipFunnel)) { try { funnel = await getVerifiedFunnel(cfg.clientOrg || "hunter"); } catch (e) {} } // чат воронку не показывает → пропускает (экономит ~21 чтение снимков)
+  return { hypotheses: hyps, tested, sources: sources.filter((s) => s.url).slice(-40), lastRun, config: cfg, funnel };
+}
+
 export default async function handler(req, res) {
   res.setHeader("Cache-Control", "no-store");
   if (!REDIS_URL || !REDIS_TOKEN) { res.status(500).json({ error: "no redis" }); return; }
@@ -281,10 +290,8 @@ export default async function handler(req, res) {
 
   try {
     if (action === "state") {
-      const cfg = await getConfig();
-      const [hyps, tested, sources, lastRun] = await Promise.all([rgetJSON(K.hypotheses, []), rgetJSON(K.tested, []), rgetJSON(K.sources, []), rgetJSON(K.lastRun, null)]);
-      let funnel = null; try { funnel = await getVerifiedFunnel(cfg.clientOrg || "hunter"); } catch (e) {}
-      res.status(200).json({ ok: true, hypotheses: hyps, tested, sources: sources.filter((s) => s.url).slice(-40), lastRun, config: cfg, funnel });
+      const b = await getGrowthStateBundle();
+      res.status(200).json({ ok: true, ...b });
       return;
     }
     if (action === "get_config") { res.status(200).json({ ok: true, config: await getConfig() }); return; }

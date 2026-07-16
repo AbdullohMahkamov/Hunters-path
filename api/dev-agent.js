@@ -121,6 +121,15 @@ async function readMemory() {
   return { findings, hypotheses, decisions, fixed, chat };
 }
 
+// Экспортируемый бандл состояния — РОВНО то, что отдаёт action:"state" (де-обезличено).
+// Нужен чат-советнику, чтобы читать состояние Dev-Agent, НЕ дублируя логику сбора.
+export async function getDevStateBundle() {
+  const map = await rgetJSON(K.idmap, { orgs: {}, mops: {} });
+  const [memory, conflog, cfg, quota] = await Promise.all([readMemory(), rgetJSON(K.conflog, []), getConfig(), getQuota()]);
+  const de = (arr) => (arr || []).map((it) => ({ ...it, claim: deanonymize(it.claim || "", map), evidence: (it.evidence || []).map((e) => deanonymize(e, map)), reason: deanonymize(it.reason || "", map) }));
+  return { findings: de(memory.findings), hypotheses: de(memory.hypotheses), decisions: memory.decisions, fixed: memory.fixed, chat: memory.chat, conflog: conflog.slice(-60), config: cfg, quota };
+}
+
 // ── КОНКРЕТНЫЕ АГРЕГАТЫ (read-only, только amoCRM для звонков) ────────────────────────
 function ageH(ts) { if (!ts) return null; const t = typeof ts === "string" ? Date.parse(ts) : (ts > 1e12 ? ts : ts * 1000); return t ? +(((Date.now() - t) / 3600000).toFixed(1)) : null; }
 const okRange = (v, lo, hi) => v == null || (v >= lo && v <= hi);
@@ -615,11 +624,8 @@ export default async function handler(req, res) {
 
   try {
     if (action === "state") {
-      const map = await rgetJSON(K.idmap, { orgs: {}, mops: {} });
-      const [memory, conflog, cfg, quota] = await Promise.all([readMemory(), rgetJSON(K.conflog, []), getConfig(), getQuota()]);
-      // де-обезличиваем для показа основателю (в памяти хранится обезличенно)
-      const de = (arr) => (arr || []).map((it) => ({ ...it, claim: deanonymize(it.claim || "", map), evidence: (it.evidence || []).map((e) => deanonymize(e, map)), reason: deanonymize(it.reason || "", map) }));
-      res.status(200).json({ ok: true, findings: de(memory.findings), hypotheses: de(memory.hypotheses), decisions: memory.decisions, fixed: memory.fixed, chat: memory.chat, conflog: conflog.slice(-60), config: cfg, quota });
+      const b = await getDevStateBundle(); // де-обезличено внутри
+      res.status(200).json({ ok: true, ...b });
       return;
     }
     if (action === "get_config") { res.status(200).json({ ok: true, config: await getConfig() }); return; }

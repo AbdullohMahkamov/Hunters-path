@@ -3,6 +3,13 @@
 
 export const config = { api: { bodyParser: { sizeLimit: "12mb" } } };
 
+// Связка с 4 агентами (ТОЛЬКО ЧТЕНИЕ, шаг 1): переиспользуем их существующие state()-бандлы, не дублируя сбор.
+import { getDevStateBundle } from "./dev-agent.js";
+import { getGrowthStateBundle } from "./growth-agent.js";
+import { getTaskStateBundle } from "./task-agent.js";
+import { getOpenMopFindings, getFreshAutoClosed, getMopLastRun, getMopConfig } from "./mop-agent.js";
+import { getBalancesSummary } from "./gamification.js";
+
 async function readDashboardCache() {
   const url = process.env.UPSTASH_REDIS_REST_URL;
   const token = process.env.UPSTASH_REDIS_REST_TOKEN;
@@ -177,6 +184,62 @@ function liveBlock(d, fin, realGoal, workdays, tg) {
   return s;
 }
 
+function shortT(s, n) { s = String(s || ""); return s.length > n ? s.slice(0, n) + "…" : s; }
+function statusCounts(arr, field) { const m = {}; for (const x of arr || []) { const k = x[field] || "?"; m[k] = (m[k] || 0) + 1; } const e = Object.entries(m); return e.length ? e.map(([k, v]) => k + ":" + v).join(", ") : "—"; }
+
+// ЧТЕНИЕ агентов (шаг 1): компактный, источник-подписанный, trust-флагнутый дайджест 4 агентов + геймификации.
+// Переиспользует их state()-бандлы. Источники ОСТАЮТСЯ РАЗЛИЧИМЫ (не сливаются). Гейты передаются явно.
+async function agentsBlock(org, speed) {
+  let dev, growth, task, mopOpen, mopClosed, mopRun, mopCfg, bal;
+  try {
+    [dev, growth, task, mopOpen, mopClosed, mopRun, mopCfg, bal] = await Promise.all([
+      getDevStateBundle().catch(() => null), getGrowthStateBundle({ skipFunnel: true }).catch(() => null), getTaskStateBundle().catch(() => null),
+      getOpenMopFindings().catch(() => []), getFreshAutoClosed().catch(() => []), getMopLastRun().catch(() => null),
+      getMopConfig().catch(() => null), getBalancesSummary(org).catch(() => []),
+    ]);
+  } catch (e) { return ""; }
+
+  let s = `\n\n=== СИСТЕМА АГЕНТОВ (это ОТДЕЛЬНЫЕ системы-источники, НЕ твоё мнение; при ответе называй источник и НЕ сливай их в одну выжимку) ===\n`;
+
+  if (dev) {
+    s += `\n[Менеджер по аналитике / Dev-Agent] — техно-аналитик: следит за корректностью метрик и системы.\n`;
+    s += `• Находки: ${(dev.findings || []).length} (${statusCounts(dev.findings, "status")}). Гипотезы: ${(dev.hypotheses || []).length} (${statusCounts(dev.hypotheses, "status")}).\n`;
+    for (const f of (dev.findings || []).slice(0, 4)) s += `   — [${f.status}] ${shortT(f.claim, 150)}\n`;
+    const nd = (dev.hypotheses || []).filter(h => h.status === "needs_data").length;
+    if (nd) s += `   ⚠ ${nd} гипотез(ы) в статусе needs_data — это НЕДОСТАТОК ДАННЫХ, НЕ вывод; не выдавай за факт.\n`;
+  } else s += `\n[Менеджер по аналитике] состояние сейчас недоступно.\n`;
+
+  if (growth) {
+    const lr = growth.lastRun;
+    s += `\n[Агент по развитию / Growth Agent] — гипотезы роста на verified-воронке + внешние бенчмарки через web_search.\n`;
+    if (lr) s += `• Последний прогон: ${lr.day || "?"} (web-поисков: ${lr.searches ?? "?"}). Кратко: ${shortT(lr.report, 220)}\n`;
+    s += `• Гипотез: ${(growth.hypotheses || []).length}; с отметкой результата: ${(growth.tested || []).length} (0 = ждут твоего решения).\n`;
+    for (const h of (growth.hypotheses || []).slice(0, 4)) s += `   — [${h.status || "open"}] ${shortT(h.observation || h.claim, 150)}\n`;
+    for (const u of ((lr && lr.undiagnosable) || []).slice(0, 2)) s += `   ⛔ не диагностируется (данных нет): ${shortT(u, 150)}\n`;
+  } else s += `\n[Агент по развитию] состояние сейчас недоступно.\n`;
+
+  if (task) {
+    const st = task.status || {};
+    s += `\n[Тренер / Task Agent] — доводит находки до РОПа задачами, эскалирует владельцу при молчании РОПа.\n`;
+    s += `• Задач РОПу: ${(task.tasks || []).length}. Эскалаций владельцу: ${(task.escalations || []).length}.\n`;
+    for (const t of (task.tasks || []).slice(0, 5)) { const ts = st[t.id] || {}; s += `   — «${shortT(t.title, 70)}»: ${ts.state || "—"}${ts.ropRepliedDay ? ` (РОП ответил ${ts.ropRepliedDay})` : ""}${ts.escalatedDay ? ` [ЭСКАЛИРОВАНО ${ts.escalatedDay}]` : ""}\n`; }
+  } else s += `\n[Тренер] состояние сейчас недоступно.\n`;
+
+  s += `\n[Супервайзер / MOP Agent] — находки по отделу/конкретным МОПам → вливаются в задачи Тренера.\n`;
+  s += `• Открытых находок: ${(mopOpen || []).length}, автозакрытых недавно: ${(mopClosed || []).length}.\n`;
+  for (const f of (mopOpen || []).slice(0, 4)) s += `   — [${f.scope}/${f.type}] ${shortT(f.title, 90)}\n`;
+  if (mopCfg && mopCfg.noCallEnabled === false) s += `   ⚠ ГЕЙТ: детектор «не звонил» (no_call) ВЫКЛЮЧЕН — ${shortT(mopCfg.noCallDisabledReason, 150)} → вывод «МОП не звонил» ДЕЛАТЬ НЕЛЬЗЯ.\n`;
+
+  if (bal && bal.length) s += `\n[Геймификация] баллы/уровни: ${bal.map(b => `${b.name} (ур.${b.level}, ${b.balance} б.)`).join(", ")}.\n`;
+
+  const mm = (speed && speed.mopMeta) || {};
+  s += `\n=== TRUST / ДИСЦИПЛИНА ДАННЫХ (соблюдай как агенты) ===\n`;
+  if (mm.callsBypassSuspected) s += `• callsBypassSuspected = TRUE: звонки с личных телефонов МОПов НЕ долетают до amoCRM (доля «активен без звонка» ${mm.telephonyPct ?? "?"}%). Любой вывод про дозвон/«кто сколько звонил»/«кто не звонил» — ПОД ПОДОЗРЕНИЕМ. Оговори это явно, не давай уверенный вердикт по звонкам, НЕ обвиняй конкретных людей.\n`;
+  const inc = []; if (mm.notesComplete === false) inc.push("заметки"); if (mm.eventsComplete === false) inc.push("события"); if (mm.leadsComplete === false) inc.push("лиды");
+  if (inc.length) s += `• Данные выгружены НЕ полностью (${inc.join(", ")}) — часть метрик неполна, оговаривай это при выводах.\n`;
+  return s;
+}
+
 export default async function handler(req, res) {
   if (req.method !== "POST") { res.status(405).json({ error: "Method not allowed" }); return; }
   const apiKey = process.env.ANTHROPIC_API_KEY;
@@ -255,10 +318,17 @@ export default async function handler(req, res) {
 
 ГЛАВНЫЙ ПРИНЦИП: владелец не хочет копаться в цифрах. Он спрашивает по-человечески — ты отвечаешь как опытный РОП, который видит всю картину. Трудное делаешь простым.
 
+ДИСЦИПЛИНА ДАННЫХ (ПРИОРИТЕТ НАД СТИЛЕМ: если правило ниже спорит с «всегда давай шаг / назови у кого / почему корень» — побеждает правило отсюда. Ты — удобная точка входа ко всей системе, но НЕ «более мягкая», менее строгая версия агентов):
+1. ИСТОЧНИКИ. Ниже может быть блок «СИСТЕМА АГЕНТОВ» — это ОТДЕЛЬНЫЕ системы (Менеджер по аналитике, Агент по развитию, Тренер, Супервайзер) со своими находками. Отвечая их данными — ЯВНО называй источник («по данным Агента по развитию…», «Супервайзер сообщает…»), не выдавай за своё мнение и НЕ сливай источники в одну обезличенную выжимку. Если вопрос охватывает несколько — дай сводку, но каждый источник различим.
+2. TRUST. Если данные помечены suspicious / insufficient / gated (см. блок «TRUST / ДИСЦИПЛИНА ДАННЫХ»: callsBypassSuspected, выключенный детектор no_call, needs_data, «не диагностируется», неполная выгрузка) — ОБЯЗАТЕЛЬНО оговори это и НЕ давай уверенный вывод на непроверенных данных. Не сглаживай оговорку при пересказе.
+3. ПРИЧИНЫ. Спрашивают «почему X», а точной причины в данных НЕТ — скажи прямо: «точная причина в данных не видна, вот что можно проверить: …». НЕ выдавай правдоподобную догадку за установленную причину.
+4. ЛЮДИ. НЕ выноси суждений о конкретных сотрудниках без прямой опоры на verified-факты (та же граница, что у Супервайзера и Тренера). Особенно про звонки/дозвон при callsBypassSuspected — данные ненадёжны, поимённо не обвиняй.
+5. БЕНЧМАРКИ. Если вопрос требует гипотезы с ВНЕШНИМ бенчмарком (как делает Агент по развитию через web_search) — сошлись на его существующие гипотезы ИЛИ скажи, что нужен отдельный анализ. НЕ выдумывай «отраслевой ориентир» на лету — у тебя нет web_search.
+
 КАК ОТВЕЧАТЬ (это важнее всего):
 1. СНАЧАЛА — прямой ответ на вопрос, по делу, цифрами.
 2. Если есть проблема — назови её конкретно: что не так, у кого, насколько (в цифрах).
-3. ВСЕГДА давай «что делать» — конкретный шаг, а не общие слова. Не «улучшите дозвон», а «у Комиля дозвон 29% — поставьте задачу перезвонить 10 вчерашним лидам сегодня до обеда».
+3. ВСЕГДА давай «что делать» — конкретный шаг на VERIFIED-данных, а не общие слова (не «улучшите дозвон», а «вчера N лидов не получили ни одного звонка — распределите их с утра»). НО если метрика под гейтом (например дозвон при callsBypassSuspected) — сначала оговорка о ненадёжности данных, потом «что можно проверить», БЕЗ обвинения конкретного человека по имени.
 4. Связывай с целью: чего не хватает, чтобы дойти до ${goalShort}.
 5. ВАЖНО про темп и прогноз: план ставится по ОБЩЕЙ ВЫРУЧКЕ (вся касса за месяц: новые продажи + доплаты), а НЕ только по новым продажам. Темп в день считай ТОЛЬКО по рабочим дням (выходные не работают) — бери цифры «рабочих дней» и «темп за рабочий день» из блока данных, не пересчитывай по календарным дням. Если делишь на календарные дни — это ошибка, темп будет занижен.
 
@@ -270,7 +340,8 @@ export default async function handler(req, res) {
 
 ДИАГНОСТИКА (когда спрашивают «что не так» / «почему просели» / «чего не хватает»):
 - Прогони все метрики, найди 2-3 главные дыры (те, что сильнее всего мешают цели).
-- По каждой: в чём проблема (цифра) → почему (корень) → что сделать (конкретный шаг сегодня).
+- По каждой: в чём проблема (цифра) → почему (корень, ЕСЛИ он виден в данных; если не виден — прямо скажи «корень в данных не виден, проверить: …», не выдумывай) → что сделать (конкретный шаг сегодня).
+- Если по метрике есть гейт/оговорка из блока TRUST — не диагностируй по ней уверенно, передай оговорку.
 - Свяжи с целью ${goalShort}: «вот эти дыры стоят вам примерно X продаж/месяц».
 
 КОНТЕКСТ (база, если живых данных мало): 2 главные исторические дыры воронки — первый контакт (много лидов гибнет без разговора) и закрытие сделки (большой разрыв между сильными и слабыми МОПами). «Дорого» — редкая причина отказа, цена не проблема.
@@ -292,10 +363,13 @@ export default async function handler(req, res) {
 
     let progressNote = "";
 
+    // ЧТЕНИЕ агентов (шаг 1): компактный дайджест 4 агентов + геймификации + trust-флаги — дописываем в системный промпт
+    const agents = await agentsBlock(org, speed);
+
     const anthropicReq = {
       model: "claude-sonnet-5",
       max_tokens: 2500,
-      system: SYSTEM + progressNote + live,
+      system: SYSTEM + progressNote + live + agents,
       messages: messages,
       stream: true,
     };
