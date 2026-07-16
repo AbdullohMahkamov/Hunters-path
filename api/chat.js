@@ -388,12 +388,14 @@ export default async function handler(req, res) {
     const lastMsg = Array.isArray(messages) && messages.length ? String(messages[messages.length - 1].content || "") : "";
     const trivial = isTrivial(lastMsg);
     const agents = trivial ? "" : await agentsBlock(org, speed); // для тривиального пропускаем сбор состояния агентов (и ~40 чтений Redis)
-    const ctx = trivial ? "" : (live + agents);
+    // Тривиальному — свой МАЛЕНЬКИЙ промпт без данных (полный SYSTEM обещает «живые данные ниже» → без них модель путается/выдумывает).
+    const TRIVIAL_SYSTEM = `Ты — вежливый ассистент-директор по продажам для владельца бизнеса Hunter Academy. Обращение на «Вы». Язык ответа ЖЁСТКО: ${lang === "uz" ? "узбекский (латиница)" : "русский"}.
+Пользователь написал короткое приветствие / благодарность / подтверждение. Ответь ОДНОЙ короткой дружелюбной фразой и мягко предложи задать вопрос по бизнесу (продажи, менеджеры, воронка, план). НЕ выдумывай НИКАКИХ цифр и данных — их сейчас в контексте нет.`;
 
     const anthropicReq = {
       model: trivial ? "claude-haiku-4-5-20251001" : "claude-sonnet-5",
-      max_tokens: 2500,
-      system: SYSTEM + progressNote + ctx,
+      max_tokens: trivial ? 300 : 2500,
+      system: trivial ? TRIVIAL_SYSTEM : (SYSTEM + progressNote + live + agents),
       messages: messages,
       stream: true,
     };
