@@ -22,7 +22,8 @@ import { getOpenMopFindings, getFreshAutoClosed, closeMopFinding, getMopLastRun 
 const REDIS_URL = process.env.UPSTASH_REDIS_REST_URL;
 const REDIS_TOKEN = process.env.UPSTASH_REDIS_REST_TOKEN;
 const AKEY = process.env.ANTHROPIC_API_KEY;
-const MODEL = "claude-sonnet-5";
+const MODEL = "claude-sonnet-5";              // reasoning: разбор ответа РОПа, строгий claims_done (закрывает задачу необратимо)
+const MODEL_LIGHT = "claude-haiku-4-5-20251001"; // routine: формирование пинга/напоминания (scope уже решён в MOP-agent) — снижение расходов
 const ORG = "hunter"; // тест-фаза: один клиент. Архитектурно расширяемо (параметр org).
 
 const K = { status: "taskagent:status", escalations: "taskagent:escalations", config: "taskagent:config" };
@@ -97,10 +98,10 @@ async function loadSalesTasks() {
   return out;
 }
 
-async function callModel(system, user, maxTokens = 900) {
+async function callModel(system, user, maxTokens = 900, model = MODEL) {
   const r = await fetch("https://api.anthropic.com/v1/messages", {
     method: "POST", headers: { "content-type": "application/json", "x-api-key": AKEY, "anthropic-version": "2023-06-01" },
-    body: JSON.stringify({ model: MODEL, max_tokens: maxTokens, system, messages: [{ role: "user", content: user }] }),
+    body: JSON.stringify({ model, max_tokens: maxTokens, system, messages: [{ role: "user", content: user }] }),
   });
   if (!r.ok) throw new Error(`Anthropic ${r.status}`);
   const d = await r.json();
@@ -190,7 +191,8 @@ ${chatHistory || "(переписки ещё не было)"}
 needsDetail=false и пустой checklist — только если ждёшь простое да/нет.`;
   let out;
   // 1400 токенов: вопрос + подсказка (на 700 JSON обрывался и агент сваливался в дефолтный шаблон)
-  try { out = parseJSON(await callModel(SYSTEM_ROP, user, 1400)); }
+  // Haiku: формирование пинга — routine (scope/люди уже решены выше). При сбое — надёжный fallback ниже.
+  try { out = parseJSON(await callModel(SYSTEM_ROP, user, 1400, MODEL_LIGHT)); }
   // Fallback тоже должен нести пометку масштаба, имена и срок — иначе при сбое модели РОП получит
   // обезличенное «какой статус?», из которого непонятно ни с кем говорить, ни к какому сроку.
   catch (e) {
