@@ -30,6 +30,18 @@ async function readRaw(req) {
   if (req.body && typeof req.body === "object") { try { return JSON.stringify(req.body); } catch (e) { /* fallthrough */ } }
   try { const chunks = []; for await (const c of req) chunks.push(typeof c === "string" ? Buffer.from(c) : c); return Buffer.concat(chunks).toString("utf8"); } catch (e) { return ""; }
 }
+// GET к мостику клиента (Bearer apiKey, инкремент по updated_since), таймаут 25с — общий для Pull и probe.
+async function fetchBridge(bridgeUrl, apiKey, since) {
+  let target; try { target = new URL(bridgeUrl); } catch (e) { return { ok: false, error: "bridgeUrl невалиден" }; }
+  if (since) target.searchParams.set("updated_since", since);
+  const ctrl = new AbortController(); const timer = setTimeout(() => ctrl.abort(), 25000);
+  try {
+    const r = await fetch(target.toString(), { headers: { Authorization: `Bearer ${apiKey}`, Accept: "application/json" }, signal: ctrl.signal });
+    clearTimeout(timer);
+    if (!r.ok) return { ok: false, status: r.status, error: `мостик вернул ${r.status}`, detail: (await r.text().catch(() => "")).slice(0, 300) };
+    return { ok: true, data: await r.json() };
+  } catch (e) { clearTimeout(timer); return { ok: false, error: "мостик недоступен", detail: String(e).slice(0, 200) }; }
+}
 
 const TZ = 5 * 3600000; // Ташкент
 const median = (arr) => { const v = (arr || []).filter((x) => x != null); if (!v.length) return null; const s = [...v].sort((a, b) => a - b); const m = Math.floor(s.length / 2); return s.length % 2 ? s[m] : (s[m - 1] + s[m]) / 2; };
@@ -253,6 +265,35 @@ export default async function handler(req, res) {
   // мок-мостик (read-only фикстура, spec-формат) — цель bridgeUrl при тесте Pull
   if (action === "mock_bridge") { res.status(200).json(MOCK_BRIDGE); return; }
 
+  // ── PROBE (форма онбординга): суперадмин тянет ПРИМЕР из bridgeUrl и выводит селекторы маппинга. ──
+  // Возвращает ту же форму, что amoCRM client-probe (pipelines/users/lossReasons) — фронт переиспользует UI.
+  // unified не имеет «воронок» → одна синтетическая воронка со всеми статусами (несут type won/lost/open).
+  if (action === "ingest_probe") {
+    if (!(await isSuperAdmin(b.session || q.session))) { res.status(403).json({ error: "superadmin only" }); return; }
+    const bridgeUrl = b.bridgeUrl || q.bridgeUrl, apiKey = b.apiKey || q.apiKey;
+    if (!bridgeUrl || !apiKey) { res.status(400).json({ error: "нужны bridgeUrl и apiKey" }); return; }
+    const fetched = await fetchBridge(bridgeUrl, apiKey, null);
+    if (!fetched.ok) { res.status(200).json({ ok: false, error: fetched.error, detail: fetched.detail || null }); return; }
+    const data = fetched.data || {};
+    const leads = data.leads || [], employees = data.employees || [];
+    const statusMap = {}, lossMap = {};
+    for (const L of leads) {
+      const s = L.status || {};
+      if (s.id != null) statusMap[String(s.id)] = { id: String(s.id), name: s.name || String(s.id), type: s.type || "open" };
+      const lr = L.loss_reason;
+      if (lr && lr.name) lossMap[lr.name] = { id: lr.id != null ? String(lr.id) : lr.name, name: lr.name };
+    }
+    const statuses = Object.values(statusMap);
+    const users = employees.map((e) => ({ id: String(e.id), name: e.name || String(e.id) }));
+    res.status(200).json({
+      ok: true, source: "unified", is_complete: data.is_complete !== false,
+      counts: { leads: leads.length, calls: (data.calls || []).length, employees: employees.length },
+      pipelines: [{ id: "unified", name: "Воронка (unified CRM)", statuses }],
+      users, lossReasons: Object.values(lossMap),
+    });
+    return;
+  }
+
   // ── PUSH (webhook мостика): POST с телом {is_complete, employees, leads, calls}. ──
   // Аутентификация — HMAC-SHA256 сырого тела ключом клиента (X-Hunter-Signature: sha256=<hex>).
   // Машина-к-машине, БЕЗ сессии. Курсор Pull не трогаем (у Push своя доставка изменений).
@@ -283,18 +324,10 @@ export default async function handler(req, res) {
     if (!clientcfg || clientcfg.source !== "unified") { res.status(400).json({ error: "unified-org не найден" }); return; }
     const { bridgeUrl, apiKey } = clientcfg;
     if (!bridgeUrl || !apiKey) { res.status(400).json({ error: "мостик не настроен (bridgeUrl/apiKey)" }); return; }
-    let target; try { target = new URL(bridgeUrl); } catch (e) { res.status(400).json({ error: "bridgeUrl невалиден" }); return; }
     const since = await rgetJSON(`ingest:${org}:lastPull`, null); // ISO прошлого успешного pull
-    if (since) target.searchParams.set("updated_since", since);
-    // тянем с таймаутом — чужой мостик может зависнуть
-    const ctrl = new AbortController(); const timer = setTimeout(() => ctrl.abort(), 25000);
-    let data;
-    try {
-      const r = await fetch(target.toString(), { headers: { Authorization: `Bearer ${apiKey}`, Accept: "application/json" }, signal: ctrl.signal });
-      clearTimeout(timer);
-      if (!r.ok) { res.status(502).json({ error: `мостик вернул ${r.status}`, detail: (await r.text().catch(() => "")).slice(0, 300) }); return; }
-      data = await r.json();
-    } catch (e) { clearTimeout(timer); res.status(502).json({ error: "мостик недоступен", detail: String(e).slice(0, 200) }); return; }
+    const fetched = await fetchBridge(bridgeUrl, apiKey, since);
+    if (!fetched.ok) { res.status(502).json({ error: fetched.error, detail: fetched.detail || null }); return; }
+    const data = fetched.data;
     const isComplete = data.is_complete !== false;
     const result = await runIngest(org, { employees: data.employees, leads: data.leads, calls: data.calls }, isComplete, Date.now());
     if (!result.ok) { res.status(400).json({ ...result, mode: "pull" }); return; }
