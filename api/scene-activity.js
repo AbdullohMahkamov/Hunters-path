@@ -152,6 +152,36 @@ async function updateJournal(items) {
   return entries.length;
 }
 
+// ── ДНЕВНОЙ ОТЧЁТ (справка, НЕ обвинение): реконструкция интервалов из журнала переходов ──
+// Каждый переход действует ОТ своего времени ДО следующего перехода (последний — до «сейчас»).
+// Интервалы клипаются к запрошенному ташкентскому дню и суммируются по состояниям.
+function tkDayStr(ms) { return new Date(ms + 5 * 3600000).toISOString().slice(0, 10); }
+function tkHM(ms) { return new Date(ms + 5 * 3600000).toISOString().slice(11, 16); }
+async function buildReport(dayStr, nowMs) {
+  const log = await rgetJSON("sceneactivity:journal", []);
+  const dayStart = Date.parse(dayStr + "T00:00:00Z") - 5 * 3600000; // ташкентская полночь в UTC ms
+  const dayEnd = dayStart + 24 * 3600000;
+  const byMop = {};
+  for (const e of log) (byMop[e.mop] = byMop[e.mop] || []).push(e);
+  const mops = {};
+  for (const [mop, arr] of Object.entries(byMop)) {
+    arr.sort((a, b) => a.at - b.at);
+    const totals = { active: 0, inactive: 0, absent: 0, offHours: 0, noData: 0 };
+    const intervals = [];
+    for (let i = 0; i < arr.length; i++) {
+      const from = arr[i].at, to = i + 1 < arr.length ? arr[i + 1].at : nowMs;
+      const s = Math.max(from, dayStart), en = Math.min(to, dayEnd);
+      if (en <= s) continue;
+      const min = Math.round((en - s) / 60000);
+      const bucket = arr[i].noData ? "noData" : arr[i].state; // «нет данных» держим отдельно от absent
+      totals[bucket] = (totals[bucket] || 0) + min;
+      intervals.push({ state: arr[i].noData ? "нет данных" : arr[i].state, reason: arr[i].reason || null, from: tkHM(s), to: tkHM(en), min });
+    }
+    if (intervals.length) mops[mop] = { totals, intervals };
+  }
+  return mops;
+}
+
 export default async function handler(req, res) {
   res.setHeader("Cache-Control", "no-store");
   if (!REDIS_URL || !REDIS_TOKEN) { res.status(500).json({ error: "no redis" }); return; }
@@ -209,6 +239,24 @@ export default async function handler(req, res) {
     if ((await sessionRole(q.session || b.session)) !== "admin") { res.status(403).json({ error: "admin only" }); return; }
     const log = await rgetJSON("sceneactivity:journal", []);
     res.status(200).json({ ok: true, journal: log, note: "noData:true reason:bypass — период «нет данных» (звонки мимо CRM), НЕ отсутствие" });
+    return;
+  }
+  // ОТЧЁТ за день (админ, read-only): «кто когда действовал в CRM» — СПРАВКА, не основание для задач РОПу
+  if (action === "report") {
+    if ((await sessionRole(q.session || b.session)) !== "admin") { res.status(403).json({ error: "admin only" }); return; }
+    const now = Date.now();
+    const day = String(q.date || b.date || tkDayStr(now));
+    const mops = await buildReport(day, now);
+    const hm = (m) => { m = Math.round(m || 0); const h = Math.floor(m / 60), mm = m % 60; return (h ? h + "ч " : "") + mm + "м"; };
+    const summary = Object.entries(mops).map(([name, r]) => {
+      const t = r.totals, inCrm = (t.active || 0) + (t.inactive || 0);
+      return `${name}: активность в CRM ${hm(inCrm)} (активен ${hm(t.active)}, «спит» ${hm(t.inactive)})`
+        + (t.absent ? ` · ушёл ${hm(t.absent)}` : "")
+        + (t.noData ? ` · НЕТ ДАННЫХ ${hm(t.noData)}` : "")
+        + (t.offHours ? ` · вне часов ${hm(t.offHours)}` : "");
+    });
+    res.status(200).json({ ok: true, date: day, mops, summary,
+      note: "СПРАВКА, не обвинение и не основание для задач РОПу. «Нет данных» ≠ «отсутствие»: пока callsBypassSuspected, тишина в CRM может быть звонками с личных телефонов (не долетают до amoCRM). Журнал пишется, только когда открыта сцена/метрики (кэш 2 мин) — пропуски = не наблюдали, а не «бездельничал». «Активность в CRM» = было действие в CRM в пределах часа, НЕ «сидел за столом»." });
     return;
   }
   if (action === "preview") { // админ: пересобрать + зафиксировать журнал + вернуть детали
