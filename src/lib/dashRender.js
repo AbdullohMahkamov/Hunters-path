@@ -339,14 +339,14 @@ function renderOverviewMoney() {
     if (lbl) lbl.textContent = uz ? 'Sotuvlar summasi (butun davr)' : 'Сумма продаж (всё время)'
     const total = dt && dt.revenueAll != null ? dt.revenueAll : null
     const cnt = dt && dt.soldAll != null ? dt.soldAll : null
-    if (box) box.innerHTML = `<div style="font-size:24px;font-weight:700;color:var(--accent);">${fmt(total)}</div>
-        <div style="font-size:11px;color:var(--txt3);margin-top:4px;">${cnt != null ? cnt + (uz ? ' ta sotuv · ' : ' продаж · ') : ''}${uz ? 'amoCRM, butun baza' : 'amoCRM, вся база'}</div>`
+    if (box) box.innerHTML = `<div style="font-size:24px;font-weight:700;color:var(--accent);">${_revTracked ? fmt(total) : 'н/д'}</div>
+        <div style="font-size:11px;color:var(--txt3);margin-top:4px;">${cnt != null ? cnt + (uz ? ' ta sotuv · ' : ' продаж · ') : ''}${uz ? 'CRM, butun baza' : 'CRM, вся база'}</div>`
   } else {
     if (lbl) lbl.textContent = uz ? 'Sotuvlar summasi (shu oy)' : 'Сумма продаж (текущий месяц)'
     const rev = dt && dt.revenue != null ? dt.revenue : null
     const cnt = dt && dt.sold != null ? dt.sold : null
-    if (box) box.innerHTML = `<div style="font-size:24px;font-weight:700;color:var(--accent);">${fmt(rev)}</div>
-        <div style="font-size:11px;color:var(--txt3);margin-top:4px;">${cnt != null ? cnt + (uz ? ' ta sotuv · ' : ' продаж · ') : ''}${uz ? 'amoCRM, shu oy' : 'amoCRM, этот месяц'}</div>`
+    if (box) box.innerHTML = `<div style="font-size:24px;font-weight:700;color:var(--accent);">${_revTracked ? fmt(rev) : 'н/д'}</div>
+        <div style="font-size:11px;color:var(--txt3);margin-top:4px;">${cnt != null ? cnt + (uz ? ' ta sotuv · ' : ' продаж · ') : ''}${uz ? 'CRM, shu oy' : 'CRM, этот месяц'}</div>`
   }
 }
 
@@ -533,7 +533,8 @@ async function saveOrgSettings(partial) {
 function editForecastGoal() {
   const uz = state.lang === 'uz'
   const cur = orgSettings.goal || getGoal()
-  const inp = prompt(uz ? 'Oylik maqsad (summa, soʻm):' : 'Цель по выручке на месяц (сум):', cur)
+  const curG = _dashCurrency === 'USD' ? 'USD' : (uz ? 'soʻm' : 'сум')
+  const inp = prompt(uz ? `Oylik maqsad (summa, ${curG}):` : `Цель по выручке на месяц (${curG}):`, cur)
   if (inp === null) return
   const cleaned = parseInt(String(inp).replace(/[^0-9]/g, ''), 10)
   if (!cleaned || cleaned <= 0) { alert(uz ? 'Nol emas, masalan 250000000' : 'Введите число больше нуля, например 250000000'); return }
@@ -759,8 +760,9 @@ function editAdSpend() {
   const per = window._dashPeriod || 'month'
   const isAll = per === 'all'
   const cur = isAll ? (orgSettings.adSpendAll || '') : (orgSettings.adSpendMonth || '')
-  const label = isAll ? (uz ? 'Reklama xarajati (BUTUN DAVR, soʻm):' : 'Расход на рекламу (ВСЁ ВРЕМЯ, сум):')
-    : (uz ? 'Reklama xarajati (SHU OY, soʻm):' : 'Расход на рекламу (ТЕКУЩИЙ МЕСЯЦ, сум):')
+  const curU = _dashCurrency === 'USD' ? 'USD' : (uz ? 'soʻm' : 'сум')
+  const label = isAll ? (uz ? `Reklama xarajati (BUTUN DAVR, ${curU}):` : `Расход на рекламу (ВСЁ ВРЕМЯ, ${curU}):`)
+    : (uz ? `Reklama xarajati (SHU OY, ${curU}):` : `Расход на рекламу (ТЕКУЩИЙ МЕСЯЦ, ${curU}):`)
   const inp = prompt(label, cur)
   if (inp === null) return
   const s = parseInt(String(inp).replace(/[^0-9]/g, ''), 10)
@@ -809,7 +811,7 @@ function renderAdsets(d) {
     revenue: isAll ? a.revenue : (a.revenueMonth != null ? a.revenueMonth : a.revenue),
     conv: isAll ? a.conv : (a.convMonth != null ? a.convMonth : a.conv),
     avgCheck: isAll ? a.avgCheck : (a.avgCheckMonth != null ? a.avgCheckMonth : a.avgCheck),
-  })).filter((a) => a.leads > 0 || a.revenue > 0).sort((x, y) => y.revenue - x.revenue)
+  })).filter((a) => a.leads > 0 || a.revenue > 0).sort((x, y) => _revTracked ? (y.revenue - x.revenue) : ((y.sold || 0) - (x.sold || 0)))
   const spendMap = {}
   if (_metaSpend && _metaSpend.adsets) for (const s of _metaSpend.adsets) spendMap[s.name] = s.spend
   const hasSpend = _metaSpend && _metaSpend.adsets && _metaSpend.adsets.length
@@ -818,7 +820,8 @@ function renderAdsets(d) {
     return
   }
   let summaryHtml = ''
-  if (isAdmin) {
+  // Окупаемость (ROAS/ROI/выручка с рекламы) — только когда выручка отслеживается. Без неё блок бессмыслен.
+  if (isAdmin && _revTracked) {
     const adRevenue = arr.reduce((s, a) => s + (a.revenue || 0), 0)
     const adSpend = getAdSpendForPeriod(isAll)
     const marginInfo = getMargin()
@@ -861,19 +864,21 @@ function renderAdsets(d) {
       </div>
     </div>`
   }
-  const maxRev = Math.max(1, ...arr.map((a) => a.revenue))
+  // метрика ранжирования источников: выручка, а без неё — количество продаж
+  const adMetric = (a) => _revTracked ? (a.revenue || 0) : (a.sold || 0)
+  const maxRev = Math.max(1, ...arr.map(adMetric))
   const LIMIT = 5
   const shown = _adsetsExpanded ? arr : arr.slice(0, LIMIT)
   let html = summaryHtml
   html += `<div style="display:flex;justify-content:space-between;align-items:center;gap:8px;margin-bottom:10px;flex-wrap:wrap;">
-    <div style="font-size:11px;color:var(--txt3);flex:1;min-width:150px;">${hasSpend ? (uz ? 'Har auditoriya ROI (Meta’dan)' : 'ROI по каждой аудитории (из Meta)') : (uz ? 'Auditoriyalar boʻyicha tushum' : 'Выручка по аудиториям')}</div>
+    <div style="font-size:11px;color:var(--txt3);flex:1;min-width:150px;">${hasSpend && _revTracked ? (uz ? 'Har auditoriya ROI (Meta’dan)' : 'ROI по каждой аудитории (из Meta)') : (_revTracked ? (uz ? 'Auditoriyalar boʻyicha tushum' : 'Выручка по аудиториям') : (uz ? 'Auditoriyalar boʻyicha sotuvlar' : 'Продажи по аудиториям'))}</div>
     ${isAdmin ? `<button id="metaRefreshBtn" onclick="refreshMetaSpend()" style="padding:7px 12px;border-radius:8px;background:var(--accent);border:none;color:#fff;font-size:12px;font-weight:600;cursor:pointer;white-space:nowrap;">${uz ? 'Meta xarajati' : 'Расходы Meta'}</button>` : ''}
   </div>`
   html += shown.map((a) => {
     const spend = spendMap[a.name]
     const roi = fmtRoi(a.revenue, spend)
     let roiTag = ''
-    if (hasSpend) {
+    if (hasSpend && _revTracked) {
       if (spend > 0 && roi != null) {
         const roiColor = roi >= 2 ? 'var(--green)' : (roi >= 1 ? 'var(--gold)' : 'var(--red)')
         roiTag = `<span style="font-size:12px;font-weight:700;color:${roiColor};white-space:nowrap;">ROAS ${roi.toFixed(1)}x</span>`
@@ -887,11 +892,11 @@ function renderAdsets(d) {
         <b style="font-size:13px;">${escapeHtml(a.name)}</b>
         <div style="display:flex;gap:10px;align-items:center;">
           ${roiTag}
-          <span style="font-size:13px;font-weight:700;color:var(--green);white-space:nowrap;">${fmtSum(a.revenue)}</span>
+          <span style="font-size:13px;font-weight:700;color:var(--green);white-space:nowrap;">${_revTracked ? fmtSum(a.revenue) : ((a.sold || 0) + ' ' + (uz ? 'sotuv' : 'прод.'))}</span>
         </div>
       </div>
       <div style="height:6px;background:var(--card2);border-radius:5px;overflow:hidden;margin-bottom:5px;">
-        <div style="height:100%;width:${Math.round(a.revenue / maxRev * 100)}%;background:var(--accent);border-radius:5px;"></div>
+        <div style="height:100%;width:${Math.round(adMetric(a) / maxRev * 100)}%;background:var(--accent);border-radius:5px;"></div>
       </div>
       <div style="font-size:11.5px;color:var(--txt3);">
         ${a.leads} ${uz ? 'lid' : 'лидов'} · ${a.sold} ${uz ? 'sotuv' : 'продаж'} · ${uz ? 'konv' : 'конв'}. ${String(a.conv).replace('.', ',')}%${hasSpend && spend > 0 ? ` · ${uz ? 'xarajat' : 'расход'} ${fmtSum(spend)}` : ''}
