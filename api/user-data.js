@@ -153,7 +153,14 @@ export default async function handler(req, res) {
       let list = await getClients();
       list = list.filter(x => x.org !== org);
       await saveClients(list);
-      await fetch(`${url}/del/clientcfg:${org}`, { method: "POST", headers: { Authorization: `Bearer ${token}` } });
+      // Чистим ВСЁ, что привязано к org: конфиг, сырьё ingest, курсор Pull и кэши.
+      // Иначе удаление+пересоздание того же org слило бы старое сырьё с новым (merge по id).
+      const del = (k) => fetch(`${url}/del/${encodeURIComponent(k)}`, { method: "POST", headers: { Authorization: `Bearer ${token}` } });
+      await Promise.all([
+        del(`clientcfg:${org}`),
+        del(`ingest:${org}:leads`), del(`ingest:${org}:calls`), del(`ingest:${org}:employees`), del(`ingest:${org}:lastPull`),
+        del(`dashboard:${org}`), del(`speed:${org}`),
+      ]);
       res.status(200).json({ ok: true });
       return;
     }
