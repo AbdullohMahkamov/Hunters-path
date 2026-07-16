@@ -107,19 +107,23 @@ export default async function handler(req, res) {
     if (action === "client-save") {
       if (!isSuperAdmin) { res.status(403).json({ error: "forbidden" }); return; }
       const c = (req.body && req.body.client) || {};
-      if (!c.org || !c.subdomain || !c.token || !c.login || !c.password) {
-        res.status(400).json({ error: "org, subdomain, token, login, password обязательны" }); return;
+      const source = (c.source === "unified") ? "unified" : "amocrm"; // источник данных: amoCRM или unified-мостик по нашей спеке
+      const baseMissing = !c.org || !c.login || !c.password;
+      if (source === "amocrm" ? (baseMissing || !c.subdomain || !c.token) : (baseMissing || !c.bridgeUrl || !c.apiKey)) {
+        res.status(400).json({ error: source === "amocrm" ? "org, subdomain, token, login, password обязательны" : "org, bridgeUrl, apiKey, login, password обязательны (unified)" }); return;
       }
       if (c.org === "hunter") { res.status(400).json({ error: "org 'hunter' зарезервирован" }); return; }
       // 1) реестр логинов (для auth)
       const list = await getClients();
       const idx = list.findIndex(x => x.org === c.org);
-      const entry = { org: c.org, name: c.name || c.org, login: c.login, password: c.password, role: c.role || "admin", subdomain: c.subdomain, token: c.token };
+      const entry = { org: c.org, name: c.name || c.org, login: c.login, password: c.password, role: c.role || "admin", source, subdomain: c.subdomain || "", token: c.token || "" };
       if (idx >= 0) list[idx] = entry; else list.push(entry);
       await saveClients(list);
-      // 2) конфиг клиента (для sync/sync-speed/activity)
+      // 2) конфиг клиента (для sync/sync-speed/activity ИЛИ ingest)
       const cfg = {
-        subdomain: c.subdomain, token: c.token,
+        source,                                                   // "amocrm" | "unified" — resolveConfig/диспетчер разводит sync vs ingest
+        subdomain: c.subdomain || "", token: c.token || "",        // amocrm: доступ к amoCRM
+        bridgeUrl: c.bridgeUrl || "", apiKey: c.apiKey || "",      // unified: мостик клиента по docs/hunter-ai-integration-spec.md
         pipeline: c.pipeline || "", sold: c.sold || "", lost: c.lost || "",
         ownThreshold: c.ownThreshold != null ? c.ownThreshold : 0,
         adsetFieldId: c.adsetFieldId || null,

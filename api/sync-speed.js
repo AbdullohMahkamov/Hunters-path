@@ -36,12 +36,14 @@ async function resolveConfig(org, redisUrl, redisToken) {
     // (ключ metricscfg:hunter в Redis). Иначе настройку метрик у первого клиента пришлось бы
     // менять коммитом — а она должна меняться в два клика, как у любого другого клиента.
     const ov = await redisGetCfg(redisUrl, redisToken, "metricscfg:hunter");
-    return { org, token: process.env.AMOCRM_TOKEN, ...HUNTER_CFG, ...(ov || {}) };
+    return { org, source: "amocrm", token: process.env.AMOCRM_TOKEN, ...HUNTER_CFG, ...(ov || {}) };
   }
   const s = await redisGetCfg(redisUrl, redisToken, `clientcfg:${org}`);
-  if (!s || !s.subdomain || !s.token) return null;
+  if (!s) return null;
+  if ((s.source || "amocrm") !== "amocrm") return null; // unified-клиента обрабатывает ingest, а не sync-speed
+  if (!s.subdomain || !s.token) return null;
   return {
-    org, token: s.token, subdomain: s.subdomain,
+    org, source: "amocrm", token: s.token, subdomain: s.subdomain,
     pipelineName: s.pipeline || "",
     soldStatus: s.soldStatus != null ? s.soldStatus : null,
     lostStatus: s.lostStatus != null ? s.lostStatus : null,

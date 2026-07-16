@@ -45,12 +45,15 @@ async function redisGetCfg(url, token, key) {
 async function resolveConfig(org, redisUrl, redisToken) {
   org = org || "hunter";
   if (org === "hunter") {
-    return { org, token: process.env.AMOCRM_TOKEN, ...HUNTER_CFG };
+    return { org, source: "amocrm", token: process.env.AMOCRM_TOKEN, ...HUNTER_CFG };
   }
   const stored = await redisGetCfg(redisUrl, redisToken, `clientcfg:${org}`);
-  if (!stored || !stored.subdomain || !stored.token) return null;
+  if (!stored) return null;
+  if ((stored.source || "amocrm") !== "amocrm") return null; // unified-клиента обрабатывает ingest, а не sync
+  if (!stored.subdomain || !stored.token) return null;
   return {
     org,
+    source: "amocrm",
     token: stored.token,
     subdomain: stored.subdomain,
     pipeline: stored.pipeline || "",
