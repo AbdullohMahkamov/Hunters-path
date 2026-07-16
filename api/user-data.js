@@ -161,7 +161,7 @@ export default async function handler(req, res) {
     // остальные клиенты: поля лежат прямо в clientcfg:<org>.
     if (action === "metrics-save") {
       if (sess.role !== "admin") { res.status(403).json({ error: "admin only" }); return; }
-      const org = (req.body && req.body.org) || sess.org || "hunter";
+      const org = (isSuperAdmin && req.body && req.body.org) ? req.body.org : (sess.org || "hunter"); // клиент — ТОЛЬКО своя org (раньше принимал любой body.org — дыра); суперадмин может указать чужую
       const inc = (req.body && req.body.metrics) || {};
       const patch = {};
       if (Array.isArray(inc.dozvonStages)) patch.dozvonStages = inc.dozvonStages.map(Number).filter(Boolean);

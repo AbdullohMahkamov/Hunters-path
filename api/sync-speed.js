@@ -66,6 +66,11 @@ async function sessionRole(url, token, session) {
     return s && s.role;
   } catch (e) { return null; }
 }
+// суперадмин (org hunter) — для гейта диагностики/этапов (клиенты сюда не ходят; per-org метрики клиента — Фаза 3)
+async function sessionSuper(url, token, session) {
+  if (!session) return false;
+  try { const r = await fetch(`${url}/get/session:${encodeURIComponent(session)}`, { headers: { Authorization: `Bearer ${token}` } }); const d = await r.json(); if (!d || d.result == null) return false; const s = JSON.parse(d.result); return !!(s && s.role === "admin" && s.org === "hunter"); } catch (e) { return false; }
+}
 
 async function redisSet(url, token, key, value) {
   const r = await fetch(`${url}/set/${encodeURIComponent(key)}`, {
@@ -112,8 +117,7 @@ export default async function handler(req, res) {
   // двухкликовая настройка в панели, как выбор финального этапа продажи. Этот эндпоинт её и кормит.
   // Лёгкий: один запрос в amoCRM, тяжёлый расчёт speed не запускается.
   if (((req.query && req.query.action) || "") === "stages") {
-    const role = await sessionRole(redisUrl, redisToken, (req.query && req.query.session) || "");
-    if (role !== "admin") { res.status(403).json({ error: "admin only" }); return; }
+    if (!(await sessionSuper(redisUrl, redisToken, (req.query && req.query.session) || ""))) { res.status(403).json({ error: "superadmin only (этапы воронки клиента per-org — Фаза 3)" }); return; }
     const pr = await fetch(`${base}/leads/pipelines`, { headers: H });
     if (!pr.ok) { res.status(200).json({ ok: false, error: `amoCRM ответил ${pr.status}` }); return; }
     const pd = await pr.json();
@@ -594,8 +598,7 @@ export default async function handler(req, res) {
     // === DEBUG-ВЫВОД: сверяем каждое событие звонка за сегодня с фактической нотой (длительностью) ===
     // Только по query-параметру и только для админа. В обычный ответ/кэш не попадает.
     if (DEBUG_CALLS) {
-      const role = await sessionRole(redisUrl, redisToken, (req.query && req.query.session) || "");
-      if (role !== "admin") { res.status(403).json({ error: "debug: admin only" }); return; }
+      if (!(await sessionSuper(redisUrl, redisToken, (req.query && req.query.session) || ""))) { res.status(403).json({ error: "debug: superadmin only" }); return; }
       const hhmm = (ts) => new Date((ts + TZ_OFFSET2) * 1000).toISOString().slice(11, 16);
       const rows = [];
       const buckets = { noteMissing: 0, dur0: 0, s1_9: 0, s10_39: 0, s40plus: 0 };

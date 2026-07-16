@@ -100,7 +100,9 @@ export default async function handler(req, res) {
   const q = req.query || {}, b = req.body || {};
   const action = q.action || b.action || "state";
   const sess = await getSession(q.session || b.session);
-  const isAdmin = !!sess && sess.role === "admin";
+  const isAdmin = !!sess && sess.role === "admin" && sess.org === "hunter";
+  // ⛔ ВСЯ сцена-пузыри — только суперадмин (хардкод списка МОПов Hunter Academy). Иначе клиент увидел бы чужих сотрудников.
+  if (!isAdmin) { res.status(403).json({ error: "superadmin only — привязано к Hunter Academy" }); return; }
 
   // preview — только админ: пересобрать и вернуть факты+фразы (для проверки, что модель держится в рамках)
   if (action === "preview") {

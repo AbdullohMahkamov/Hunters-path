@@ -13,7 +13,7 @@ export default async function handler(req, res) {
   const session = req.query && req.query.session;
   let sess = null;
   try { const raw = await redisGet(`session:${session}`); sess = raw ? JSON.parse(raw) : null; } catch (e) {}
-  if (!sess || sess.role !== "admin") { res.status(403).json({ error: "admin only" }); return; }
+  if (!sess || sess.role !== "admin" || sess.org !== "hunter") { res.status(403).json({ error: "superadmin only" }); return; }
 
   const accounts = JSON.parse((await redisGet("mops:accounts")) || "[]");
   const dash = JSON.parse((await redisGet("dashboard")) || "null");

@@ -38,7 +38,7 @@ export default async function handler(req, res) {
     const { action, session, demoId } = req.body || {};
     const sess = await getSession(url, token, session);
     // Только админ управляет демо-аккаунтами
-    if (!sess || sess.role !== "admin") { res.status(403).json({ error: "Только для админа" }); return; }
+    if (!sess || sess.role !== "admin" || sess.org !== "hunter") { res.status(403).json({ error: "Только для суперадмина" }); return; }
 
     const listKey = "demos:list";
     let demos = (await redisGet(url, token, listKey)) || [];
