@@ -21,6 +21,9 @@ let ovFinYear = null, ovFinMonth = null
 // USD — префикс «$». Задаётся при загрузке данных (см. window._dashData = d).
 let _dashCurrency = 'UZS'
 export function setDashCurrency(c) { _dashCurrency = c || 'UZS' }
+// отслеживается ли выручка (из кэша totals.revenueTracked). false → CRM не отдаёт суммы оплат:
+// показываем «н/д», а не $0, чтобы не читать отсутствие данных как реальный ноль. Дефолт true (hunter/amoCRM).
+let _revTracked = true
 // полный формат суммы с юнитом (для мест, где раньше был хардкод «сум»)
 export function fmtCur(n, uz) {
   const num = new Intl.NumberFormat('ru-RU').format(Math.round(Number(n) || 0))
@@ -65,6 +68,7 @@ function countWorkdays(year, month, workdays) {
 export function applyLiveDash(d) {
   window._dashData = d
   setDashCurrency(d && (d.currency || (d.totals && d.totals.currency)))
+  _revTracked = !(d && d.totals && d.totals.revenueTracked === false)
   const t = d.totals
   const set = (id, v) => { const e = document.getElementById(id); if (e) e.textContent = v }
   const per = window._dashPeriod || 'month'
@@ -76,7 +80,7 @@ export function applyLiveDash(d) {
   const setT = (id, v) => { const e = document.getElementById(id); if (e) e.textContent = v }
   setT('tdLeads', t.leadsToday != null ? t.leadsToday : '—')
   setT('tdSold', t.soldToday != null ? t.soldToday : '—')
-  setT('tdRev', t.revenueToday != null ? fmtSum(t.revenueToday) : '—')
+  setT('tdRev', !_revTracked ? 'н/д' : (t.revenueToday != null ? fmtSum(t.revenueToday) : '—'))
 
   const isAll = per === 'all'
   const soldShown = isAll && t.soldAll != null ? t.soldAll : t.sold
@@ -84,8 +88,8 @@ export function applyLiveDash(d) {
 
   set('kpiSold', soldShown)
   set('kpiSoldH', isAll ? 'за всё время' : ('из плана ' + (t.needPerMonth || 141)))
-  set('kpiRevenue', fmtSum(revShown))
-  const rh = document.getElementById('ovRevH'); if (rh) rh.textContent = isAll ? 'за всё время' : 'этот месяц'
+  set('kpiRevenue', _revTracked ? fmtSum(revShown) : 'н/д')
+  const rh = document.getElementById('ovRevH'); if (rh) rh.textContent = !_revTracked ? 'нет оплат в CRM' : (isAll ? 'за всё время' : 'этот месяц')
   set('kpiConv', String(convVal).replace('.', ',') + '%')
   const convLeads = isAll ? (t.leadsAll != null ? t.leadsAll : t.leads) : (t.leads != null ? t.leads : 0)
   const convSold = isAll ? (t.soldTeamAll != null ? t.soldTeamAll : t.soldAll) : (t.soldTeam != null ? t.soldTeam : t.sold)
@@ -95,7 +99,7 @@ export function applyLiveDash(d) {
   const chkSold = isAll ? (t.soldAll != null ? t.soldAll : t.sold) : t.sold
   const chkRev = isAll ? (t.revenueAll != null ? t.revenueAll : t.revenue) : (t.newSalesRevenue != null ? t.newSalesRevenue : t.revenue)
   const avgCheck = (chkSold > 0) ? Math.round(chkRev / chkSold) : 0
-  set('kpiCheck', avgCheck > 0 ? fmtSum(avgCheck) : '—')
+  set('kpiCheck', !_revTracked ? 'н/д' : (avgCheck > 0 ? fmtSum(avgCheck) : '—'))
   const chkH = document.getElementById('ovCheckH'); if (chkH) chkH.textContent = isAll ? (uzL ? 'butun davr' : 'за всё время') : (uzL ? 'tushum ÷ sotuv' : 'выручка ÷ продажи')
   const sl = document.getElementById('ovSoldLbl'); if (sl) sl.textContent = isAll ? 'Продаж (всё время)' : 'Продаж'
   const rl = document.getElementById('ovRevLbl'); if (rl) rl.textContent = isAll ? 'Выручка (всё время)' : 'Выручка'

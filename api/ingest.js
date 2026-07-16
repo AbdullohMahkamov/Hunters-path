@@ -163,11 +163,15 @@ export function computeMetrics(raw, cfg, isComplete, nowMs) {
   const curCount = {};
   for (const L of (raw.leads || [])) { const cur = L.payment && L.payment.currency; if (cur) curCount[cur] = (curCount[cur] || 0) + 1; }
   const currency = Object.keys(curCount).sort((a, b) => curCount[b] - curCount[a])[0] || cfg.currency || "UZS";
+  // отслеживается ли выручка: есть ли хоть один лид с реальной оплатой (is_paid + amount>0).
+  // Если CRM не привязывает суммы (B&H), revenue=0 — это ОТСУТСТВИЕ данных, а не «ноль выручки».
+  // Флаг → дашборд покажет «н/д», агенты не примут $0 за реальный ноль (data-completeness passport).
+  const revenueTracked = (raw.leads || []).some((L) => L.payment && L.payment.is_paid && Number(L.payment.amount) > 0);
 
   const dashboard = {
-    updatedAt, period: "Текущий месяц", currency,
+    updatedAt, period: "Текущий месяц", currency, revenueTracked,
     totals: {
-      currency,
+      currency, revenueTracked,
       leads: totalLeads, sold: soldTeam, revenue: revenueTeam, newSalesRevenue: revenueTeam, soldTeam, revenueTeam,
       conv, avgCheck, avgCheckMedian: avgCheck, noContactPct, ownExcluded: 0,
       dealCycleMedianDays, paidReceiptCount: null, goal: null,
@@ -179,7 +183,7 @@ export function computeMetrics(raw, cfg, isComplete, nowMs) {
     suspicious: [],
   };
   const speed = {
-    updatedAt, period: "Текущий месяц", currency, mops: speedMops, mopsDay,
+    updatedAt, period: "Текущий месяц", currency, revenueTracked, mops: speedMops, mopsDay,
     mopIssues: mopIssues.slice(0, 400),
     reach: { reachedLeads: speedMops.reduce((s, m) => s + m.reached, 0), leads: totalLeads },
     dozvon: { pool: DZagg.pool, calledToday: DZagg.calledToday, reachedToday: DZagg.reachedToday, pct: pct(DZagg.reachedToday, DZagg.calledToday), coveragePct: pct(DZagg.calledToday, DZagg.pool),
