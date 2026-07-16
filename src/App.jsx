@@ -61,9 +61,9 @@ export default function App() {
     // на /dev-agent без входа — сначала логин, после входа останемся на этом маршруте
     return <Login onLoggedIn={handleLoggedIn} />
   }
-  // Внутренний маршрут /dev-agent — только для админа. Иначе уводим на главную.
+  // Внутренний маршрут /dev-agent — только для СУПЕР-админа (hunter). Клиента-владельца уводим на главную.
   if (isDevAgentRoute()) {
-    if (sess.role === 'admin') {
+    if (sess.role === 'admin' && sess.org === 'hunter') {
       return (
         <Suspense fallback={null}>
           <DevAgent onLogout={handleLogout} />
