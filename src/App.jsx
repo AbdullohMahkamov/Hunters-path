@@ -33,7 +33,7 @@ export default function App() {
         try {
           const d = await auth.check(s)
           if (!cancelled && d && d.ok) {
-            setRoleOrg(d.role || '', d.org || '', { mopId: d.mopId, mopName: d.mopName })
+            setRoleOrg(d.role || '', d.org || '', { mopId: d.mopId, mopName: d.mopName, clientName: d.clientName, demoName: d.demoName })
             setPhase(d.role === 'mop' ? 'mop' : 'app')
             return
           }
