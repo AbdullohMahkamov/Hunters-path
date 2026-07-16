@@ -54,7 +54,7 @@
     },
     {
       "path": "/api/dev-agent?action=nightly&cron=1",
-      "schedule": "0 0 * * *"
+      "schedule": "0 0 * * 1"
     },
     {
       "path": "/api/dev-agent?action=weekly_review&cron=1",
@@ -62,7 +62,7 @@
     },
     {
       "path": "/api/growth-agent?action=cron_tick&cron=1",
-      "schedule": "0 2 * * *"
+      "schedule": "0 2 * * 1"
     },
     {
       "path": "/api/mop-agent?action=run&cron=1",

@@ -31,7 +31,7 @@ const CAP = { hypotheses: 40, tested: 120, sources: 120 };
 const DEFAULT_CONFIG = {
   clientOrg: "hunter",                                  // полигон: Hunter Academy (org=hunter). Расширяемо client_id позже.
   niche: "онлайн-образование, продажа онлайн-курсов (edtech), B2C",
-  cadence: process.env.GROWTH_CADENCE || "daily",       // 'daily' (тест-фаза) | 'weekly' (MVP) — легко переключить
+  cadence: process.env.GROWTH_CADENCE || "weekly",      // 'weekly' (MVP, снижение расходов: 1 прогон/нед) | 'daily' — через env GROWTH_CADENCE
   cronDay: 1,                                           // для weekly: 1=Пн (МСК)
   webMaxSearches: 4,                                    // 3-4 запроса за прогон
   searchDedupDays: 3,                                   // не повторять тему поиска, если искалась за N дней
