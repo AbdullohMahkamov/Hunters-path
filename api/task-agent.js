@@ -17,7 +17,8 @@
 import { sendTg, getPeople, pushChat, getChat } from "./tg-bot.js";
 // MOP Agent не строит свой канал — его находки вливаются в ЭТОТ же список задач РОПа
 // и дальше едут по уже работающей машине: пинг → диалог → порог 13:00 → эскалация владельцу.
-import { getOpenMopFindings, getFreshAutoClosed, closeMopFinding, getMopLastRun } from "./mop-agent.js";
+import { getOpenMopFindings, getFreshAutoClosed, closeMopFinding, getMopLastRun, runMopAgent } from "./mop-agent.js";
+import { runNightly } from "./dev-agent.js"; // для РЕАЛЬНОГО перезапуска анализа по вердикту владельца в споре
 
 const REDIS_URL = process.env.UPSTASH_REDIS_REST_URL;
 const REDIS_TOKEN = process.env.UPSTASH_REDIS_REST_TOKEN;
@@ -260,7 +261,7 @@ async function notifyOwnerDispute(taskId, task, dispute) {
   const people = await getPeople();
   if (!(people.owner && people.owner.chatId)) return;
   const title = task ? task.title : taskId;
-  const txt = `⚖️ <b>РОП оспорил находку</b>\n<b>Задача:</b> ${title}\n\n🤖 <b>Агент:</b> ${String(dispute.agentClaim || "—").slice(0, 500)}\n👤 <b>РОП:</b> ${String(dispute.ropClaim || "—").slice(0, 500)}\n\nОбе версии сохранены. Ваше решение:`;
+  const txt = `⚖️ <b>РОП оспорил находку</b>\n<b>Задача:</b> ${title}\n\n🤖 <b>Агент:</b> ${String(dispute.agentClaim || "—").slice(0, 500)}\n👤 <b>РОП:</b> ${String(dispute.ropClaim || "—").slice(0, 500)}\n\nОбе версии сохранены. Нажмите кнопку — <b>или ответьте текстом</b> свой вердикт/указание (напр. «проверь сначала — запроси у РОПа список», «пусть агент переанализирует»).`;
   const kb = { reply_markup: { inline_keyboard: [
     [{ text: "✅ Прав агент", callback_data: `disp:agent:${taskId}` }, { text: "👤 Прав РОП", callback_data: `disp:rop:${taskId}` }],
     [{ text: "📝 Учту, оставить открытым", callback_data: `disp:noted:${taskId}` }],
@@ -407,6 +408,63 @@ const SYSTEM_OWNER = `Ты — Task-агент системы Hunter AI. С то
 Верни СТРОГО JSON:
 {"action":"message_rop|close|none","ropMessage":"текст сообщения РОПу на ЕГО языке — пусто, если не шлём","ownerReply":"короткое подтверждение владельцу на ЕГО языке: что именно ты сделал/отправил"}`;
 
+// ── DISPUTE-AWARE: владелец отвечает СВОБОДНЫМ ТЕКСТОМ на ОСПАРИВАНИЕ (не только кнопки) ──
+// Понимает контекст спора (обе версии), записывает вердикт владельца, и РЕАЛЬНО действует
+// (перезапуск анализа / запрос данных у РОПа), а не обещает. «pending» — спор остаётся открытым.
+const SYSTEM_OWNER_DISPUTE = `Ты — Task-агент Hunter AI. ВЛАДЕЛЕЦ отвечает СВОБОДНЫМ ТЕКСТОМ на ОСПАРИВАНИЕ находки — спор фактов между агентом и РОПом. Твоя задача: понять его ВЕРДИКТ и ИСПОЛНИТЬ его реально, не на словах.
+
+- verdict="agent" — владелец согласен с агентом (находка остаётся, РОП должен выполнить).
+- verdict="rop" — владелец принял версию РОПа (находка снимается).
+- verdict="noted" — оставить открытой, просто зафиксировать.
+- verdict="pending" — владелец НЕ решил окончательно: хочет СНАЧАЛА проверить / получить данные / переанализировать. Спор ОСТАЁТСЯ открытым, а ты РЕАЛЬНО делаешь запрошенное (запрос РОПу и/или перезапуск анализа), НЕ просто обещаешь.
+- ropMessage — если владелец просит что-то запросить/передать РОПу (напр. «пришли список 82 лидов с ID и статусами») → сформулируй на языке РОПа; иначе пусто.
+- rerun — если владелец просит ЗАНОВО прогнать анализ: "mop" (Супервайзер — находки по МОПам/статусам/дозвону) | "dev" (Менеджер по аналитике — метрики/корректность) | пусто. Выбери по сути спора.
+- ownerReply — короткое ЧЕСТНОЕ подтверждение владельцу на ЕГО языке про УЖЕ сделанное (запросил у РОПа X, перезапустил анализ Y, зафиксировал вердикт). Без «сделаю» — только про факт.
+Никаких необратимых действий с людьми. Верни СТРОГО JSON:
+{"verdict":"agent|rop|noted|pending","ropMessage":"...или пусто","rerun":"mop|dev или пусто","ownerReply":"..."}`;
+
+async function handleOwnerDisputeReply(text, taskId, task, dispute, people, ropLang, ownerLang) {
+  const chat = await getChat();
+  const recent = chat.slice(-12).map((m) => `${m.role === "rop" ? "РОП" : (m.role === "owner" ? "ВЛАДЕЛЕЦ" : "АГЕНТ")}: ${m.text}`).join("\n");
+  const user = `ЯЗЫК СООБЩЕНИЯ РОПу: ${ropLang === "uz" ? "узбекский (латиница)" : "русский"}. ЯЗЫК ВЛАДЕЛЬЦУ: ${ownerLang === "uz" ? "узбекский (латиница)" : "русский"}.
+
+СПОР ПО ЗАДАЧЕ: [${taskId}] ${task ? task.title : ""}
+🤖 ВЕРСИЯ АГЕНТА: ${dispute.agentClaim}
+👤 ВЕРСИЯ РОПа: ${dispute.ropClaim}
+
+ПЕРЕПИСКА (последнее):
+${recent || "(пусто)"}
+
+РЕШЕНИЕ/УКАЗАНИЕ ВЛАДЕЛЬЦА (свободный текст): ${text}
+
+Определи по правилам и верни СТРОГО JSON.`;
+  let out = null, err = null;
+  for (let a = 0; a < 2 && !out; a++) { try { out = parseJSON(await callModel(SYSTEM_OWNER_DISPUTE, user, 1000)); } catch (e) { err = e; } }
+  if (!out) {
+    await logDiag("handleOwnerDisputeReply", err, text);
+    if (people.owner && people.owner.chatId) await sendTg("owner", people.owner.chatId, ownerLang === "uz" ? "Qaroringizni oldim, lekin qayta ishlashda nosozlik bo'ldi — qayta yuboring." : "Ваш вердикт получил, но при обработке была заминка — повторите, пожалуйста.");
+    return { ok: false, error: "llm", dispute: true };
+  }
+  // 1) записываем вердикт владельца на спор — ТРЕТЬЯ грань записи, рядом с версиями агента и РОПа
+  const st = await rgetJSON(K.status, {});
+  if (st[taskId] && st[taskId].dispute) { st[taskId].dispute.ownerVerdict = String(text).slice(0, 700); st[taskId].dispute.ownerVerdictAt = Date.now(); await rsetJSON(K.status, st); }
+  // 2) финальный вердикт → закрываем спор общим обработчиком; pending — оставляем открытым
+  let resolved = null;
+  if (["agent", "rop", "noted"].includes(out.verdict)) { try { await handleDisputeResolve(out.verdict, taskId); resolved = out.verdict; } catch (e) {} }
+  // 3) реальный запрос РОПу
+  let sentToRop = false;
+  if (String(out.ropMessage || "").trim() && people.rop && people.rop.chatId) {
+    const r = await sendTg("rop", people.rop.chatId, out.ropMessage);
+    if (r.ok) { await pushChat({ role: "agent", text: out.ropMessage, taskId }); await rememberMsgTask("rop", r.messageId, taskId); sentToRop = true; }
+  }
+  // 4) РЕАЛЬНЫЙ перезапуск анализа (не обещание)
+  let reran = null;
+  try { if (out.rerun === "mop") { await runMopAgent(); reran = "mop"; } else if (out.rerun === "dev") { await runNightly("nightly", false); reran = "dev"; } } catch (e) {}
+  // 5) подтверждение владельцу
+  if (people.owner && people.owner.chatId && String(out.ownerReply || "").trim()) { await sendTg("owner", people.owner.chatId, out.ownerReply); await pushChat({ role: "agent", text: out.ownerReply, taskId, to: "owner" }); }
+  return { ok: true, taskId, dispute: true, verdict: out.verdict, resolved, sentToRop, reran };
+}
+
 export async function handleOwnerReply(text, replyToMsgId) {
   const cfg = await getConfig();
   if (!cfg.enabled || !AKEY) return { ok: false, skipped: "disabled" };
@@ -421,6 +479,12 @@ export async function handleOwnerReply(text, replyToMsgId) {
   const esc = [...escs].reverse().find((e) => e.taskId === taskId) || null;
   const tasks = await loadSalesTasks();
   const task = tasks.find((t) => t.id === taskId) || (esc ? { id: taskId, title: esc.title, deadline: esc.deadline } : null);
+
+  // Если по этой задаче ИДЁТ неразрешённый спор → dispute-aware ветка: понимаем контекст спора,
+  // а НЕ трактуем ответ владельца как обычную «инструкцию РОПу» (это и был баг «ИИ не понимает контекст»).
+  const st0 = await rgetJSON(K.status, {});
+  const dispute = (st0[taskId] && st0[taskId].dispute && !st0[taskId].dispute.resolvedByOwner) ? st0[taskId].dispute : null;
+  if (dispute) return await handleOwnerDisputeReply(text, taskId, task, dispute, people, ropLang, ownerLang);
 
   const chat = await getChat();
   const recent = chat.slice(-16).map((m) => `${m.role === "rop" ? "РОП" : (m.role === "owner" ? "ВЛАДЕЛЕЦ" : "АГЕНТ")}: ${m.text}`).join("\n");

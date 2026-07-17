@@ -173,6 +173,7 @@ export default function TaskPanel() {
                   </div>
                   <div style={{ fontSize: 13, lineHeight: 1.5, marginBottom: 5 }}><b style={{ color: 'var(--txt3)' }}>🤖 Агент:</b> {s.dispute.agentClaim}</div>
                   <div style={{ fontSize: 13, lineHeight: 1.5 }}><b style={{ color: 'var(--accent)' }}>👤 РОП:</b> {s.dispute.ropClaim}</div>
+                  {s.dispute.ownerVerdict && <div style={{ fontSize: 13, lineHeight: 1.5, marginTop: 5 }}><b style={{ color: 'var(--gold)' }}>👑 Ваш вердикт:</b> {s.dispute.ownerVerdict}</div>}
                   {!s.dispute.resolvedByOwner && (
                     <div style={{ display: 'flex', gap: 6, marginTop: 9, flexWrap: 'wrap' }}>
                       <button className="da-mini" disabled={busy === 'disp' + t.id} onClick={() => resolveDispute(t.id, 'agent')}>✅ Прав агент</button>
