@@ -176,7 +176,7 @@ async function decideGrowthMode(cfg, funnel) {
   return { mode: "light", reason: `воронка не изменилась с полного прогона от ${rm.lastFullDay || "?"}`, streak, lastFullDay: rm.lastFullDay };
 }
 
-async function runGrowth(forceFull) {
+export async function runGrowth(forceFull) {
   const cfg = await getConfig();
   const org = cfg.clientOrg || "hunter";
   const funnel = await getVerifiedFunnel(org);

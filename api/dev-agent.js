@@ -519,7 +519,7 @@ async function bumpQuota(field) { const key = K.quota(todayKey()); const q = awa
 async function getQuota() { return await rgetJSON(K.quota(todayKey()), { nightly: 0, chat: 0 }); }
 
 // ── НОЧНОЙ ПРОГОН / НЕДЕЛЬНАЯ РЕВИЗИЯ ────────────────────────────────────────────────
-async function runNightly(mode, viaCron) {
+export async function runNightly(mode, viaCron) {
   const cfg = await getConfig();
   // лимит плановых (cron) вызовов: не более nightlyDailyLimit в сутки — уведомление, не блокировка
   if (viaCron) {

@@ -8,7 +8,10 @@
 // Всё — admin-гейт (владелец). Каждое действие идемпотентно-безопасно и логируется.
 
 import { sendTg, getPeople, pushChat } from "./tg-bot.js";
-import { runChat as devRunChat } from "./dev-agent.js";
+import { runChat as devRunChat, runNightly } from "./dev-agent.js";
+import { runTick } from "./task-agent.js";
+import { runGrowth } from "./growth-agent.js";
+import { runMopAgent } from "./mop-agent.js";
 
 const REDIS_URL = process.env.UPSTASH_REDIS_REST_URL;
 const REDIS_TOKEN = process.env.UPSTASH_REDIS_REST_TOKEN;
@@ -107,6 +110,22 @@ export default async function handler(req, res) {
       if (!hypId) { res.status(400).json({ error: "нужен hypId" }); return; }
       const r = await closeHypothesis({ hypId, result: b.result, note: b.note });
       res.status(r.ok ? 200 : 404).json({ ok: r.ok, type, error: r.error || null });
+      return;
+    }
+    // run_agent → НЕМЕДЛЕННЫЙ ручной прогон агента заново (у всех четырёх есть). Только на явную просьбу владельца.
+    if (type === "run_agent") {
+      const agent = String(b.agent || q.agent || "").trim();
+      const AG = { task: "Тренер (задачи)", dev: "Менеджер по аналитике", growth: "Агент роста", mop: "Супервайзер по МОПам" };
+      if (!AG[agent]) { res.status(400).json({ error: "agent: task|dev|growth|mop" }); return; }
+      let r;
+      try {
+        if (agent === "task") r = await runTick(true);
+        else if (agent === "dev") r = await runNightly("nightly", false);
+        else if (agent === "growth") r = await runGrowth(true);
+        else if (agent === "mop") r = await runMopAgent();
+      } catch (e) { res.status(200).json({ ok: false, type, agent, error: String(e).slice(0, 160) }); return; }
+      const ok = !!(r && r.ok !== false);
+      res.status(200).json({ ok, type, agent, ran: ok, skipped: (r && r.skipped) || null, note: `${AG[agent]}: прогон запущен заново` });
       return;
     }
     res.status(400).json({ error: "неизвестный type" });

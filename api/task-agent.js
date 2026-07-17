@@ -468,7 +468,7 @@ export async function handleOwnerButton(action, taskId) {
 }
 
 // ── ТИК: пинги + порог эскалации ──
-async function runTick(force) {
+export async function runTick(force) {
   const cfg = await getConfig();
   if (!cfg.enabled) return { ok: true, skipped: "выключен" };
   const people = await getPeople();
