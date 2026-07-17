@@ -241,6 +241,111 @@ export default async function handler(req, res) {
     return;
   }
 
+  // === AUDIT-PICK: репрезентативная выборка на ОДНОГО МОПа для глубокого аудита ===
+  // Смесь по 2 осям: исход (won/lost) × позиция звонка в лиде (первый/повторный), разброс по времени.
+  // Бюджет по РЕАЛЬНОМУ файлу (HEAD → Content-Length/16000). Балансируем, но не подгоняем: чего
+  // реально нет — того не будет, состав честно показываем.
+  if (action === "audit-pick") {
+    const AMO = process.env.AMOCRM_TOKEN;
+    if (!AMO) { res.status(500).json({ error: "нет AMOCRM_TOKEN" }); return; }
+    const mopName = q.mop || b.mop;
+    const mopId = Object.keys(MOPS).find((id) => MOPS[id] === mopName);
+    if (!mopId) { res.status(400).json({ error: `неизвестный МОП "${mopName}" (есть: ${Object.values(MOPS).join(", ")})` }); return; }
+    const budgetMin = Number(q.budgetMin || b.budgetMin || 60);
+    const minSec = parseInt(q.minSec || b.minSec || 120, 10);   // не берём совсем короткие гудки/сбросы
+    const maxSec = parseInt(q.maxSec || b.maxSec || 1200, 10);  // до 20 мин — длинные полные циклы продажи
+    const sinceDays = parseInt(q.sinceDays || b.sinceDays || 45, 10);
+    // полосы длительности (по разговору): short 2-4мин, medium 5-10мин, long 10-20мин
+    const bandOf = (sec) => (sec <= 240 ? "short" : (sec <= 600 ? "medium" : "long"));
+    const targets = { long: parseInt(q.longMax || b.longMax || 2, 10), medium: parseInt(q.medMax || b.medMax || 4, 10), short: 999 };
+    const SUB = "huntercademy", SOLD = 142, LOST = 143, BYTES_PER_SEC = 16000;
+    const base = `https://${SUB}.amocrm.ru/api/v4`, H = { Authorization: `Bearer ${AMO}` };
+    const sinceTs = Math.floor(Date.now() / 1000) - sinceDays * 86400;
+    // исключаем уже проанализированные аудио (чтобы не платить дважды за ту же запись)
+    const doneIdx = await rgetJSON(CA_LIST(org), []);
+    const doneLeads = new Set(doneIdx.map((x) => String(x.leadId)));
+
+    // 1) лиды этого МОПа (фильтр по ответственному), won/lost, тронутые в окне
+    const leads = [];
+    for (let page = 1; page <= 8; page++) {
+      const r = await fetch(`${base}/leads?limit=250&page=${page}&filter[responsible_user_id]=${mopId}&filter[updated_at][from]=${sinceTs}`, { headers: H });
+      if (r.status === 204 || !r.ok) break;
+      const d = await r.json();
+      const ls = (d._embedded && d._embedded.leads) || [];
+      for (const L of ls) { if (L.status_id === SOLD || L.status_id === LOST) leads.push({ id: L.id, status: L.status_id === SOLD ? "won" : "lost" }); }
+      if (ls.length < 250) break;
+      await sleep(170);
+    }
+    // 2) ноты → кандидаты, помечаем первый/повторный звонок (по порядку внутри лида)
+    const cands = [];
+    for (const L of leads.slice(0, 140)) {
+      const r = await fetch(`${base}/leads/${L.id}/notes?limit=250`, { headers: H });
+      await sleep(160);
+      if (!r.ok || r.status === 204) continue;
+      const d = await r.json();
+      const calls = ((d._embedded && d._embedded.notes) || [])
+        .filter((n) => n.note_type === "call_in" || n.note_type === "call_out")
+        .map((n) => ({ ts: n.created_at, dur: parseInt((n.params || {}).duration || 0, 10) || 0, link: (n.params || {}).link }))
+        .filter((c) => c.link).sort((a, b2) => a.ts - b2.ts);
+      calls.forEach((c, i) => {
+        if (c.dur < minSec || c.dur > maxSec || c.ts < sinceTs) return;
+        cands.push({ leadId: L.id, status: L.status, dur: c.dur, link: c.link, ts: c.ts, isFirst: i === 0, callDate: new Date(c.ts * 1000).toISOString().slice(0, 10), alreadyDone: doneLeads.has(String(L.id)) });
+      });
+    }
+    // 3) баланс по 3 осям: полоса длительности → внутри неё round-robin по won/lost × первый/повторный,
+    //    с разбросом по времени. Порядок набора: сначала длинные (их мало и они дорогие), потом средние,
+    //    потом добиваем короткими. Уже проанализированные записи исключены (не платим дважды).
+    const budgetSec = budgetMin * 60;
+    const sub = ["won-first", "lost-first", "won-repeat", "lost-repeat"];
+    const shelves = { short: {}, medium: {}, long: {} };
+    for (const c of cands) {
+      if (c.alreadyDone) continue;
+      const sh = shelves[bandOf(c.dur)]; const k = `${c.status}-${c.isFirst ? "first" : "repeat"}`;
+      (sh[k] = sh[k] || []).push(c);
+    }
+    for (const band of Object.keys(shelves)) for (const k in shelves[band]) shelves[band][k].sort((a, b2) => a.ts - b2.ts);
+    const sel = []; let est = 0;
+    const pullBand = (band, maxCount) => {
+      const sh = shelves[band]; const idx = {}; sub.forEach((k) => (idx[k] = 0));
+      let n = 0, moved = true;
+      while (n < maxCount && est < budgetSec && moved) {
+        moved = false;
+        for (const k of sub) {
+          if (n >= maxCount || est >= budgetSec) break;
+          const arr = sh[k] || [];
+          if (idx[k] < arr.length) {
+            const c = arr[idx[k]++]; const ef = Math.round(c.dur * 1.2);
+            if (est + ef > budgetSec + 120) continue; // не перелетать бюджет сильно
+            sel.push(c); est += ef; n++; moved = true;
+          }
+        }
+      }
+    };
+    pullBand("long", targets.long);
+    pullBand("medium", targets.medium);
+    pullBand("short", targets.short);
+    // 4) HEAD выбранных: реальный fileSec + живость
+    const final = [];
+    for (const c of sel) {
+      let fileSec = null;
+      try { const h = await fetch(c.link, { method: "HEAD", signal: AbortSignal.timeout(12000) }); if (h.ok) { const len = parseInt(h.headers.get("content-length") || "0", 10); if (len > 0) fileSec = Math.round(len / BYTES_PER_SEC); } } catch (e) { /* мёртвая */ }
+      await sleep(80);
+      if (fileSec == null) continue;
+      final.push({ leadId: c.leadId, status: c.status, position: c.isFirst ? "первый" : "повторный", band: bandOf(c.dur), talkSec: c.dur, fileSec, link: c.link, callDate: c.callDate });
+    }
+    final.sort((a, b2) => a.callDate.localeCompare(b2.callDate));
+    const comp = { won: 0, lost: 0, "первый": 0, "повторный": 0, short: 0, medium: 0, long: 0 }; let sec = 0;
+    for (const c of final) { comp[c.status]++; comp[c.position]++; comp[c.band]++; sec += c.fileSec; }
+    res.status(200).json({
+      ok: true, action: "audit-pick", mop: mopName, mopId, budgetMin,
+      scanned: { leadsWonLost: leads.length, candidateCalls: cands.length, freshCandidates: cands.filter((c) => !c.alreadyDone).length },
+      composition: comp, totalFileMin: +(sec / 60).toFixed(1),
+      dateSpan: final.length ? { from: final[0].callDate, to: final[final.length - 1].callDate } : null,
+      calls: final,
+    });
+    return;
+  }
+
   // === PICK: исторический отбор звонков по СТАТУСУ лида (won/lost) за месяц ===
   // Нужен для контрастного анализа: debug=calls умеет только «сегодня», а нам нужны записи любой давности.
   // Только amoCRM — секреты DeepSales тут не требуются (поэтому до их проверки).
