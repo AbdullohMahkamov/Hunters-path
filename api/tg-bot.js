@@ -250,9 +250,14 @@ export default async function handler(req, res) {
       res.status(200).json({ ok: true, stored: true }); return;
     }
 
-    // владелец что-то написал боту эскалаций — просто фиксируем
+    // владелец ответил боту эскалаций → Task Agent превращает инструкцию в сообщение РОПу и подтверждает.
+    // reply_to_message.message_id — привязка к конкретной эскалации (иначе берётся последняя незакрытая).
+    const ownerReplyToId = (msg.reply_to_message && msg.reply_to_message.message_id) || null;
     await pushChat({ role: "owner", text: text.slice(0, 2000), name });
-    await sendTg("owner", chatId, "Принято. Решения по эскалациям делайте в панели Hunter AI (вкладка Task Agent).");
+    try {
+      const mod = await import("./task-agent.js");
+      await mod.handleOwnerReply(text.slice(0, 2000), ownerReplyToId);
+    } catch (e) { await sendTg("owner", chatId, "Принял, но обработать инструкцию не удалось — попробуйте ещё раз."); }
     res.status(200).json({ ok: true, stored: true });
   } catch (e) {
     res.status(200).json({ ok: false, error: String(e).slice(0, 200) }); // 200 — чтобы Telegram не ретраил

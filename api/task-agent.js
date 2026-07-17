@@ -46,20 +46,22 @@ async function rdel(key) { try { await fetch(`${REDIS_URL}/del/${encodeURICompon
 // Telegram присылает reply_to_message.message_id, когда РОП отвечает Reply'ем на конкретный пинг.
 // Сохраняем id ИСХОДЯЩИХ сообщений (пинги/вопросы) → по Reply точно знаем задачу, не заставляя LLM
 // угадывать из списка. Ключи — целые (message_id), JS хранит их по возрастанию → срез отбрасывает старые.
-const MSGMAP_KEY = "taskagent:msgmap";
-async function rememberMsgTask(messageId, taskId) {
+// namespace по боту: у rop- и owner-ботов message_id независимы и МОГУТ пересекаться → разные карты.
+const MSGMAP_KEY = (kind) => `taskagent:msgmap:${kind === "owner" ? "owner" : "rop"}`;
+async function rememberMsgTask(kind, messageId, taskId) {
   if (!messageId || !taskId) return;
   try {
-    const m = await rgetJSON(MSGMAP_KEY, {});
+    const key = MSGMAP_KEY(kind);
+    const m = await rgetJSON(key, {});
     m[String(messageId)] = taskId;
     const keys = Object.keys(m);
     if (keys.length > 300) for (const k of keys.slice(0, keys.length - 300)) delete m[k];
-    await rsetJSON(MSGMAP_KEY, m);
+    await rsetJSON(key, m);
   } catch (e) {}
 }
-async function lookupMsgTask(messageId) {
+async function lookupMsgTask(kind, messageId) {
   if (!messageId) return "";
-  const m = await rgetJSON(MSGMAP_KEY, {});
+  const m = await rgetJSON(MSGMAP_KEY(kind), {});
   return m[String(messageId)] || "";
 }
 // Диагностика сбоев LLM/парсинга: РАНЬШЕ падение handleRopReply молча уходило в шаблон и было невидимым.
@@ -258,7 +260,7 @@ export async function handleRopReply(text, replyToMsgId) {
   const tasks = await loadSalesTasks();
   const open = tasks.filter((t) => !t.done);
   // reply-контекст: если РОП ответил Reply'ем на пинг — берём задачу напрямую из карты message_id→taskId
-  const replyTaskId = await lookupMsgTask(replyToMsgId);
+  const replyTaskId = await lookupMsgTask("rop", replyToMsgId);
   const replyTask = replyTaskId ? open.find((t) => t.id === replyTaskId) : null;
   const chat = await getChat();
   const recent = chat.slice(-16).map((m) => `${m.role === "rop" ? "РОП" : (m.role === "owner" ? "ВЛАДЕЛЕЦ" : "АГЕНТ")}${m.taskId ? ` [задача ${m.taskId}]` : ""}: ${m.text}`).join("\n");
@@ -333,9 +335,91 @@ claims_done ставь СТРОГО: только если человек ЯВН
   if (people.rop && people.rop.chatId && out.reply) {
     const r = await sendTg("rop", people.rop.chatId, out.reply);
     await pushChat({ role: "agent", text: out.reply, taskId });
-    if (r.ok && taskId) await rememberMsgTask(r.messageId, taskId); // РОП может ответить Reply'ем на этот вопрос
+    if (r.ok && taskId) await rememberMsgTask("rop", r.messageId, taskId); // РОП может ответить Reply'ем на этот вопрос
   }
   return { ok: true, taskId, status: out.status };
+}
+
+// ══ ОТВЕТ ВЛАДЕЛЬЦА НА ЭСКАЛАЦИЮ ══
+// Владелец отвечает боту эскалаций свободным текстом («напомни мягко, не к спеху» / «сними с контроля»).
+// Агент превращает инструкцию в КОНКРЕТНОЕ сообщение РОПу (на языке РОПа, тоном владельца) и коротко
+// подтверждает владельцу. Привязка к задаче: reply_to_message → owner-карта, иначе последняя незакрытая
+// эскалация (тот же класс reply-контекста, что чинили у РОПа — привязка явная, а не «на угад»).
+const SYSTEM_OWNER = `Ты — Task-агент системы Hunter AI. С тобой в Telegram общается ВЛАДЕЛЕЦ бизнеса — он отвечает на ЭСКАЛАЦИЮ по задаче отдела продаж.
+
+Твоя работа: превратить инструкцию владельца в КОНКРЕТНОЕ сообщение РОПу и коротко подтвердить владельцу, что ты сделал.
+
+Правила:
+- Сообщение РОПу пиши тоном, который задал владелец (мягко / настойчиво / срочно / «не к спеху» — ровно как он сказал). Ты — система Hunter AI, не человек: без давления, без ярлыков и оценок человека, коротко и по делу.
+- Опирайся на КОНКРЕТНУЮ задачу и переписку — напоминай именно про эту задачу, а не абстрактно.
+- Если владелец решает снять задачу с контроля («оставь / не трогай / хватит / снимаю») — action="close", РОПу НЕ пиши (ropMessage пусто).
+- Если сообщение владельца не про эту задачу — action="none", ropMessage пусто, а в ownerReply коротко ответь ему по сути.
+
+Верни СТРОГО JSON:
+{"action":"message_rop|close|none","ropMessage":"текст сообщения РОПу на ЕГО языке — пусто, если не шлём","ownerReply":"короткое подтверждение владельцу на ЕГО языке: что именно ты сделал/отправил"}`;
+
+export async function handleOwnerReply(text, replyToMsgId) {
+  const cfg = await getConfig();
+  if (!cfg.enabled || !AKEY) return { ok: false, skipped: "disabled" };
+  const people = await getPeople();
+  const ropLang = (people.rop && people.rop.lang) || "ru";
+  const ownerLang = (people.owner && people.owner.lang) || "ru";
+
+  // 1) к какой эскалации/задаче относится ответ владельца
+  const escs = await rgetJSON(K.escalations, []);
+  let taskId = await lookupMsgTask("owner", replyToMsgId);
+  if (!taskId) { const last = [...escs].reverse().find((e) => !e.resolved); taskId = last ? last.taskId : ""; }
+  const esc = [...escs].reverse().find((e) => e.taskId === taskId) || null;
+  const tasks = await loadSalesTasks();
+  const task = tasks.find((t) => t.id === taskId) || (esc ? { id: taskId, title: esc.title, deadline: esc.deadline } : null);
+
+  const chat = await getChat();
+  const recent = chat.slice(-16).map((m) => `${m.role === "rop" ? "РОП" : (m.role === "owner" ? "ВЛАДЕЛЕЦ" : "АГЕНТ")}: ${m.text}`).join("\n");
+
+  const user = `ЯЗЫК СООБЩЕНИЯ РОПу: ${ropLang === "uz" ? "узбекский (латиница)" : "русский"} — РОП сам выбрал этот язык.
+ЯЗЫК ПОДТВЕРЖДЕНИЯ ВЛАДЕЛЬЦУ: ${ownerLang === "uz" ? "узбекский (латиница)" : "русский"}.
+
+ЗАДАЧА ПОД ЭСКАЛАЦИЕЙ: ${task ? `[${task.id}] ${task.title}` : "(не удалось определить задачу)"}
+СРОК: ${(task && (task.deadlineLabel || task.deadline)) || "не задан"}
+СТАТУС ЭСКАЛАЦИИ: ${esc ? esc.status : "нет данных"}
+
+ПЕРЕПИСКА С РОПом (последнее):
+${recent || "(пусто)"}
+
+ИНСТРУКЦИЯ ВЛАДЕЛЬЦА: ${text}
+
+Сформулируй по правилам системного промпта и верни СТРОГО JSON.`;
+
+  let out = null, err = null;
+  for (let a = 0; a < 2 && !out; a++) { try { out = parseJSON(await callModel(SYSTEM_OWNER, user, 1200)); } catch (e) { err = e; } }
+  if (!out) {
+    await logDiag("handleOwnerReply", err, text);
+    if (people.owner && people.owner.chatId) await sendTg("owner", people.owner.chatId, ownerLang === "uz" ? "Ko'rsatmangizni oldim, lekin qayta ishlashda texnik nosozlik bo'ldi — iltimos, qayta yuboring." : "Инструкцию получил, но при обработке была техническая заминка — повторите, пожалуйста.");
+    return { ok: false, error: "llm" };
+  }
+
+  let sentToRop = false;
+  if (out.action === "message_rop" && String(out.ropMessage || "").trim() && people.rop && people.rop.chatId) {
+    const r = await sendTg("rop", people.rop.chatId, out.ropMessage);
+    if (r.ok) {
+      await pushChat({ role: "agent", text: out.ropMessage, taskId });
+      await rememberMsgTask("rop", r.messageId, taskId); // РОП сможет ответить Reply'ем — попадёт в handleRopReply
+      sentToRop = true;
+      // владелец вмешался и дал задаче ход → отметим, чтобы не эскалировать её повторно в тот же день
+      if (taskId) { const st = await rgetJSON(K.status, {}); st[taskId] = { ...(st[taskId] || {}), ownerActedDay: tkDay(), ownerActedAt: Date.now() }; await rsetJSON(K.status, st); }
+    }
+  }
+  if (out.action === "close" && taskId) {
+    const st = await rgetJSON(K.status, {});
+    st[taskId] = { ...(st[taskId] || {}), ownerResolved: true, ownerResolvedAt: Date.now() };
+    await rsetJSON(K.status, st);
+    if (esc) { esc.resolved = true; await rsetJSON(K.escalations, escs.slice(-200)); }
+  }
+  if (people.owner && people.owner.chatId && String(out.ownerReply || "").trim()) {
+    await sendTg("owner", people.owner.chatId, out.ownerReply);
+    await pushChat({ role: "agent", text: out.ownerReply, taskId, to: "owner" });
+  }
+  return { ok: true, taskId, action: out.action, sentToRop };
 }
 
 // ── ТИК: пинги + порог эскалации ──
@@ -394,7 +478,7 @@ async function runTick(force) {
         const r = await sendTg("rop", people.rop.chatId, msg);
         if (r.ok) {
           await pushChat({ role: "agent", text: msg, taskId: t.id });
-          await rememberMsgTask(r.messageId, t.id); // Reply РОПа на этот пинг → сопоставим с задачей
+          await rememberMsgTask("rop", r.messageId, t.id); // Reply РОПа на этот пинг → сопоставим с задачей
           st[t.id] = { ...s, pingDay: day, pingAt: Date.now(), state: s.state || "pinged" };
           pinged.push({ id: t.id, title: t.title });
         }
@@ -430,8 +514,9 @@ async function runTick(force) {
         const convTxt = conv.length
           ? conv.map((m) => `${m.role === "rop" ? "РОП" : "Агент"}: ${m.text}`).join("\n\n")
           : "(переписки не было — РОП не отвечал)";
-        const txt = `⚠️ <b>Эскалация Task-агента</b>\n${tag ? `${tag}\n` : ""}\n<b>Задача:</b> ${t.title}\n<b>Срок:</b> ${t.deadlineLabel || t.deadline || "не задан"}\n<b>Статус:</b> ${status}\n\n<b>Переписка с РОПом (дословно):</b>\n${convTxt}`;
-        await sendTg("owner", people.owner.chatId, txt);
+        const txt = `⚠️ <b>Эскалация Task-агента</b>\n${tag ? `${tag}\n` : ""}\n<b>Задача:</b> ${t.title}\n<b>Срок:</b> ${t.deadlineLabel || t.deadline || "не задан"}\n<b>Статус:</b> ${status}\n\n<b>Переписка с РОПом (дословно):</b>\n${convTxt}\n\n<i>Ответьте на это сообщение — я передам РОПу (например «напомни мягко, не к спеху») или сниму задачу с контроля.</i>`;
+        const er = await sendTg("owner", people.owner.chatId, txt);
+        if (er.ok) await rememberMsgTask("owner", er.messageId, t.id); // владелец сможет ответить Reply'ем на эскалацию
       }
       st[t.id] = { ...s2, escalatedDay: day, escalatedAt: Date.now() };
       escalated.push({ id: t.id, title: t.title, status });
@@ -482,6 +567,15 @@ export default async function handler(req, res) {
       if (!txt) { res.status(400).json({ error: "нужен text" }); return; }
       const r = await handleRopReply(txt, b.replyToMsgId || null);
       res.status(200).json({ ok: true, reprocessed: true, result: r || null });
+      return;
+    }
+    // ТЕСТ/разовый прогон инструкции владельца по эскалации (то, что в норме приходит owner-вебхуком).
+    // ВНИМАНИЕ: при action=message_rop реально отправит сообщение РОПу. Админ.
+    if (action === "reprocess-owner") {
+      const txt = String((b.text || "")).trim();
+      if (!txt) { res.status(400).json({ error: "нужен text" }); return; }
+      const r = await handleOwnerReply(txt, b.replyToMsgId || null);
+      res.status(200).json({ ok: true, result: r || null });
       return;
     }
     // ПРЕДПРОСМОТР пинга — составить сообщение БЕЗ отправки РОПу (проверка подсказок под разные задачи)
