@@ -28,6 +28,9 @@ export const BOT_TOKENS = {
   owner: process.env.TELEGRAM_OWNER_BOT_TOKEN || "",
 };
 const K = { people: "taskagent:people", codes: "taskagent:bindcode", chat: "taskagent:chat" };
+// «Hunter AI Digest» — отдельный бот для человекочитаемых сводок Dev/Growth/MOP агентов (НЕ Task Agent).
+const DIGEST_TOKEN = process.env.TELEGRAM_DIGEST_BOT_TOKEN || "";
+const DIGEST_KEY = "digest:cfg"; // { chatId, name, boundAt } — кому слать сводки (владелец лично)
 
 async function rget(key) {
   try { const r = await fetch(`${REDIS_URL}/get/${encodeURIComponent(key)}`, { headers: { Authorization: `Bearer ${REDIS_TOKEN}` } }); const d = await r.json(); return d && d.result != null ? d.result : null; } catch (e) { return null; }
@@ -125,6 +128,30 @@ export default async function handler(req, res) {
         } catch (e) { hooks[kind] = { token: true, error: String(e).slice(0, 80) }; }
       }
       res.status(200).json({ ok: true, people, codes, bots: hooks });
+      return;
+    }
+
+    // ── HUNTER AI DIGEST: разовое получение chat_id (у digest-бота вебхука нет → getUpdates работает) ──
+    if (action === "digest-updates") {
+      if (!DIGEST_TOKEN) { res.status(400).json({ error: "нет TELEGRAM_DIGEST_BOT_TOKEN в env" }); return; }
+      try {
+        const r = await fetch(`https://api.telegram.org/bot${DIGEST_TOKEN}/getUpdates`);
+        const d = await r.json();
+        const chats = [];
+        for (const u of (d.result || [])) {
+          const m = u.message || u.edited_message || null;
+          if (!m || !m.chat) continue;
+          chats.push({ chatId: m.chat.id, name: [m.chat.first_name, m.chat.last_name].filter(Boolean).join(" ") || m.chat.title || "", username: m.chat.username || "", text: String(m.text || "").slice(0, 60) });
+        }
+        res.status(200).json({ ok: !!d.ok, chats, current: await rgetJSON(DIGEST_KEY, null), error: d.description || null });
+      } catch (e) { res.status(200).json({ ok: false, error: String(e).slice(0, 120) }); }
+      return;
+    }
+    if (action === "digest-bind") {
+      const chatId = b.chatId || q.chatId;
+      if (!chatId) { res.status(400).json({ error: "нужен chatId" }); return; }
+      await rsetJSON(DIGEST_KEY, { chatId: String(chatId), name: b.name || q.name || "", boundAt: Date.now() });
+      res.status(200).json({ ok: true, chatId: String(chatId) });
       return;
     }
 
