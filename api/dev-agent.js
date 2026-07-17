@@ -592,7 +592,7 @@ hypotheses: ${JSON.stringify(memory.hypotheses)}
 }
 
 // ── ДНЕВНАЯ ПЕРЕПИСКА ────────────────────────────────────────────────────────────────
-async function runChat(userText) {
+export async function runChat(userText) {
   const cfg = await getConfig();
   const map = await buildIdMap();
   const q = await getQuota();

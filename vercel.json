@@ -35,6 +35,9 @@
     },
     "api/digest.js": {
       "maxDuration": 120
+    },
+    "api/advisor-act.js": {
+      "maxDuration": 300
     }
   },
   "crons": [

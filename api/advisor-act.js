@@ -8,6 +8,7 @@
 // Всё — admin-гейт (владелец). Каждое действие идемпотентно-безопасно и логируется.
 
 import { sendTg, getPeople, pushChat } from "./tg-bot.js";
+import { runChat as devRunChat } from "./dev-agent.js";
 
 const REDIS_URL = process.env.UPSTASH_REDIS_REST_URL;
 const REDIS_TOKEN = process.env.UPSTASH_REDIS_REST_TOKEN;
@@ -35,13 +36,20 @@ async function createRopTask({ title, why, deadline, steps }) {
   return { id };
 }
 
-// analyst → поручение Менеджеру по аналитике (Dev-Agent). Кладём в его чат как сообщение владельца,
-// чтобы аналитик увидел команду (в интерфейсе /dev-agent) и отработал её. Не запускаем тяжёлый прогон здесь.
+// analyst → поручение Менеджеру по аналитике (Dev-Agent). ЗАПУСКАЕМ немедленно: его же диалоговый прогон
+// (runChat) отрабатывает поручение и кладёт ответ в его чат (вкладка Менеджера по аналитике). Не «очередь».
 async function commandAnalyst({ text }) {
-  const chat = await rgetJSON("devagent:chat", []);
-  chat.push({ id: genId("m"), role: "user", text: String(text || "").slice(0, 1200), at: Date.now(), from: "советник (по поручению владельца)" });
-  await rsetJSON("devagent:chat", chat.slice(-240));
-  return { queued: true };
+  const t = String(text || "").slice(0, 1200);
+  try {
+    const r = await devRunChat(t); // сразу считает по данным и отвечает; runChat сам пишет команду и ответ в devagent:chat
+    return { started: true, replied: !!(r && (r.ok !== false)) };
+  } catch (e) {
+    // фолбэк: прогон не удался — не теряем поручение, кладём в его чат
+    const chat = await rgetJSON("devagent:chat", []);
+    chat.push({ id: genId("m"), role: "user", text: t, at: Date.now(), from: "советник (по поручению владельца)" });
+    await rsetJSON("devagent:chat", chat.slice(-240));
+    return { started: false, queued: true, error: String(e).slice(0, 120) };
+  }
 }
 
 // close_hyp → закрыть гипотезу Агента роста. Повторяет логику growth mark_result: гипотеза уезжает в tested
