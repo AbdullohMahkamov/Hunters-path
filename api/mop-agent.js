@@ -124,6 +124,62 @@ function deadlineInDays(cfg, days) {
 // Пересматривать только если доля станет реально значимой (десятки процентов у конкретного МОПа).
 import { getCallAnalysisBundle } from "./deepsales.js";
 
+// ── DeepSales-находки по разборам звонков ── КАЖДАЯ несёт обязательную оговорку покрытия («сигнал, не приговор»).
+const CALL_TAG_RU = {
+  company_info: "некорректная информация о продукте / необоснованные гарантии",
+  closing: "слабое закрытие (не назначается следующий шаг)",
+  greeting: "приветствие и установление контакта",
+  questioning: "выявление потребности (мало вопросов, SPIN)",
+  explanation: "объяснение ценности оффера",
+  objection_handling: "работа с возражениями",
+  script: "отклонение от скрипта",
+  tone: "тон общения",
+  introduction: "представление себя и академии",
+  communication: "коммуникация с клиентом",
+};
+const CALL_TAG_ACTION = {
+  company_info: "Ввести и проверить правило формулировок: трудоустройство — гарантия С УСЛОВИЕМ (завершил курс), доход — возможность, не гарантия. Разобрать на планёрке.",
+  closing: "Добавить в скрипт обязательный следующий шаг в конце каждого звонка (дата/время следующего контакта). Проверить у команды.",
+  questioning: "Усилить выявление потребности (SPIN, вопрос про последствие). Дать команде образец вопросов.",
+};
+function detectCallQualityFindings(ca, cfg, nowMs) {
+  if (!ca || !ca.coverage || !(ca.coverage.analyzed > 0)) return [];
+  const out = [];
+  const analyzed = ca.coverage.analyzed;
+  const tags = (ca.team && ca.team.all && ca.team.all.mistakeTags) || {};
+  // командные: самые частые серьёзные нарушения (≥30% разобранных звонков), максимум 2
+  const teamTags = Object.entries(tags).filter(([t, c]) => CALL_TAG_RU[t] && c / analyzed >= 0.30).sort((a, b) => b[1] - a[1]).slice(0, 2);
+  for (const [tag, cnt] of teamTags) {
+    const pct = Math.round(cnt / analyzed * 100);
+    out.push({
+      id: newId("cq"), scope: "department", type: "call_" + tag, source: "mop-agent", mops: [], count: cnt,
+      title: `Отдел: улучшить «${CALL_TAG_RU[tag]}» по разборам звонков`,
+      fact: `По ${analyzed} разобранным звонкам команды (это ДОЛИ ПРОЦЕНТА всех звонков — выборка крошечная и НЕ случайная, это СИГНАЛ, не приговор) проблема «${CALL_TAG_RU[tag]}» встречается в ${cnt} звонках (${pct}%). Видна у нескольких менеджеров — значит вопрос скрипта/процесса, а не одного человека.`,
+      action: CALL_TAG_ACTION[tag] || `Разобрать «${CALL_TAG_RU[tag]}» на планёрке, дать образец в скрипте и проверить у команды.`,
+      ...deadlineInDays(cfg, cfg.deptDeadlineDays), createdAt: nowMs, status: "open",
+    });
+  }
+  // точечная: 1 МОП с явно слабейшими разборами (порог по числу разобранных + разрыв балла)
+  const MIN_ANALYZED = cfg.callMinAnalyzed != null ? cfg.callMinAnalyzed : 8;
+  const rating = (ca.rating || []).filter((r) => (r.analyzed || 0) >= MIN_ANALYZED && r.avgScore != null);
+  if (rating.length >= 2) {
+    const teamAvg = +(rating.reduce((s, r) => s + r.avgScore, 0) / rating.length).toFixed(1);
+    const worst = [...rating].sort((a, b) => a.avgScore - b.avgScore)[0];
+    const GAP = cfg.callScoreGap != null ? cfg.callScoreGap : 6;
+    if (worst && (teamAvg - worst.avgScore) >= GAP) {
+      const bm = (ca.coverage.byMop && ca.coverage.byMop[worst.mop]) || {};
+      out.push({
+        id: newId("cq"), scope: "mop", type: "call_lowscore", source: "mop-agent", mops: [worst.mop], mop: worst.mop, count: worst.analyzed,
+        title: `Проверить звонки ${worst.mop}: по разборам слабее команды (сначала ручная проверка)`,
+        fact: `По ${worst.analyzed} разобранным звонкам ${worst.mop} из ~${bm.monthCallsEstimate || "?"} (${bm.sharePctApprox != null ? bm.sharePctApprox + "%" : "доля мала"}) — это ВЫБОРКА МЕНЬШЕ ПРОЦЕНТА, СИГНАЛ, а НЕ приговор: средний балл ${worst.avgScore} против ${teamAvg} по команде, ошибок на звонок ${worst.mistakesPerCall}. Прежде чем делать вывод — послушать несколько его звонков вручную.`,
+        action: `Послушать 2-3 звонка ${worst.mop} в разделе «Анализ звонков», сверить с эталонным скриптом, поработать над слабым местом. Это ПРОВЕРКА по крошечной выборке, не оценка человека — без выговора по цифрам.`,
+        ...deadlineNextDay(cfg), createdAt: nowMs, status: "open",
+      });
+    }
+  }
+  return out;
+}
+
 export async function runMopAgent() {
   const cfg = await getMopConfig();
   if (!cfg.enabled) return { ok: true, skipped: "выключен" };
@@ -135,6 +191,7 @@ export async function runMopAgent() {
   // НЕ участвует в решении «заводить ли находку» — см. комментарий выше.
   const callCtx = await getCallAnalysisBundle(ORG).catch(() => null);
   const hasAnalysis = (name) => !!(callCtx && callCtx.byMop && callCtx.byMop[name] && callCtx.byMop[name].analyzed > 0);
+  const caHadData = !!(callCtx && callCtx.coverage && callCtx.coverage.analyzed > 0); // были ли разборы в этот прогон (для авто-закрытия call_*)
 
   // ── ДВА НЕЗАВИСИМЫХ ГЕЙТА ПЕРЕД ЛЮБОЙ НАХОДКОЙ ──
   // Гейт 1 — TRUST LAYER: доверяем ли мы звонковым метрикам клиента в принципе.
@@ -257,6 +314,10 @@ export async function runMopAgent() {
     }
   }
 
+  // DeepSales-находки по разборам звонков (командные + точечные) — КАЖДАЯ с обязательной оговоркой покрытия.
+  // Идут в тот же пайплайн (дедуп/мёрдж/задачи РОПу), но по своему гейту (покрытие), не по trust звонковых метрик.
+  try { for (const f of detectCallQualityFindings(callCtx, cfg, nowMs)) fresh.push(f); } catch (e) {}
+
   // 3) СЛИЯНИЕ с уже открытыми: не плодим дубли.
   // ВАЖНО: у задачи ПО ОТДЕЛУ ключ — только (department|тип), БЕЗ списка МОПов. Состав МОПов
   // меняется день ко дню (сегодня Абдулла+Достон, завтра Абдулла+Сардор), и если зашить его в ключ,
@@ -325,6 +386,13 @@ export async function runMopAgent() {
       continue;
     }
     if (freshKeys.has(key(f))) continue;
+    // call_* (DeepSales): если разборы БЫЛИ в этот прогон и сигнал не воспроизвёлся → авто-закрываем (сигнал ушёл,
+    // напр. новый недельный прогон улучшил картину); если разборов не было — держим (не «решено», просто не проверяли).
+    if (String(f.type || "").startsWith("call_")) {
+      if (caHadData) autoClosed.push({ ...f, status: "auto_closed", closedAt: nowMs, closeReason: "по свежим разборам звонков сигнал больше не подтверждается" });
+      else merged.push(f);
+      continue;
+    }
     // НЕ ЗАКРЫВАЕМ то, чего в этот прогон не проверяли: если по типу стоял гейт (данные неполные
     // или trust не verified), отсутствие факта означает «не смотрели», а НЕ «проблема решена».
     // Иначе агент бы отрапортовал РОПу «✅ больше не подтвердилось», просто не заглянув в данные.
