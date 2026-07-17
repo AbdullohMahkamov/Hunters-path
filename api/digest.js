@@ -89,6 +89,7 @@ function buildSeed(kind, item) {
   if (Array.isArray(it.mops) && it.mops.length) L.push(`• Кого касается: ${it.mops.join(", ")}`);
   const conf = it.confidence != null ? String(it.confidence) : "";
   if (conf || it.status) L.push(`• Внутренняя пометка надёжности: ${conf}${it.status ? ` / ${it.status}` : ""} (переведи для меня в честную уверенность, не завышай).`);
+  if (kind === "growth" && it.id) L.push(`• (служебный id гипотезы для кнопки «закрыть гипотезу как ложную»: ${it.id})`);
   return L.join("\n");
 }
 async function saveHandoff(token, kind, item) {
