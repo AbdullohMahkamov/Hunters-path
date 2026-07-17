@@ -32,6 +32,71 @@ export default async function handler(req, res) {
   const sess = await getSession(q.session || b.session);
   if (!(sess && sess.role === "admin" && sess.org === "hunter")) { res.status(403).json({ error: "superadmin only" }); return; }
 
+  // === PICK: исторический отбор звонков по СТАТУСУ лида (won/lost) за месяц ===
+  // Нужен для контрастного анализа: debug=calls умеет только «сегодня», а нам нужны записи любой давности.
+  // Только amoCRM — секреты DeepSales тут не требуются (поэтому до их проверки).
+  if (action === "pick") {
+    const AMO = process.env.AMOCRM_TOKEN;
+    if (!AMO) { res.status(500).json({ error: "нет AMOCRM_TOKEN" }); return; }
+    const SUB = "huntercademy", SOLD = 142, LOST = 143, SCAN_CAP = 80;
+    const MOPS = { 13660834: "Komiljon", 13703650: "Samandar", 13904266: "Abdulla-Legenda", 13833590: "Begoyim", 13681582: "Abulbositxon" };
+    const minSec = parseInt(q.minSec || b.minSec || 120, 10);
+    const maxSec = parseInt(q.maxSec || b.maxSec || 240, 10);
+    const need = Math.min(parseInt(q.need || b.need || 15, 10), 25);
+    const base = `https://${SUB}.amocrm.ru/api/v4`;
+    const H = { Authorization: `Bearer ${AMO}` };
+    const TZ = 5 * 3600;
+    const nl = new Date(Date.now() + TZ * 1000);
+    const monthStart = Math.floor(Date.UTC(nl.getUTCFullYear(), nl.getUTCMonth(), 1) / 1000) - TZ;
+
+    // 1) лиды, тронутые в этом месяце → делим на won/lost (только наши МОПы)
+    const wonLeads = [], lostLeads = [];
+    for (let page = 1; page <= 6; page++) {
+      const r = await fetch(`${base}/leads?limit=250&page=${page}&filter[updated_at][from]=${monthStart}`, { headers: H });
+      if (r.status === 204 || !r.ok) break;
+      const d = await r.json();
+      const leads = (d._embedded && d._embedded.leads) || [];
+      for (const L of leads) {
+        if (!MOPS[L.responsible_user_id]) continue;
+        if (L.status_id === SOLD) wonLeads.push(L); else if (L.status_id === LOST) lostLeads.push(L);
+      }
+      if (leads.length < 250) break;
+      await sleep(180);
+    }
+
+    // 2) по каждому лиду — ноты, берём САМЫЙ ДЛИННЫЙ звонок в диапазоне [minSec..maxSec]
+    const pickFrom = async (leads, status) => {
+      const out = [];
+      for (const L of leads.slice(0, SCAN_CAP)) {
+        if (out.length >= need) break;
+        const r = await fetch(`${base}/leads/${L.id}/notes?limit=250`, { headers: H });
+        await sleep(170); // ~6/с — под лимит amoCRM (~7/с)
+        if (!r.ok || r.status === 204) continue;
+        const d = await r.json();
+        let best = null;
+        for (const n of ((d._embedded && d._embedded.notes) || [])) {
+          if (n.note_type !== "call_in" && n.note_type !== "call_out") continue;
+          const p = n.params || {};
+          const dur = parseInt(p.duration || 0, 10) || 0;
+          if (dur < minSec || dur > maxSec || !p.link) continue;
+          if (!best || dur > best.dur) best = { dur, link: p.link, ts: n.created_at };
+        }
+        if (best) out.push({ leadId: L.id, status, mop: MOPS[L.responsible_user_id], crm_manager_id: String(L.responsible_user_id), duration: best.dur, link: best.link, callDate: new Date(best.ts * 1000).toISOString().slice(0, 10) });
+      }
+      return out;
+    };
+    const won = await pickFrom(wonLeads, "won");
+    const lost = await pickFrom(lostLeads, "lost");
+    const sum = (a) => a.reduce((s, x) => s + x.duration, 0);
+    res.status(200).json({
+      ok: true, action: "pick", filter: { minSec, maxSec, need, scanCap: SCAN_CAP },
+      scanned: { wonLeadsThisMonth: wonLeads.length, lostLeadsThisMonth: lostLeads.length },
+      won, lost,
+      totals: { wonCount: won.length, wonSec: sum(won), lostCount: lost.length, lostSec: sum(lost), totalMin: +((sum(won) + sum(lost)) / 60).toFixed(1) },
+    });
+    return;
+  }
+
   const EMAIL = process.env.DEEPSALES_EMAIL, PASSWORD = process.env.DEEPSALES_PASSWORD, BEARER = process.env.DEEPSALES_BEARER_TOKEN;
   if (!EMAIL || !PASSWORD || !BEARER) { res.status(500).json({ error: "не заданы env: DEEPSALES_EMAIL / DEEPSALES_PASSWORD / DEEPSALES_BEARER_TOKEN" }); return; }
   const basic = "Basic " + Buffer.from(`${EMAIL}:${PASSWORD}`).toString("base64");
@@ -83,5 +148,5 @@ export default async function handler(req, res) {
     return;
   }
 
-  res.status(400).json({ error: "action: analyze | result" });
+  res.status(400).json({ error: "action: pick | analyze | result" });
 }
