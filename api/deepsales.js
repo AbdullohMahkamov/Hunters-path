@@ -119,7 +119,31 @@ export async function getCallAnalysisBundle(org = "hunter") {
       monthCallsEstimate: monthCalls[name] || null,
       sharePctApprox: monthCalls[name] ? +(arr.length / monthCalls[name] * 100).toFixed(1) : null };
   }
+  // ── РЕЙТИНГ МОПов по ТЕКУЩЕМУ критерию (единая шкала) ──
+  // Балл overallScore при РАЗНЫХ критериях несравним (старые прогоны — другая шкала). Поэтому
+  // рейтинг считаем только по записям с самым частым (= текущим) кодом критерия. Это авто-адаптируется:
+  // по мере новых прогонов текущий критерий вытесняет старые.
+  const codeFreq = {};
+  for (const x of list) for (const k of Object.keys(x.criteriaScores || {})) codeFreq[k] = (codeFreq[k] || 0) + 1;
+  const currentCriterion = Object.keys(codeFreq).sort((a, b) => codeFreq[b] - codeFreq[a])[0] || null;
+  const rating = [];
+  for (const [name, arr] of Object.entries(grp((x) => x.mop))) {
+    const cur = currentCriterion ? arr.filter((x) => x.criteriaScores && x.criteriaScores[currentCriterion] != null) : arr;
+    if (!cur.length) continue;
+    const won = cur.filter((x) => x.status === "won"), lost = cur.filter((x) => x.status === "lost");
+    rating.push({
+      mop: name, n: cur.length,
+      avgScore: avg(cur.map((x) => x.score).filter((v) => v != null)),
+      wonScore: won.length ? avg(won.map((x) => x.score).filter((v) => v != null)) : null,
+      lostScore: lost.length ? avg(lost.map((x) => x.score).filter((v) => v != null)) : null,
+      talkRatio: avg(cur.map((x) => x.talkRatio).filter((v) => v != null)),
+      mistakesPerCall: avg(cur.map((x) => x.mistakesCount || 0)),
+      analyzed: byMop[name].analyzed, sharePctApprox: byMop[name].sharePctApprox,
+    });
+  }
+  rating.sort((a, b) => (b.avgScore || 0) - (a.avgScore || 0));
   return {
+    rating, currentCriterion,
     coverage: {
       analyzed: list.length,
       window: { from: dates[0] || null, to: dates[dates.length - 1] || null },

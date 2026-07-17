@@ -917,6 +917,25 @@ function renderCallAnalysis() {
       </div>
       <div style="font-size:10.5px;color:var(--txt3);margin:0 0 12px;">* баллы у DeepSales зависят от категории звонка — между won и lost НЕ сравнимы напрямую.</div>`
   }
+  // ── РЕЙТИНГ МОПов (по текущему критерию, единая шкала) ──
+  const rating = _caData.rating || []
+  if (rating.length) {
+    const maxS = Math.max(1, ...rating.map((r) => r.avgScore || 0))
+    html += `<div style="font-size:12px;font-weight:700;color:var(--txt2);margin-bottom:4px;">Рейтинг менеджеров <span style="font-weight:400;color:var(--txt3);">(средний балл разбора, 0–100)</span></div>
+      <div style="font-size:10.5px;color:var(--gold,#d4af37);margin-bottom:8px;">⚠ по ${rating.reduce((s, r) => s + r.n, 0)} разобранным звонкам — это доли процента, сигнал к ручной проверке, НЕ приговор человеку.</div>`
+    html += rating.map((r, i) => {
+      const sc = r.avgScore != null ? r.avgScore : 0
+      const col = sc >= 50 ? 'var(--green)' : (sc >= 40 ? 'var(--gold,#d4af37)' : 'var(--red)')
+      return `<div style="display:flex;align-items:center;gap:9px;padding:6px 0;border-top:1px solid var(--line);">
+        <div style="width:18px;font-size:12px;color:var(--txt3);font-weight:700;">${i + 1}</div>
+        <div style="flex:0 0 130px;font-size:12.5px;font-weight:600;">${caEsc(r.mop)}</div>
+        <div style="flex:1;min-width:70px;height:7px;background:var(--card2,var(--card));border-radius:5px;overflow:hidden;"><div style="height:100%;width:${Math.round(sc / maxS * 100)}%;background:${col};border-radius:5px;"></div></div>
+        <div style="flex:0 0 34px;text-align:right;font-size:13px;font-weight:700;color:${col};">${r.avgScore != null ? r.avgScore : '—'}</div>
+        <div style="flex:0 0 auto;font-size:10.5px;color:var(--txt3);white-space:nowrap;">говорил ${r.talkRatio != null ? Math.round(r.talkRatio) : '—'}% · ош ${r.mistakesPerCall != null ? r.mistakesPerCall : '—'} · ${r.n} зв ${r.sharePctApprox != null ? '(' + r.sharePctApprox + '%)' : ''}</div>
+      </div>`
+    }).join('')
+    html += `<div style="height:12px;"></div>`
+  }
   html += `<button onclick="caOpenList()" style="width:100%;padding:11px;border-radius:9px;background:var(--accent);border:none;color:#fff;font-size:13px;font-weight:600;cursor:pointer;display:flex;align-items:center;justify-content:center;gap:7px;">
     <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round"><path d="M8 6h13M8 12h13M8 18h13M3 6h.01M3 12h.01M3 18h.01"/></svg>
     Все разборы по МОПам (${cov.analyzed}) →</button>`
