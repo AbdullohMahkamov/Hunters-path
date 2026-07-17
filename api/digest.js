@@ -17,6 +17,9 @@ const DIGEST_KEY = "digest:cfg";  // { chatId, name, boundAt } — кому сл
 const SENT_KEY = "digest:sent";   // { [findingId]: ts } — что уже отправляли (dedup, чтобы не спамить)
 const SENT_CAP = 800;
 const SECTION = { growth: "Рост", mop: "МОПы / Задачи РОПа", dev: "Разработка" };
+const APP_URL = "https://test.hunterai.uz"; // главный домен — куда ведёт кнопка «Обсудить с помощником»
+const HANDOFF_KEY = "digest:handoffs";      // { [token]: { kind, item, seed, title, at } } — контекст находки для советника
+const HANDOFF_CAP = 300;
 
 async function rget(key) { try { const r = await fetch(`${REDIS_URL}/get/${encodeURIComponent(key)}`, { headers: { Authorization: `Bearer ${REDIS_TOKEN}` } }); const d = await r.json(); return d && d.result != null ? d.result : null; } catch (e) { return null; } }
 async function rgetJSON(key, dflt) { const raw = await rget(key); if (raw == null) return dflt; try { return JSON.parse(raw); } catch (e) { return dflt; } }
@@ -71,14 +74,42 @@ ${JSON.stringify(item).slice(0, 2600)}
   return (await callModel(SYSTEM_DIGEST, user, 700)).trim();
 }
 
-async function sendDigest(text) {
+// ── HANDOFF: контекст находки для советника (кнопка «Обсудить с помощником») ──
+function genToken() { return "hf" + Math.random().toString(36).slice(2, 10) + Date.now().toString(36); }
+function handoffTitle(item) { return String(item.title || item.observation || item.fact || item.claim || "Находка").slice(0, 40); }
+// Засев — первое сообщение, которое увидит советник (полный контекст находки + просьба разобрать).
+function buildSeed(kind, item) {
+  const label = { growth: "Рост (гипотеза роста)", mop: "Отдел продаж / МОПы", dev: "Разработка" }[kind] || kind;
+  const it = item || {};
+  const L = ["Разбери эту находку агента и подскажи, что мне делать — коротко и по шагам. Если стоит поручить РОПу, скажи прямо (я смогу отправить это ему).", "", `Находка (${label}):`];
+  const add = (k, lbl) => { if (it[k]) L.push(`• ${lbl}: ${String(it[k]).slice(0, 600)}`); };
+  add("title", "Суть"); add("observation", "Наблюдение"); add("fact", "Факт"); add("claim", "Вывод");
+  add("cause", "Возможная причина"); add("action", "Предлагаемое действие"); add("howToVerify", "Как проверить");
+  if (Array.isArray(it.evidence) && it.evidence.length) L.push(`• Основания: ${it.evidence.slice(0, 3).join("; ").slice(0, 600)}`);
+  if (Array.isArray(it.mops) && it.mops.length) L.push(`• Кого касается: ${it.mops.join(", ")}`);
+  const conf = it.confidence != null ? String(it.confidence) : "";
+  if (conf || it.status) L.push(`• Внутренняя пометка надёжности: ${conf}${it.status ? ` / ${it.status}` : ""} (переведи для меня в честную уверенность, не завышай).`);
+  return L.join("\n");
+}
+async function saveHandoff(token, kind, item) {
+  const m = await rgetJSON(HANDOFF_KEY, {});
+  m[token] = { kind, seed: buildSeed(kind, item), title: handoffTitle(item), at: Date.now() };
+  const ks = Object.keys(m);
+  if (ks.length > HANDOFF_CAP) { ks.sort((a, b) => m[a].at - m[b].at); for (const k of ks.slice(0, ks.length - HANDOFF_CAP)) delete m[k]; }
+  await rsetJSON(HANDOFF_KEY, m);
+}
+async function getHandoff(token) { const m = await rgetJSON(HANDOFF_KEY, {}); return m[token] || null; }
+// inline-кнопка под сообщением дайджеста: ведёт в приложение, открывает советника с этой находкой
+function handoffKb(token) { return { reply_markup: { inline_keyboard: [[{ text: "🧠 Обсудить с помощником", url: `${APP_URL}/?advisor=${token}` }]] } }; }
+
+async function sendDigest(text, extra) {
   if (!DIGEST_TOKEN) return { ok: false, error: "нет TELEGRAM_DIGEST_BOT_TOKEN" };
   const cfg = await rgetJSON(DIGEST_KEY, null);
   if (!cfg || !cfg.chatId) return { ok: false, error: "digest не привязан (нет chatId)" };
   try {
     const r = await fetch(`https://api.telegram.org/bot${DIGEST_TOKEN}/sendMessage`, {
       method: "POST", headers: { "content-type": "application/json" },
-      body: JSON.stringify({ chat_id: cfg.chatId, text: String(text).slice(0, 4000), parse_mode: "HTML", disable_web_page_preview: true }),
+      body: JSON.stringify({ chat_id: cfg.chatId, text: String(text).slice(0, 4000), parse_mode: "HTML", disable_web_page_preview: true, ...(extra || {}) }),
     });
     const d = await r.json();
     return d && d.ok ? { ok: true, messageId: d.result && d.result.message_id } : { ok: false, error: (d && d.description) || "send failed" };
@@ -116,7 +147,9 @@ async function digestSweep(opts = {}) {
     let text;
     try { text = await formatOne(x.kind, x.item); } catch (e) { continue; } // не отформатировали — попробуем позже
     if (!text) continue;
-    const r = await sendDigest(text);
+    const token = genToken();
+    await saveHandoff(token, x.kind, x.item); // контекст для кнопки «Обсудить с помощником»
+    const r = await sendDigest(text, handoffKb(token));
     if (r.ok) { sent[x.id] = Date.now(); sentNow.push({ kind: x.kind, id: x.id }); }
   }
   await rsetJSON(SENT_KEY, capSent(sent));
@@ -168,9 +201,21 @@ export default async function handler(req, res) {
       const pick = (b.id || q.id) ? all.find((x) => x.id === (b.id || q.id)) : all[0];
       if (!pick) { res.status(400).json({ error: "нет находок для теста" }); return; }
       const text = await formatOne(pick.kind, pick.item);
-      const r = await sendDigest(text);
+      const token = genToken();
+      await saveHandoff(token, pick.kind, pick.item);
+      const withBtn = (b.button === false || q.button === "0") ? undefined : handoffKb(token);
+      const r = await sendDigest(text, withBtn);
       if (r.ok) { const sent = await rgetJSON(SENT_KEY, {}); sent[pick.id] = Date.now(); await rsetJSON(SENT_KEY, capSent(sent)); }
-      res.status(200).json({ ok: r.ok, kind: pick.kind, id: pick.id, preview: text, error: r.error || null });
+      res.status(200).json({ ok: r.ok, kind: pick.kind, id: pick.id, token, preview: text, error: r.error || null });
+      return;
+    }
+    if (action === "handoff") {
+      // контекст находки для советника (фронт вызывает при заходе с ?advisor=<token>). Гейт — админ-сессия владельца.
+      const token = q.token || b.token;
+      if (!token) { res.status(400).json({ error: "нужен token" }); return; }
+      const h = await getHandoff(token);
+      if (!h) { res.status(404).json({ error: "находка не найдена или устарела" }); return; }
+      res.status(200).json({ ok: true, kind: h.kind, title: h.title, seed: h.seed });
       return;
     }
     res.status(400).json({ error: "unknown action" });
