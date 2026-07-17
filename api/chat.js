@@ -234,6 +234,7 @@ async function agentsBlock(org, speed) {
     }
     for (const r of (ca.recent || []).slice(0, 5)) s += `   — ${r.callDate} ${r.mop} [${r.status}] балл ${r.score}, talk ${r.talkRatio}%: ${shortT(r.headline, 90)}\n`;
     s += `(Разборы приходят от DeepSales на узбекском — цитируй как есть, не выдумывай перевод.)\n`;
+    s += `DeepSales САМ оценил каждый звонок по настроенным критериям продукта Hunter Academy (Salomlashuv, SPIN, FAB, Narx/USP, достоверность инфо о продукте и др.) — это ГОТОВЫЙ вердикт. Твоя роль: читать и агрегировать его оценки (criteria_scores/mistakes/objections), НЕ делать собственный разбор текста разговора.\n`;
   }
 
   if (dev) {

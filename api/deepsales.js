@@ -94,12 +94,22 @@ export async function getCallAnalysisBundle(org = "hunter") {
   const avg = (a) => (a.length ? +(a.reduce((s, x) => s + x, 0) / a.length).toFixed(1) : null);
   const grp = (f) => { const o = {}; for (const x of list) { const k = f(x); if (!k) continue; (o[k] = o[k] || []).push(x); } return o; };
   const tally = (arr, key) => { const o = {}; for (const x of arr) for (const t of (x[key] || [])) o[t] = (o[t] || 0) + 1; return o; };
+  // средний балл по каждому критерию DeepSales (code-agnostic): работает с любыми настроенными
+  // критериями, включая новый "Mahsulot haqida to'g'ri va rasmiy ma'lumot berish" (ось достоверности).
+  const critAvg = (arr) => {
+    const codes = new Set();
+    for (const x of arr) for (const k of Object.keys(x.criteriaScores || {})) codes.add(k);
+    const o = {};
+    for (const k of codes) { const vals = arr.map((x) => x.criteriaScores && x.criteriaScores[k]).filter((v) => v != null); if (vals.length) o[k] = { avg: avg(vals), n: vals.length }; }
+    return o;
+  };
   const stat = (arr) => (arr && arr.length ? {
     n: arr.length,
     talkRatio: avg(arr.map((x) => x.talkRatio).filter((v) => v != null)),
     avgScore: avg(arr.map((x) => x.score).filter((v) => v != null)),
     mistakesPerCall: avg(arr.map((x) => x.mistakesCount || 0)),
     mistakeTags: tally(arr, "mistakeTags"), objectionTags: tally(arr, "objectionTags"),
+    criteriaAvg: critAvg(arr),
   } : null);
   const dates = list.map((x) => x.callDate).filter(Boolean).sort();
   const byStatus = grp((x) => x.status);
@@ -259,15 +269,16 @@ export default async function handler(req, res) {
     // Каждый звонок уходит на РЕАЛЬНЫЙ аккаунт своего МОПа в DeepSales (DS_MANAGERS) — тогда их
     // кабинет (Рейтинг/Менеджеры) показывает верную атрибуцию. Если МОП не опознан — технический
     // аккаунт из env (фолбэк). Наша собственная привязка (mop/lead/статус) всё равно хранится у нас.
-    const FALLBACK_MANAGER = process.env.DEEPSALES_MANAGER_ID;
-    if (!FALLBACK_MANAGER && !Object.keys(DS_MANAGERS).length) { res.status(500).json({ error: "нет ни DS_MANAGERS, ни env DEEPSALES_MANAGER_ID" }); return; }
+    if (!Object.keys(DS_MANAGERS).length) { res.status(500).json({ error: "DS_MANAGERS пуст" }); return; }
     const out = [];
     for (const it of items) {
       try {
         if (!it.link) { out.push({ leadId: it.leadId || null, ok: false, error: "нужен link" }); continue; }
         // audio_url — DeepSales сам скачивает запись (Utel публичен, CORS *).
-        const mgr = DS_MANAGERS[it.mop] || FALLBACK_MANAGER;
-        if (!mgr) { out.push({ leadId: it.leadId, ok: false, error: `нет manager_id для МОПа "${it.mop || "?"}"` }); continue; }
+        // строго реальный аккаунт МОПа. 1443 («Hunter») служебный — к МОПам НЕ привязываем,
+        // поэтому неопознанный МОП пропускаем с ошибкой, а не шлём на служебный (иначе кривая атрибуция).
+        const mgr = DS_MANAGERS[it.mop];
+        if (!mgr) { out.push({ leadId: it.leadId, ok: false, error: `МОП "${it.mop || "?"}" не сопоставлен с DeepSales manager_id — пропущено` }); continue; }
         const fd = new FormData();
         fd.append("audio_url", it.link);
         fd.append("manager_id", String(mgr));
@@ -345,6 +356,9 @@ export default async function handler(req, res) {
         score: rec.overallScore, talkRatio: rec.talkRatio, headline: headlineOf(A),
         mistakeTags: (rec.mistakes || []).map((m) => m.tag).filter(Boolean),
         objectionTags: (rec.objections || []).map((o) => o.tag).filter(Boolean),
+        // criteriaScores в индекс (плоский объект ~5-8 чисел) — чтобы бандл считал средние по критериям
+        // без чтения полных записей. Ось «достоверность продукта» = средний балл нужного критерия.
+        criteriaScores: rec.criteriaScores || {},
         mistakesCount: rec.mistakesCount, category: rec.category, state: "done", analyzedAt: rec.analyzedAt,
       });
       saved++;
