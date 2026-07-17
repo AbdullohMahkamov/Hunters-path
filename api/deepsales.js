@@ -14,6 +14,13 @@ const REDIS_TOKEN = process.env.UPSTASH_REDIS_REST_TOKEN;
 const DS = "https://dashboard.deepsales.uz";
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 
+// МОПы: amoCRM user id → имя (тот же маппинг, что в sync-speed HUNTER_CFG.mops)
+const MOPS = { 13660834: "Komiljon", 13703650: "Samandar", 13904266: "Abdulla-Legenda", 13833590: "Begoyim", 13681582: "Abulbositxon" };
+// имя МОПа → manager_id в DeepSales (реальные аккаунты менеджеров, заведены владельцем).
+// НЕ секрет — это внутренние id аккаунтов, держим в коде рядом с маппингом имён.
+// 1443 («Hunter») — технический аккаунт, остаётся фолбэком для звонков без опознанного МОПа.
+const DS_MANAGERS = { "Abdulla-Legenda": 1444, "Samandar": 1445, "Begoyim": 1446, "Komiljon": 1447, "Abulbositxon": 1448 };
+
 async function getSession(session) {
   if (!session || !REDIS_URL) return null;
   try {
@@ -160,8 +167,7 @@ export default async function handler(req, res) {
   if (action === "pick") {
     const AMO = process.env.AMOCRM_TOKEN;
     if (!AMO) { res.status(500).json({ error: "нет AMOCRM_TOKEN" }); return; }
-    const SUB = "huntercademy", SOLD = 142, LOST = 143;
-    const MOPS = { 13660834: "Komiljon", 13703650: "Samandar", 13904266: "Abdulla-Legenda", 13833590: "Begoyim", 13681582: "Abulbositxon" };
+    const SUB = "huntercademy", SOLD = 142, LOST = 143; // MOPS — на уровне модуля
     const minSec = parseInt(q.minSec || b.minSec || 120, 10);
     const maxSec = parseInt(q.maxSec || b.maxSec || 240, 10);
     const need = Math.min(parseInt(q.need || b.need || 15, 10), 25);
@@ -250,19 +256,21 @@ export default async function handler(req, res) {
     const items = Array.isArray(b.items) ? b.items : [];
     if (!items.length) { res.status(400).json({ error: "нужен items: [{link, crm_manager_id, leadId}]" }); return; }
     if (items.length > 40) { res.status(400).json({ error: "не более 40 записей за вызов (бюджет/таймаут) — дробите на партии" }); return; }
-    // DeepSales используется как чистый транскрибатор/анализатор: все записи шлём на ОДНОГО
-    // технического менеджера (DEEPSALES_MANAGER_ID). Привязка «чей это звонок» (МОП/лид/статус)
-    // живёт ЦЕЛИКОМ у нас — мы знаем её из amoCRM до отправки и храним в ответе ниже.
-    const MANAGER_ID = process.env.DEEPSALES_MANAGER_ID;
-    if (!MANAGER_ID) { res.status(500).json({ error: "не задан env DEEPSALES_MANAGER_ID (технический менеджер DeepSales)" }); return; }
+    // Каждый звонок уходит на РЕАЛЬНЫЙ аккаунт своего МОПа в DeepSales (DS_MANAGERS) — тогда их
+    // кабинет (Рейтинг/Менеджеры) показывает верную атрибуцию. Если МОП не опознан — технический
+    // аккаунт из env (фолбэк). Наша собственная привязка (mop/lead/статус) всё равно хранится у нас.
+    const FALLBACK_MANAGER = process.env.DEEPSALES_MANAGER_ID;
+    if (!FALLBACK_MANAGER && !Object.keys(DS_MANAGERS).length) { res.status(500).json({ error: "нет ни DS_MANAGERS, ни env DEEPSALES_MANAGER_ID" }); return; }
     const out = [];
     for (const it of items) {
       try {
         if (!it.link) { out.push({ leadId: it.leadId || null, ok: false, error: "нужен link" }); continue; }
         // audio_url — DeepSales сам скачивает запись (Utel публичен, CORS *).
+        const mgr = DS_MANAGERS[it.mop] || FALLBACK_MANAGER;
+        if (!mgr) { out.push({ leadId: it.leadId, ok: false, error: `нет manager_id для МОПа "${it.mop || "?"}"` }); continue; }
         const fd = new FormData();
         fd.append("audio_url", it.link);
-        fd.append("manager_id", String(MANAGER_ID));
+        fd.append("manager_id", String(mgr));
         const r = await fetch(`${DS}/api/crm/audio-analyze`, { method: "POST", headers: { Authorization: basic, Accept: "application/json" }, body: fd, signal: AbortSignal.timeout(90000) });
         let body; try { body = await r.json(); } catch (e) { body = { _text: (await r.text().catch(() => "")).slice(0, 200) }; }
         // DeepSales отдаёт id в data.audio_file_id (не audio_id). data.duration — длительность ВСЕГО файла
@@ -270,7 +278,7 @@ export default async function handler(req, res) {
         const D = body.data || {};
         const aid = D.audio_file_id || D.audio_id || D.id || body.audio_id || body.id || null;
         // mop/leadStatus возвращаем обратно — это НАША привязка результата к менеджеру и исходу сделки
-        out.push({ leadId: it.leadId, mop: it.mop || null, leadStatus: it.status || null, ok: r.status < 300, status: r.status, audio_id: aid, amoSeconds: it.duration || null, fileSeconds: D.duration || null, resp: body });
+        out.push({ leadId: it.leadId, mop: it.mop || null, dsManagerId: mgr, leadStatus: it.status || null, ok: r.status < 300, status: r.status, audio_id: aid, amoSeconds: it.duration || null, fileSeconds: D.duration || null, resp: body });
         // ЗАГОТОВКА в хранилище: привязку (чей звонок) знаем только мы — DeepSales её не вернёт
         if (aid) {
           const stub = { audioFileId: aid, leadId: it.leadId, mop: it.mop || null, mopId: it.mopId || null,
