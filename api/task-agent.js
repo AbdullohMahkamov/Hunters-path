@@ -677,6 +677,14 @@ export default async function handler(req, res) {
       res.status(200).json({ ok: true, result: r || null });
       return;
     }
+    // решение владельца по ОСПАРИВАНИЮ из панели (дубль кнопок owner-бота): decision = agent|rop|noted
+    if (action === "resolve-dispute") {
+      const decision = String(b.decision || q.decision || "").trim();
+      const tId = String(b.taskId || q.taskId || "").trim();
+      if (!["agent", "rop", "noted"].includes(decision) || !tId) { res.status(400).json({ error: "нужны taskId и decision=agent|rop|noted" }); return; }
+      res.status(200).json(await handleDisputeResolve(decision, tId));
+      return;
+    }
     // ПРЕДПРОСМОТР пинга — составить сообщение БЕЗ отправки РОПу (проверка подсказок под разные задачи)
     if (action === "preview_ping") {
       const tasks = await loadSalesTasks();

@@ -49,6 +49,7 @@ export default function TaskPanel() {
   function flash(m) { setToast(m); setTimeout(() => setToast(''), 2000) }
 
   async function tick() { if (busy) return; setBusy('tick'); try { const d = await taskAgent.tick(true); if (d && d.ok) { await load(); flash(`Пингов: ${(d.pinged || []).length} · эскалаций: ${(d.escalated || []).length}`) } else flash((d && d.error) || 'Ошибка') } catch (e) { flash('Нет связи') } setBusy('') }
+  async function resolveDispute(taskId, decision) { setBusy('disp' + taskId); try { const r = await taskAgent.resolveDispute(taskId, decision); if (r && r.ok) { await load(); flash('Решение по спору принято') } else flash((r && r.error) || 'Ошибка') } catch (e) { flash('Нет связи') } setBusy('') }
   // Прогон Агента Г вручную: пересобрать находки по МОПам (в проде это делает cron каждый час в :30)
   async function scanMops() {
     if (busy) return; setBusy('mop')
@@ -164,6 +165,23 @@ export default function TaskPanel() {
                 {s.note ? ` — ${s.note}` : ''}
                 {s.escalatedDay ? <b style={{ color: 'var(--red)' }}> · эскалировано</b> : null}
               </span></div>
+              {s.dispute && (
+                <div style={{ marginTop: 8, padding: 10, borderRadius: 8, background: 'var(--card2)', borderLeft: '3px solid var(--gold)' }}>
+                  <div style={{ fontWeight: 700, fontSize: 13, marginBottom: 6 }}>
+                    ⚖️ Оспорено РОПом
+                    {s.dispute.resolvedByOwner ? ` · решение: ${s.dispute.resolvedByOwner === 'agent' ? 'прав агент' : s.dispute.resolvedByOwner === 'rop' ? 'прав РОП' : 'учтено, оставлено'}` : ''}
+                  </div>
+                  <div style={{ fontSize: 13, lineHeight: 1.5, marginBottom: 5 }}><b style={{ color: 'var(--txt3)' }}>🤖 Агент:</b> {s.dispute.agentClaim}</div>
+                  <div style={{ fontSize: 13, lineHeight: 1.5 }}><b style={{ color: 'var(--accent)' }}>👤 РОП:</b> {s.dispute.ropClaim}</div>
+                  {!s.dispute.resolvedByOwner && (
+                    <div style={{ display: 'flex', gap: 6, marginTop: 9, flexWrap: 'wrap' }}>
+                      <button className="da-mini" disabled={busy === 'disp' + t.id} onClick={() => resolveDispute(t.id, 'agent')}>✅ Прав агент</button>
+                      <button className="da-mini" disabled={busy === 'disp' + t.id} onClick={() => resolveDispute(t.id, 'rop')}>👤 Прав РОП</button>
+                      <button className="da-mini" disabled={busy === 'disp' + t.id} onClick={() => resolveDispute(t.id, 'noted')}>📝 Учту, оставить</button>
+                    </div>
+                  )}
+                </div>
+              )}
               {conv.length > 0 && (
                 <>
                   <button className="da-mini" style={{ maxWidth: 220, marginTop: 8 }} onClick={() => setOpenTask(openTask === t.id ? '' : t.id)}>

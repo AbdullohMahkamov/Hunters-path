@@ -147,6 +147,7 @@ export const growthAgent = {
 export const taskAgent = {
   state: () => getJSON('/api/task-agent?action=state&session=' + encodeURIComponent(getSession())),
   tick: (force) => postJSON('/api/task-agent', { action: 'tick', session: getSession(), force: !!force }).then((r) => r.json()),
+  resolveDispute: (taskId, decision) => postJSON('/api/task-agent', { action: 'resolve-dispute', session: getSession(), taskId, decision }).then((r) => r.json()),
   setConfig: (config) => postJSON('/api/task-agent', { action: 'set_config', session: getSession(), config }).then((r) => r.json()),
   reset: () => postJSON('/api/task-agent', { action: 'reset', session: getSession() }).then((r) => r.json()),
   // боты
