@@ -10,6 +10,7 @@
 // Лимиты DeepSales: 60/мин dashboard (audio-analyze), 600/мин analysis (call-analysis/transcription) — заложены паузами.
 
 import { getVerifiedFunnel } from "./dev-agent.js"; // для «разговор→сделка» в baseline/progress
+import { sendDigest } from "./digest.js"; // компактные метрики владельцу в Digest-бот (owner-путь)
 
 const REDIS_URL = process.env.UPSTASH_REDIS_REST_URL;
 const REDIS_TOKEN = process.env.UPSTASH_REDIS_REST_TOKEN;
@@ -249,6 +250,27 @@ function diffSnapshots(base, now) {
   return { dealConv: { from: base.dealConvPct, to: now.dealConvPct, delta: d(base.dealConvPct, now.dealConvPct, 2) }, teamDsScore: { from: base.teamDsScore, to: now.teamDsScore, delta: d(base.teamDsScore, now.teamDsScore, 1) }, violations: vio, perMop };
 }
 
+// ── КОМПАКТНАЯ СВОДКА МЕТРИК ВЛАДЕЛЬЦУ (owner-путь): цифры + Δ к прошлой неделе. БЕЗ разборов нарушений — детали у РОПа.
+const LASTMETRICS_KEY = (org) => `progress:lastmetrics:${org}`;
+function mDelta(delta, unit) { if (delta == null || delta === 0) return ""; return ` (${delta > 0 ? "▲+" : "▼"}${delta}${unit || ""})`; }
+async function buildMetricsDigest(org) {
+  const now = await computeBaselineSnapshot(org);
+  const last = await rgetJSON(LASTMETRICS_KEY(org), null);
+  const base = await rgetJSON(`progress:baseline:${org}`, null);
+  const cmp = last || base;
+  const d = (a, b, p) => (a != null && b != null) ? +(b - a).toFixed(p) : null;
+  const cov = now.caCoverage || {};
+  const perMop = (now.perMop || []).slice().sort((a, b) => (b.dsScore || 0) - (a.dsScore || 0));
+  let s = `📊 <b>Звонки — сводка метрик</b>\n\n`;
+  s += `Разговор→сделка: <b>${now.dealConvPct != null ? now.dealConvPct + "%" : "—"}</b>${mDelta(cmp ? d(cmp.dealConvPct, now.dealConvPct, 2) : null, " п.п.")}\n`;
+  s += `Средний балл звонков: <b>${now.teamDsScore != null ? now.teamDsScore : "—"}</b>${mDelta(cmp ? d(cmp.teamDsScore, now.teamDsScore, 1) : null, "")}\n`;
+  s += `Разобрано: <b>${cov.analyzed || 0}</b> звонков${cov.window ? ` (по ${cov.window.to})` : ""}\n\n`;
+  s += `<b>По менеджерам</b> (балл · конверсия):\n`;
+  for (const m of perMop) s += `• ${m.mop}: ${m.dsScore != null ? m.dsScore : "—"} · ${m.conv != null ? m.conv + "%" : "—"}\n`;
+  s += `\n<i>${last ? "Δ — к прошлой сводке" : (base ? "Δ — к старту (baseline)" : "первая сводка — Δ появится со следующей")}. Детальные разборы и задания команде — у РОПа.</i>`;
+  return s;
+}
+
 export default async function handler(req, res) {
   res.setHeader("Cache-Control", "no-store");
   const q = req.query || {}, b = req.body || {};
@@ -256,11 +278,15 @@ export default async function handler(req, res) {
 
   // гейт — только суперадмин (hunter). Анализ звонков — чувствительная операция.
   const sess = await getSession(q.session || b.session);
-  // Чтение раздела — admin + РОП (РОПу нужно для разбора с командой). Запуск анализа — только admin.
+  const cronSecret = process.env.CRON_SECRET || "";
+  const authHeader = (req.headers && (req.headers.authorization || req.headers.Authorization)) || "";
+  const isCron = cronSecret ? (authHeader === `Bearer ${cronSecret}`) : false;
+  // Чтение раздела — admin + РОП (РОПу нужно для разбора с командой). Запуск анализа — только admin. Метрики-сводка — крон по секрету.
   const isAdmin = !!(sess && sess.role === "admin");
   const isRop = !!(sess && sess.role === "rop");
   const READ_ONLY = new Set(["list", "get", "bundle"]);
-  if (!(isAdmin || (isRop && READ_ONLY.has(action)))) { res.status(403).json({ error: "admin (или РОП — только чтение)" }); return; }
+  const CRON_OK = new Set(["metrics-digest"]);
+  if (!(isAdmin || (isRop && READ_ONLY.has(action)) || (isCron && CRON_OK.has(action)))) { res.status(403).json({ error: "admin (или РОП — только чтение)" }); return; }
   const org = (sess && sess.org) || "hunter";
 
   // === ЧТЕНИЕ РАЗДЕЛА (admin + РОП). Секреты DeepSales не нужны — читаем своё хранилище. ===
@@ -282,6 +308,14 @@ export default async function handler(req, res) {
     if (!base) { res.status(400).json({ error: "нет baseline — сначала baseline-save" }); return; }
     const now = await computeBaselineSnapshot(org);
     res.status(200).json({ ok: true, baselineAt: base.at, baselineLabel: base.label, diff: diffSnapshots(base, now), from: base, to: now });
+    return;
+  }
+  if (action === "metrics-digest") {
+    const msg = await buildMetricsDigest(org);
+    const r = await sendDigest(msg);
+    // после успешной отправки фиксируем текущий снимок как «прошлую сводку» для Δ следующей недели
+    if (r && r.ok) { const snap = await computeBaselineSnapshot(org); await rsetJSON(LASTMETRICS_KEY(org), { at: Date.now(), ...snap }); }
+    res.status(200).json({ ok: !!(r && r.ok), sent: !!(r && r.ok), preview: msg, error: (r && r.error) || null });
     return;
   }
   if (action === "plan-config") {
