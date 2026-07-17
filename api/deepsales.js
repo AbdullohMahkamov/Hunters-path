@@ -309,9 +309,13 @@ export default async function handler(req, res) {
       const A = ca.status === 200 && ca.body && ca.body.data ? ca.body.data : null;
       const T = tr.status === 200 && tr.body && tr.body.data ? tr.body.data : null;
       if (!A || !T) continue;
-      // достаём НАШУ привязку из заготовки, записанной на этапе analyze
+      // НАША привязка: из заготовки (analyze) либо из body.attrib — для backfill уже отправленных
+      // записей без повторной отправки аудио (бюджет минут не тратится).
       const idx = await rgetJSON(CA_LIST(org), []);
-      const stub = idx.find((x) => String(x.audioFileId) === String(aid)) || {};
+      const attrib = Array.isArray(b.attrib) ? b.attrib : [];
+      const stub = idx.find((x) => String(x.audioFileId) === String(aid))
+        || attrib.find((a) => String(a.audioFileId || a.audio_id) === String(aid))
+        || {};
       const rec = {
         audioFileId: aid, leadId: stub.leadId || null, mop: stub.mop || null, mopId: stub.mopId || null,
         status: stub.status || null, callDate: stub.callDate || null, talkSec: stub.talkSec || null,
