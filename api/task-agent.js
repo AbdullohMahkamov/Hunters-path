@@ -414,6 +414,20 @@ export default async function handler(req, res) {
       return;
     }
     if (action === "tick") { const r = await runTick(!!b.force); res.status(200).json(isAdmin ? r : { ok: !!r.ok, ran: true }); return; }
+    // РАЗОВОЕ ОБЪЯВЛЕНИЕ — отправить готовый текст РОПу/владельцу через канал Тренера (админ + подтверждение владельца).
+    // Для срочных распоряжений команде (напр. запрет фраз) до полноценного скрипта. Логируется в chat.
+    if (action === "announce") {
+      const text = String((b.text || "")).trim();
+      if (!text) { res.status(400).json({ error: "нужен text" }); return; }
+      const to = b.to === "owner" ? "owner" : "rop";
+      const people = await getPeople();
+      const p = people[to];
+      if (!p || !p.chatId) { res.status(400).json({ error: `${to} не привязан` }); return; }
+      const r = await sendTg(to, p.chatId, text);
+      if (r.ok) await pushChat({ role: "agent", text, taskId: null });
+      res.status(200).json({ ok: !!r.ok, sent: !!r.ok, to, name: p.name, error: r.error || null });
+      return;
+    }
     // ПРЕДПРОСМОТР пинга — составить сообщение БЕЗ отправки РОПу (проверка подсказок под разные задачи)
     if (action === "preview_ping") {
       const tasks = await loadSalesTasks();
