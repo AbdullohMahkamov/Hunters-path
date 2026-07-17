@@ -106,19 +106,24 @@ export default async function handler(req, res) {
     const items = Array.isArray(b.items) ? b.items : [];
     if (!items.length) { res.status(400).json({ error: "нужен items: [{link, crm_manager_id, leadId}]" }); return; }
     if (items.length > 40) { res.status(400).json({ error: "не более 40 записей за вызов (бюджет/таймаут) — дробите на партии" }); return; }
+    // DeepSales используется как чистый транскрибатор/анализатор: все записи шлём на ОДНОГО
+    // технического менеджера (DEEPSALES_MANAGER_ID). Привязка «чей это звонок» (МОП/лид/статус)
+    // живёт ЦЕЛИКОМ у нас — мы знаем её из amoCRM до отправки и храним в ответе ниже.
+    const MANAGER_ID = process.env.DEEPSALES_MANAGER_ID;
+    if (!MANAGER_ID) { res.status(500).json({ error: "не задан env DEEPSALES_MANAGER_ID (технический менеджер DeepSales)" }); return; }
     const out = [];
     for (const it of items) {
       try {
-        if (!it.link || !it.crm_manager_id) { out.push({ leadId: it.leadId || null, ok: false, error: "нужны link и crm_manager_id" }); continue; }
-        // DeepSales поддерживает audio_url — передаём ссылку на запись, он сам её скачивает
-        // (запись Utel публична, CORS *). Легче, чем качать+заливать через нас.
+        if (!it.link) { out.push({ leadId: it.leadId || null, ok: false, error: "нужен link" }); continue; }
+        // audio_url — DeepSales сам скачивает запись (Utel публичен, CORS *).
         const fd = new FormData();
         fd.append("audio_url", it.link);
-        fd.append("crm_manager_id", String(it.crm_manager_id));
+        fd.append("manager_id", String(MANAGER_ID));
         const r = await fetch(`${DS}/api/crm/audio-analyze`, { method: "POST", headers: { Authorization: basic, Accept: "application/json" }, body: fd, signal: AbortSignal.timeout(90000) });
         let body; try { body = await r.json(); } catch (e) { body = { _text: (await r.text().catch(() => "")).slice(0, 200) }; }
         const aid = body.audio_id || body.id || (body.data && (body.data.audio_id || body.data.id)) || null;
-        out.push({ leadId: it.leadId, ok: r.status < 300, status: r.status, audio_id: aid, seconds: it.duration || null, resp: body });
+        // mop/leadStatus возвращаем обратно — это НАША привязка результата к менеджеру и исходу сделки
+        out.push({ leadId: it.leadId, mop: it.mop || null, leadStatus: it.status || null, ok: r.status < 300, status: r.status, audio_id: aid, seconds: it.duration || null, resp: body });
       } catch (e) { out.push({ leadId: it.leadId, ok: false, error: String(e).slice(0, 140) }); }
       await sleep(1200); // 60/мин dashboard — с запасом
     }
