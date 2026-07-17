@@ -25,7 +25,7 @@ export function installShellStubs() {
     })
     if (tab === 'trends' && typeof window.loadTrends === 'function') window.loadTrends()
     if (tab === 'finance' && typeof window.loadFinance === 'function') window.loadFinance()
-    if (tab === 'sales') loadActivity() // «Активность менеджеров» — тянем кэш при открытии вкладки
+    if (tab === 'sales') { loadActivity(); if (typeof window.loadCallAnalysis === 'function') window.loadCallAnalysis() } // активность + разборы звонков
   }
 
   // setDashPeriod / setDiscPeriod / setActPeriod / loadActivity — реальные (перерисовка по данным)

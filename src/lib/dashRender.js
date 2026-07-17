@@ -867,8 +867,169 @@ function renderAdsets(d) {
   box.innerHTML = html
 }
 
+// ===== АНАЛИЗ ЗВОНКОВ (DeepSales) =====
+// Раздел на вкладке Продажи. Разборы РЕАЛЬНЫХ разговоров: оценка, talk_ratio, возражения,
+// ошибки, транскрипт. Ключевое: выборка КРОШЕЧНАЯ (доли процента) и НЕ случайная — покрытие
+// показываем прямо в интерфейсе, рядом с каждой цифрой по МОПу, а не мелким шрифтом внизу.
+let _caData = null, _caRows = [], _caMop = '', _caStatus = ''
+const caEsc = (s) => escapeHtml(String(s == null ? '' : s))
+
+async function loadCallAnalysis() {
+  const box = document.getElementById('callAnalysisBox')
+  const blk = document.getElementById('callAnalysisBlock')
+  if (!box || !blk) return
+  const role = getRole()
+  if (role !== 'admin' && role !== 'rop') { blk.style.display = 'none'; return } // admin + РОП
+  blk.style.display = ''
+  try {
+    const q = '&session=' + encodeURIComponent(getSession())
+    const [b, l] = await Promise.all([
+      fetch('/api/deepsales?action=bundle' + q).then((r) => r.json()),
+      fetch('/api/deepsales?action=list' + q).then((r) => r.json()),
+    ])
+    if (!b || !b.ok || !b.coverage || !b.coverage.analyzed) { blk.style.display = 'none'; return }
+    _caData = b; _caRows = (l && l.rows) || []
+    renderCallAnalysis()
+  } catch (e) { box.innerHTML = '<div style="font-size:12px;color:var(--red);">Не удалось загрузить разборы</div>' }
+}
+function caSetMop(v) { _caMop = v || ''; renderCallAnalysis() }
+function caSetStatus(v) { _caStatus = v || ''; renderCallAnalysis() }
+
+function renderCallAnalysis() {
+  const box = document.getElementById('callAnalysisBox'); if (!box || !_caData) return
+  const cov = _caData.coverage, team = _caData.team || {}
+  const mops = Object.keys(cov.byMop || {})
+  let rows = _caRows.slice()
+  if (_caMop) rows = rows.filter((r) => r.mop === _caMop)
+  if (_caStatus) rows = rows.filter((r) => r.status === _caStatus)
+
+  // ── ПАСПОРТ ВЫБОРКИ:首 самое важное, наверху, крупно ──
+  let html = `<div style="background:var(--gold-bg,rgba(212,175,55,.1));border:1px solid var(--gold,#d4af37);border-radius:10px;padding:10px 12px;margin-bottom:12px;font-size:12px;line-height:1.5;">
+    <b>Разобрано ${cov.analyzed} звонков</b> за ${caEsc(cov.window.from)} – ${caEsc(cov.window.to)}.
+    Это <b>доли процента</b> от всех звонков и <b>не случайная выборка</b> (отбирали 2–4 мин по лидам won/lost).
+    Годится как повод посмотреть конкретный разговор — <b>не как оценка человека</b>.
+  </div>`
+
+  // ── КОМАНДА: won vs lost ──
+  if (team.won && team.lost) {
+    const cell = (a, b2, lbl) => `<div style="background:var(--card);border:1px solid var(--line);border-radius:9px;padding:8px 10px;">
+      <div style="font-size:10.5px;color:var(--txt2);">${lbl}</div>
+      <div style="font-size:14px;font-weight:700;margin-top:2px;"><span style="color:var(--green);">${a}</span> <span style="color:var(--txt3);">/</span> <span style="color:var(--red);">${b2}</span></div></div>`
+    html += `<div style="font-size:11px;color:var(--txt2);margin-bottom:6px;">Команда: <span style="color:var(--green);">won ${team.won.n}</span> / <span style="color:var(--red);">lost ${team.lost.n}</span> разборов</div>
+      <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(140px,1fr));gap:8px;margin-bottom:12px;">
+      ${cell(team.won.talkRatio + '%', team.lost.talkRatio + '%', 'Говорил менеджер')}
+      ${cell(team.won.mistakesPerCall, team.lost.mistakesPerCall, 'Ошибок на звонок')}
+      ${cell(team.won.mistakeTags.closing || 0, team.lost.mistakeTags.closing || 0, 'Ошибки закрытия (всего)')}
+      ${cell(team.won.avgScore, team.lost.avgScore, 'Средний балл*')}
+      </div>
+      <div style="font-size:10.5px;color:var(--txt3);margin:-6px 0 12px;">* баллы у DeepSales зависят от категории звонка — между won и lost НЕ сравнимы напрямую.</div>`
+  }
+
+  // ── ФИЛЬТРЫ ──
+  const opt = (v, cur, lbl) => `<option value="${caEsc(v)}"${cur === v ? ' selected' : ''}>${caEsc(lbl)}</option>`
+  html += `<div style="display:flex;gap:8px;flex-wrap:wrap;margin-bottom:10px;">
+    <select onchange="caSetMop(this.value)" style="padding:7px 10px;border-radius:8px;border:1px solid var(--line2);background:var(--card);color:var(--txt);font-size:12.5px;">
+      ${opt('', _caMop, 'Все МОПы')}${mops.map((m) => opt(m, _caMop, m)).join('')}</select>
+    <select onchange="caSetStatus(this.value)" style="padding:7px 10px;border-radius:8px;border:1px solid var(--line2);background:var(--card);color:var(--txt);font-size:12.5px;">
+      ${opt('', _caStatus, 'Все сделки')}${opt('won', _caStatus, 'Только продано')}${opt('lost', _caStatus, 'Только потеряно')}</select>
+    <div style="align-self:center;font-size:11.5px;color:var(--txt3);">показано ${rows.length}</div>
+  </div>`
+
+  // ── КАРТОЧКА МОПа: его цифры + ЕГО покрытие рядом, не в сноске ──
+  if (_caMop && cov.byMop[_caMop]) {
+    const c = cov.byMop[_caMop], m = _caData.byMop[_caMop] || {}
+    const t = team.all || {}
+    const cmp = (v, base, lbl, suf = '') => `<div style="font-size:12px;padding:3px 0;"><span style="color:var(--txt2);">${lbl}:</span> <b>${v}${suf}</b> <span style="color:var(--txt3);">(команда ${base}${suf})</span></div>`
+    html += `<div style="background:var(--card);border:1px solid var(--accent);border-radius:10px;padding:11px 12px;margin-bottom:12px;">
+      <div style="font-size:13px;font-weight:700;margin-bottom:4px;">${caEsc(_caMop)}</div>
+      <div style="font-size:11.5px;color:var(--gold,#d4af37);margin-bottom:7px;">Разобрано <b>${c.analyzed}</b> из ~${c.monthCallsEstimate || '?'} его звонков за месяц — <b>${c.sharePctApprox != null ? c.sharePctApprox + '%' : 'доля неизвестна'}</b>. Слишком мало для вывода о человеке.</div>
+      ${cmp(m.talkRatio, t.talkRatio, 'Говорил сам', '%')}
+      ${cmp(m.mistakesPerCall, t.mistakesPerCall, 'Ошибок на звонок')}
+      <div style="font-size:12px;padding:3px 0;"><span style="color:var(--txt2);">Его ошибки:</span> ${Object.entries(m.mistakeTags || {}).map(([k, v]) => `${caEsc(k)} ×${v}`).join(', ') || '—'}</div>
+      <div style="font-size:12px;padding:3px 0;"><span style="color:var(--txt2);">Возражения клиентов:</span> ${Object.entries(m.objectionTags || {}).map(([k, v]) => `${caEsc(k)} ×${v}`).join(', ') || '—'}</div>
+    </div>`
+  }
+
+  // ── ТАБЛИЦА: суть звонка видна сразу, без открытия ──
+  html += rows.map((r) => {
+    const stColor = r.status === 'won' ? 'var(--green)' : (r.status === 'lost' ? 'var(--red)' : 'var(--txt3)')
+    const stTxt = r.status === 'won' ? 'продано' : (r.status === 'lost' ? 'потеряно' : (r.status || '—'))
+    const tag = (r.mistakeTags || [])[0]
+    return `<div onclick="caOpen(${r.leadId},'${caEsc(r.audioFileId)}')" style="padding:9px 0;border-top:1px solid var(--line);cursor:pointer;">
+      <div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap;font-size:12.5px;">
+        <b style="min-width:120px;">${caEsc(r.mop)}</b>
+        <span style="color:var(--txt3);">#${r.leadId}</span>
+        <span style="border:1px solid ${stColor};color:${stColor};border-radius:5px;padding:0 5px;font-size:10.5px;">${stTxt}</span>
+        <span style="color:var(--txt3);">${caEsc(r.callDate)}</span>
+        <span style="color:var(--txt3);">${r.fileSec ? (r.fileSec / 60).toFixed(1) + 'м' : ''}</span>
+        <span style="margin-left:auto;color:var(--txt2);">балл <b style="color:var(--txt);">${r.score != null ? r.score : '—'}</b></span>
+        <span style="color:var(--txt2);">сам говорил <b style="color:var(--txt);">${r.talkRatio != null ? Math.round(r.talkRatio) + '%' : '—'}</b></span>
+      </div>
+      <div style="font-size:11.5px;color:var(--txt2);margin-top:3px;">
+        ${tag ? `<span style="background:var(--bg2);border-radius:4px;padding:1px 5px;font-size:10px;color:var(--gold,#d4af37);">${caEsc(tag)}</span> ` : ''}${caEsc(r.headline)}
+      </div>
+    </div>`
+  }).join('') || '<div style="font-size:12px;color:var(--txt3);padding:10px 0;">Нет разборов по этому фильтру</div>'
+
+  box.innerHTML = html
+}
+
+// Детали одного звонка: критерии, возражения, ошибки+рекомендации, полный транскрипт
+async function caOpen(leadId, audioFileId) {
+  const ov = document.getElementById('caModal') || (() => {
+    const d = document.createElement('div'); d.id = 'caModal'
+    d.style.cssText = 'position:fixed;inset:0;z-index:600;background:rgba(0,0,0,.55);display:flex;align-items:center;justify-content:center;padding:18px;'
+    d.onclick = (e) => { if (e.target === d) d.remove() }
+    document.body.appendChild(d); return d
+  })()
+  ov.innerHTML = `<div style="background:var(--bg);border:1px solid var(--line2);border-radius:14px;max-width:760px;width:100%;max-height:88vh;overflow:auto;padding:16px;"><div style="font-size:12px;color:var(--txt3);">Загрузка...</div></div>`
+  try {
+    const r = await fetch(`/api/deepsales?action=get&leadId=${leadId}&audioFileId=${encodeURIComponent(audioFileId)}&session=${encodeURIComponent(getSession())}`)
+    const d = await r.json()
+    const c = d && d.record
+    if (!c) { ov.querySelector('div').innerHTML = '<div style="color:var(--red);font-size:12.5px;">Разбор не найден</div>'; return }
+    const sec = (t) => `<div style="font-size:12px;font-weight:700;color:var(--txt2);text-transform:uppercase;letter-spacing:.3px;margin:14px 0 6px;">${t}</div>`
+    let h = `<div style="display:flex;justify-content:space-between;align-items:center;gap:8px;">
+        <div><div style="font-size:15px;font-weight:700;">${caEsc(c.mop)} · лид #${c.leadId}</div>
+        <div style="font-size:11.5px;color:var(--txt3);">${caEsc(c.callDate)} · ${c.fileSec ? (c.fileSec / 60).toFixed(1) + ' мин' : ''} · ${caEsc(c.category || '')} · сам говорил ${c.talkRatio != null ? Math.round(c.talkRatio) + '%' : '—'}</div></div>
+        <button onclick="document.getElementById('caModal').remove()" style="background:none;border:none;color:var(--txt2);font-size:22px;cursor:pointer;line-height:1;">×</button></div>`
+    h += `<div style="font-size:11px;color:var(--gold,#d4af37);margin-top:8px;">Один разбор из выборки в доли процента — смотрите его как конкретный разговор, а не как оценку менеджера.</div>`
+    const cs = c.criteriaScores || {}, ce = c.criteriaExplanations || {}
+    if (Object.keys(cs).length) {
+      h += sec(`Критерии (общий балл ${c.overallScore != null ? c.overallScore : '—'})`)
+      h += Object.entries(cs).map(([k, v]) => `<div style="padding:6px 0;border-top:1px solid var(--line);">
+        <div style="display:flex;justify-content:space-between;font-size:12.5px;"><b>${caEsc(k)}</b><span style="color:${v > 0 ? 'var(--green)' : 'var(--red)'};font-weight:700;">${v}</span></div>
+        ${ce[k] ? `<div style="font-size:11.5px;color:var(--txt2);margin-top:3px;">${caEsc(ce[k])}</div>` : ''}</div>`).join('')
+    }
+    if ((c.objections || []).length) {
+      h += sec('Возражения клиента')
+      h += c.objections.map((o) => `<div style="padding:7px 0;border-top:1px solid var(--line);font-size:12.5px;">
+        <div><span style="background:var(--bg2);border-radius:4px;padding:1px 5px;font-size:10px;color:var(--gold,#d4af37);">${caEsc(o.tag)}</span> <span style="color:var(--txt3);">${caEsc(o.timestamp)}</span></div>
+        <div style="margin-top:3px;">«${caEsc(o.text)}»</div>
+        <div style="color:var(--txt2);margin-top:3px;">Как отработано: ${caEsc(o.resolution)}</div></div>`).join('')
+    }
+    if ((c.mistakes || []).length) {
+      h += sec(`Ошибки (${c.mistakesCount || c.mistakes.length})`)
+      h += c.mistakes.map((m) => `<div style="padding:7px 0;border-top:1px solid var(--line);font-size:12.5px;">
+        <div><span style="background:var(--bg2);border-radius:4px;padding:1px 5px;font-size:10px;color:var(--red);">${caEsc(m.tag)}</span> <span style="color:var(--txt3);">${caEsc(m.timestamp)}</span></div>
+        <div style="margin-top:3px;">${caEsc(m.mistake)}</div>
+        ${m.recommendation ? `<div style="color:var(--green);margin-top:3px;">→ ${caEsc(m.recommendation)}</div>` : ''}</div>`).join('')
+    }
+    if (c.finalOutcome) { h += sec('Итог'); h += `<div style="font-size:12.5px;color:var(--txt2);">${caEsc(c.finalOutcome)}</div>` }
+    if ((c.transcript || []).length) {
+      h += sec('Транскрипция')
+      h += `<div style="max-height:300px;overflow:auto;border:1px solid var(--line);border-radius:8px;padding:8px;">` + c.transcript.map((t) => {
+        const isM = t.speaker === 'manager'
+        return `<div style="font-size:12px;padding:3px 0;"><span style="color:var(--txt3);">${caEsc(t.timestamp)}</span> <b style="color:${isM ? 'var(--accent)' : 'var(--gold,#d4af37)'};">${isM ? 'менеджер' : 'клиент'}:</b> ${caEsc(t.text)}</div>`
+      }).join('') + `</div>`
+    }
+    ov.querySelector('div').innerHTML = h
+  } catch (e) { ov.querySelector('div').innerHTML = '<div style="color:var(--red);font-size:12.5px;">Ошибка загрузки</div>' }
+}
+
 export function initDashModals() {
   Object.assign(window, {
+    loadCallAnalysis, caSetMop, caSetStatus, caOpen,
     openSuspModal, closeSuspModal, toggleSuspHistory, reviewSusp,
     openWorkdaysModal, closeWorkdaysModal, saveWorkdays,
     editForecastGoal, syncAll, saveOrgSettings,
