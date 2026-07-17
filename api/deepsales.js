@@ -135,6 +135,62 @@ export async function getCallAnalysisBundle(org = "hunter") {
   };
 }
 
+// ===== ПЛАНИРОВЩИК НЕДЕЛЬНОГО БЮДЖЕТА ТРАНСКРИБАЦИИ =====
+// Раз в неделю решает, СКОЛЬКО звонков и ЧЬИХ слать на анализ, чтобы дефицитные минуты шли туда,
+// где полезнее, а не поровну. Две оси → приоритет = ХУДШАЯ из них. Нет данных по достоверности —
+// НЕ выдумываем: помечаем «недостаточно данных» и приоритет ведём ТОЛЬКО по продажам.
+const PLAN_CFG_KEY = (org) => `transcriptplan:cfg:${org}`;
+async function planCfg(org) {
+  const d = await rgetJSON(PLAN_CFG_KEY(org), {}) || {};
+  return {
+    weeklyMinutes: d.weeklyMinutes != null ? d.weeklyMinutes : 70,   // недельный лимит минут (файла)
+    avgMinPerCall: d.avgMinPerCall != null ? d.avgMinPerCall : 3,    // ~средняя длительность файла, мин
+    reliabilityCode: d.reliabilityCode || null,                      // код критерия достоверности (ставим, когда узнаем)
+    sales: { lowRatio: d.salesLowRatio != null ? d.salesLowRatio : 0.8, highRatio: d.salesHighRatio != null ? d.salesHighRatio : 1.2 },
+    reliability: { low: d.reliabilityLow != null ? d.reliabilityLow : 15, high: d.reliabilityHigh != null ? d.reliabilityHigh : 30 }, // пороги провизорные до уточнения шкалы
+  };
+}
+export async function getWeeklyTranscriptionPlan(org = "hunter") {
+  const cfg = await planCfg(org);
+  const dash = await rgetJSON(org === "hunter" ? "dashboard" : `dashboard:${org}`, null);
+  const ca = await getCallAnalysisBundle(org).catch(() => null);
+  const mopsByConv = (dash && dash.mopsByConv) || [];
+  const withLeads = mopsByConv.filter((m) => (m.leads || 0) > 0);
+  const teamConv = withLeads.length ? +(withLeads.reduce((s, m) => s + (m.conv || 0), 0) / withLeads.length).toFixed(2) : 0;
+  const rank = { low: 1, medium: 2, high: 3 }; // performance rank: low = хуже = приоритетнее
+  const rows = [];
+  for (const m of withLeads) {
+    // ── ось ПРОДАЖИ (performance): conv относительно среднего по команде ──
+    const ratio = teamConv > 0 ? (m.conv || 0) / teamConv : 1;
+    const salesPerf = ratio >= cfg.sales.highRatio ? "high" : (ratio <= cfg.sales.lowRatio ? "low" : "medium");
+    // ── ось ДОСТОВЕРНОСТЬ: балл нужного критерия. Нет кода/нет данных → НЕ считаем осью ──
+    const cell = cfg.reliabilityCode && ca && ca.byMop && ca.byMop[m.name] && ca.byMop[m.name].criteriaAvg && ca.byMop[m.name].criteriaAvg[cfg.reliabilityCode];
+    let relPerf = null, relScore = null, relN = 0, relNote = null;
+    if (cell && cell.n > 0) { relScore = cell.avg; relN = cell.n; relPerf = relScore >= cfg.reliability.high ? "high" : (relScore <= cfg.reliability.low ? "low" : "medium"); }
+    else relNote = cfg.reliabilityCode ? "недостаточно данных по оси достоверности (критерий отсутствует в разобранных звонках МОПа) — приоритет только по продажам" : "код критерия достоверности не задан — ось выключена, приоритет только по продажам";
+    // ── приоритет = ХУДШАЯ (минимальная performance) из доступных осей ──
+    const perfs = [salesPerf]; if (relPerf) perfs.push(relPerf);
+    const worstRank = Math.min(...perfs.map((p) => rank[p]));
+    const overall = worstRank === 1 ? "low" : (worstRank === 2 ? "medium" : "high");
+    const weight = 4 - worstRank; // low-perf(1)→вес 3 (больше звонков), high-perf(3)→вес 1
+    rows.push({ mop: m.name, conv: m.conv, sold: m.sold, leads: m.leads, salesPerf, ratioToTeam: +ratio.toFixed(2), relPerf, relScore, relN, relNote, overallPerf: overall, priorityWeight: weight });
+  }
+  const totalW = rows.reduce((s, r) => s + r.priorityWeight, 0) || 1;
+  for (const r of rows) {
+    r.minutesBudget = +(cfg.weeklyMinutes * r.priorityWeight / totalW).toFixed(1);
+    r.calls = Math.max(0, Math.round(r.minutesBudget / cfg.avgMinPerCall));
+  }
+  rows.sort((a, b) => b.priorityWeight - a.priorityWeight || (a.conv - b.conv));
+  return {
+    org, generatedForWeekOf: null, // проставляется вызывающей стороной (в скрипте нет Date-ограничений)
+    config: cfg, teamConv,
+    plan: rows,
+    totals: { weeklyMinutesLimit: cfg.weeklyMinutes, plannedCalls: rows.reduce((s, r) => s + r.calls, 0), plannedMinutes: +rows.reduce((s, r) => s + r.calls * cfg.avgMinPerCall, 0).toFixed(1) },
+    reliabilityAxis: cfg.reliabilityCode ? `критерий ${cfg.reliabilityCode}` : "ВЫКЛЮЧЕНА (код критерия достоверности не задан) — план только по продажам",
+    disclaimer: "Ось достоверности основана на КРОШЕЧНОЙ невыборочной выборке разборов — это ОДИН из сигналов приоритизации бюджета, НЕ оценка МОПа. Где данных по критерию нет — приоритет только по продажам, отсутствующее НЕ додумывается.",
+  };
+}
+
 export default async function handler(req, res) {
   res.setHeader("Cache-Control", "no-store");
   const q = req.query || {}, b = req.body || {};
@@ -151,6 +207,20 @@ export default async function handler(req, res) {
 
   // === ЧТЕНИЕ РАЗДЕЛА (admin + РОП). Секреты DeepSales не нужны — читаем своё хранилище. ===
   if (action === "bundle") { res.status(200).json({ ok: true, ...(await getCallAnalysisBundle(org)) }); return; }
+  if (action === "plan") { res.status(200).json({ ok: true, ...(await getWeeklyTranscriptionPlan(org)) }); return; }
+  if (action === "plan-config") {
+    if (!isAdmin) { res.status(403).json({ error: "admin only" }); return; }
+    const cur = await rgetJSON(PLAN_CFG_KEY(org), {}) || {};
+    const patch = {};
+    for (const k of ["weeklyMinutes", "avgMinPerCall", "reliabilityCode", "salesLowRatio", "salesHighRatio", "reliabilityLow", "reliabilityHigh"]) {
+      if (b[k] !== undefined) patch[k] = b[k];
+    }
+    if (!Object.keys(patch).length) { res.status(400).json({ error: "нечего менять", current: cur }); return; }
+    const next = { ...cur, ...patch };
+    await rsetJSON(PLAN_CFG_KEY(org), next);
+    res.status(200).json({ ok: true, config: next });
+    return;
+  }
   if (action === "list") {
     let rows = (await rgetJSON(CA_LIST(org), [])).filter((x) => x.state === "done");
     const fmop = q.mop || b.mop, fst = q.status || b.status;
@@ -367,5 +437,5 @@ export default async function handler(req, res) {
     return;
   }
 
-  res.status(400).json({ error: "action: bundle | list | get | pick | analyze | result" });
+  res.status(400).json({ error: "action: bundle | plan | list | get | pick | analyze | result" });
 }
