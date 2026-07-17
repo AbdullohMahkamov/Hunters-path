@@ -475,6 +475,15 @@ export default async function handler(req, res) {
       res.status(200).json({ ok: !!r.ok, sent: !!r.ok, to, name: p.name, error: r.error || null });
       return;
     }
+    // РАЗОВАЯ ПЕРЕОБРАБОТКА сообщения РОПа через исправленный handleRopReply (когда старый баг съел ответ).
+    // Текст в чат НЕ дублируем — он уже там; прогоняем только генерацию ответа. Админ.
+    if (action === "reprocess-rop") {
+      const txt = String((b.text || "")).trim();
+      if (!txt) { res.status(400).json({ error: "нужен text" }); return; }
+      const r = await handleRopReply(txt, b.replyToMsgId || null);
+      res.status(200).json({ ok: true, reprocessed: true, result: r || null });
+      return;
+    }
     // ПРЕДПРОСМОТР пинга — составить сообщение БЕЗ отправки РОПу (проверка подсказок под разные задачи)
     if (action === "preview_ping") {
       const tasks = await loadSalesTasks();
