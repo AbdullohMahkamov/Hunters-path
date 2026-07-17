@@ -325,7 +325,7 @@ export default async function handler(req, res) {
           const arr = sh[k] || [];
           while (idx[k] < arr.length && used.has(ukey(arr[idx[k]]))) idx[k]++;
           if (idx[k] < arr.length) {
-            const c = arr[idx[k]++]; const ef = Math.round(c.dur * 1.2);
+            const c = arr[idx[k]++]; const ef = Math.round(c.dur * 1.1); // реальный ratio файл/разговор ~1.1 (не 1.2 — иначе бюджет убегает)
             if (est + ef > budgetSec + 120) continue; // не перелетать бюджет сильно
             used.add(ukey(c)); sel.push(c); est += ef; spent += ef; n++; moved = true;
           }
@@ -336,7 +336,7 @@ export default async function handler(req, res) {
     pullBand("medium", targets.medium, bandCap.medium);
     pullBand("short", targets.short, budgetSec);
     // недобрали бюджет (коротких/чего-то мало) — добираем чем реально есть, без потолков
-    if (est < budgetSec * 0.9) for (const band of ["medium", "long", "short"]) pullBand(band, 999, budgetSec);
+    if (est < budgetSec * 0.95) for (const band of ["medium", "long", "short"]) pullBand(band, 999, budgetSec);
     // 4) HEAD выбранных: реальный fileSec + живость
     const final = [];
     for (const c of sel) {
