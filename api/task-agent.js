@@ -41,6 +41,36 @@ async function rsetJSON(key, v) { try { await fetch(`${REDIS_URL}/set/${encodeUR
 // scene: лёгкий лог РЕАЛЬНОГО события передачи данных между агентами (для визуализации на сцене).
 async function logFlow(from, to) { try { const a = await rgetJSON("scene:flows", []); a.push({ at: Date.now(), from, to }); await rsetJSON("scene:flows", a.slice(-20)); } catch (e) {} }
 async function rdel(key) { try { await fetch(`${REDIS_URL}/del/${encodeURIComponent(key)}`, { method: "POST", headers: { Authorization: `Bearer ${REDIS_TOKEN}` } }); } catch (e) {} }
+
+// ── КАРТА message_id → taskId ──
+// Telegram присылает reply_to_message.message_id, когда РОП отвечает Reply'ем на конкретный пинг.
+// Сохраняем id ИСХОДЯЩИХ сообщений (пинги/вопросы) → по Reply точно знаем задачу, не заставляя LLM
+// угадывать из списка. Ключи — целые (message_id), JS хранит их по возрастанию → срез отбрасывает старые.
+const MSGMAP_KEY = "taskagent:msgmap";
+async function rememberMsgTask(messageId, taskId) {
+  if (!messageId || !taskId) return;
+  try {
+    const m = await rgetJSON(MSGMAP_KEY, {});
+    m[String(messageId)] = taskId;
+    const keys = Object.keys(m);
+    if (keys.length > 300) for (const k of keys.slice(0, keys.length - 300)) delete m[k];
+    await rsetJSON(MSGMAP_KEY, m);
+  } catch (e) {}
+}
+async function lookupMsgTask(messageId) {
+  if (!messageId) return "";
+  const m = await rgetJSON(MSGMAP_KEY, {});
+  return m[String(messageId)] || "";
+}
+// Диагностика сбоев LLM/парсинга: РАНЬШЕ падение handleRopReply молча уходило в шаблон и было невидимым.
+// Теперь причина пишется в taskagent:diag — чтобы такие баги не прятались.
+async function logDiag(where, err, ctx) {
+  try {
+    const a = await rgetJSON("taskagent:diag", []);
+    a.push({ at: Date.now(), where, err: String((err && err.message) || err || "").slice(0, 200), ctx: String(ctx || "").slice(0, 160) });
+    await rsetJSON("taskagent:diag", a.slice(-50));
+  } catch (e) {}
+}
 async function getSession(session) { if (!session) return null; try { const raw = await rget(`session:${session}`); return raw ? JSON.parse(raw) : null; } catch (e) { return null; } }
 async function getConfig() { const c = await rgetJSON(K.config, null); return { ...DEFAULT_CONFIG, ...(c || {}) }; }
 
@@ -222,11 +252,14 @@ export async function getTaskStateBundle() {
     mopAgent: mopRun, flows: flows.slice(-8), now: { tashkentHour: tkHour(), tashkentDay: tkDay() } };
 }
 
-export async function handleRopReply(text) {
+export async function handleRopReply(text, replyToMsgId) {
   const cfg = await getConfig();
   if (!cfg.enabled || !AKEY) return;
   const tasks = await loadSalesTasks();
   const open = tasks.filter((t) => !t.done);
+  // reply-контекст: если РОП ответил Reply'ем на пинг — берём задачу напрямую из карты message_id→taskId
+  const replyTaskId = await lookupMsgTask(replyToMsgId);
+  const replyTask = replyTaskId ? open.find((t) => t.id === replyTaskId) : null;
   const chat = await getChat();
   const recent = chat.slice(-16).map((m) => `${m.role === "rop" ? "РОП" : (m.role === "owner" ? "ВЛАДЕЛЕЦ" : "АГЕНТ")}${m.taskId ? ` [задача ${m.taskId}]` : ""}: ${m.text}`).join("\n");
 
@@ -239,7 +272,7 @@ ${open.map((t) => `- [${t.id}] ${scopeTag(t) ? scopeTag(t) + " " : ""}${t.title}
 
 ПЕРЕПИСКА (последнее):
 ${recent}
-
+${replyTask ? `\nРОП ОТВЕТИЛ (Reply) на сообщение по задаче [${replyTask.id}] «${replyTask.title}» — его сообщение почти наверняка относится ИМЕННО к этой задаче; используй этот taskId, если из текста явно не следует другое.` : ""}
 НОВОЕ СООБЩЕНИЕ РОПа: ${text}
 
 Ответь РОПу по делу (2-4 предложения) и определи, к какой задаче относится его сообщение.
@@ -253,12 +286,24 @@ claims_done ставь СТРОГО: только если человек ЯВН
 
 ВАЖНО про закрытие: задачи с пометкой 🏢/👤 (находки по отделу/по МОПу) закрываются ПРЯМО ЗДЕСЬ, по твоей оценке ответа — НЕ отправляй РОПа закрывать их в интерфейсе, карточки там нет. Остальные задачи плана он закрывает сам в интерфейсе Hunter AI и оставляет отчёт.`;
 
-  let out;
-  try { out = parseJSON(await callModel(SYSTEM_ROP, user, 900)); }
-  catch (e) { out = { reply: "Принял. Уточните, пожалуйста, по какой задаче и какой сейчас статус?", needsDetail: true, hintHeader: "Чтобы зафиксировать правильно, укажите:", checklist: ["о какой задаче речь", "статус (сделано / в процессе / не начато)", "если не сделано — что мешает"], taskId: "", status: "unclear", note: "" }; }
+  // 1500 токенов: JSON здесь БОЛЬШЕ, чем у пинга (reply+checklist+taskId+status+note). На 900 узбекский
+  // ответ обрывался → parseJSON падал → немой русский шаблон (это и был баг «бот игнорирует РОПа»).
+  let out = null, llmErr = null;
+  for (let attempt = 0; attempt < 2 && !out; attempt++) {
+    try { out = parseJSON(await callModel(SYSTEM_ROP, user, 1500)); }
+    catch (e) { llmErr = e; }
+  }
+  if (!out) {
+    // Не прячем сбой и НЕ вводим РОПа в заблуждение generic-переспросом. Фиксируем причину и честно
+    // отвечаем НА ЯЗЫКЕ РОПа. taskId берём из reply-контекста, чтобы задача не «уехала» в эскалацию зря.
+    await logDiag("handleRopReply", llmErr, text);
+    out = ropLang === "uz"
+      ? { reply: "Xabaringizni oldim va saqlab qo'ydim. Javobni tayyorlashda vaqtincha texnik nosozlik bo'ldi — tez orada shu mavzu bo'yicha to'liq javob beraman.", needsDetail: false, hintHeader: "", checklist: [], taskId: replyTaskId || "", status: "unclear", note: "LLM/parse error" }
+      : { reply: "Сообщение получил и сохранил. При подготовке ответа была техническая заминка — вернусь с ответом по существу совсем скоро.", needsDetail: false, hintHeader: "", checklist: [], taskId: replyTaskId || "", status: "unclear", note: "LLM/parse error" };
+  }
   out.reply = assembleMsg({ question: out.reply, needsDetail: out.needsDetail, hintHeader: out.hintHeader, checklist: out.checklist });
 
-  const taskId = out.taskId || "";
+  const taskId = out.taskId || replyTaskId || "";
   // помечаем последнее сообщение РОПа принадлежностью к задаче
   if (taskId) {
     const all = await getChat();
@@ -286,8 +331,9 @@ claims_done ставь СТРОГО: только если человек ЯВН
   }
   const people = await getPeople();
   if (people.rop && people.rop.chatId && out.reply) {
-    await sendTg("rop", people.rop.chatId, out.reply);
+    const r = await sendTg("rop", people.rop.chatId, out.reply);
     await pushChat({ role: "agent", text: out.reply, taskId });
+    if (r.ok && taskId) await rememberMsgTask(r.messageId, taskId); // РОП может ответить Reply'ем на этот вопрос
   }
   return { ok: true, taskId, status: out.status };
 }
@@ -348,6 +394,7 @@ async function runTick(force) {
         const r = await sendTg("rop", people.rop.chatId, msg);
         if (r.ok) {
           await pushChat({ role: "agent", text: msg, taskId: t.id });
+          await rememberMsgTask(r.messageId, t.id); // Reply РОПа на этот пинг → сопоставим с задачей
           st[t.id] = { ...s, pingDay: day, pingAt: Date.now(), state: s.state || "pinged" };
           pinged.push({ id: t.id, title: t.title });
         }

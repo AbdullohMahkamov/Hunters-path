@@ -240,10 +240,12 @@ export default async function handler(req, res) {
 
     if (kind === "rop") {
       // ответ РОПа → в общий тред; Task Agent обработает и ответит
+      // reply_to_message.message_id — если РОП ответил Reply'ем на конкретный пинг (нужно для привязки к задаче)
+      const replyToId = (msg.reply_to_message && msg.reply_to_message.message_id) || null;
       await pushChat({ role: "rop", text: text.slice(0, 2000), name });
       try {
         const mod = await import("./task-agent.js");
-        await mod.handleRopReply(text.slice(0, 2000));
+        await mod.handleRopReply(text.slice(0, 2000), replyToId);
       } catch (e) { /* агент недоступен — сообщение всё равно сохранено */ }
       res.status(200).json({ ok: true, stored: true }); return;
     }
