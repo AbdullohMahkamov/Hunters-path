@@ -312,25 +312,31 @@ export default async function handler(req, res) {
     }
     for (const band of Object.keys(shelves)) for (const k in shelves[band]) shelves[band][k].sort((a, b2) => a.ts - b2.ts);
     const sel = []; let est = 0;
-    const pullBand = (band, maxCount) => {
+    const used = new Set(); const ukey = (c) => c.leadId + ":" + c.ts;
+    // потолок бюджета на полосу — чтобы длинные/средние не съели весь час и коротким осталось место
+    const bandCap = { long: Math.round(budgetSec * 0.40), medium: Math.round(budgetSec * 0.42), short: budgetSec };
+    const pullBand = (band, maxCount, cap) => {
       const sh = shelves[band]; const idx = {}; sub.forEach((k) => (idx[k] = 0));
-      let n = 0, moved = true;
-      while (n < maxCount && est < budgetSec && moved) {
+      let n = 0, spent = 0, moved = true;
+      while (n < maxCount && est < budgetSec && spent < cap && moved) {
         moved = false;
         for (const k of sub) {
-          if (n >= maxCount || est >= budgetSec) break;
+          if (n >= maxCount || est >= budgetSec || spent >= cap) break;
           const arr = sh[k] || [];
+          while (idx[k] < arr.length && used.has(ukey(arr[idx[k]]))) idx[k]++;
           if (idx[k] < arr.length) {
             const c = arr[idx[k]++]; const ef = Math.round(c.dur * 1.2);
             if (est + ef > budgetSec + 120) continue; // не перелетать бюджет сильно
-            sel.push(c); est += ef; n++; moved = true;
+            used.add(ukey(c)); sel.push(c); est += ef; spent += ef; n++; moved = true;
           }
         }
       }
     };
-    pullBand("long", targets.long);
-    pullBand("medium", targets.medium);
-    pullBand("short", targets.short);
+    pullBand("long", targets.long, bandCap.long);
+    pullBand("medium", targets.medium, bandCap.medium);
+    pullBand("short", targets.short, budgetSec);
+    // недобрали бюджет (коротких/чего-то мало) — добираем чем реально есть, без потолков
+    if (est < budgetSec * 0.9) for (const band of ["medium", "long", "short"]) pullBand(band, 999, budgetSec);
     // 4) HEAD выбранных: реальный fileSec + живость
     const final = [];
     for (const c of sel) {
@@ -345,7 +351,8 @@ export default async function handler(req, res) {
     for (const c of final) { comp[c.status]++; comp[c.position]++; comp[c.band]++; sec += c.fileSec; }
     res.status(200).json({
       ok: true, action: "audit-pick", mop: mopName, mopId, budgetMin,
-      scanned: { wonLeads: wonL.length, lostLeads: lostL.length, notesScanned: toScan.slice(0, 130).length, candidateCalls: cands.length, freshCandidates: cands.filter((c) => !c.alreadyDone).length },
+      scanned: { wonLeads: wonL.length, lostLeads: lostL.length, notesScanned: toScan.slice(0, 130).length, candidateCalls: cands.length,
+        freshCandidatesByBand: cands.reduce((o, c) => { if (!c.alreadyDone) o[bandOf(c.dur)] = (o[bandOf(c.dur)] || 0) + 1; return o; }, { short: 0, medium: 0, long: 0 }) },
       composition: comp, totalFileMin: +(sec / 60).toFixed(1),
       dateSpan: final.length ? { from: final[0].callDate, to: final[final.length - 1].callDate } : null,
       calls: final,
