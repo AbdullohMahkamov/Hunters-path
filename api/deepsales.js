@@ -271,6 +271,18 @@ async function buildMetricsDigest(org) {
   return s;
 }
 
+// Недельный план транскрибации → владельцу в Digest как ПРЕДЛОЖЕНИЕ (анализ не запускается сам).
+async function buildPlanDigest(org) {
+  const p = await getWeeklyTranscriptionPlan(org);
+  const rows = p.plan || [];
+  const lvl = (x) => x === "low" ? "🔴 плотно" : x === "medium" ? "🟡 средне" : "🟢 эталон";
+  let s = `🗓 <b>План разбора звонков на неделю</b>\n\n`;
+  s += `Бюджет: <b>${p.totals.weeklyMinutesLimit} мин</b> (~${p.totals.plannedCalls} звонков). Приоритет — где хуже из двух осей: продажи × достоверность.\n\n`;
+  for (const r of rows) s += `• <b>${r.mop}</b>: ${r.calls} зв · ${r.minutesBudget} мин — ${lvl(r.overallPerf)}\n`;
+  s += `\nИтого <b>${p.totals.plannedCalls} звонков / ${p.totals.plannedMinutes} мин</b>.\n<i>Это ПРЕДЛОЖЕНИЕ — анализ НЕ запущен. Подтвердите запуск, чтобы начать разбор по этому плану.</i>`;
+  return s;
+}
+
 export default async function handler(req, res) {
   res.setHeader("Cache-Control", "no-store");
   const q = req.query || {}, b = req.body || {};
@@ -285,7 +297,7 @@ export default async function handler(req, res) {
   const isAdmin = !!(sess && sess.role === "admin");
   const isRop = !!(sess && sess.role === "rop");
   const READ_ONLY = new Set(["list", "get", "bundle"]);
-  const CRON_OK = new Set(["metrics-digest"]);
+  const CRON_OK = new Set(["metrics-digest", "plan-digest"]);
   if (!(isAdmin || (isRop && READ_ONLY.has(action)) || (isCron && CRON_OK.has(action)))) { res.status(403).json({ error: "admin (или РОП — только чтение)" }); return; }
   const org = (sess && sess.org) || "hunter";
 
@@ -308,6 +320,14 @@ export default async function handler(req, res) {
     if (!base) { res.status(400).json({ error: "нет baseline — сначала baseline-save" }); return; }
     const now = await computeBaselineSnapshot(org);
     res.status(200).json({ ok: true, baselineAt: base.at, baselineLabel: base.label, diff: diffSnapshots(base, now), from: base, to: now });
+    return;
+  }
+  if (action === "plan-digest") {
+    const msg = await buildPlanDigest(org);
+    const plan = await getWeeklyTranscriptionPlan(org);
+    await rsetJSON(`transcriptplan:pending:${org}`, { at: Date.now(), plan: plan.plan, totals: plan.totals, confirmed: false }); // ждёт подтверждения владельца
+    const r = await sendDigest(msg);
+    res.status(200).json({ ok: !!(r && r.ok), sent: !!(r && r.ok), preview: msg, error: (r && r.error) || null });
     return;
   }
   if (action === "metrics-digest") {
