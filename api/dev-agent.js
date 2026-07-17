@@ -477,7 +477,12 @@ async function callModel(system, userContent, maxTokens) {
   const d = await r.json(); const u = d.usage || {};
   return { text: (d.content || []).filter((b) => b.type === "text").map((b) => b.text).join("").trim(), tokens: (u.input_tokens || 0) + (u.output_tokens || 0) };
 }
-function parseJSON(text) { let t = text.replace(/```json/gi, "").replace(/```/g, "").trim(); const s = t.indexOf("{"), e = t.lastIndexOf("}"); if (s >= 0 && e > s) t = t.slice(s, e + 1); return JSON.parse(t); }
+function parseJSON(text) {
+  let t = text.replace(/```json/gi, "").replace(/```/g, "").trim();
+  const s = t.indexOf("{"), e = t.lastIndexOf("}"); if (s >= 0 && e > s) t = t.slice(s, e + 1);
+  try { return JSON.parse(t); }
+  catch (e) { return JSON.parse(t.replace(/,\s*([}\]])/g, "$1")); } // мягкая починка: висячие запятые перед } или ]
+}
 
 function mergeMemoryList(prevList, newList, kind, conflog, fixedClaims, rejectedClaims, minEvidence) {
   const prevById = {}; for (const p of prevList) if (p && p.id) prevById[p.id] = p;
@@ -553,10 +558,20 @@ hypotheses: ${JSON.stringify(memory.hypotheses)}
 
   const rawContent = buildNightlyContent({ memory, agg, git, weekly: mode === "weekly" });
   const content = anonymize(rawContent, map); // реальные имена НЕ уходят в модель
-  const { text, tokens } = await callModel(SYSTEM, content, 8000);
+  // 16000 + ретрай со строгим напоминанием: длинный JSON (findings+hypotheses+report) на 8000 обрывался
+  // или приходил битым → парс падал и весь ночной прогон был впустую (память не обновлялась). Теперь два
+  // захода, потом честный лог ПРИЧИНЫ (а не 4000 символов сырья).
+  let text = "", tokens = 0, out = null, parseErr = null;
+  for (let attempt = 0; attempt < 2 && !out; attempt++) {
+    const user = attempt === 0 ? content
+      : content + "\n\n⚠️ ПРЕДЫДУЩИЙ ОТВЕТ НЕ РАЗОБРАЛСЯ КАК JSON. Верни СТРОГО валидный JSON ЦЕЛИКОМ: без пояснений до/после, без markdown-обёртки, экранируй кавычки и переводы строк внутри значений, без висячих запятых.";
+    const r = await callModel(SYSTEM, user, 16000);
+    text = r.text; tokens = r.tokens;
+    try { out = parseJSON(text); } catch (e) { parseErr = e; }
+  }
   await bumpQuota("nightly");
-  let out; try { out = parseJSON(text); } catch (e) {
-    await pushChat("agent", `Прогон: не смог разобрать ответ модели в JSON.\n\n${deanonymize(text, map).slice(0, 4000)}`, { kind: mode === "weekly" ? "weekly" : "nightly", tokens });
+  if (!out) {
+    await pushChat("agent", `Прогон: не смог разобрать ответ модели в JSON — ${String((parseErr && parseErr.message) || parseErr).slice(0, 140)}. Память не менялась, повтор на следующем прогоне.`, { kind: mode === "weekly" ? "weekly" : "nightly", tokens });
     return { ok: false, error: "parse_failed" };
   }
   const conflog = await rgetJSON(K.conflog, []);
