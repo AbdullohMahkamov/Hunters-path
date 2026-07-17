@@ -892,50 +892,69 @@ async function loadCallAnalysis() {
     renderCallAnalysis()
   } catch (e) { box.innerHTML = '<div style="font-size:12px;color:var(--red);">Не удалось загрузить разборы</div>' }
 }
-function caSetMop(v) { _caMop = v || ''; renderCallAnalysis() }
-function caSetStatus(v) { _caStatus = v || ''; renderCallAnalysis() }
+function caSetMop(v) { _caMop = v || ''; caRefreshList() }
+function caSetStatus(v) { _caStatus = v || ''; caRefreshList() }
+function caRefreshList() { const bd = document.getElementById('caListBody'); if (bd) bd.innerHTML = renderCaListBody() }
 
+// ГЛАВНЫЙ ЭКРАН: только паспорт выборки + командные метрики + кнопка. Полный список — в модалке.
 function renderCallAnalysis() {
   const box = document.getElementById('callAnalysisBox'); if (!box || !_caData) return
   const cov = _caData.coverage, team = _caData.team || {}
-  const mops = Object.keys(cov.byMop || {})
-  let rows = _caRows.slice()
-  if (_caMop) rows = rows.filter((r) => r.mop === _caMop)
-  if (_caStatus) rows = rows.filter((r) => r.status === _caStatus)
-
-  // ── ПАСПОРТ ВЫБОРКИ:首 самое важное, наверху, крупно ──
   let html = `<div style="background:var(--gold-bg,rgba(212,175,55,.1));border:1px solid var(--gold,#d4af37);border-radius:10px;padding:10px 12px;margin-bottom:12px;font-size:12px;line-height:1.5;">
     <b>Разобрано ${cov.analyzed} звонков</b> за ${caEsc(cov.window.from)} – ${caEsc(cov.window.to)}.
-    Это <b>доли процента</b> от всех звонков и <b>не случайная выборка</b> (отбирали 2–4 мин по лидам won/lost).
-    Годится как повод посмотреть конкретный разговор — <b>не как оценка человека</b>.
+    Это <b>доли процента</b> от всех звонков и <b>не случайная выборка</b>. Годится как повод посмотреть конкретный разговор — <b>не как оценка человека</b>.
   </div>`
-
-  // ── КОМАНДА: won vs lost ──
   if (team.won && team.lost) {
     const cell = (a, b2, lbl) => `<div style="background:var(--card);border:1px solid var(--line);border-radius:9px;padding:8px 10px;">
       <div style="font-size:10.5px;color:var(--txt2);">${lbl}</div>
       <div style="font-size:14px;font-weight:700;margin-top:2px;"><span style="color:var(--green);">${a}</span> <span style="color:var(--txt3);">/</span> <span style="color:var(--red);">${b2}</span></div></div>`
     html += `<div style="font-size:11px;color:var(--txt2);margin-bottom:6px;">Команда: <span style="color:var(--green);">won ${team.won.n}</span> / <span style="color:var(--red);">lost ${team.lost.n}</span> разборов</div>
-      <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(140px,1fr));gap:8px;margin-bottom:12px;">
+      <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(140px,1fr));gap:8px;margin-bottom:8px;">
       ${cell(team.won.talkRatio + '%', team.lost.talkRatio + '%', 'Говорил менеджер')}
       ${cell(team.won.mistakesPerCall, team.lost.mistakesPerCall, 'Ошибок на звонок')}
       ${cell(team.won.mistakeTags.closing || 0, team.lost.mistakeTags.closing || 0, 'Ошибки закрытия (всего)')}
       ${cell(team.won.avgScore, team.lost.avgScore, 'Средний балл*')}
       </div>
-      <div style="font-size:10.5px;color:var(--txt3);margin:-6px 0 12px;">* баллы у DeepSales зависят от категории звонка — между won и lost НЕ сравнимы напрямую.</div>`
+      <div style="font-size:10.5px;color:var(--txt3);margin:0 0 12px;">* баллы у DeepSales зависят от категории звонка — между won и lost НЕ сравнимы напрямую.</div>`
   }
+  html += `<button onclick="caOpenList()" style="width:100%;padding:11px;border-radius:9px;background:var(--accent);border:none;color:#fff;font-size:13px;font-weight:600;cursor:pointer;display:flex;align-items:center;justify-content:center;gap:7px;">
+    <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round"><path d="M8 6h13M8 12h13M8 18h13M3 6h.01M3 12h.01M3 18h.01"/></svg>
+    Все разборы по МОПам (${cov.analyzed}) →</button>`
+  box.innerHTML = html
+}
 
-  // ── ФИЛЬТРЫ ──
+// МОДАЛКА: фильтры + карточка МОПа + список всех разборов (клик по строке → детали звонка)
+function caOpenList() {
+  const ov = document.getElementById('caListModal') || (() => {
+    const d = document.createElement('div'); d.id = 'caListModal'
+    d.style.cssText = 'position:fixed;inset:0;z-index:590;background:rgba(0,0,0,.55);display:flex;align-items:flex-start;justify-content:center;padding:22px 14px;overflow:auto;'
+    d.onclick = (e) => { if (e.target === d) d.remove() }
+    document.body.appendChild(d); return d
+  })()
+  ov.innerHTML = `<div style="background:var(--bg);border:1px solid var(--line2);border-radius:14px;max-width:820px;width:100%;max-height:92vh;overflow:auto;padding:16px;">
+    <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:12px;">
+      <div style="font-size:15px;font-weight:700;">Разборы звонков — история</div>
+      <button onclick="document.getElementById('caListModal').remove()" style="background:none;border:none;color:var(--txt2);font-size:22px;cursor:pointer;line-height:1;">×</button>
+    </div>
+    <div id="caListBody">${renderCaListBody()}</div>
+  </div>`
+}
+
+function renderCaListBody() {
+  if (!_caData) return ''
+  const cov = _caData.coverage, team = _caData.team || {}
+  const mops = Object.keys(cov.byMop || {})
+  let rows = _caRows.slice()
+  if (_caMop) rows = rows.filter((r) => r.mop === _caMop)
+  if (_caStatus) rows = rows.filter((r) => r.status === _caStatus)
   const opt = (v, cur, lbl) => `<option value="${caEsc(v)}"${cur === v ? ' selected' : ''}>${caEsc(lbl)}</option>`
-  html += `<div style="display:flex;gap:8px;flex-wrap:wrap;margin-bottom:10px;">
+  let html = `<div style="display:flex;gap:8px;flex-wrap:wrap;margin-bottom:10px;">
     <select onchange="caSetMop(this.value)" style="padding:7px 10px;border-radius:8px;border:1px solid var(--line2);background:var(--card);color:var(--txt);font-size:12.5px;">
       ${opt('', _caMop, 'Все МОПы')}${mops.map((m) => opt(m, _caMop, m)).join('')}</select>
     <select onchange="caSetStatus(this.value)" style="padding:7px 10px;border-radius:8px;border:1px solid var(--line2);background:var(--card);color:var(--txt);font-size:12.5px;">
       ${opt('', _caStatus, 'Все сделки')}${opt('won', _caStatus, 'Только продано')}${opt('lost', _caStatus, 'Только потеряно')}</select>
     <div style="align-self:center;font-size:11.5px;color:var(--txt3);">показано ${rows.length}</div>
   </div>`
-
-  // ── КАРТОЧКА МОПа: его цифры + ЕГО покрытие рядом, не в сноске ──
   if (_caMop && cov.byMop[_caMop]) {
     const c = cov.byMop[_caMop], m = _caData.byMop[_caMop] || {}
     const t = team.all || {}
@@ -949,8 +968,6 @@ function renderCallAnalysis() {
       <div style="font-size:12px;padding:3px 0;"><span style="color:var(--txt2);">Возражения клиентов:</span> ${Object.entries(m.objectionTags || {}).map(([k, v]) => `${caEsc(k)} ×${v}`).join(', ') || '—'}</div>
     </div>`
   }
-
-  // ── ТАБЛИЦА: суть звонка видна сразу, без открытия ──
   html += rows.map((r) => {
     const stColor = r.status === 'won' ? 'var(--green)' : (r.status === 'lost' ? 'var(--red)' : 'var(--txt3)')
     const stTxt = r.status === 'won' ? 'продано' : (r.status === 'lost' ? 'потеряно' : (r.status || '—'))
@@ -970,8 +987,7 @@ function renderCallAnalysis() {
       </div>
     </div>`
   }).join('') || '<div style="font-size:12px;color:var(--txt3);padding:10px 0;">Нет разборов по этому фильтру</div>'
-
-  box.innerHTML = html
+  return html
 }
 
 // Детали одного звонка: критерии, возражения, ошибки+рекомендации, полный транскрипт
@@ -1029,7 +1045,7 @@ async function caOpen(leadId, audioFileId) {
 
 export function initDashModals() {
   Object.assign(window, {
-    loadCallAnalysis, caSetMop, caSetStatus, caOpen,
+    loadCallAnalysis, caSetMop, caSetStatus, caOpen, caOpenList,
     openSuspModal, closeSuspModal, toggleSuspHistory, reviewSusp,
     openWorkdaysModal, closeWorkdaysModal, saveWorkdays,
     editForecastGoal, syncAll, saveOrgSettings,
