@@ -19,7 +19,7 @@
       "maxDuration": 120
     },
     "api/dev-agent.js": {
-      "maxDuration": 120
+      "maxDuration": 300
     },
     "api/growth-agent.js": {
       "maxDuration": 180
