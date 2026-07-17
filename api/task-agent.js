@@ -254,6 +254,21 @@ export async function getTaskStateBundle() {
     mopAgent: mopRun, flows: flows.slice(-8), now: { tashkentHour: tkHour(), tashkentDay: tkDay() } };
 }
 
+// Уведомление владельцу об ОСПАРИВАНИИ находки — с кнопками решения (✅ агент / 👤 РОП / 📝 учту).
+// Это НЕ «эскалация как проигнорировано» — РОП ответил; это «есть спор фактов, реши».
+async function notifyOwnerDispute(taskId, task, dispute) {
+  const people = await getPeople();
+  if (!(people.owner && people.owner.chatId)) return;
+  const title = task ? task.title : taskId;
+  const txt = `⚖️ <b>РОП оспорил находку</b>\n<b>Задача:</b> ${title}\n\n🤖 <b>Агент:</b> ${String(dispute.agentClaim || "—").slice(0, 500)}\n👤 <b>РОП:</b> ${String(dispute.ropClaim || "—").slice(0, 500)}\n\nОбе версии сохранены. Ваше решение:`;
+  const kb = { reply_markup: { inline_keyboard: [
+    [{ text: "✅ Прав агент", callback_data: `disp:agent:${taskId}` }, { text: "👤 Прав РОП", callback_data: `disp:rop:${taskId}` }],
+    [{ text: "📝 Учту, оставить открытым", callback_data: `disp:noted:${taskId}` }],
+  ] } };
+  const r = await sendTg("owner", people.owner.chatId, txt, kb);
+  if (r.ok) { await rememberMsgTask("owner", r.messageId, taskId); await pushChat({ role: "agent", text: `⚖️ Оспорено РОПом (владельцу — на решение). Агент: ${dispute.agentClaim}. РОП: ${dispute.ropClaim}`, taskId }); }
+}
+
 export async function handleRopReply(text, replyToMsgId) {
   const cfg = await getConfig();
   if (!cfg.enabled || !AKEY) return;
@@ -281,10 +296,12 @@ ${replyTask ? `\nРОП ОТВЕТИЛ (Reply) на сообщение по за
 Если от него снова ждёшь СОДЕРЖАТЕЛЬНЫЙ ответ (он ответил расплывчато / нужен статус / нужна причина) — приложи подсказку-шаблон, подстроенную под ЭТУ задачу (см. правила в системном промпте). Если ответ исчерпывающий и переспрашивать нечего — needsDetail=false.
 
 Верни СТРОГО JSON, на языке переписки:
-{"reply":"текст ответа РОПу","needsDetail":true,"hintHeader":"заголовок подсказки","checklist":["пункт 1","пункт 2"],"taskId":"id задачи или пусто","status":"in_progress|blocked|claims_done|unclear|none","note":"кратко что зафиксировал"}
-status: in_progress — работает; blocked — что-то мешает; claims_done — говорит что сделал; unclear — непонятно; none — не про задачи.
+{"reply":"текст ответа РОПу","needsDetail":true,"hintHeader":"заголовок подсказки","checklist":["пункт 1","пункт 2"],"taskId":"id задачи или пусто","status":"in_progress|blocked|claims_done|disputed|unclear|none","note":"кратко что зафиксировал","disputeClaim":"ТОЛЬКО если status=disputed — суть контр-версии РОПа своими словами (что он утверждает ВМЕСТО факта находки); иначе пусто"}
+status: in_progress — работает; blocked — что-то мешает; claims_done — говорит что сделал; disputed — ОСПАРИВАЕТ сам ФАКТ находки («это неверно, на самом деле так-то», приводит контр-факт); unclear — непонятно; none — не про задачи.
 
 claims_done ставь СТРОГО: только если человек ЯВНО и КОНКРЕТНО сказал, что сделал (что именно сделал / с кем поговорил / что изменилось). Расплывчатое «вроде норм», «да там ок», «разберёмся», «посмотрю» — это НЕ claims_done, это unclear, и needsDetail=true. Не выдавай желаемое за сделанное: по claims_done с needsDetail=false задача закрывается автоматически, откатить это человек не сможет.
+
+disputed ставь СТРОГО: только когда РОП оспаривает САМ ФАКТ находки (утверждает, что данные/вывод неверны, и приводит свою версию — «я проверил, там на самом деле так-то»). Это НЕ claims_done («сделал») и НЕ blocked («мешает»). При disputed задача НЕ закрывается: обе версии — агента и РОПа — сохраняются владельцу для решения, а в disputeClaim передай суть контр-версии РОПа. В reply ответь РОПу нейтрально: «спор зафиксирован, передал владельцу на решение» — без спора с ним и без признания вины.
 
 ВАЖНО про закрытие: задачи с пометкой 🏢/👤 (находки по отделу/по МОПу) закрываются ПРЯМО ЗДЕСЬ, по твоей оценке ответа — НЕ отправляй РОПа закрывать их в интерфейсе, карточки там нет. Остальные задачи плана он закрывает сам в интерфейсе Hunter AI и оставляет отчёт.`;
 
@@ -316,6 +333,20 @@ claims_done ставь СТРОГО: только если человек ЯВН
   const st = await rgetJSON(K.status, {});
   if (taskId) {
     st[taskId] = { ...(st[taskId] || {}), ropRepliedAt: Date.now(), ropRepliedDay: tkDay(), state: out.status || "unclear", note: out.note || "" };
+    // ── ОСПАРИВАНИЕ: РОП оспорил САМ ФАКТ находки → структурно храним ДВЕ версии, НЕ закрываем, шлём владельцу с кнопками ──
+    if (out.status === "disputed") {
+      const t0 = open.find((t) => t.id === taskId);
+      // append-only: если по этой задаче уже был спор — не затираем прошлую версию, ведём историю
+      const prior = (st[taskId].dispute && st[taskId].dispute.history) || (st[taskId].dispute ? [{ ...st[taskId].dispute }] : []);
+      st[taskId].dispute = {
+        at: Date.now(),
+        agentClaim: t0 ? (t0.why || t0.title || "") : "",
+        ropClaim: String(out.disputeClaim || text || "").slice(0, 800),
+        resolvedByOwner: null,
+        history: prior,
+      };
+      try { await notifyOwnerDispute(taskId, t0, st[taskId].dispute); } catch (e) {}
+    }
     await rsetJSON(K.status, st);
   }
   // Находку MOP Agent РОП закрывает СЛОВОМ (карточки в интерфейсе у неё нет).
@@ -338,6 +369,24 @@ claims_done ставь СТРОГО: только если человек ЯВН
     if (r.ok && taskId) await rememberMsgTask("rop", r.messageId, taskId); // РОП может ответить Reply'ем на этот вопрос
   }
   return { ok: true, taskId, status: out.status };
+}
+
+// Решение владельца по ОСПАРИВАНИЮ (кнопки disp:agent|rop|noted). Обе версии остаются в истории — финальный статус их НЕ затирает.
+// Необратимых авто-действий нет: агент лишь фиксирует решение владельца.
+export async function handleDisputeResolve(action, taskId) {
+  const st = await rgetJSON(K.status, {});
+  const s = st[taskId];
+  if (!s || !s.dispute) return { ok: false, toast: "спор не найден" };
+  s.dispute.resolvedByOwner = action; s.dispute.resolvedAt = Date.now();
+  const LBL = { agent: "оставлена (прав агент — РОП должен выполнить)", rop: "снята (принята версия РОПа)", noted: "оставлена под перепроверку данными" };
+  if (action === "rop") {
+    s.state = "resolved_rop";
+    const tasks = await loadSalesTasks(); const t0 = tasks.find((t) => t.id === taskId);
+    if (t0 && t0.source === "mop-agent") { try { await closeMopFinding(taskId, "owner_accepted_rop", s.dispute.ropClaim || "", t0.repeatCount || 1); } catch (e) {} }
+  } else if (action === "agent") { s.state = "disputed_owner_agent"; } // остаётся открытой, РОП должен выполнить
+  else { s.state = "disputed_noted"; }                                  // остаётся открытой под перепроверку
+  await rsetJSON(K.status, st);
+  return { ok: true, toast: "Решение принято", ownerMsg: `⚖️ Спор по задаче «${taskId}»: ${LBL[action] || action}. Обе версии сохранены в истории.` };
 }
 
 // ══ ОТВЕТ ВЛАДЕЛЬЦА НА ЭСКАЛАЦИЮ ══

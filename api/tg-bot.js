@@ -233,15 +233,18 @@ export default async function handler(req, res) {
       const people = await getPeople();
       const bound = people[kind];
       if (!bound || bound.chatId !== cqChatId) { await answerCallback(kind, cq.id, ""); res.status(200).json({ ok: true, ignored: "cq not bound" }); return; }
-      const m = String(cq.data || "").match(/^esc:(remind|close|self):(.+)$/);
-      if (!m) { await answerCallback(kind, cq.id, ""); res.status(200).json({ ok: true, ignored: "cq no match" }); return; }
-      const act = m[1], taskId = m[2];
+      const data = String(cq.data || "");
+      const mEsc = data.match(/^esc:(remind|close|self):(.+)$/);
+      const mDisp = data.match(/^disp:(agent|rop|noted):(.+)$/); // решение владельца по оспариванию
+      if (!mEsc && !mDisp) { await answerCallback(kind, cq.id, ""); res.status(200).json({ ok: true, ignored: "cq no match" }); return; }
+      const act = mDisp ? mDisp[1] : mEsc[1];
       try {
         const mod = await import("./task-agent.js");
-        const r = await mod.handleOwnerButton(act, taskId);
+        const r = mDisp ? await mod.handleDisputeResolve(mDisp[1], mDisp[2]) : await mod.handleOwnerButton(mEsc[1], mEsc[2]);
         await answerCallback(kind, cq.id, (r && r.toast) || "Готово");
         if (r && r.ownerMsg && cqChatId) await sendTg(kind, cqChatId, r.ownerMsg);
-        if (act === "close" && cq.message) await clearReplyMarkup(kind, cqChatId, cq.message.message_id); // защита от повторного нажатия
+        // после решения по спору или «снять с контроля» убираем кнопки (защита от повторного нажатия)
+        if (cq.message && (mDisp || act === "close")) await clearReplyMarkup(kind, cqChatId, cq.message.message_id);
       } catch (e) { await answerCallback(kind, cq.id, "Ошибка обработки"); }
       res.status(200).json({ ok: true, cq: act }); return;
     }
