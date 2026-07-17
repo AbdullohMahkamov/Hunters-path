@@ -9,6 +9,7 @@ import { getGrowthStateBundle } from "./growth-agent.js";
 import { getTaskStateBundle } from "./task-agent.js";
 import { getOpenMopFindings, getFreshAutoClosed, getMopLastRun, getMopConfig } from "./mop-agent.js";
 import { getBalancesSummary } from "./gamification.js";
+import { getCallAnalysisBundle } from "./deepsales.js";
 
 async function readDashboardCache() {
   const url = process.env.UPSTASH_REDIS_REST_URL;
@@ -203,16 +204,37 @@ function statusCounts(arr, field) { const m = {}; for (const x of arr || []) { c
 // ЧТЕНИЕ агентов (шаг 1): компактный, источник-подписанный, trust-флагнутый дайджест 4 агентов + геймификации.
 // Переиспользует их state()-бандлы. Источники ОСТАЮТСЯ РАЗЛИЧИМЫ (не сливаются). Гейты передаются явно.
 async function agentsBlock(org, speed) {
-  let dev, growth, task, mopOpen, mopClosed, mopRun, mopCfg, bal;
+  let dev, growth, task, mopOpen, mopClosed, mopRun, mopCfg, bal, ca;
   try {
-    [dev, growth, task, mopOpen, mopClosed, mopRun, mopCfg, bal] = await Promise.all([
+    [dev, growth, task, mopOpen, mopClosed, mopRun, mopCfg, bal, ca] = await Promise.all([
       getDevStateBundle().catch(() => null), getGrowthStateBundle({ skipFunnel: true }).catch(() => null), getTaskStateBundle().catch(() => null),
       getOpenMopFindings().catch(() => []), getFreshAutoClosed().catch(() => []), getMopLastRun().catch(() => null),
       getMopConfig().catch(() => null), getBalancesSummary(org).catch(() => []),
+      getCallAnalysisBundle(org).catch(() => null),
     ]);
   } catch (e) { return ""; }
 
   let s = `\n\n=== СИСТЕМА АГЕНТОВ (это ОТДЕЛЬНЫЕ системы-источники, НЕ твоё мнение; при ответе называй источник и НЕ сливай их в одну выжимку) ===\n`;
+
+  // ── АНАЛИЗ ЗВОНКОВ (DeepSales) — выборка КРОШЕЧНАЯ и НЕ случайная ──
+  if (ca && ca.coverage && ca.coverage.analyzed > 0) {
+    const cov = ca.coverage;
+    s += `\n[Анализ звонков / DeepSales] — разборы РЕАЛЬНЫХ разговоров (транскрипт, оценки, возражения, ошибки).\n`;
+    s += `• Всего разобрано: ${cov.analyzed} звонков за период ${cov.window.from}–${cov.window.to} (последний прогон ${String(cov.lastAnalyzedAt || "").slice(0, 10)}).\n`;
+    s += `\n‼️ ЖЁСТКОЕ ПРАВИЛО, НАРУШАТЬ НЕЛЬЗЯ НИ РАЗУ:\n`;
+    s += `Выборка КРОШЕЧНАЯ (доли процента) и НЕ случайная. При ЛЮБОМ упоминании данных КОНКРЕТНОГО МОПа ты ОБЯЗАН в ТОЙ ЖЕ фразе назвать его покрытие: сколько его звонков разобрано, из скольких примерно, и какой это %.\n`;
+    s += `Покрытие по каждому: ${Object.entries(cov.byMop).map(([k, v]) => `${k} — ${v.analyzed} из ~${v.monthCallsEstimate || "?"} (${v.sharePctApprox != null ? v.sharePctApprox + "%" : "доля неизвестна"})`).join("; ")}.\n`;
+    s += `${cov.sampling}\n`;
+    s += `ЗАПРЕЩЕНО: «Абдулла плохо закрывает». ОБЯЗАТЕЛЬНО так: «по 7 разобранным звонкам из ~775 (0.9%) у Абдуллы в N из 7 не назначен следующий шаг — это выборка меньше процента, повод проверить вручную, а НЕ вывод о человеке».\n`;
+    s += `Если пользователь просит судить о МОПе по этим данным — прямо скажи, что выборки не хватает для суждения, и предложи посмотреть разборы в разделе «Анализ звонков» (вкладка Продажи).\n`;
+    if (ca.team && ca.team.won && ca.team.lost) {
+      s += `• Контраст команды (won ${ca.team.won.n} vs lost ${ca.team.lost.n} разборов): talk_ratio менеджера ${ca.team.won.talkRatio}% / ${ca.team.lost.talkRatio}%; ошибок на звонок ${ca.team.won.mistakesPerCall} / ${ca.team.lost.mistakesPerCall}.\n`;
+      s += `  Ошибки won: ${JSON.stringify(ca.team.won.mistakeTags)}; lost: ${JSON.stringify(ca.team.lost.mistakeTags)}.\n`;
+      s += `  Возражения won: ${JSON.stringify(ca.team.won.objectionTags)}; lost: ${JSON.stringify(ca.team.lost.objectionTags)}.\n`;
+    }
+    for (const r of (ca.recent || []).slice(0, 5)) s += `   — ${r.callDate} ${r.mop} [${r.status}] балл ${r.score}, talk ${r.talkRatio}%: ${shortT(r.headline, 90)}\n`;
+    s += `(Разборы приходят от DeepSales на узбекском — цитируй как есть, не выдумывай перевод.)\n`;
+  }
 
   if (dev) {
     s += `\n[Менеджер по аналитике / Dev-Agent] — техно-аналитик: следит за корректностью метрик и системы.\n`;
