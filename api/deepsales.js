@@ -312,6 +312,8 @@ export default async function handler(req, res) {
     }
     for (const band of Object.keys(shelves)) for (const k in shelves[band]) shelves[band][k].sort((a, b2) => a.ts - b2.ts);
     const sel = []; let est = 0;
+    // баланс-каунтеры: не даём выборке залиться тем, чего много (lost/повторные), когда won/первых мало
+    let cWon = 0, cLost = 0, cFirst = 0, cRepeat = 0;
     const used = new Set(); const ukey = (c) => c.leadId + ":" + c.ts;
     // потолок бюджета на полосу — чтобы длинные/средние не съели весь час и коротким осталось место
     const bandCap = { long: Math.round(budgetSec * 0.40), medium: Math.round(budgetSec * 0.42), short: budgetSec };
@@ -327,7 +329,11 @@ export default async function handler(req, res) {
           if (idx[k] < arr.length) {
             const c = arr[idx[k]++]; const ef = Math.round(c.dur * 1.1); // реальный ratio файл/разговор ~1.1 (не 1.2 — иначе бюджет убегает)
             if (est + ef > budgetSec + 120 || spent + ef > cap) continue; // не перелетать общий бюджет И потолок полосы
+            if (c.status === "lost" && cLost >= cWon + 2) continue; // не флудить lost, когда won исчерпан
+            if (!c.isFirst && cRepeat >= cFirst + 2) continue;      // не флудить повторные, когда первых мало
             used.add(ukey(c)); sel.push(c); est += ef; spent += ef; n++; moved = true;
+            if (c.status === "won") cWon++; else cLost++;
+            if (c.isFirst) cFirst++; else cRepeat++;
           }
         }
       }
