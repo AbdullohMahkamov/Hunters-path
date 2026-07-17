@@ -36,6 +36,19 @@ async function rgetJSON(key, dflt) { const raw = await rget(key); if (raw == nul
 async function rsetJSON(key, v) { try { await fetch(`${REDIS_URL}/set/${encodeURIComponent(key)}`, { method: "POST", headers: { Authorization: `Bearer ${REDIS_TOKEN}` }, body: JSON.stringify(v) }); return true; } catch (e) { return false; } }
 async function getSession(session) { if (!session) return null; try { const raw = await rget(`session:${session}`); return raw ? JSON.parse(raw) : null; } catch (e) { return null; } }
 
+// ── ОТВЕТ НА callback_query (кнопка) — гасит «часики» на кнопке; text показывается тостом ──
+async function answerCallback(botKind, cbId, text) {
+  const token = BOT_TOKENS[botKind];
+  if (!token || !cbId) return;
+  try { await fetch(`https://api.telegram.org/bot${token}/answerCallbackQuery`, { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ callback_query_id: cbId, text: String(text || "").slice(0, 200) }) }); } catch (e) {}
+}
+// убрать кнопки у сообщения (чтобы не нажали повторно после «снять с контроля»)
+async function clearReplyMarkup(botKind, chatId, messageId) {
+  const token = BOT_TOKENS[botKind];
+  if (!token || !chatId || !messageId) return;
+  try { await fetch(`https://api.telegram.org/bot${token}/editMessageReplyMarkup`, { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ chat_id: chatId, message_id: messageId, reply_markup: { inline_keyboard: [] } }) }); } catch (e) {}
+}
+
 // ── ОТПРАВКА от имени бота (экспортируется для task-agent.js) ──
 export async function sendTg(botKind, chatId, text, extra) {
   const token = BOT_TOKENS[botKind];
@@ -123,7 +136,7 @@ export default async function handler(req, res) {
       const out = {};
       const targets = [
         { key: "rop", token: BOT_TOKENS.rop, url: `https://${host}/api/tg-bot?bot=rop`, updates: ["message"] },
-        { key: "owner", token: BOT_TOKENS.owner, url: `https://${host}/api/tg-bot?bot=owner`, updates: ["message"] },
+        { key: "owner", token: BOT_TOKENS.owner, url: `https://${host}/api/tg-bot?bot=owner`, updates: ["message", "callback_query"] },
         // бизнес-бот для клиентов — НЕ трогаем его логику, только синхронизируем секрет webhook'а
         { key: "business", token: process.env.TELEGRAM_BOT_TOKEN || "", url: `https://${host}/api/telegram`, updates: ["business_connection", "business_message", "edited_business_message"] },
       ];
@@ -186,6 +199,26 @@ export default async function handler(req, res) {
   if (!kind) { res.status(200).json({ ok: true, ignored: "no bot kind" }); return; }
 
   try {
+    // ── КНОПКИ ЭСКАЛАЦИИ (callback_query) — обрабатываем раньше обычных сообщений ──
+    const cq = (req.body && req.body.callback_query) || null;
+    if (cq) {
+      const cqChatId = cq.message && cq.message.chat && cq.message.chat.id;
+      const people = await getPeople();
+      const bound = people[kind];
+      if (!bound || bound.chatId !== cqChatId) { await answerCallback(kind, cq.id, ""); res.status(200).json({ ok: true, ignored: "cq not bound" }); return; }
+      const m = String(cq.data || "").match(/^esc:(remind|close|self):(.+)$/);
+      if (!m) { await answerCallback(kind, cq.id, ""); res.status(200).json({ ok: true, ignored: "cq no match" }); return; }
+      const act = m[1], taskId = m[2];
+      try {
+        const mod = await import("./task-agent.js");
+        const r = await mod.handleOwnerButton(act, taskId);
+        await answerCallback(kind, cq.id, (r && r.toast) || "Готово");
+        if (r && r.ownerMsg && cqChatId) await sendTg(kind, cqChatId, r.ownerMsg);
+        if (act === "close" && cq.message) await clearReplyMarkup(kind, cqChatId, cq.message.message_id); // защита от повторного нажатия
+      } catch (e) { await answerCallback(kind, cq.id, "Ошибка обработки"); }
+      res.status(200).json({ ok: true, cq: act }); return;
+    }
+
     const msg = (req.body && req.body.message) || null;
     if (!msg || !msg.chat) { res.status(200).json({ ok: true, ignored: true }); return; }
     const chatId = msg.chat.id;

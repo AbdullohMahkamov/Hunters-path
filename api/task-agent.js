@@ -422,6 +422,51 @@ ${recent || "(пусто)"}
   return { ok: true, taskId, action: out.action, sentToRop };
 }
 
+// ── КНОПКИ ПОД ЭСКАЛАЦИЕЙ (callback_query) ── быстрые типовые решения владельца.
+// remind — напомнить РОПу по задаче (переиспользуем composePing: тон/шаблон/язык уже в нём);
+// close — снять с контроля; self — подсказать владельцу ответить текстом (Reply → handleOwnerReply).
+export async function handleOwnerButton(action, taskId) {
+  const cfg = await getConfig();
+  if (!cfg.enabled) return { ok: false, toast: "агент выключен" };
+  const people = await getPeople();
+  const ropLang = (people.rop && people.rop.lang) || "ru";
+  const escs = await rgetJSON(K.escalations, []);
+  const esc = [...escs].reverse().find((e) => e.taskId === taskId) || null;
+  const tasks = await loadSalesTasks();
+  const task = tasks.find((t) => t.id === taskId) || (esc ? { id: taskId, title: esc.title, deadline: esc.deadline, source: "plan" } : null);
+
+  if (action === "close") {
+    const st = await rgetJSON(K.status, {});
+    st[taskId] = { ...(st[taskId] || {}), ownerResolved: true, ownerResolvedAt: Date.now() };
+    await rsetJSON(K.status, st);
+    if (esc) { esc.resolved = true; await rsetJSON(K.escalations, escs.slice(-200)); }
+    return { ok: true, action, toast: "Снято с контроля", ownerMsg: `✅ Снято с контроля: «${task ? task.title : taskId}». РОПу не пишу.` };
+  }
+  if (action === "self") {
+    return { ok: true, action, toast: "Ответьте текстом (Reply)", ownerMsg: "✍️ Ответьте на это сообщение (Reply) вашей инструкцией — я передам РОПу в нужном тоне (например «напомни мягко, не к спеху»)." };
+  }
+  if (action === "remind") {
+    if (!task) return { ok: false, toast: "Задача не найдена" };
+    let sent = false;
+    try {
+      const chat = await getChat();
+      const hist = chat.filter((m) => m.taskId === taskId).map((m) => `${m.role === "rop" ? "РОП" : "АГЕНТ"}: ${m.text}`).join("\n");
+      const msg = await composePing(task, hist, ropLang);
+      if (people.rop && people.rop.chatId) {
+        const r = await sendTg("rop", people.rop.chatId, msg);
+        if (r.ok) {
+          await pushChat({ role: "agent", text: msg, taskId });
+          await rememberMsgTask("rop", r.messageId, taskId);
+          const st = await rgetJSON(K.status, {}); st[taskId] = { ...(st[taskId] || {}), ownerActedDay: tkDay(), ownerActedAt: Date.now() }; await rsetJSON(K.status, st);
+          sent = true;
+        }
+      }
+    } catch (e) { await logDiag("handleOwnerButton/remind", e, taskId); }
+    return { ok: sent, action, toast: sent ? "Напомнил РОПу" : "Не удалось отправить", ownerMsg: sent ? `🔔 Напомнил РОПу по задаче «${task.title}».` : "Не удалось напомнить — попробуйте позже." };
+  }
+  return { ok: false, toast: "неизвестное действие" };
+}
+
 // ── ТИК: пинги + порог эскалации ──
 async function runTick(force) {
   const cfg = await getConfig();
@@ -515,7 +560,12 @@ async function runTick(force) {
           ? conv.map((m) => `${m.role === "rop" ? "РОП" : "Агент"}: ${m.text}`).join("\n\n")
           : "(переписки не было — РОП не отвечал)";
         const txt = `⚠️ <b>Эскалация Task-агента</b>\n${tag ? `${tag}\n` : ""}\n<b>Задача:</b> ${t.title}\n<b>Срок:</b> ${t.deadlineLabel || t.deadline || "не задан"}\n<b>Статус:</b> ${status}\n\n<b>Переписка с РОПом (дословно):</b>\n${convTxt}\n\n<i>Ответьте на это сообщение — я передам РОПу (например «напомни мягко, не к спеху») или сниму задачу с контроля.</i>`;
-        const er = await sendTg("owner", people.owner.chatId, txt);
+        // Кнопки — быстрые типовые решения (дополнение к текстовому ответу, не замена).
+        const kb = { reply_markup: { inline_keyboard: [
+          [{ text: "🔔 Напомнить РОПу ещё раз", callback_data: `esc:remind:${t.id}` }],
+          [{ text: "✅ Снять с контроля", callback_data: `esc:close:${t.id}` }, { text: "✍️ Написать самому", callback_data: `esc:self:${t.id}` }],
+        ] } };
+        const er = await sendTg("owner", people.owner.chatId, txt, kb);
         if (er.ok) await rememberMsgTask("owner", er.messageId, t.id); // владелец сможет ответить Reply'ем на эскалацию
       }
       st[t.id] = { ...s2, escalatedDay: day, escalatedAt: Date.now() };
