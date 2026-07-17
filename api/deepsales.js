@@ -9,6 +9,8 @@
 // action=result   body:{ ids:[audio_id] } | ?audio_id=  → GET call-analysis + transcription (Bearer)
 // Лимиты DeepSales: 60/мин dashboard (audio-analyze), 600/мин analysis (call-analysis/transcription) — заложены паузами.
 
+import { getVerifiedFunnel } from "./dev-agent.js"; // для «разговор→сделка» в baseline/progress
+
 const REDIS_URL = process.env.UPSTASH_REDIS_REST_URL;
 const REDIS_TOKEN = process.env.UPSTASH_REDIS_REST_TOKEN;
 const DS = "https://dashboard.deepsales.uz";
@@ -215,6 +217,38 @@ export async function getWeeklyTranscriptionPlan(org = "hunter") {
   };
 }
 
+// ── BASELINE / PROGRESS ── снимок «до» + сравнение «стало» (кейс роста Hunter Academy + материал продукта).
+async function computeBaselineSnapshot(org) {
+  const ca = await getCallAnalysisBundle(org).catch(() => null);
+  const dash = await rgetJSON(org === "hunter" ? "dashboard" : `dashboard:${org}`, null);
+  let dealConvPct = null, dealConvTrust = null;
+  try {
+    const f = await getVerifiedFunnel(org);
+    const st = (f.stages || []).find((s) => s.transitionFromPrev && /разговор.*сделк/i.test(s.transitionFromPrev.name || ""));
+    if (st) { dealConvPct = st.transitionFromPrev.pct; dealConvTrust = st.transitionFromPrev.trust; }
+  } catch (e) {}
+  const mops = (dash && dash.mopsByConv) || [];
+  const team = ca && ca.team && ca.team.all ? ca.team.all : null;
+  return {
+    dealConvPct, dealConvTrust,                       // «разговор→сделка» (verified), %
+    teamDsScore: team ? team.avgScore : null,         // средний балл команды по DeepSales-критерию
+    violations: team ? team.mistakeTags || {} : {},   // частота нарушений: {company_info(ложные гарантии), greeting, close…}
+    objections: team ? team.objectionTags || {} : {},
+    perMop: mops.map((m) => {
+      const r = ca && ca.rating ? ca.rating.find((x) => x.mop === m.name) : null;
+      return { mop: m.name, conv: m.conv != null ? m.conv : null, sold: m.sold, leads: m.leads, dsScore: r ? r.avgScore : null, analyzed: r ? r.analyzed : 0, mistakesPerCall: r ? r.mistakesPerCall : null };
+    }),
+    caCoverage: ca && ca.coverage ? { analyzed: ca.coverage.analyzed, window: ca.coverage.window } : null,
+  };
+}
+function diffSnapshots(base, now) {
+  const d = (a, bb, p) => (a != null && bb != null) ? +(bb - a).toFixed(p) : null;
+  const vio = {}; const tags = new Set([...Object.keys(base.violations || {}), ...Object.keys(now.violations || {})]);
+  for (const t of tags) { const f = (base.violations || {})[t] || 0, tt = (now.violations || {})[t] || 0; vio[t] = { from: f, to: tt, delta: tt - f }; }
+  const perMop = (now.perMop || []).map((m) => { const bm = (base.perMop || []).find((x) => x.mop === m.mop) || {}; return { mop: m.mop, conv: { from: bm.conv, to: m.conv, delta: d(bm.conv, m.conv, 2) }, dsScore: { from: bm.dsScore, to: m.dsScore, delta: d(bm.dsScore, m.dsScore, 1) } }; });
+  return { dealConv: { from: base.dealConvPct, to: now.dealConvPct, delta: d(base.dealConvPct, now.dealConvPct, 2) }, teamDsScore: { from: base.teamDsScore, to: now.teamDsScore, delta: d(base.teamDsScore, now.teamDsScore, 1) }, violations: vio, perMop };
+}
+
 export default async function handler(req, res) {
   res.setHeader("Cache-Control", "no-store");
   const q = req.query || {}, b = req.body || {};
@@ -232,6 +266,24 @@ export default async function handler(req, res) {
   // === ЧТЕНИЕ РАЗДЕЛА (admin + РОП). Секреты DeepSales не нужны — читаем своё хранилище. ===
   if (action === "bundle") { res.status(200).json({ ok: true, ...(await getCallAnalysisBundle(org)) }); return; }
   if (action === "plan") { res.status(200).json({ ok: true, ...(await getWeeklyTranscriptionPlan(org)) }); return; }
+  if (action === "baseline-save") {
+    const key = `progress:baseline:${org}`;
+    const existing = await rgetJSON(key, null);
+    if (existing && !b.force) { res.status(200).json({ ok: true, alreadyExists: true, at: existing.at, label: existing.label, note: "baseline уже зафиксирован — НЕ перезаписываю (передай force:true, если реально надо заменить точку отсчёта)" }); return; }
+    const snap = await computeBaselineSnapshot(org);
+    const rec = { at: Date.now(), label: String(b.label || "Снимок ДО внедрения нового скрипта и жёсткого контроля"), ...snap };
+    await rsetJSON(key, rec);
+    res.status(200).json({ ok: true, saved: true, baseline: rec });
+    return;
+  }
+  if (action === "baseline-get") { res.status(200).json({ ok: true, baseline: await rgetJSON(`progress:baseline:${org}`, null) }); return; }
+  if (action === "progress") {
+    const base = await rgetJSON(`progress:baseline:${org}`, null);
+    if (!base) { res.status(400).json({ error: "нет baseline — сначала baseline-save" }); return; }
+    const now = await computeBaselineSnapshot(org);
+    res.status(200).json({ ok: true, baselineAt: base.at, baselineLabel: base.label, diff: diffSnapshots(base, now), from: base, to: now });
+    return;
+  }
   if (action === "plan-config") {
     if (!isAdmin) { res.status(403).json({ error: "admin only" }); return; }
     const cur = await rgetJSON(PLAN_CFG_KEY(org), {}) || {};
