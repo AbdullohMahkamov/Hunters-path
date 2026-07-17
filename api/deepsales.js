@@ -265,20 +265,27 @@ export default async function handler(req, res) {
     const doneIdx = await rgetJSON(CA_LIST(org), []);
     const doneLeads = new Set(doneIdx.map((x) => String(x.leadId)));
 
-    // 1) лиды этого МОПа (фильтр по ответственному), won/lost, тронутые в окне
-    const leads = [];
-    for (let page = 1; page <= 8; page++) {
+    // 1) ВСЕ won/lost лиды этого МОПа в окне. Фильтр по ответственному ДУБЛИРУЕМ В КОДЕ —
+    //    URL-фильтр amoCRM ненадёжен, иначе в выборку попадут чужие звонки.
+    const wonL = [], lostL = [];
+    for (let page = 1; page <= 10; page++) {
       const r = await fetch(`${base}/leads?limit=250&page=${page}&filter[responsible_user_id]=${mopId}&filter[updated_at][from]=${sinceTs}`, { headers: H });
       if (r.status === 204 || !r.ok) break;
       const d = await r.json();
       const ls = (d._embedded && d._embedded.leads) || [];
-      for (const L of ls) { if (L.status_id === SOLD || L.status_id === LOST) leads.push({ id: L.id, status: L.status_id === SOLD ? "won" : "lost" }); }
+      for (const L of ls) {
+        if (String(L.responsible_user_id) !== String(mopId)) continue; // ГАРАНТИЯ: только этот МОП
+        if (L.status_id === SOLD) wonL.push(L.id); else if (L.status_id === LOST) lostL.push(L.id);
+      }
       if (ls.length < 250) break;
       await sleep(170);
     }
+    // разброс по времени: сканируем ВСЕ won (их мало) + равномерную выборку lost по всему диапазону
+    const spread = (a, n) => (a.length <= n ? a.slice() : a.filter((_, i) => i % Math.ceil(a.length / n) === 0).slice(0, n));
+    const toScan = [...wonL.map((id) => ({ id, status: "won" })), ...spread(lostL, 90).map((id) => ({ id, status: "lost" }))];
     // 2) ноты → кандидаты, помечаем первый/повторный звонок (по порядку внутри лида)
     const cands = [];
-    for (const L of leads.slice(0, 140)) {
+    for (const L of toScan.slice(0, 130)) {
       const r = await fetch(`${base}/leads/${L.id}/notes?limit=250`, { headers: H });
       await sleep(160);
       if (!r.ok || r.status === 204) continue;
@@ -338,7 +345,7 @@ export default async function handler(req, res) {
     for (const c of final) { comp[c.status]++; comp[c.position]++; comp[c.band]++; sec += c.fileSec; }
     res.status(200).json({
       ok: true, action: "audit-pick", mop: mopName, mopId, budgetMin,
-      scanned: { leadsWonLost: leads.length, candidateCalls: cands.length, freshCandidates: cands.filter((c) => !c.alreadyDone).length },
+      scanned: { wonLeads: wonL.length, lostLeads: lostL.length, notesScanned: toScan.slice(0, 130).length, candidateCalls: cands.length, freshCandidates: cands.filter((c) => !c.alreadyDone).length },
       composition: comp, totalFileMin: +(sec / 60).toFixed(1),
       dateSpan: final.length ? { from: final[0].callDate, to: final[final.length - 1].callDate } : null,
       calls: final,
