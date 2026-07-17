@@ -23,6 +23,101 @@ async function getSession(session) {
   } catch (e) { return null; }
 }
 
+// ===== ХРАНЕНИЕ РАЗБОРОВ ЗВОНКОВ =====
+// callanalysis:${org}:${leadId} → массив записей (у лида может быть несколько разобранных звонков)
+// callanalysis:list:${org}      → лёгкий индекс (таблица + статистика без чтения полных записей)
+async function rgetJSON(key, dflt) {
+  try {
+    const r = await fetch(`${REDIS_URL}/get/${encodeURIComponent(key)}`, { headers: { Authorization: `Bearer ${REDIS_TOKEN}` } });
+    const d = await r.json();
+    return d && d.result != null ? JSON.parse(d.result) : dflt;
+  } catch (e) { return dflt; }
+}
+async function rsetJSON(key, v) {
+  try {
+    await fetch(`${REDIS_URL}/set/${encodeURIComponent(key)}`, { method: "POST", headers: { Authorization: `Bearer ${REDIS_TOKEN}` }, body: JSON.stringify(v) });
+    return true;
+  } catch (e) { return false; }
+}
+const CA_KEY = (org, leadId) => `callanalysis:${org}:${leadId}`;
+const CA_LIST = (org) => `callanalysis:list:${org}`;
+
+// «Главная проблема звонка» одной строкой — детерминированно, без ИИ: ошибка, привязанная
+// к критерию с НАИМЕНЬШИМ баллом; фолбэк — первая ошибка; иначе итог разговора.
+function headlineOf(ca) {
+  const ms = (ca && ca.mistakes) || [];
+  if (!ms.length) return String((ca && ca.final_outcome) || "явных ошибок не найдено").slice(0, 110);
+  const cs = (ca && ca.criteria_scores) || {};
+  let best = ms[0], bestScore = Infinity;
+  for (const m of ms) {
+    const sc = m.criterion_code != null && cs[m.criterion_code] != null ? Number(cs[m.criterion_code]) : null;
+    if (sc != null && sc < bestScore) { bestScore = sc; best = m; }
+  }
+  return String(best.mistake || "").slice(0, 110);
+}
+async function caIndexUpsert(org, row) {
+  const list = await rgetJSON(CA_LIST(org), []);
+  const i = list.findIndex((x) => String(x.audioFileId) === String(row.audioFileId));
+  if (i >= 0) list[i] = { ...list[i], ...row }; else list.push(row);
+  list.sort((a, b) => String(b.callDate || "").localeCompare(String(a.callDate || "")));
+  await rsetJSON(CA_LIST(org), list.slice(0, 500));
+}
+async function caRecordUpsert(org, leadId, rec) {
+  const arr = await rgetJSON(CA_KEY(org, leadId), []);
+  const i = arr.findIndex((x) => String(x.audioFileId) === String(rec.audioFileId));
+  if (i >= 0) arr[i] = { ...arr[i], ...rec }; else arr.push(rec);
+  await rsetJSON(CA_KEY(org, leadId), arr);
+}
+
+// ===== БАНДЛ ДЛЯ АГЕНТОВ =====
+// Единый источник разборов звонков для MOP-Agent / Task-Agent / чата.
+// ЖЁСТКО несёт coverage: выборка мала и НЕ случайна — агент обязан это произносить
+// при КАЖДОМ упоминании конкретного МОПа, иначе получится вывод о человеке по 4% данных.
+export async function getCallAnalysisBundle(org = "hunter") {
+  const all = await rgetJSON(CA_LIST(org), []);
+  const list = all.filter((x) => x.state === "done");
+  if (!list.length) return { coverage: { analyzed: 0 }, team: null, byMop: {}, recent: [], disclaimer: "разборов звонков ещё нет — не ссылайся на них" };
+  // знаменатель покрытия: оценка звонков МОПа за ТЕКУЩИЙ месяц из speed (leads × avgCallsPerLead)
+  const speed = await rgetJSON(org === "hunter" ? "speed" : `speed:${org}`, null);
+  const monthCalls = {};
+  for (const m of ((speed && speed.mops) || [])) {
+    const est = Math.round((m.leads || 0) * (m.avgCallsPerLead || 0));
+    if (est > 0) monthCalls[m.name] = est;
+  }
+  const avg = (a) => (a.length ? +(a.reduce((s, x) => s + x, 0) / a.length).toFixed(1) : null);
+  const grp = (f) => { const o = {}; for (const x of list) { const k = f(x); if (!k) continue; (o[k] = o[k] || []).push(x); } return o; };
+  const tally = (arr, key) => { const o = {}; for (const x of arr) for (const t of (x[key] || [])) o[t] = (o[t] || 0) + 1; return o; };
+  const stat = (arr) => (arr && arr.length ? {
+    n: arr.length,
+    talkRatio: avg(arr.map((x) => x.talkRatio).filter((v) => v != null)),
+    avgScore: avg(arr.map((x) => x.score).filter((v) => v != null)),
+    mistakesPerCall: avg(arr.map((x) => x.mistakesCount || 0)),
+    mistakeTags: tally(arr, "mistakeTags"), objectionTags: tally(arr, "objectionTags"),
+  } : null);
+  const dates = list.map((x) => x.callDate).filter(Boolean).sort();
+  const byStatus = grp((x) => x.status);
+  const byMop = {};
+  for (const [name, arr] of Object.entries(grp((x) => x.mop))) {
+    byMop[name] = { ...stat(arr), analyzed: arr.length,
+      monthCallsEstimate: monthCalls[name] || null,
+      sharePctApprox: monthCalls[name] ? +(arr.length / monthCalls[name] * 100).toFixed(1) : null };
+  }
+  return {
+    coverage: {
+      analyzed: list.length,
+      window: { from: dates[0] || null, to: dates[dates.length - 1] || null },
+      byMop: Object.fromEntries(Object.entries(byMop).map(([k, v]) => [k, { analyzed: v.analyzed, monthCallsEstimate: v.monthCallsEstimate, sharePctApprox: v.sharePctApprox }])),
+      denominatorNote: "monthCallsEstimate — ОЦЕНКА числа звонков МОПа за ТЕКУЩИЙ месяц (speed: leads×avgCallsPerLead). Окно выборки шире месяца, поэтому sharePctApprox — верхняя граница доли.",
+      sampling: "НЕ случайная выборка: брались только звонки 2-4 мин по лидам со статусом won/lost. Это качественный сигнал, НЕ статистическая оценка.",
+      lastAnalyzedAt: list.map((x) => x.analyzedAt).filter(Boolean).sort().pop() || null,
+    },
+    team: { won: stat(byStatus.won || []), lost: stat(byStatus.lost || []), all: stat(list) },
+    byMop,
+    recent: list.slice(0, 20).map((x) => ({ leadId: x.leadId, mop: x.mop, status: x.status, callDate: x.callDate, score: x.score, talkRatio: x.talkRatio, headline: x.headline })),
+    disclaimer: "ОБЯЗАТЕЛЬНО И БЕЗ ИСКЛЮЧЕНИЙ: при ЛЮБОМ упоминании данных конкретного МОПа называй покрытие — сколько его звонков проанализировано из скольких и долю (byMop[имя].analyzed / monthCallsEstimate / sharePctApprox). Выборка мала и НЕ случайна: это повод проверить вручную, а не вывод о человеке. Фразы вида «Х плохо закрывает» без указания доли — ЗАПРЕЩЕНЫ.",
+  };
+}
+
 export default async function handler(req, res) {
   res.setHeader("Cache-Control", "no-store");
   const q = req.query || {}, b = req.body || {};
@@ -30,7 +125,34 @@ export default async function handler(req, res) {
 
   // гейт — только суперадмин (hunter). Анализ звонков — чувствительная операция.
   const sess = await getSession(q.session || b.session);
-  if (!(sess && sess.role === "admin" && sess.org === "hunter")) { res.status(403).json({ error: "superadmin only" }); return; }
+  // Чтение раздела — admin + РОП (РОПу нужно для разбора с командой). Запуск анализа — только admin.
+  const isAdmin = !!(sess && sess.role === "admin");
+  const isRop = !!(sess && sess.role === "rop");
+  const READ_ONLY = new Set(["list", "get", "bundle"]);
+  if (!(isAdmin || (isRop && READ_ONLY.has(action)))) { res.status(403).json({ error: "admin (или РОП — только чтение)" }); return; }
+  const org = (sess && sess.org) || "hunter";
+
+  // === ЧТЕНИЕ РАЗДЕЛА (admin + РОП). Секреты DeepSales не нужны — читаем своё хранилище. ===
+  if (action === "bundle") { res.status(200).json({ ok: true, ...(await getCallAnalysisBundle(org)) }); return; }
+  if (action === "list") {
+    let rows = (await rgetJSON(CA_LIST(org), [])).filter((x) => x.state === "done");
+    const fmop = q.mop || b.mop, fst = q.status || b.status;
+    if (fmop) rows = rows.filter((x) => x.mop === fmop);
+    if (fst) rows = rows.filter((x) => x.status === fst);
+    res.status(200).json({ ok: true, action: "list", count: rows.length, rows });
+    return;
+  }
+  if (action === "get") {
+    const leadId = q.leadId || b.leadId, aid = q.audioFileId || b.audioFileId;
+    if (!leadId && !aid) { res.status(400).json({ error: "нужен leadId или audioFileId" }); return; }
+    let lid = leadId;
+    if (!lid) { const row = (await rgetJSON(CA_LIST(org), [])).find((x) => String(x.audioFileId) === String(aid)); lid = row && row.leadId; }
+    if (!lid) { res.status(404).json({ error: "не найдено" }); return; }
+    const arr = await rgetJSON(CA_KEY(org, lid), []);
+    const rec = aid ? arr.find((x) => String(x.audioFileId) === String(aid)) : arr[0];
+    res.status(200).json({ ok: true, record: rec || null });
+    return;
+  }
 
   // === PICK: исторический отбор звонков по СТАТУСУ лида (won/lost) за месяц ===
   // Нужен для контрастного анализа: debug=calls умеет только «сегодня», а нам нужны записи любой давности.
@@ -149,6 +271,14 @@ export default async function handler(req, res) {
         const aid = D.audio_file_id || D.audio_id || D.id || body.audio_id || body.id || null;
         // mop/leadStatus возвращаем обратно — это НАША привязка результата к менеджеру и исходу сделки
         out.push({ leadId: it.leadId, mop: it.mop || null, leadStatus: it.status || null, ok: r.status < 300, status: r.status, audio_id: aid, amoSeconds: it.duration || null, fileSeconds: D.duration || null, resp: body });
+        // ЗАГОТОВКА в хранилище: привязку (чей звонок) знаем только мы — DeepSales её не вернёт
+        if (aid) {
+          const stub = { audioFileId: aid, leadId: it.leadId, mop: it.mop || null, mopId: it.mopId || null,
+            status: it.status || null, callDate: it.callDate || null, talkSec: it.duration || null,
+            fileSec: D.duration || null, state: "pending", sentAt: new Date().toISOString() };
+          await caRecordUpsert(org, it.leadId, stub);
+          await caIndexUpsert(org, stub);
+        }
       } catch (e) { out.push({ leadId: it.leadId, ok: false, error: String(e).slice(0, 140) }); }
       await sleep(1200); // 60/мин dashboard — с запасом
     }
@@ -167,16 +297,49 @@ export default async function handler(req, res) {
       return { status: r.status, body };
     };
     const out = [];
+    let saved = 0;
     for (const aid of ids) {
       const ca = await bget(`/api/call-analysis?audio_id=${encodeURIComponent(aid)}`);
       await sleep(120); // 600/мин analysis
       const tr = await bget(`/api/transcription?audio_id=${encodeURIComponent(aid)}`);
       await sleep(120);
       out.push({ audio_id: aid, call_analysis: ca, transcription: tr });
+
+      // === СОХРАНЕНИЕ (не только показ) ===
+      const A = ca.status === 200 && ca.body && ca.body.data ? ca.body.data : null;
+      const T = tr.status === 200 && tr.body && tr.body.data ? tr.body.data : null;
+      if (!A || !T) continue;
+      // достаём НАШУ привязку из заготовки, записанной на этапе analyze
+      const idx = await rgetJSON(CA_LIST(org), []);
+      const stub = idx.find((x) => String(x.audioFileId) === String(aid)) || {};
+      const rec = {
+        audioFileId: aid, leadId: stub.leadId || null, mop: stub.mop || null, mopId: stub.mopId || null,
+        status: stub.status || null, callDate: stub.callDate || null, talkSec: stub.talkSec || null,
+        fileSec: (T.audio && T.audio.duration) || stub.fileSec || null,
+        category: (A.category && A.category.name) || null,
+        overallScore: A.overall_score != null ? A.overall_score : null,
+        criteriaScores: A.criteria_scores || {}, criteriaExplanations: A.criteria_explanations || {},
+        talkRatio: T.talk_ratio != null ? T.talk_ratio : null,
+        objections: A.objections || [], mistakes: A.mistakes || [], mistakesCount: A.mistakes_count || (A.mistakes || []).length,
+        finalOutcome: A.final_outcome || null, nextSteps: A.next_steps || null, feedback: A.feedback || null,
+        infoAboutClient: A.info_about_client || null,
+        transcript: (T.segments || []).map((s) => ({ speaker: s.speaker, text: s.text, timestamp: s.timestamp })),
+        state: "done", analyzedAt: new Date().toISOString(),
+      };
+      await caRecordUpsert(org, rec.leadId, rec);
+      await caIndexUpsert(org, {
+        audioFileId: aid, leadId: rec.leadId, mop: rec.mop, mopId: rec.mopId, status: rec.status,
+        callDate: rec.callDate, talkSec: rec.talkSec, fileSec: rec.fileSec,
+        score: rec.overallScore, talkRatio: rec.talkRatio, headline: headlineOf(A),
+        mistakeTags: (rec.mistakes || []).map((m) => m.tag).filter(Boolean),
+        objectionTags: (rec.objections || []).map((o) => o.tag).filter(Boolean),
+        mistakesCount: rec.mistakesCount, category: rec.category, state: "done", analyzedAt: rec.analyzedAt,
+      });
+      saved++;
     }
-    res.status(200).json({ ok: true, action: "result", results: out });
+    res.status(200).json({ ok: true, action: "result", results: out, saved });
     return;
   }
 
-  res.status(400).json({ error: "action: pick | analyze | result" });
+  res.status(400).json({ error: "action: bundle | list | get | pick | analyze | result" });
 }
