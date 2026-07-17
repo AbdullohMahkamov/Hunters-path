@@ -38,11 +38,15 @@ export default async function handler(req, res) {
   if (action === "pick") {
     const AMO = process.env.AMOCRM_TOKEN;
     if (!AMO) { res.status(500).json({ error: "нет AMOCRM_TOKEN" }); return; }
-    const SUB = "huntercademy", SOLD = 142, LOST = 143, SCAN_CAP = 80;
+    const SUB = "huntercademy", SOLD = 142, LOST = 143;
     const MOPS = { 13660834: "Komiljon", 13703650: "Samandar", 13904266: "Abdulla-Legenda", 13833590: "Begoyim", 13681582: "Abulbositxon" };
     const minSec = parseInt(q.minSec || b.minSec || 120, 10);
     const maxSec = parseInt(q.maxSec || b.maxSec || 240, 10);
     const need = Math.min(parseInt(q.need || b.need || 15, 10), 25);
+    const SCAN_CAP = Math.min(parseInt(q.scanCap || b.scanCap || 200, 10), 300);
+    const sinceDays = parseInt(q.sinceDays || b.sinceDays || 60, 10); // свежесть звонка: старые записи Utel могут быть вычищены
+    const sinceTs = Math.floor(Date.now() / 1000) - sinceDays * 86400;
+    const BYTES_PER_SEC = 16000; // 8кГц 16-бит моно — проверено: 1402284Б / 88с ≈ 15935
     const base = `https://${SUB}.amocrm.ru/api/v4`;
     const H = { Authorization: `Bearer ${AMO}` };
     const TZ = 5 * 3600;
@@ -79,20 +83,38 @@ export default async function handler(req, res) {
           const p = n.params || {};
           const dur = parseInt(p.duration || 0, 10) || 0;
           if (dur < minSec || dur > maxSec || !p.link) continue;
+          if (n.created_at < sinceTs) continue; // только свежие — старые записи Utel могут быть удалены
           if (!best || dur > best.dur) best = { dur, link: p.link, ts: n.created_at };
         }
-        if (best) out.push({ leadId: L.id, status, mop: MOPS[L.responsible_user_id], crm_manager_id: String(L.responsible_user_id), duration: best.dur, link: best.link, callDate: new Date(best.ts * 1000).toISOString().slice(0, 10) });
+        if (!best) continue;
+        // HEAD: (1) жива ли ссылка, (2) РЕАЛЬНАЯ длительность файла — DeepSales считает бюджет по файлу
+        // (с гудками), а не по времени разговора из amoCRM. Проверено: 55с разговора = 88с файла.
+        let fileSec = null;
+        try {
+          const h = await fetch(best.link, { method: "HEAD", signal: AbortSignal.timeout(12000) });
+          if (h.ok) { const len = parseInt(h.headers.get("content-length") || "0", 10); if (len > 0) fileSec = Math.round(len / BYTES_PER_SEC); }
+        } catch (e) { /* мёртвая ссылка */ }
+        await sleep(100);
+        if (fileSec == null) continue; // ссылка недоступна — пропускаем, чтобы не слать битое
+        out.push({ leadId: L.id, status, mop: MOPS[L.responsible_user_id], talkSec: best.dur, fileSec, link: best.link, callDate: new Date(best.ts * 1000).toISOString().slice(0, 10) });
       }
       return out;
     };
     const won = await pickFrom(wonLeads, "won");
     const lost = await pickFrom(lostLeads, "lost");
-    const sum = (a) => a.reduce((s, x) => s + x.duration, 0);
+    const sumFile = (a) => a.reduce((s, x) => s + (x.fileSec || 0), 0);
+    const sumTalk = (a) => a.reduce((s, x) => s + (x.talkSec || 0), 0);
     res.status(200).json({
-      ok: true, action: "pick", filter: { minSec, maxSec, need, scanCap: SCAN_CAP },
+      ok: true, action: "pick", filter: { minSec, maxSec, need, scanCap: SCAN_CAP, sinceDays },
       scanned: { wonLeadsThisMonth: wonLeads.length, lostLeadsThisMonth: lostLeads.length },
       won, lost,
-      totals: { wonCount: won.length, wonSec: sum(won), lostCount: lost.length, lostSec: sum(lost), totalMin: +((sum(won) + sum(lost)) / 60).toFixed(1) },
+      // БЮДЖЕТ считаем по fileSec (весь файл с гудками) — именно его тарифицирует DeepSales.
+      totals: {
+        wonCount: won.length, lostCount: lost.length,
+        wonFileMin: +(sumFile(won) / 60).toFixed(1), lostFileMin: +(sumFile(lost) / 60).toFixed(1),
+        totalFileMin: +((sumFile(won) + sumFile(lost)) / 60).toFixed(1),
+        totalTalkMin: +((sumTalk(won) + sumTalk(lost)) / 60).toFixed(1),
+      },
     });
     return;
   }
@@ -121,9 +143,12 @@ export default async function handler(req, res) {
         fd.append("manager_id", String(MANAGER_ID));
         const r = await fetch(`${DS}/api/crm/audio-analyze`, { method: "POST", headers: { Authorization: basic, Accept: "application/json" }, body: fd, signal: AbortSignal.timeout(90000) });
         let body; try { body = await r.json(); } catch (e) { body = { _text: (await r.text().catch(() => "")).slice(0, 200) }; }
-        const aid = body.audio_id || body.id || (body.data && (body.data.audio_id || body.data.id)) || null;
+        // DeepSales отдаёт id в data.audio_file_id (не audio_id). data.duration — длительность ВСЕГО файла
+        // (включая гудки): именно она тратит бюджет минут, а не duration разговора из amoCRM.
+        const D = body.data || {};
+        const aid = D.audio_file_id || D.audio_id || D.id || body.audio_id || body.id || null;
         // mop/leadStatus возвращаем обратно — это НАША привязка результата к менеджеру и исходу сделки
-        out.push({ leadId: it.leadId, mop: it.mop || null, leadStatus: it.status || null, ok: r.status < 300, status: r.status, audio_id: aid, seconds: it.duration || null, resp: body });
+        out.push({ leadId: it.leadId, mop: it.mop || null, leadStatus: it.status || null, ok: r.status < 300, status: r.status, audio_id: aid, amoSeconds: it.duration || null, fileSeconds: D.duration || null, resp: body });
       } catch (e) { out.push({ leadId: it.leadId, ok: false, error: String(e).slice(0, 140) }); }
       await sleep(1200); // 60/мин dashboard — с запасом
     }
