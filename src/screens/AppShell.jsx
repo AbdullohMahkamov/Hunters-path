@@ -4,7 +4,7 @@ import { state, save, loadCloud, ensureChats, setLang } from '../lib/appState.js
 import { applyTheme } from '../lib/theme.js'
 import { installShellStubs } from '../lib/shellStubs.js'
 import { applyLiveDash, applySuspicious, initDashModals } from '../lib/dashRender.js'
-import { initChat, renderChat, scrollChatBottom } from '../lib/chat.js'
+import { initChat, renderChat, scrollChatBottom, sendMsg } from '../lib/chat.js'
 import { initAdminModals } from '../lib/adminModals.js'
 import { initTelegram, loadTelegramChats } from '../lib/telegram.js'
 import { initFinanceTrends } from '../lib/financeTrends.js'
@@ -98,6 +98,24 @@ export default function AppShell({ onLogout }) {
       else start = 'chat'
       bootedRef.current = true
       applyTab(start)
+      // Диплинк из «Hunter AI Digest»: ?advisor=<token> → НОВЫЙ чат в Советнике с полным контекстом находки
+      if (role !== 'rop') {
+        try {
+          const advToken = new URLSearchParams(location.search).get('advisor')
+          if (advToken) {
+            history.replaceState(null, '', location.pathname) // чтобы F5 не повторял отправку
+            const rr = await fetch('/api/digest?action=handoff&token=' + encodeURIComponent(advToken) + '&session=' + encodeURIComponent(getSession()))
+            const dd = await rr.json()
+            if (!cancelled && dd && dd.ok && dd.seed) {
+              ensureChats()
+              const c = { id: 'c' + Date.now(), title: dd.title || 'Находка', messages: [], pinned: false, projectId: '' }
+              state.chats.unshift(c); state.activeChatId = c.id; save()
+              applyTab('chat')
+              setTimeout(() => { renderChat(); sendMsg(dd.seed) }, 120)
+            }
+          }
+        } catch (e) { /* диплинк не критичен — просто откроется приложение */ }
+      }
       setTimeout(() => { applyI18n(); maybeShowWelcome() }, 30)
     })()
     return () => { cancelled = true; document.body.classList.remove('shell', 'sec-open', 'chat-open') }
