@@ -200,7 +200,7 @@ export async function runDailyBrain(org = ORG, force = false) {
   const bundle = await gatherForBrain(org);
   let observations = [];
   try {
-    const raw = await callModel(BRAIN_SYSTEM, "Данные системы за сутки:\n" + JSON.stringify(bundle));
+    const raw = await callModel(BRAIN_SYSTEM, "Данные системы за сутки:\n" + JSON.stringify(bundle), 8000); // Sonnet-5 тратит часть бюджета на рассуждения — даём запас, иначе JSON обрывается
     const m = raw.replace(/```json|```/g, "").match(/\[[\s\S]*\]/);
     observations = m ? JSON.parse(m[0]) : [];
     if (!Array.isArray(observations)) observations = [];
@@ -404,13 +404,17 @@ export default async function handler(req, res) {
   try {
     if (action === "daily") { res.status(200).json(await runDailyBrain(ORG, req.query && req.query.force === "1")); return; }
     if (action === "state") { res.status(200).json({ proposals: await rgetJSON(K.proposals, []), lastrun: await rgetJSON(K.lastrun, null), config: await getConfig() }); return; }
-    if (action === "synth") { // диагностика СИНТЕЗА: сырой ответ модели + статус парсинга (без отправки)
+    if (action === "synth") { // диагностика СИНТЕЗА: сырой ответ + stop_reason/usage + статус парсинга (без отправки)
       const bundle = await gatherForBrain(ORG);
-      let raw = "", err = null, parsed = null;
-      try { raw = await callModel(BRAIN_SYSTEM, "Данные системы за сутки:\n" + JSON.stringify(bundle)); }
-      catch (e) { err = "callModel: " + String(e && e.message || e); }
-      if (raw) { try { const m = raw.replace(/```json|```/g, "").match(/\[[\s\S]*\]/); parsed = m ? JSON.parse(m[0]) : null; } catch (e) { err = (err || "") + " | parse: " + String(e && e.message || e); } }
-      res.status(200).json({ ok: true, err, rawLen: raw.length, rawHead: raw.slice(0, 700), parsedCount: Array.isArray(parsed) ? parsed.length : null, parsed });
+      const rr = await fetch("https://api.anthropic.com/v1/messages", {
+        method: "POST", headers: { "content-type": "application/json", "x-api-key": AKEY, "anthropic-version": "2023-06-01" },
+        body: JSON.stringify({ model: MODEL, max_tokens: 8000, system: BRAIN_SYSTEM, messages: [{ role: "user", content: "Данные системы за сутки:\n" + JSON.stringify(bundle) }] }),
+      });
+      const dd = await rr.json();
+      const text = (dd.content || []).filter((b) => b.type === "text").map((b) => b.text).join("");
+      let parsed = null, perr = null;
+      try { const m = text.replace(/```json|```/g, "").match(/\[[\s\S]*\]/); parsed = m ? JSON.parse(m[0]) : null; } catch (e) { perr = String(e && e.message || e); }
+      res.status(200).json({ ok: true, httpOk: rr.ok, stop: dd.stop_reason, usage: dd.usage, apiErr: dd.error || null, textLen: text.length, parsedCount: Array.isArray(parsed) ? parsed.length : null, parseErr: perr, textHead: text.slice(0, 300) });
       return;
     }
     if (action === "peek") { // диагностика: ЧТО мозг видит на входе (чтобы отличить честный 0 от пустого входа)
