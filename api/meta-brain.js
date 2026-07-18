@@ -404,6 +404,15 @@ export default async function handler(req, res) {
   try {
     if (action === "daily") { res.status(200).json(await runDailyBrain(ORG, req.query && req.query.force === "1")); return; }
     if (action === "state") { res.status(200).json({ proposals: await rgetJSON(K.proposals, []), lastrun: await rgetJSON(K.lastrun, null), config: await getConfig() }); return; }
+    if (action === "synth") { // диагностика СИНТЕЗА: сырой ответ модели + статус парсинга (без отправки)
+      const bundle = await gatherForBrain(ORG);
+      let raw = "", err = null, parsed = null;
+      try { raw = await callModel(BRAIN_SYSTEM, "Данные системы за сутки:\n" + JSON.stringify(bundle)); }
+      catch (e) { err = "callModel: " + String(e && e.message || e); }
+      if (raw) { try { const m = raw.replace(/```json|```/g, "").match(/\[[\s\S]*\]/); parsed = m ? JSON.parse(m[0]) : null; } catch (e) { err = (err || "") + " | parse: " + String(e && e.message || e); } }
+      res.status(200).json({ ok: true, err, rawLen: raw.length, rawHead: raw.slice(0, 700), parsedCount: Array.isArray(parsed) ? parsed.length : null, parsed });
+      return;
+    }
     if (action === "peek") { // диагностика: ЧТО мозг видит на входе (чтобы отличить честный 0 от пустого входа)
       const b = await gatherForBrain(ORG);
       res.status(200).json({ ok: true, counts: {
