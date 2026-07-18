@@ -316,7 +316,8 @@ async function execNextMop(org) {
       if (ppl.owner && ppl.owner.chatId) await sendTg("owner", ppl.owner.chatId, `✅ Разбор по недельному плану завершён: отправлено <b>${totSent}</b> звонков по ${(pend.spend.done || []).length} менеджерам. Результаты подтянутся в «Анализ звонков» и метрики в течение дня.`); } catch (e) {}
     return { done: true, total: pend.spend.done };
   }
-  const pick = await selfCall({ action: "audit-pick", mop: next.mop, budgetMin: next.minutesBudget });
+  // longMax/medMax = плановому числу звонков → снимаем полосовые лимиты аудитора, ограничивает только бюджет минут.
+  const pick = await selfCall({ action: "audit-pick", mop: next.mop, budgetMin: next.minutesBudget, longMax: next.calls, medMax: next.calls });
   const cand = (pick.calls || []).slice(0, next.calls); // audit-pick отдаёт отобранное в поле calls; жёсткий кап по плану
   let sent = 0;
   for (let i = 0; i < cand.length; i += 40) {
