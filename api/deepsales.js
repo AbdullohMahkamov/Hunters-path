@@ -272,6 +272,105 @@ async function buildMetricsDigest(org) {
   return s;
 }
 
+// ── ОТЧЁТ ПО ГЛАВНЫМ МЕТРИКАМ (Пн+Чт) → Digest: ДВОЙНОЕ «от/до» — к baseline (17.07) И к прошлому отчёту.
+// Переиспользует computeBaselineSnapshot. Дисциплина: короткий период → «в пределах шума», не выдуманный тренд.
+const LASTREPORT_KEY = (org) => `progress:lastreport:${org}`;
+const RPT_NOISE = { dealConv: 0.5, dsScore: 2 }; // за 3-4 дня меньше этого по модулю — не значимо
+function rDelta(from, to, p) { return (from != null && to != null) ? +(to - from).toFixed(p) : null; }
+function rArr(delta, unit) {
+  if (delta == null) return "н/д";
+  if (Math.abs(delta) < 1e-9) return "◀▶ без изм.";
+  return `${delta > 0 ? "▲+" : "▼"}${Math.abs(delta)}${unit || ""}`;
+}
+
+async function buildProgressReport(org, kind) {
+  const now = await computeBaselineSnapshot(org);
+  const base = await rgetJSON(`progress:baseline:${org}`, null);
+  const lastRec = await rgetJSON(LASTREPORT_KEY(org), null);
+  const last = lastRec && lastRec.snapshot ? lastRec.snapshot : null;
+  const sinceMs = (lastRec && lastRec.at) || (base && base.at) || 0; // «за период» = с прошлого отчёта (или со старта)
+
+  const dcvB = rDelta(base && base.dealConvPct, now.dealConvPct, 2);
+  const dcvL = last ? rDelta(last.dealConvPct, now.dealConvPct, 2) : null;
+  const dsB = rDelta(base && base.teamDsScore, now.teamDsScore, 1);
+  const dsL = last ? rDelta(last.teamDsScore, now.teamDsScore, 1) : null;
+
+  const dash = await rgetJSON(org === "hunter" ? "dashboard" : `dashboard:${org}`, null);
+  const speed = await rgetJSON(org === "hunter" ? "speed" : `speed:${org}`, null);
+  const noContact = dash && dash.totals ? dash.totals.noContactPct : null;
+  const telGated = !!(speed && speed.mopMeta && speed.mopMeta.callsBypassSuspected);
+  const findings = (await rgetJSON("mopagent:findings", [])) || [];
+  const openF = findings.filter((f) => f.status === "open").length;
+  const closedF = findings.filter((f) => f.status !== "open" && (f.closedAt || 0) >= sinceMs).length;
+  const props = (await rgetJSON("metabrain:proposals", [])) || [];
+  const confirmedTasks = props.filter((p) => (p.confirmedAt || 0) >= sinceMs).length;
+  const tstatus = (await rgetJSON("taskagent:status", {})) || {};
+  const disputesResolved = Object.values(tstatus).filter((s) => s && s.dispute && s.dispute.resolvedAt >= sinceMs).length;
+
+  // ложные гарантии: частота company_info в ДВУХ РАЗНЫХ выборках звонков (не повтор тех же разговоров)
+  const cgFrom = base && base.violations ? (base.violations.company_info || 0) : null;
+  const cgTo = now.violations ? (now.violations.company_info || 0) : 0;
+
+  const day = new Date(Date.now() + 5 * 3600000);
+  const dayStr = `${day.getUTCDate()}.${String(day.getUTCMonth() + 1).padStart(2, "0")}`;
+  const sub = kind === "thursday" ? "промежуточный срез с начала недели" : "итог прошлой недели";
+  const flat = (dcvB == null || Math.abs(dcvB) < RPT_NOISE.dealConv) && (dsB == null || Math.abs(dsB) < RPT_NOISE.dsScore);
+
+  let s = `📈 <b>Отчёт по главным метрикам · ${dayStr}</b>\n<i>(${sub})</i>\n\n`;
+
+  // 1. Главное
+  s += `<b>Главное:</b> `;
+  if (flat) s += `значимых сдвигов за период нет — конверсия и качество звонков держатся на уровне старта.`;
+  else {
+    const bits = [];
+    if (dcvB != null && Math.abs(dcvB) >= RPT_NOISE.dealConv) bits.push(`конверсия ${dcvB > 0 ? "подросла" : "просела"} на ${Math.abs(dcvB)} п.п. к старту`);
+    if (dsB != null && Math.abs(dsB) >= RPT_NOISE.dsScore) bits.push(`балл звонков ${dsB > 0 ? "вырос" : "упал"} на ${Math.abs(dsB)}`);
+    s += bits.join("; ") + ".";
+  }
+  if (cgFrom != null && cgTo >= cgFrom) s += ` Важно: ложные гарантии в звонках так и не снизились.`;
+  s += `\n\n`;
+
+  // 2. Продажи
+  s += `<b>1. Продажи</b>\n`;
+  s += `Разговор→сделка: <b>${now.dealConvPct != null ? now.dealConvPct + "%" : "—"}</b> · к старту ${rArr(dcvB, " п.п.")} · к прошлому отчёту ${last ? rArr(dcvL, " п.п.") : "— первый отчёт"}\n`;
+  if (dcvB != null && Math.abs(dcvB) < RPT_NOISE.dealConv) s += `<i>Δ в пределах шума за такой короткий период — значимого вывода нет.</i>\n`;
+  const perm = (now.perMop || []).filter((m) => m.conv != null).slice(0, 6);
+  if (perm.length) {
+    s += `По менеджерам (конверсия, Δ к старту): ` + perm.map((m) => {
+      const bm = base && base.perMop ? base.perMop.find((x) => x.mop === m.mop) : null;
+      return `${m.mop} ${m.conv}% ${rArr(bm ? rDelta(bm.conv, m.conv, 1) : null, "")}`;
+    }).join("; ") + `\n`;
+  }
+  s += `\n`;
+
+  // 3. Дозвон / гигиена CRM
+  s += `<b>2. Дозвон / гигиена CRM</b>\n`;
+  if (telGated) s += `⚠️ Дозвон честно показать нельзя: часть звонков идёт мимо CRM (личные телефоны менеджеров) — данные ненадёжны, значимого вывода по дозвону не даём.\n`;
+  else if (noContact != null) s += `Потеряно без контакта: <b>${noContact}%</b> лидов.\n`;
+  s += `Находки по менеджерам: открыто <b>${openF}</b>, закрыто за период <b>${closedF}</b>.\n\n`;
+
+  // 4. Качество разговоров
+  s += `<b>3. Качество разговоров</b>\n`;
+  s += `Средний балл команды: <b>${now.teamDsScore != null ? now.teamDsScore : "—"}</b> · к старту ${rArr(dsB, "")}${last ? ` · к прошлому ${rArr(dsL, "")}` : ""}\n`;
+  if (cgFrom != null) {
+    const trend = cgTo <= cgFrom * 0.7 ? "заметно снизилась" : (cgTo >= cgFrom * 1.3 ? "выросла" : "держится на прежнем уровне");
+    const mark = cgTo <= cgFrom * 0.7 ? " ✅" : (cgTo >= cgFrom ? " 🔴" : "");
+    s += `Ложные гарантии (обещания трудоустройства): в НОВОЙ выборке разборов частота <b>${trend}</b> — примерно ${cgTo} против ~${cgFrom} в стартовой выборке.${mark}\n`;
+    s += `<i>Это ДВЕ разные подборки звонков (не переслушивание тех же), но сопоставимые срезы — сравниваем частоту в выборках, а не конкретные разговоры.</i>\n`;
+  }
+  const cov = now.caCoverage || {};
+  s += `Разобрано за период: <b>${cov.analyzed || 0}</b> звонков — покрытие меньше 2%, это сигнал к проверке, а не вывод о людях.\n\n`;
+
+  // 5. Что сделано
+  s += `<b>4. Что сделано за период</b>\n`;
+  s += `• Задачи от общего мозга (подтверждены вами): <b>${confirmedTasks}</b>\n`;
+  s += `• Закрыто находок по менеджерам: <b>${closedF}</b>\n`;
+  s += `• Разрешено споров с РОПом: <b>${disputesResolved}</b>\n\n`;
+
+  s += `<i>Δ считаются к старту (baseline 17 июля) и к прошлому отчёту. Детальные разборы и задания команде — у РОПа.</i>`;
+  return { text: s, snapshot: now };
+}
+
 // Недельный план транскрибации → владельцу в Digest как ПРЕДЛОЖЕНИЕ (анализ не запускается сам).
 async function buildPlanDigest(org) {
   const p = await getWeeklyTranscriptionPlan(org);
@@ -397,7 +496,7 @@ export default async function handler(req, res) {
   const isAdmin = !!(sess && sess.role === "admin");
   const isRop = !!(sess && sess.role === "rop");
   const READ_ONLY = new Set(["list", "get", "bundle"]);
-  const CRON_OK = new Set(["metrics-digest", "plan-digest", "plan-exec", "audit-pick", "analyze"]);
+  const CRON_OK = new Set(["metrics-digest", "plan-digest", "plan-exec", "audit-pick", "analyze", "progress-report"]);
   if (!(isAdmin || (isRop && READ_ONLY.has(action)) || (isCron && CRON_OK.has(action)))) { res.status(403).json({ error: "admin (или РОП — только чтение)" }); return; }
   const org = (sess && sess.org) || "hunter";
 
@@ -453,6 +552,14 @@ export default async function handler(req, res) {
     // после успешной отправки фиксируем текущий снимок как «прошлую сводку» для Δ следующей недели
     if (r && r.ok) { const snap = await computeBaselineSnapshot(org); await rsetJSON(LASTMETRICS_KEY(org), { at: Date.now(), ...snap }); }
     res.status(200).json({ ok: !!(r && r.ok), sent: !!(r && r.ok), preview: msg, error: (r && r.error) || null });
+    return;
+  }
+  if (action === "progress-report") { // Пн+Чт: отчёт «от/до» (к baseline и к прошлому отчёту) → Digest
+    const kind = b.kind || (req.query && req.query.kind) || ((new Date(Date.now() + 5 * 3600000)).getUTCDay() === 4 ? "thursday" : "monday");
+    const { text, snapshot } = await buildProgressReport(org, kind);
+    const r = await sendDigest(text);
+    if (r && r.ok) await rsetJSON(LASTREPORT_KEY(org), { at: Date.now(), snapshot }); // снимок для «vs прошлый отчёт» в следующем
+    res.status(200).json({ ok: !!(r && r.ok), sent: !!(r && r.ok), kind, preview: text, error: (r && r.error) || null });
     return;
   }
   if (action === "plan-config") {

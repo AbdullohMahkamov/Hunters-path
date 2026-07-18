@@ -97,8 +97,12 @@
       "schedule": "15,45 6-14 * * *"
     },
     {
-      "path": "/api/deepsales?action=metrics-digest",
-      "schedule": "30 5 * * 1"
+      "path": "/api/deepsales?action=progress-report&kind=monday&cron=1",
+      "schedule": "15 5 * * 1"
+    },
+    {
+      "path": "/api/deepsales?action=progress-report&kind=thursday&cron=1",
+      "schedule": "15 5 * * 4"
     },
     {
       "path": "/api/meta-brain?action=daily&cron=1",
