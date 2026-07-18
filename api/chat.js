@@ -497,6 +497,13 @@ export default async function handler(req, res) {
       systemText = sys; model = "claude-sonnet-5"; maxTok = 2500;
     }
 
+    // ДИАГНОСТИКА сборки (не стримим): фронт этого флага не шлёт, только ручная проверка интента/размера.
+    if (req.body && req.body.debug) {
+      res.status(200).json({ ok: true, trivial, intent, model, sysChars: systemText.length,
+        includes: { live: !!(intent && intent.live), agents: !!(intent && intent.agents), calls: !!(intent && intent.calls), act: !!(intent && intent.act) } });
+      return;
+    }
+
     const anthropicReq = {
       model, max_tokens: maxTok,
       system: systemText,
