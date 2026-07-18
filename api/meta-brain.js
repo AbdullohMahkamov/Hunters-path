@@ -397,6 +397,15 @@ export default async function handler(req, res) {
   try {
     if (action === "daily") { res.status(200).json(await runDailyBrain(ORG, req.query && req.query.force === "1")); return; }
     if (action === "state") { res.status(200).json({ proposals: await rgetJSON(K.proposals, []), lastrun: await rgetJSON(K.lastrun, null), config: await getConfig() }); return; }
+    if (action === "peek") { // диагностика: ЧТО мозг видит на входе (чтобы отличить честный 0 от пустого входа)
+      const b = await gatherForBrain(ORG);
+      res.status(200).json({ ok: true, counts: {
+        mopFindings: (b.mop || []).length, growthHyps: (b.growth || []).length, devFindings: (b.dev || []).length,
+        deepsalesAnalyzed: b.deepsales ? b.deepsales.analyzed : 0,
+        funnelBottleneck: b.funnel ? b.funnel.bottleneck : null, funnelUndiagnosable: b.funnel ? (b.funnel.undiagnosable || []).length : null,
+      }, sample: b });
+      return;
+    }
     if (action === "button") { res.status(200).json(await handleMetaButton(req.body.act, req.body.id, host)); return; }
     if (action === "config") { const cur = await getConfig(); await rsetJSON(K.config, { ...cur, ...(req.body.config || {}) }); res.status(200).json({ ok: true, config: await getConfig() }); return; }
     res.status(400).json({ error: "unknown action" });
