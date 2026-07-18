@@ -13,13 +13,15 @@ import { getSession } from '../lib/session.js'
 import { SCENE_AGENTS } from '../lib/sceneAdapters.js'
 
 const RW = 352, RH = 224
-const NAME = { dev: 'Менеджер по аналитике', growth: 'Агент по развитию', task: 'Тренер', mop: 'Супервайзер' }
-const ACC = { dev: '#3b9eff', growth: '#27c08a', task: '#f2b134', mop: '#9b8cff' }
+const NAME = { dev: 'Менеджер по аналитике', growth: 'Агент по развитию', task: 'Тренер', mop: 'Супервайзер', ceo: 'CEO' }
+const ACC = { dev: '#3b9eff', growth: '#27c08a', task: '#f2b134', mop: '#9b8cff', ceo: '#e0667a' }
 const ZONES = {
   dev: { pts: [[52, 95], [95, 90], [115, 100]], att: [128, 66] },
   growth: { pts: [[52, 190], [95, 185], [115, 195]], att: [128, 178] },
   task: { pts: [[186, 155], [178, 182], [200, 165]], att: [212, 180] },
   mop: { pts: [[288, 150], [278, 182], [298, 162]], att: [290, 178] },
+  // CEO — центральный коридор между всеми комнатами («наблюдает над» четырьмя). att — шаг вперёд к пользователю при ожидании.
+  ceo: { pts: [[156, 44], [150, 68], [164, 56]], att: [158, 112] },
 }
 // МОПы — статичны у столов вдоль стен; РОП — без метрик/пузыря
 const DECOR = [
@@ -42,7 +44,8 @@ const DIRCOL = { left: 0, up: 6, right: 12, down: 18 }
 const FLOW_KEY = { 'dev-agent>growth-agent': 'd2g', 'mop-agent>task-agent': 'm2t' }
 // декоративные — mop1..5 и rop (в /decor/); агенты — dev/growth/task/mop (в /characters/).
 // ВАЖНО: агент 'mop' (Супервайзер) НЕ decor — иначе тянулся бы несуществующий decor/mop.png и спрайт пропадал.
-const imgFor = (id) => (/^mop[1-5]$/.test(id) || id === 'rop') ? `/assets/scene/characters/decor/${id}.png` : `/assets/scene/characters/${id}.png`
+// CEO (временно) переиспользует лист dev.png + CSS hue-rotate (см. ниже) — до появления настоящего ceo.png.
+const imgFor = (id) => id === 'ceo' ? `/assets/scene/characters/dev.png` : ((/^mop[1-5]$/.test(id) || id === 'rop') ? `/assets/scene/characters/decor/${id}.png` : `/assets/scene/characters/${id}.png`)
 
 export default function ScenePanel({ active = true }) {
   const hostRef = useRef(null)
@@ -74,6 +77,8 @@ export default function ScenePanel({ active = true }) {
       return a
     }
     for (const id of agentIds) { const z = ZONES[id]; A[id] = mk(id, z.pts[0][0], z.pts[0][1], false, NAME[id], ACC[id]); A[id].pts = z.pts; A[id].sayWork = NAME[id] }
+    // CEO — ВРЕМЕННЫЙ перекрас: тот же лист dev.png, но сдвиг тона в тёплый (отличается от 4 операционных). Заменить фильтр на настоящий ceo.png, когда будет.
+    if (A.ceo) A.ceo.spr.style.filter = 'hue-rotate(135deg) saturate(1.35) brightness(1.03)'
     DECOR.forEach((d, i) => { const a = mk(d.id, d.home[0], d.home[1], true, d.name, '#b0aa9c'); a.home = d.home; a.homeDir = d.dir; a.dir = d.dir; a.bubHideUntil = 2500 + i * 2500; if (/^mop[1-5]$/.test(d.id)) { a.presence = 'unknown'; a.hidden = true; a.el.style.display = 'none' } A[d.id] = a }) // только отслеживаемые МОПы скрыты до 1-го ответа; РОП (не в scene-activity) виден всегда
     const ALL = Object.values(A)
 

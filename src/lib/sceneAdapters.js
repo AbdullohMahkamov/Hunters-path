@@ -2,7 +2,7 @@
 // Каждый берёт СВОЙ существующий state() и приводит к общей форме для сцены.
 // ВАЖНО: действия карточек ссылаются на ТЕ ЖЕ функции api.js, что и текстовые интерфейсы —
 // никакой параллельной логики принятия решений. Сцена — второй способ нажать те же кнопки.
-import { devAgent, growthAgent, taskAgent, mopAgent } from './api.js'
+import { devAgent, growthAgent, taskAgent, mopAgent, metaBrain } from './api.js'
 
 // Нормализованный агент:
 // { id, name, role, accent, attr, statusLine, waiting, count, pending:[card] }
@@ -117,5 +117,27 @@ const mopAdapter = {
   },
 }
 
-// Порядок = раскладка комнаты (2×2): верх Dev/Growth, низ Task/MOP.
-export const SCENE_AGENTS = [devAdapter, growthAdapter, taskAdapter, mopAdapter]
+// ─── META-BRAIN (CEO / «общий мозг»): сводные наблюдения над всеми четырьмя.
+// Роль — наблюдение и синтез, не операционка. Решение по наблюдениям владелец принимает
+// в OWNER-БОТЕ (Telegram), не в вебе — поэтому карточка ИНФОРМАЦИОННАЯ, без кнопок-действий
+// (та же честность, что у Task Agent: не рисуем на сцене кнопку, которой в вебе нет).
+const ceoAdapter = {
+  id: 'ceo', name: 'CEO', role: 'сверяет сигналы агентов', accent: '#e0667a', attr: 'folder',
+  load: async () => {
+    const d = await metaBrain.state()
+    const props = (d && d.proposals) || []
+    // «ждёт решения» = предложения в статусе ожидания (pending / поправка / переотправка)
+    const pend = props.filter((p) => p && ['pending', 'awaiting_edit', 'edited'].includes(p.status))
+    const pending = pend.length ? [{
+      id: 'ceo-summary',
+      title: `Ждёт вашего решения: ${pend.length}`,
+      body: pend.slice(0, 5).map((p) => `${p.contradiction ? '⚠️' : '📌'} ${short(p.title, 70)}`).join('\n'),
+      meta: 'Решение по сводным наблюдениям вы принимаете в owner-боте (Подтвердить / Отклонить / Поправить). Сцена — только обзор.',
+      actions: [], // намеренно пусто: решение — в Telegram, фейковых кнопок на сцене нет
+    }] : []
+    return { statusLine: pend.length ? `${pend.length} ждут решения` : 'сверяет сигналы агентов', waiting: pend.length > 0, count: pend.length, pending }
+  },
+}
+
+// Порядок: 4 операционных агента (2×2) + CEO пятым (центральный коридор, «над» всеми).
+export const SCENE_AGENTS = [devAdapter, growthAdapter, taskAdapter, mopAdapter, ceoAdapter]

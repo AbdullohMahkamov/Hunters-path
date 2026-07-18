@@ -165,4 +165,9 @@ export const mopAgent = {
   setConfig: (config) => postJSON('/api/mop-agent', { action: 'set_config', session: getSession(), config }).then((r) => r.json()),
 }
 
+// ===== META-BRAIN (общий мозг / CEO — сводные наблюдения; для сцены только чтение) =====
+export const metaBrain = {
+  state: () => getJSON('/api/meta-brain?action=state&session=' + encodeURIComponent(getSession())),
+}
+
 export { postJSON, getJSON }
