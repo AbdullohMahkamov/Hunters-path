@@ -90,6 +90,10 @@
       "schedule": "0 5 * * 1"
     },
     {
+      "path": "/api/deepsales?action=plan-exec",
+      "schedule": "15,45 6-14 * * *"
+    },
+    {
       "path": "/api/deepsales?action=metrics-digest",
       "schedule": "30 5 * * 1"
     }

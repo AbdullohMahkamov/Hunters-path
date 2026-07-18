@@ -296,19 +296,68 @@ async function sendPlanProposal(org) {
   ] } };
   await sendTg("owner", people.owner.chatId, await buildPlanDigest(org), kb);
 }
+// self-call к своим же action'ам (audit-pick/analyze) — по CRON_SECRET, чтобы изолировать тяжёлые шаги по одному вызову.
+const SELF_BASE = "https://hunters-path.vercel.app/api/deepsales";
+async function selfCall(body) {
+  const cs = process.env.CRON_SECRET || "";
+  try { const r = await fetch(SELF_BASE, { method: "POST", headers: { "content-type": "application/json", ...(cs ? { Authorization: `Bearer ${cs}` } : {}) }, body: JSON.stringify(body), signal: AbortSignal.timeout(250000) }); return await r.json(); } catch (e) { return { ok: false, error: String(e).slice(0, 120) }; }
+}
+// ИСПОЛНИТЕЛЬ: разбирает ОДИН следующий МОП подтверждённого плана (audit-pick без оплаты → analyze с оплатой).
+// Дедуп уже разобранных — внутри audit-pick. Бюджет-кап — по числу звонков из плана. По одному МОПу за вызов (таймаут).
+async function execNextMop(org) {
+  const key = `transcriptplan:pending:${org}`;
+  const pend = await rgetJSON(key, null);
+  if (!pend || !pend.confirmed || !pend.spend || pend.spend.complete) return { done: true, note: "нет активного запуска" };
+  const doneMops = new Set((pend.spend.done || []).map((x) => x.mop));
+  const next = (pend.plan || []).find((r) => !doneMops.has(r.mop) && r.calls > 0);
+  if (!next) {
+    pend.spend.complete = true; pend.spend.completeAt = Date.now(); await rsetJSON(key, pend);
+    try { const ppl = await getPeople(); const totSent = (pend.spend.done || []).reduce((s, x) => s + (x.sent || 0), 0);
+      if (ppl.owner && ppl.owner.chatId) await sendTg("owner", ppl.owner.chatId, `✅ Разбор по недельному плану завершён: отправлено <b>${totSent}</b> звонков по ${(pend.spend.done || []).length} менеджерам. Результаты подтянутся в «Анализ звонков» и метрики в течение дня.`); } catch (e) {}
+    return { done: true, total: pend.spend.done };
+  }
+  const pick = await selfCall({ action: "audit-pick", mop: next.mop, budgetMin: next.minutesBudget });
+  const cand = [...(pick.won || []), ...(pick.lost || [])].slice(0, next.calls); // жёсткий кап по плану
+  let sent = 0;
+  for (let i = 0; i < cand.length; i += 40) {
+    const items = cand.slice(i, i + 40).map((c) => ({ link: c.link, mop: next.mop, leadId: c.leadId }));
+    const res = await selfCall({ action: "analyze", items });
+    const arr = res.out || res.results || res.items || [];
+    sent += Array.isArray(arr) ? arr.filter((x) => x && x.ok).length : 0;
+  }
+  pend.spend.done = [...(pend.spend.done || []), { mop: next.mop, picked: cand.length, sent, at: Date.now() }];
+  await rsetJSON(key, pend);
+  const remaining = (pend.plan || []).filter((r) => !new Set(pend.spend.done.map((x) => x.mop)).has(r.mop) && r.calls > 0).length;
+  return { done: remaining === 0, mop: next.mop, sent, picked: cand.length, remaining };
+}
+
 export async function handlePlanButton(act, org = "hunter") {
   const key = `transcriptplan:pending:${org}`;
   const pend = await rgetJSON(key, null);
+  const people = await getPeople();
+  const ownerChat = people.owner && people.owner.chatId;
   if (act === "review") { await sendPlanProposal(org); return { ok: true, toast: "План пересобран — прислал заново" }; }
   if (act === "decline") {
-    if (pend) { pend.declined = true; pend.confirmed = false; await rsetJSON(key, pend); }
+    if (pend) { pend.declined = true; pend.confirmed = false; pend.spend = null; await rsetJSON(key, pend); }
     return { ok: true, toast: "План отклонён", ownerMsg: "✖️ План на эту неделю отклонён — разбор звонков не запускается." };
   }
+  if (act === "cancel") { if (pend) { pend.confirmed = false; pend.spend = null; await rsetJSON(key, pend); } return { ok: true, toast: "Отменено", ownerMsg: "✖️ Запуск отменён — ничего не списано." }; }
   if (act === "run") {
     if (!pend) return { ok: false, toast: "нет активного плана" };
     pend.confirmed = true; pend.confirmedAt = Date.now(); pend.declined = false; await rsetJSON(key, pend);
-    // ВНИМАНИЕ: сам разбор (трата минут DeepSales) выполняет отдельный исполнитель — по этому подтверждённому плану.
-    return { ok: true, toast: "Подтверждено", ownerMsg: `✅ План подтверждён (${pend.totals ? pend.totals.plannedCalls : "?"} звонков, ${pend.totals ? pend.totals.plannedMinutes : "?"} мин). Разбор запускается по плану.` };
+    // ФИНАЛЬНЫЙ денежный гейт — «Запустить» НЕ тратит, тратит только «Потратить».
+    const usd = Math.round((pend.totals ? pend.totals.plannedMinutes : 0) * 0.056);
+    const kb = { reply_markup: { inline_keyboard: [[{ text: "💸 Потратить и разобрать", callback_data: "tplan:spend" }], [{ text: "✖️ Отмена", callback_data: "tplan:cancel" }]] } };
+    if (ownerChat) await sendTg("owner", ownerChat, `✅ План подтверждён: <b>${pend.totals ? pend.totals.plannedCalls : "?"} звонков / ${pend.totals ? pend.totals.plannedMinutes : "?"} мин</b>. Уже разобранные исключаются автоматически.\n\n<b>Это спишет реальные минуты DeepSales (~$${usd}).</b>\nПодтвердите трату, чтобы начать разбор:`, kb);
+    return { ok: true, toast: "Подтверждено — нужен финальный шаг «Потратить»" };
+  }
+  if (act === "spend") {
+    if (!pend || !pend.confirmed) return { ok: false, toast: "нет подтверждённого плана" };
+    if (pend.spend && pend.spend.complete) return { ok: true, toast: "уже разобрано по этому плану" };
+    // Только ИНИЦИИРУЕМ. Разбор ведёт крон plan-exec — по одному МОПу за проход (без гонки инлайн/крон).
+    if (!pend.spend) { pend.spend = { startedAt: Date.now(), done: [] }; await rsetJSON(key, pend); }
+    if (ownerChat) await sendTg("owner", ownerChat, `🚀 Запущено. Разбираю по плану — по одному менеджеру за раз (первый пойдёт в ближайший интервал крона). По завершении пришлю итог, результаты подтянутся в раздел «Анализ звонков» и метрики.`);
+    return { ok: true, toast: "Запущено — разбор пошёл по расписанию" };
   }
   return { ok: false, toast: "неизвестное действие" };
 }
@@ -327,7 +376,7 @@ export default async function handler(req, res) {
   const isAdmin = !!(sess && sess.role === "admin");
   const isRop = !!(sess && sess.role === "rop");
   const READ_ONLY = new Set(["list", "get", "bundle"]);
-  const CRON_OK = new Set(["metrics-digest", "plan-digest"]);
+  const CRON_OK = new Set(["metrics-digest", "plan-digest", "plan-exec", "audit-pick", "analyze"]);
   if (!(isAdmin || (isRop && READ_ONLY.has(action)) || (isCron && CRON_OK.has(action)))) { res.status(403).json({ error: "admin (или РОП — только чтение)" }); return; }
   const org = (sess && sess.org) || "hunter";
 
@@ -369,6 +418,7 @@ export default async function handler(req, res) {
     res.status(200).json({ ok: !!(r && r.ok), sent: !!(r && r.ok), preview: msg, error: (r && r.error) || null });
     return;
   }
+  if (action === "plan-exec") { res.status(200).json(await execNextMop(org)); return; } // крон: разобрать следующий МОП подтверждённого плана
   if (action === "metrics-digest") {
     const msg = await buildMetricsDigest(org);
     const r = await sendDigest(msg);

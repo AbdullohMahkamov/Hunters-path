@@ -236,7 +236,7 @@ export default async function handler(req, res) {
       const data = String(cq.data || "");
       const mEsc = data.match(/^esc:(remind|close|self):(.+)$/);
       const mDisp = data.match(/^disp:(agent|rop|noted):(.+)$/); // решение владельца по оспариванию
-      const mTpl = data.match(/^tplan:(run|review|decline)$/);   // решение по недельному плану транскрибации
+      const mTpl = data.match(/^tplan:(run|review|decline|spend|cancel)$/);   // решение по недельному плану транскрибации
       if (!mEsc && !mDisp && !mTpl) { await answerCallback(kind, cq.id, ""); res.status(200).json({ ok: true, ignored: "cq no match" }); return; }
       const act = mTpl ? mTpl[1] : (mDisp ? mDisp[1] : mEsc[1]);
       try {
@@ -246,7 +246,7 @@ export default async function handler(req, res) {
         await answerCallback(kind, cq.id, (r && r.toast) || "Готово");
         if (r && r.ownerMsg && cqChatId) await sendTg(kind, cqChatId, r.ownerMsg);
         // убираем кнопки после РЕШЕНИЯ (спор / снять с контроля / запуск|отказ плана); на «пересмотр» — нет (пришли новые)
-        if (cq.message && (mDisp || act === "close" || act === "run" || act === "decline")) await clearReplyMarkup(kind, cqChatId, cq.message.message_id);
+        if (cq.message && (mDisp || ["close", "run", "decline", "spend", "cancel"].includes(act))) await clearReplyMarkup(kind, cqChatId, cq.message.message_id);
       } catch (e) { await answerCallback(kind, cq.id, "Ошибка обработки"); }
       res.status(200).json({ ok: true, cq: act }); return;
     }
