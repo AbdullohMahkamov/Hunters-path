@@ -307,9 +307,13 @@ async function buildProgressReport(org, kind) {
   const tstatus = (await rgetJSON("taskagent:status", {})) || {};
   const disputesResolved = Object.values(tstatus).filter((s) => s && s.dispute && s.dispute.resolvedAt >= sinceMs).length;
 
-  // ложные гарантии: частота company_info в ДВУХ РАЗНЫХ выборках звонков (не повтор тех же разговоров)
+  // ложные гарантии: частота company_info. ВАЖНО: статистика DeepSales НАКОПИТЕЛЬНАЯ (новые разборы
+  // добавляются к прежним). Честно сравнивать можно ТОЛЬКО если разборов реально прибавилось.
   const cgFrom = base && base.violations ? (base.violations.company_info || 0) : null;
   const cgTo = now.violations ? (now.violations.company_info || 0) : 0;
+  const baseAnalyzed = base && base.caCoverage ? base.caCoverage.analyzed : null;
+  const nowAnalyzed = now.caCoverage ? now.caCoverage.analyzed : 0;
+  const sampleGrew = baseAnalyzed != null && nowAnalyzed > baseAnalyzed;
 
   const day = new Date(Date.now() + 5 * 3600000);
   const dayStr = `${day.getUTCDate()}.${String(day.getUTCMonth() + 1).padStart(2, "0")}`;
@@ -327,7 +331,11 @@ async function buildProgressReport(org, kind) {
     if (dsB != null && Math.abs(dsB) >= RPT_NOISE.dsScore) bits.push(`балл звонков ${dsB > 0 ? "вырос" : "упал"} на ${Math.abs(dsB)}`);
     s += bits.join("; ") + ".";
   }
-  if (cgFrom != null && cgTo >= cgFrom) s += ` Важно: ложные гарантии в звонках так и не снизились.`;
+  if (cgFrom != null) {
+    if (!sampleGrew) s += ` По ложным гарантиям пока нет свежих разборов — новых звонков с старта не добавилось, судить рано.`;
+    else if (cgTo >= cgFrom) s += ` Важно: в новых разборах ложные гарантии так и не снизились.`;
+    else s += ` Хорошая новость: в новых разборах ложные гарантии пошли на спад.`;
+  }
   s += `\n\n`;
 
   // 2. Продажи
@@ -336,7 +344,7 @@ async function buildProgressReport(org, kind) {
   if (dcvB != null && Math.abs(dcvB) < RPT_NOISE.dealConv) s += `<i>Δ в пределах шума за такой короткий период — значимого вывода нет.</i>\n`;
   const perm = (now.perMop || []).filter((m) => m.conv != null).slice(0, 6);
   if (perm.length) {
-    s += `По менеджерам (конверсия, Δ к старту): ` + perm.map((m) => {
+    s += `По менеджерам (лид→продажа, Δ к старту): ` + perm.map((m) => {
       const bm = base && base.perMop ? base.perMop.find((x) => x.mop === m.mop) : null;
       return `${m.mop} ${m.conv}% ${rArr(bm ? rDelta(bm.conv, m.conv, 1) : null, "")}`;
     }).join("; ") + `\n`;
@@ -351,15 +359,19 @@ async function buildProgressReport(org, kind) {
 
   // 4. Качество разговоров
   s += `<b>3. Качество разговоров</b>\n`;
-  s += `Средний балл команды: <b>${now.teamDsScore != null ? now.teamDsScore : "—"}</b> · к старту ${rArr(dsB, "")}${last ? ` · к прошлому ${rArr(dsL, "")}` : ""}\n`;
+  s += `Средний балл команды: <b>${now.teamDsScore != null ? now.teamDsScore : "—"}</b> · к старту ${rArr(dsB, "")}${last ? ` · к прошлому ${rArr(dsL, "")}` : ""}${!sampleGrew ? " <i>(новых разборов с старта нет — оценка по тем же звонкам)</i>" : ""}\n`;
   if (cgFrom != null) {
-    const trend = cgTo <= cgFrom * 0.7 ? "заметно снизилась" : (cgTo >= cgFrom * 1.3 ? "выросла" : "держится на прежнем уровне");
-    const mark = cgTo <= cgFrom * 0.7 ? " ✅" : (cgTo >= cgFrom ? " 🔴" : "");
-    s += `Ложные гарантии (обещания трудоустройства): в НОВОЙ выборке разборов частота <b>${trend}</b> — примерно ${cgTo} против ~${cgFrom} в стартовой выборке.${mark}\n`;
-    s += `<i>Это ДВЕ разные подборки звонков (не переслушивание тех же), но сопоставимые срезы — сравниваем частоту в выборках, а не конкретные разговоры.</i>\n`;
+    if (!sampleGrew) {
+      s += `Ложные гарантии (обещания трудоустройства): ~${cgTo} упоминаний. С момента старта новых разобранных звонков НЕ добавилось (те же ${nowAnalyzed}) — сравнивать пока не с чем: цифра та же, потому что это те же разговоры. Реальную динамику покажу, когда разберём новые звонки. 🔴 пока не подтверждено, что прекратилось.\n`;
+    } else {
+      const trend = cgTo <= cgFrom * 0.7 ? "заметно снизилась" : (cgTo >= cgFrom * 1.3 ? "выросла" : "держится на прежнем уровне");
+      const mark = cgTo <= cgFrom * 0.7 ? " ✅" : (cgTo >= cgFrom ? " 🔴" : "");
+      s += `Ложные гарантии (обещания трудоустройства): в расширенной выборке (<b>${nowAnalyzed}</b> звонков, включает прежние ${baseAnalyzed}) частота <b>${trend}</b> — ~${cgTo} против ~${cgFrom} на старте.${mark}\n`;
+      s += `<i>Выборка накопительная: новые разборы добавляются к прежним, а не заменяют их. Сравниваем частоту в выборках, а не конкретные разговоры.</i>\n`;
+    }
   }
   const cov = now.caCoverage || {};
-  s += `Разобрано за период: <b>${cov.analyzed || 0}</b> звонков — покрытие меньше 2%, это сигнал к проверке, а не вывод о людях.\n\n`;
+  s += `Разобрано всего (накоплено): <b>${cov.analyzed || 0}</b> звонков — покрытие меньше 2%, это сигнал к проверке, а не вывод о людях.\n\n`;
 
   // 5. Что сделано
   s += `<b>4. Что сделано за период</b>\n`;
