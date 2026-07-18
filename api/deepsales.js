@@ -302,34 +302,54 @@ async function selfCall(body) {
   const cs = process.env.CRON_SECRET || "";
   try { const r = await fetch(SELF_BASE, { method: "POST", headers: { "content-type": "application/json", ...(cs ? { Authorization: `Bearer ${cs}` } : {}) }, body: JSON.stringify(body), signal: AbortSignal.timeout(250000) }); return await r.json(); } catch (e) { return { ok: false, error: String(e).slice(0, 120) }; }
 }
-// ИСПОЛНИТЕЛЬ: разбирает ОДИН следующий МОП подтверждённого плана (audit-pick без оплаты → analyze с оплатой).
-// Дедуп уже разобранных — внутри audit-pick. Бюджет-кап — по числу звонков из плана. По одному МОПу за вызов (таймаут).
-async function execNextMop(org) {
+// ИСПОЛНИТЕЛЬ (ДНЕВНОЙ РИТМ): недельный бюджет тратится РАВНОМЕРНО по дням (≈недельная норма/7 в день на МОПа).
+// Один вызов = дневная порция ОДНОГО МОПа (audit-pick без оплаты → analyze с оплатой; дедуп внутри audit-pick).
+// Крон дёргает несколько раз в день → каждый МОП получает свою дневную порцию; прогресс виден каждый день.
+async function execDaily(org) {
   const key = `transcriptplan:pending:${org}`;
   const pend = await rgetJSON(key, null);
-  if (!pend || !pend.confirmed || !pend.spend || pend.spend.complete) return { done: true, note: "нет активного запуска" };
-  const doneMops = new Set((pend.spend.done || []).map((x) => x.mop));
-  const next = (pend.plan || []).find((r) => !doneMops.has(r.mop) && r.calls > 0);
-  if (!next) {
-    pend.spend.complete = true; pend.spend.completeAt = Date.now(); await rsetJSON(key, pend);
-    try { const ppl = await getPeople(); const totSent = (pend.spend.done || []).reduce((s, x) => s + (x.sent || 0), 0);
-      if (ppl.owner && ppl.owner.chatId) await sendTg("owner", ppl.owner.chatId, `✅ Разбор по недельному плану завершён: отправлено <b>${totSent}</b> звонков по ${(pend.spend.done || []).length} менеджерам. Результаты подтянутся в «Анализ звонков» и метрики в течение дня.`); } catch (e) {}
-    return { done: true, total: pend.spend.done };
+  if (!pend || !pend.confirmed || !pend.spend) return { done: true, note: "нет активного запуска" };
+  const today = new Date(Date.now() + 5 * 3600000).toISOString().slice(0, 10); // дата по Ташкенту
+  pend.spend.byMop = pend.spend.byMop || {};
+  pend.spend.daily = pend.spend.daily || {};
+  pend.spend.daily[today] = pend.spend.daily[today] || {};
+  const dayMap = pend.spend.daily[today];
+  const plan = pend.plan || [];
+  const perMin = (pend.totals && pend.totals.plannedCalls) ? pend.totals.plannedMinutes / pend.totals.plannedCalls : 3;
+  // следующий МОП: дневная норма (недельная/7) ещё не выбрана И недельный кап не достигнут
+  let target = null, need = 0;
+  for (const r of plan) {
+    if (!(r.calls > 0)) continue;
+    const dailyTarget = Math.max(1, Math.round(r.calls / 7));
+    const sentToday = dayMap[r.mop] || 0;
+    const weeklySent = pend.spend.byMop[r.mop] || 0;
+    if (sentToday >= dailyTarget || weeklySent >= r.calls) continue;
+    target = r; need = Math.min(dailyTarget - sentToday, r.calls - weeklySent); break;
   }
-  // longMax/medMax = плановому числу звонков → снимаем полосовые лимиты аудитора, ограничивает только бюджет минут.
-  const pick = await selfCall({ action: "audit-pick", mop: next.mop, budgetMin: next.minutesBudget, longMax: next.calls, medMax: next.calls });
-  const cand = (pick.calls || []).slice(0, next.calls); // audit-pick отдаёт отобранное в поле calls; жёсткий кап по плану
+  if (!target) {
+    const weekDone = plan.every((r) => !(r.calls > 0) || (pend.spend.byMop[r.mop] || 0) >= r.calls);
+    if (weekDone && !pend.spend.weekDoneNotified) {
+      pend.spend.weekDoneNotified = true; await rsetJSON(key, pend);
+      try { const ppl = await getPeople(); const tot = Object.values(pend.spend.byMop).reduce((s, n) => s + n, 0);
+        if (ppl.owner && ppl.owner.chatId) await sendTg("owner", ppl.owner.chatId, `✅ Недельный план разбора звонков выполнен полностью: <b>${tot}</b> звонков за неделю. Результаты — в «Анализ звонков» и метриках.`); } catch (e) {}
+    } else { await rsetJSON(key, pend); }
+    return { done: true, today, note: weekDone ? "неделя выполнена" : "дневная норма на сегодня выбрана" };
+  }
+  const budgetMin = Math.max(6, Math.round(need * perMin));
+  const pick = await selfCall({ action: "audit-pick", mop: target.mop, budgetMin, longMax: need, medMax: need });
+  const cand = (pick.calls || []).slice(0, need); // жёсткий кап дневной нормой
   let sent = 0;
   for (let i = 0; i < cand.length; i += 40) {
-    const items = cand.slice(i, i + 40).map((c) => ({ link: c.link, mop: next.mop, leadId: c.leadId }));
+    const items = cand.slice(i, i + 40).map((c) => ({ link: c.link, mop: target.mop, leadId: c.leadId }));
     const res = await selfCall({ action: "analyze", items });
     const arr = res.out || res.results || res.items || [];
     sent += Array.isArray(arr) ? arr.filter((x) => x && x.ok).length : 0;
   }
-  pend.spend.done = [...(pend.spend.done || []), { mop: next.mop, picked: cand.length, sent, at: Date.now() }];
+  // свежих нет (0) → закрываем дневную норму этого МОПа, чтобы крон не крутился на нём весь день
+  dayMap[target.mop] = (dayMap[target.mop] || 0) + (cand.length ? sent : Math.max(1, Math.round(target.calls / 7)));
+  pend.spend.byMop[target.mop] = (pend.spend.byMop[target.mop] || 0) + sent;
   await rsetJSON(key, pend);
-  const remaining = (pend.plan || []).filter((r) => !new Set(pend.spend.done.map((x) => x.mop)).has(r.mop) && r.calls > 0).length;
-  return { done: remaining === 0, mop: next.mop, sent, picked: cand.length, remaining };
+  return { done: false, mop: target.mop, sent, picked: cand.length, today, weeklySent: pend.spend.byMop[target.mop], weeklyTarget: target.calls };
 }
 
 export async function handlePlanButton(act, org = "hunter") {
@@ -354,11 +374,11 @@ export async function handlePlanButton(act, org = "hunter") {
   }
   if (act === "spend") {
     if (!pend || !pend.confirmed) return { ok: false, toast: "нет подтверждённого плана" };
-    if (pend.spend && pend.spend.complete) return { ok: true, toast: "уже разобрано по этому плану" };
-    // Только ИНИЦИИРУЕМ. Разбор ведёт крон plan-exec — по одному МОПу за проход (без гонки инлайн/крон).
-    if (!pend.spend) { pend.spend = { startedAt: Date.now(), done: [] }; await rsetJSON(key, pend); }
-    if (ownerChat) await sendTg("owner", ownerChat, `🚀 Запущено. Разбираю по плану — по одному менеджеру за раз (первый пойдёт в ближайший интервал крона). По завершении пришлю итог, результаты подтянутся в раздел «Анализ звонков» и метрики.`);
-    return { ok: true, toast: "Запущено — разбор пошёл по расписанию" };
+    if (pend.spend && pend.spend.weekDoneNotified) return { ok: true, toast: "неделя уже разобрана" };
+    // Только ИНИЦИИРУЕМ. Разбор ведёт крон plan-exec — дневными порциями (без гонки инлайн/крон).
+    if (!pend.spend) { pend.spend = { startedAt: Date.now(), byMop: {}, daily: {} }; await rsetJSON(key, pend); }
+    if (ownerChat) await sendTg("owner", ownerChat, `🚀 Запущено. Недельный план разбираю РАВНОМЕРНО по дням (≈1/7 в день на менеджера) — так прогресс виден каждый день, а не одним куском. По концу недели пришлю итог; результаты подтягиваются в «Анализ звонков» и метрики.`);
+    return { ok: true, toast: "Запущено — разбор пойдёт по дням" };
   }
   return { ok: false, toast: "неизвестное действие" };
 }
@@ -419,11 +439,11 @@ export default async function handler(req, res) {
     res.status(200).json({ ok: !!(r && r.ok), sent: !!(r && r.ok), preview: msg, error: (r && r.error) || null });
     return;
   }
-  if (action === "plan-exec") { res.status(200).json(await execNextMop(org)); return; } // крон: разобрать следующий МОП подтверждённого плана
+  if (action === "plan-exec") { res.status(200).json(await execDaily(org)); return; } // крон: дневная порция разбора (равномерно по дням)
   if (action === "plan-reset-spend") { // сбросить прогресс разбора (после багфикса) — переразобрать все МОПы
     if (!isAdmin) { res.status(403).json({ error: "admin only" }); return; }
     const p = await rgetJSON(`transcriptplan:pending:${org}`, null);
-    if (p && p.spend) { p.spend.done = []; p.spend.complete = false; await rsetJSON(`transcriptplan:pending:${org}`, p); }
+    if (p && p.spend) { p.spend.byMop = {}; p.spend.daily = {}; p.spend.weekDoneNotified = false; delete p.spend.done; delete p.spend.complete; await rsetJSON(`transcriptplan:pending:${org}`, p); }
     res.status(200).json({ ok: true, reset: true, hasSpend: !!(p && p.spend) });
     return;
   }
