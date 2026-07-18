@@ -123,6 +123,7 @@ function deadlineInDays(cfg, days) {
 // её обосновал), но НЕ ИМЕЕТ ПРАВА заводить находку/задачу на основании самих разборов.
 // Пересматривать только если доля станет реально значимой (десятки процентов у конкретного МОПа).
 import { getCallAnalysisBundle } from "./deepsales.js";
+import { enrichFindings } from "./meta-brain.js"; // ОБЩИЙ МОЗГ: кросс-чек сигналов перед отправкой находки РОПу
 
 // ── DeepSales-находки по разборам звонков ── КАЖДАЯ несёт обязательную оговорку покрытия («сигнал, не приговор»).
 const CALL_TAG_RU = {
@@ -401,7 +402,11 @@ export async function runMopAgent() {
   }
 
   const closedOld = prev.filter((f) => f.status !== "open");
-  const all = [...merged, ...autoClosed, ...invalidated, ...closedOld].slice(-CAP.findings);
+  // ОБЩИЙ МОЗГ: сверяем каждую ОТКРЫТУЮ находку с Dev-воронкой / Growth / DeepSales (лёгкий детерминированный
+  // просмотр, БЕЗ LLM). Находка ОСТАЁТСЯ MOP-овской (тот же id, тот же dispute) — просто честно показывает,
+  // на скольких независимых сигналах основана. Провенанс call_*↔DeepSales учтён внутри crossCheckFinding.
+  const enrichedOpen = await enrichFindings(ORG, merged);
+  const all = [...enrichedOpen, ...autoClosed, ...invalidated, ...closedOld].slice(-CAP.findings);
   await rsetJSON(K.findings, all);
 
   // история (для подсчёта повторов «3+ раза за неделю»)
