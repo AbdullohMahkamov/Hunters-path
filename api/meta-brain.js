@@ -82,8 +82,8 @@ export function crossCheckFinding(finding, ctx) {
     if (cov && cov.analyzed > 0 && mine.length) {
       const avg = Math.round(mine.reduce((s, r) => s + r.score, 0) / mine.length);
       const share = cov.sharePctApprox != null ? `${cov.sharePctApprox}%` : "доля неизвестна";
-      if (avg < 50) signals.push({ axis: "deepsales", direction: "support", detail: `разборами DeepSales: ${cov.analyzed} из ~${cov.monthCallsEstimate || "?"} звонков (${share}), средний балл ${avg}/100` });
-      else if (avg >= 70) signals.push({ axis: "deepsales", direction: "contradict", detail: `по разборам DeepSales у ${mop} средний балл ${avg}/100 (${cov.analyzed} зв., ${share}) — на звонках картина скорее хорошая` });
+      if (avg < 50) signals.push({ axis: "deepsales", direction: "support", detail: `разбором реальных звонков (${cov.analyzed} из ~${cov.monthCallsEstimate || "?"}, ${share}) — средняя оценка ${avg} из 100, низкая` });
+      else if (avg >= 70) signals.push({ axis: "deepsales", direction: "contradict", detail: `разбор звонков у ${mop} даёт оценку ${avg} из 100 (${cov.analyzed} зв.) — на звонках скорее хорошо` });
     }
   }
 
@@ -97,7 +97,7 @@ export function crossCheckFinding(finding, ctx) {
     });
     const tr = relevant && relevant.transitionFromPrev;
     if (tr && tr.trust && tr.trust !== "verified") {
-      signals.push({ axis: "dev", direction: "caveat", detail: `данные Dev-воронки по этому этапу помечены «${tr.trust === "suspicious" ? "ненадёжно (телефония)" : "недостаточно данных"}» — вывод по нему держать осторожно` });
+      signals.push({ axis: "dev", direction: "caveat", detail: `по воронке продаж этот этап пока ${tr.trust === "suspicious" ? "считается ненадёжным (звонки идут мимо CRM)" : "без достаточных данных"} — вывод держать осторожно` });
     }
   }
 
@@ -105,7 +105,7 @@ export function crossCheckFinding(finding, ctx) {
   if (theme && Array.isArray(ctx.growthHyps)) {
     const open = ctx.growthHyps.filter((h) => (h.status || "open") === "open");
     const hit = open.find((h) => themeOf(`${h.observation || ""} ${h.claim || ""}`) === theme);
-    if (hit) signals.push({ axis: "growth", direction: "context", detail: `Growth Agent рассматривает смежную тему: «${shortT(hit.observation || hit.claim, 90)}» — стоит сверить` });
+    if (hit) signals.push({ axis: "growth", direction: "context", detail: `анализ точек роста смотрит смежную тему: «${shortT(hit.observation || hit.claim, 90)}» — стоит сверить` });
   }
 
   const supports = signals.filter((s) => s.direction === "support");
@@ -113,9 +113,9 @@ export function crossCheckFinding(finding, ctx) {
   const independentCount = new Set(supports.map((s) => s.axis)).size; // MOP сам НЕ считается «подтверждением себя»
 
   let strength, note;
-  if (contradicts.length) { strength = "contested"; note = `⚠️ Есть противоречащий сигнал: ${contradicts[0].detail} — перепроверить, прежде чем требовать.`; }
+  if (contradicts.length) { strength = "contested"; note = `⚠️ Внимание, есть обратное: ${contradicts[0].detail} — стоит перепроверить, прежде чем требовать.`; }
   else if (independentCount >= 1) { strength = "multi"; note = `Подтверждается также ${supports.map((s) => s.detail).join("; ")}.`; }
-  else { strength = "single"; note = "Сигнал только от Супервайзера (MOP), другими источниками пока не подтверждён."; }
+  else { strength = "single"; note = "Пока подтверждено только этим наблюдением по менеджерам, другими данными не перепроверено."; }
   const caveats = signals.filter((s) => s.direction === "caveat" || s.direction === "context");
   if (caveats.length && strength !== "contested") note += " " + caveats.map((s) => s.detail).join("; ") + ".";
   return { signals, independentCount, supports: supports.length, contradicts: contradicts.length, strength, note, at: Date.now() };
@@ -168,7 +168,16 @@ D. Так же ищи ПРОТИВОРЕЧИЯ (Growth предлагает од
 
 Верни СТРОГО валидный JSON-массив (без markdown), максимум 5 наблюдений, отсортируй по важности:
 [{"title":"кратко суть","statement":"1-2 фразы что видно","sources":[{"agent":"MOP|Dev|Growth|DeepSales","signal":"конкретный сигнал с цифрой"}],"independentSignals":2,"confidence":"high|med|low","contradiction":false,"caveats":["выборка звонков 1.1%"],"proposedTask":{"title":"задача РОПу кратко","why":"зачем и что сделать","deadlineDays":3,"scope":"pointwise|department","mop":"имя или null"}}]
-Если действие преждевременно (низкая уверенность/противоречие) — proposedTask всё равно дай, но как «проверить/не действовать» (напр. поручить аналитику проверить долю X). Язык — русский, простой, для владельца-непрограммиста, без кода/жаргона.`;
+Если действие преждевременно (низкая уверенность/противоречие) — proposedTask всё равно дай, но как «проверить/не действовать» (напр. поручить проверить это на большем числе звонков).
+
+ЯЗЫК (КРИТИЧНО — читает ВЛАДЕЛЕЦ бизнеса, не программист; во ВСЕХ полях, включая title/statement/sources.signal/caveats/proposedTask):
+- СТРОГО ЗАПРЕЩЕНЫ технические слова и коды: call_greeting, greeting, won, lost, closing, no_call, названия полей, английские термины, слова «находка», «сигнал», «ось», «выборка», «покрытие», «trust». Дроби вида «13/76» и «(~17%)» — тоже нельзя.
+- Пиши как живому человеку, простыми словами, объясняя суть.
+  Плохо: «ошибка greeting: won 13/76 (~17%) vs lost 8/86 (~9%)».
+  Хорошо: «на приветствии менеджеры одинаково слабы и в удачных, и в проваленных сделках — значит проваливают продажи не из-за него».
+- Источники называй по-человечески: DeepSales → «разбор реальных звонков»; воронка/Dev → «путь клиента по этапам продаж»; MOP → «наблюдение по работе менеджеров»; Growth → «анализ точек роста». В поле sources.agent оставляй короткий код (MOP/Dev/Growth/DeepSales) — его подменит приложение, а вот sources.signal пиши ПОЛНОСТЬЮ человеческим языком без цифр-дробей.
+- Цифры — ориентирами словами: не «каждый 13-й из 76», а «примерно каждый шестой звонок»; проценты можно («около 17%»), дроби нельзя.
+- Про малое число разобранных звонков говори по-человечески: «звонков разобрано пока мало — это повод проверить, а не вывод».`;
 
 async function gatherForBrain(org) {
   const [funnel, ca, mopFindings, growthHyps, devFindings] = await Promise.all([
@@ -242,20 +251,21 @@ export async function runDailyBrain(org = ORG, force = false) {
 }
 
 const CONF_BADGE = { high: "🟢 высокая", med: "🟡 средняя", low: "🔴 низкая" };
+// коды источников → человеческие имена (владелец не должен видеть DeepSales/MOP/Dev)
+const SRC_NAME = { DeepSales: "Разбор реальных звонков", MOP: "Наблюдение по менеджерам", Dev: "Путь клиента по воронке", Growth: "Анализ точек роста" };
 function fmtProposal(p) {
   const t = p.proposedTask || {};
-  const srcLine = (p.sources || []).map((s) => `• ${s.agent}: ${s.signal}`).join("\n");
-  const nInd = p.independentSignals != null ? p.independentSignals : (p.sources || []).length;
+  const srcLine = (p.sources || []).map((s) => `• ${SRC_NAME[s.agent] || s.agent}: ${s.signal}`).join("\n");
   let s = `🧠 <b>Сводное наблюдение · ${p.day}</b>\n\n`;
   s += `${p.contradiction ? "⚠️" : "📌"} <b>${p.title}</b>\n`;
   if (p.statement) s += `${p.statement}\n`;
-  s += `\nИсточники (${nInd} независимых):\n${srcLine}\n`;
-  s += `Уверенность: ${CONF_BADGE[p.confidence] || p.confidence}`;
+  s += `\nНа чём основано:\n${srcLine}\n`;
+  s += `Насколько уверен: ${CONF_BADGE[p.confidence] || p.confidence}`;
   if (p.caveats && p.caveats.length) s += ` — ${p.caveats.join("; ")}`;
   s += `\n\n`;
   s += p.contradiction
-    ? `Предлагаю НЕ действовать сразу: ${t.why || t.title}\n`
-    : `Предлагаю задачу РОПу:\n«${t.title}»${t.why ? ` — ${t.why}` : ""}${t.deadlineDays ? ` Срок: ${t.deadlineDays} дн.` : ""}\n`;
+    ? `Предлагаю пока НЕ действовать: ${t.why || t.title}\n`
+    : `Предлагаю поручить руководителю продаж:\n«${t.title}»${t.why ? ` — ${t.why}` : ""}${t.deadlineDays ? ` Срок: ${t.deadlineDays} дн.` : ""}\n`;
   return s;
 }
 
@@ -428,6 +438,7 @@ export default async function handler(req, res) {
     }
     if (action === "button") { res.status(200).json(await handleMetaButton(req.body.act, req.body.id, host)); return; }
     if (action === "config") { const cur = await getConfig(); await rsetJSON(K.config, { ...cur, ...(req.body.config || {}) }); res.status(200).json({ ok: true, config: await getConfig() }); return; }
+    if (action === "clear") { await Promise.all([rsetJSON(K.proposals, []), rsetJSON(K.seen, {}), rsetJSON(K.msgmap, {})]); res.status(200).json({ ok: true, cleared: true }); return; } // сброс накопленных предложений (для теста формата)
     res.status(400).json({ error: "unknown action" });
   } catch (e) { res.status(500).json({ error: String(e && e.message || e) }); }
 }
