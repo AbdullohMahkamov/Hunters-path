@@ -317,7 +317,7 @@ async function execNextMop(org) {
     return { done: true, total: pend.spend.done };
   }
   const pick = await selfCall({ action: "audit-pick", mop: next.mop, budgetMin: next.minutesBudget });
-  const cand = [...(pick.won || []), ...(pick.lost || [])].slice(0, next.calls); // жёсткий кап по плану
+  const cand = (pick.calls || []).slice(0, next.calls); // audit-pick отдаёт отобранное в поле calls; жёсткий кап по плану
   let sent = 0;
   for (let i = 0; i < cand.length; i += 40) {
     const items = cand.slice(i, i + 40).map((c) => ({ link: c.link, mop: next.mop, leadId: c.leadId }));
@@ -419,6 +419,13 @@ export default async function handler(req, res) {
     return;
   }
   if (action === "plan-exec") { res.status(200).json(await execNextMop(org)); return; } // крон: разобрать следующий МОП подтверждённого плана
+  if (action === "plan-reset-spend") { // сбросить прогресс разбора (после багфикса) — переразобрать все МОПы
+    if (!isAdmin) { res.status(403).json({ error: "admin only" }); return; }
+    const p = await rgetJSON(`transcriptplan:pending:${org}`, null);
+    if (p && p.spend) { p.spend.done = []; p.spend.complete = false; await rsetJSON(`transcriptplan:pending:${org}`, p); }
+    res.status(200).json({ ok: true, reset: true, hasSpend: !!(p && p.spend) });
+    return;
+  }
   if (action === "metrics-digest") {
     const msg = await buildMetricsDigest(org);
     const r = await sendDigest(msg);
