@@ -236,15 +236,17 @@ export default async function handler(req, res) {
       const data = String(cq.data || "");
       const mEsc = data.match(/^esc:(remind|close|self):(.+)$/);
       const mDisp = data.match(/^disp:(agent|rop|noted):(.+)$/); // решение владельца по оспариванию
-      if (!mEsc && !mDisp) { await answerCallback(kind, cq.id, ""); res.status(200).json({ ok: true, ignored: "cq no match" }); return; }
-      const act = mDisp ? mDisp[1] : mEsc[1];
+      const mTpl = data.match(/^tplan:(run|review|decline)$/);   // решение по недельному плану транскрибации
+      if (!mEsc && !mDisp && !mTpl) { await answerCallback(kind, cq.id, ""); res.status(200).json({ ok: true, ignored: "cq no match" }); return; }
+      const act = mTpl ? mTpl[1] : (mDisp ? mDisp[1] : mEsc[1]);
       try {
-        const mod = await import("./task-agent.js");
-        const r = mDisp ? await mod.handleDisputeResolve(mDisp[1], mDisp[2]) : await mod.handleOwnerButton(mEsc[1], mEsc[2]);
+        let r;
+        if (mTpl) { const dm = await import("./deepsales.js"); r = await dm.handlePlanButton(mTpl[1]); }
+        else { const mod = await import("./task-agent.js"); r = mDisp ? await mod.handleDisputeResolve(mDisp[1], mDisp[2]) : await mod.handleOwnerButton(mEsc[1], mEsc[2]); }
         await answerCallback(kind, cq.id, (r && r.toast) || "Готово");
         if (r && r.ownerMsg && cqChatId) await sendTg(kind, cqChatId, r.ownerMsg);
-        // после решения по спору или «снять с контроля» убираем кнопки (защита от повторного нажатия)
-        if (cq.message && (mDisp || act === "close")) await clearReplyMarkup(kind, cqChatId, cq.message.message_id);
+        // убираем кнопки после РЕШЕНИЯ (спор / снять с контроля / запуск|отказ плана); на «пересмотр» — нет (пришли новые)
+        if (cq.message && (mDisp || act === "close" || act === "run" || act === "decline")) await clearReplyMarkup(kind, cqChatId, cq.message.message_id);
       } catch (e) { await answerCallback(kind, cq.id, "Ошибка обработки"); }
       res.status(200).json({ ok: true, cq: act }); return;
     }

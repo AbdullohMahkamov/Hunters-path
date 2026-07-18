@@ -11,6 +11,7 @@
 
 import { getVerifiedFunnel } from "./dev-agent.js"; // для «разговор→сделка» в baseline/progress
 import { sendDigest } from "./digest.js"; // компактные метрики владельцу в Digest-бот (owner-путь)
+import { sendTg, getPeople } from "./tg-bot.js"; // план на подтверждение — в owner-бот (кнопки)
 
 const REDIS_URL = process.env.UPSTASH_REDIS_REST_URL;
 const REDIS_TOKEN = process.env.UPSTASH_REDIS_REST_TOKEN;
@@ -283,6 +284,35 @@ async function buildPlanDigest(org) {
   return s;
 }
 
+// Решение владельца по недельному плану (кнопки owner-бота tplan:run|review|decline).
+async function sendPlanProposal(org) {
+  const plan = await getWeeklyTranscriptionPlan(org);
+  await rsetJSON(`transcriptplan:pending:${org}`, { at: Date.now(), plan: plan.plan, totals: plan.totals, confirmed: false, declined: false });
+  const people = await getPeople();
+  if (!(people.owner && people.owner.chatId)) return;
+  const kb = { reply_markup: { inline_keyboard: [
+    [{ text: "✅ Запустить", callback_data: "tplan:run" }, { text: "🔄 Пересмотр", callback_data: "tplan:review" }],
+    [{ text: "✖️ Отказ", callback_data: "tplan:decline" }],
+  ] } };
+  await sendTg("owner", people.owner.chatId, await buildPlanDigest(org), kb);
+}
+export async function handlePlanButton(act, org = "hunter") {
+  const key = `transcriptplan:pending:${org}`;
+  const pend = await rgetJSON(key, null);
+  if (act === "review") { await sendPlanProposal(org); return { ok: true, toast: "План пересобран — прислал заново" }; }
+  if (act === "decline") {
+    if (pend) { pend.declined = true; pend.confirmed = false; await rsetJSON(key, pend); }
+    return { ok: true, toast: "План отклонён", ownerMsg: "✖️ План на эту неделю отклонён — разбор звонков не запускается." };
+  }
+  if (act === "run") {
+    if (!pend) return { ok: false, toast: "нет активного плана" };
+    pend.confirmed = true; pend.confirmedAt = Date.now(); pend.declined = false; await rsetJSON(key, pend);
+    // ВНИМАНИЕ: сам разбор (трата минут DeepSales) выполняет отдельный исполнитель — по этому подтверждённому плану.
+    return { ok: true, toast: "Подтверждено", ownerMsg: `✅ План подтверждён (${pend.totals ? pend.totals.plannedCalls : "?"} звонков, ${pend.totals ? pend.totals.plannedMinutes : "?"} мин). Разбор запускается по плану.` };
+  }
+  return { ok: false, toast: "неизвестное действие" };
+}
+
 export default async function handler(req, res) {
   res.setHeader("Cache-Control", "no-store");
   const q = req.query || {}, b = req.body || {};
@@ -323,10 +353,19 @@ export default async function handler(req, res) {
     return;
   }
   if (action === "plan-digest") {
-    const msg = await buildPlanDigest(org);
     const plan = await getWeeklyTranscriptionPlan(org);
-    await rsetJSON(`transcriptplan:pending:${org}`, { at: Date.now(), plan: plan.plan, totals: plan.totals, confirmed: false }); // ждёт подтверждения владельца
-    const r = await sendDigest(msg);
+    await rsetJSON(`transcriptplan:pending:${org}`, { at: Date.now(), plan: plan.plan, totals: plan.totals, confirmed: false, declined: false }); // ждёт решения владельца
+    const msg = await buildPlanDigest(org);
+    // Решение (кнопки) — в owner-бот (Digest-бот без вебхука, кнопки там не нажать). Digest остаётся для read-сводок.
+    const people = await getPeople();
+    let r = { ok: false, error: "owner не привязан" };
+    if (people.owner && people.owner.chatId) {
+      const kb = { reply_markup: { inline_keyboard: [
+        [{ text: "✅ Запустить", callback_data: "tplan:run" }, { text: "🔄 Пересмотр", callback_data: "tplan:review" }],
+        [{ text: "✖️ Отказ", callback_data: "tplan:decline" }],
+      ] } };
+      r = await sendTg("owner", people.owner.chatId, msg, kb);
+    }
     res.status(200).json({ ok: !!(r && r.ok), sent: !!(r && r.ok), preview: msg, error: (r && r.error) || null });
     return;
   }
