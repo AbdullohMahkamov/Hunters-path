@@ -170,6 +170,12 @@ export default async function handler(req, res) {
         if (!(rs > 0 && rs <= 600)) { res.status(400).json({ error: "reachedSec: 1..600 секунд" }); return; }
         patch.reachedSec = rs;
       }
+      // порог «подозрение на сбой телефонии» (% лидов с активностью, но без единого звонка)
+      if (inc.telephonyBypassPct != null) {
+        const tp = parseInt(inc.telephonyBypassPct, 10);
+        if (!(tp >= 1 && tp <= 100)) { res.status(400).json({ error: "telephonyBypassPct: 1..100 %" }); return; }
+        patch.telephonyBypassPct = tp;
+      }
       if (!Object.keys(patch).length) { res.status(400).json({ error: "нечего сохранять" }); return; }
       const key = org === "hunter" ? "metricscfg:hunter" : `clientcfg:${org}`;
       const cr = await fetch(`${url}/get/${key}`, { headers: { Authorization: `Bearer ${token}` } });

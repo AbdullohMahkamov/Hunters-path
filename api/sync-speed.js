@@ -932,14 +932,18 @@ export default async function handler(req, res) {
     // Этот детектор ровно об этом и сигналил (лид без звонков, но с активностью в CRM), но был
     // информационным и веса не имел. Теперь его показание — основание МОЛЧАТЬ.
     const telPct = telTotal ? Math.round(telNoCallButActive / telTotal * 100) : 0;
-    const TEL_BYPASS_PCT = cfg.telephonyBypassPct != null ? cfg.telephonyBypassPct : 5;
+    // Порог 25% (был 5%). ПРОВЕРЕНО 20.07.2026: в amoCRM лежит ~558 реальных дозвонов по 5 МОПам —
+    // интеграция «Мои Звонки» с корпоративного телефона РАБОТАЕТ, звонки долетают. При 5% гейт срабатывал
+    // на нормальных 7% «активность без звонка» (лиды, которых вели только в Telegram, либо реально не
+    // обзвонённые) и ЛОЖНО глушил всю аналитику дозвона. 25% ловит настоящую аварию интеграции, а не норму.
+    const TEL_BYPASS_PCT = cfg.telephonyBypassPct != null ? cfg.telephonyBypassPct : 25;
     const telephony = {
       total: telTotal, noCallButActive: telNoCallButActive, noCallButActivePct: telPct,
       // ГЛАВНОЕ ПОЛЕ: подозрение, что звонки идут мимо CRM → метрикам звонков верить нельзя
       callsBypassSuspected: telPct >= TEL_BYPASS_PCT,
       thresholdPct: TEL_BYPASS_PCT,
       warning: telPct >= TEL_BYPASS_PCT
-        ? `${telNoCallButActive} лид(ов) (${telPct}%) имеют активность в CRM, но НИ ОДНОГО звонка. Похоже, часть звонков идёт мимо amoCRM (личные телефоны / «Мои Звонки»). Метрика звонков ЗАНИЖЕНА, детектор «лид без звонка» отключён.`
+        ? `${telNoCallButActive} лид(ов) (${telPct}%) имеют активность в CRM, но НИ ОДНОГО звонка — это выше порога ${TEL_BYPASS_PCT}%. Похоже на СБОЙ интеграции телефонии (звонки перестали долетать до amoCRM). Метрика звонков ЗАНИЖЕНА, выводы про дозвон делать нельзя, пока не проверена интеграция.`
         : null,
     };
     // ДОЗВОН ПО ЛИДАМ (правильная метрика): сколько ЛИДОВ имели разговор ≥ REACHED_SEC.
