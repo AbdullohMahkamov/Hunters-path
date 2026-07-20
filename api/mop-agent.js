@@ -492,6 +492,13 @@ export default async function handler(req, res) {
         if (typeof inc[k] === "number" && isFinite(inc[k]) && inc[k] >= 0) next[k] = inc[k];
       }
       if (typeof inc.enabled === "boolean") next.enabled = inc.enabled;
+      // Детектор «лиду не позвонили»: включение/выключение с причиной. Был выключен гейтом телефонии;
+      // менять его можно только осознанно (он называет людей поимённо), поэтому причина хранится рядом.
+      if (typeof inc.noCallEnabled === "boolean") {
+        next.noCallEnabled = inc.noCallEnabled;
+        if (typeof inc.noCallDisabledReason === "string") next.noCallDisabledReason = inc.noCallDisabledReason;
+        if (inc.noCallEnabled) next.noCallReEnabledAt = tkDay();
+      }
       await rsetJSON(K.config, next);
       res.status(200).json({ ok: true, config: next }); return;
     }
