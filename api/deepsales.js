@@ -588,7 +588,11 @@ export default async function handler(req, res) {
     return;
   }
   if (action === "list") {
-    let rows = (await rgetJSON(CA_LIST(org), [])).filter((x) => x.state === "done");
+    // state=all|pending|done (дефолт done — прежнее поведение). Нужен, чтобы видеть неотобранные «pending»
+    // (отправлено в DeepSales, результат ещё не забран) — иначе они невидимы и выглядят как потерянные деньги.
+    const wantState = q.state || b.state || "done";
+    let rows = await rgetJSON(CA_LIST(org), []);
+    if (wantState !== "all") rows = rows.filter((x) => x.state === wantState);
     const fmop = q.mop || b.mop, fst = q.status || b.status;
     if (fmop) rows = rows.filter((x) => x.mop === fmop);
     if (fst) rows = rows.filter((x) => x.status === fst);
