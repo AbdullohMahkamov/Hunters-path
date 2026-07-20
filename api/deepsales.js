@@ -370,6 +370,12 @@ async function buildProgressReport(org, kind) {
   const baseAnalyzed = base && base.caCoverage ? base.caCoverage.analyzed : null;
   const nowAnalyzed = now.caCoverage ? now.caCoverage.analyzed : 0;
   const sampleGrew = baseAnalyzed != null && nowAnalyzed > baseAnalyzed;
+  // ⚠️ СРАВНИВАТЬ МОЖНО ТОЛЬКО ЧАСТОТУ (на звонок), НЕ сырые счётчики: выборка накопительная, при её
+  // росте абсолютное число упоминаний растёт само по себе и «рост» был бы ложным выводом.
+  const cgRateFrom = (cgFrom != null && baseAnalyzed) ? cgFrom / baseAnalyzed : null;
+  const cgRateTo = nowAnalyzed ? cgTo / nowAnalyzed : null;
+  const cgRel = (cgRateFrom && cgRateTo != null) ? (cgRateTo - cgRateFrom) / cgRateFrom : null;
+  const per10 = (r) => r == null ? null : Math.round(r * 100) / 10; // упоминаний на каждые 10 звонков
 
   const day = new Date(Date.now() + 5 * 3600000);
   const dayStr = `${day.getUTCDate()}.${String(day.getUTCMonth() + 1).padStart(2, "0")}`;
@@ -389,8 +395,10 @@ async function buildProgressReport(org, kind) {
   }
   if (cgFrom != null) {
     if (!sampleGrew) s += ` По ложным гарантиям пока нет свежих разборов — новых звонков с старта не добавилось, судить рано.`;
-    else if (cgTo >= cgFrom) s += ` Важно: в новых разборах ложные гарантии так и не снизились.`;
-    else s += ` Хорошая новость: в новых разборах ложные гарантии пошли на спад.`;
+    else if (cgRel == null) s += ``;
+    else if (cgRel <= -0.15) s += ` Хорошая новость: ложные гарантии стали звучать реже.`;
+    else if (cgRel >= 0.15) s += ` Важно: ложные гарантии стали звучать ЧАЩЕ.`;
+    else s += ` Важно: частота ложных гарантий не изменилась — как звучали, так и звучат.`;
   }
   s += `\n\n`;
 
@@ -420,10 +428,10 @@ async function buildProgressReport(org, kind) {
     if (!sampleGrew) {
       s += `Ложные гарантии (обещания трудоустройства): ~${cgTo} упоминаний. С момента старта новых разобранных звонков НЕ добавилось (те же ${nowAnalyzed}) — сравнивать пока не с чем: цифра та же, потому что это те же разговоры. Реальную динамику покажу, когда разберём новые звонки. 🔴 пока не подтверждено, что прекратилось.\n`;
     } else {
-      const trend = cgTo <= cgFrom * 0.7 ? "заметно снизилась" : (cgTo >= cgFrom * 1.3 ? "выросла" : "держится на прежнем уровне");
-      const mark = cgTo <= cgFrom * 0.7 ? " ✅" : (cgTo >= cgFrom ? " 🔴" : "");
-      s += `Ложные гарантии (обещания трудоустройства): в расширенной выборке (<b>${nowAnalyzed}</b> звонков, включает прежние ${baseAnalyzed}) частота <b>${trend}</b> — ~${cgTo} против ~${cgFrom} на старте.${mark}\n`;
-      s += `<i>Выборка накопительная: новые разборы добавляются к прежним, а не заменяют их. Сравниваем частоту в выборках, а не конкретные разговоры.</i>\n`;
+      const trend = cgRel == null ? "не определяется" : (cgRel <= -0.15 ? "снизилась" : (cgRel >= 0.15 ? "выросла" : "держится на прежнем уровне"));
+      const mark = cgRel != null && cgRel <= -0.15 ? " ✅" : " 🔴";
+      s += `Ложные гарантии (обещания трудоустройства): частота <b>${trend}</b> — примерно <b>${per10(cgRateTo)}</b> упоминаний на каждые 10 звонков (на старте было ${per10(cgRateFrom)}).${mark}\n`;
+      s += `<i>Считаем именно ЧАСТОТУ на звонок, а не общее число: выборка выросла с ${baseAnalyzed} до ${nowAnalyzed} звонков, поэтому абсолютные числа растут сами по себе и сравнивать их было бы неверно. Выборка накопительная — новые разборы добавляются к прежним.</i>\n`;
     }
   }
   const cov = now.caCoverage || {};
