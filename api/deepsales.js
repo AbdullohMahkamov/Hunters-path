@@ -73,6 +73,62 @@ async function caIndexUpsert(org, row) {
   list.sort((a, b) => String(b.callDate || "").localeCompare(String(a.callDate || "")));
   await rsetJSON(CA_LIST(org), list.slice(0, 500));
 }
+
+// ЗАБОР готовых разборов у DeepSales по audio_id + СОХРАНЕНИЕ (state:"done").
+// У DeepSales это ТОЛЬКО ЧТЕНИЕ (Bearer GET) — повторной оплаты нет, аудио не пересылается.
+// Используется и ручным action=result, и кроном result-sweep (без него оплаченные разборы
+// вечно висят «pending» и не попадают ни в бандл, ни в отчёты).
+async function fetchAndSaveResults(org, ids, attrib = []) {
+  const BEARER = process.env.DEEPSALES_BEARER_TOKEN;
+  const bget = async (path) => {
+    const r = await fetch(`${DS}${path}`, { headers: { Authorization: `Bearer ${BEARER}`, Accept: "application/json" }, signal: AbortSignal.timeout(30000) });
+    let body; try { body = await r.json(); } catch (e) { body = { _s: r.status }; }
+    return { status: r.status, body };
+  };
+  const out = [];
+  let saved = 0;
+  for (const aid of ids) {
+    const ca = await bget(`/api/call-analysis?audio_id=${encodeURIComponent(aid)}`);
+    await sleep(120); // 600/мин analysis
+    const tr = await bget(`/api/transcription?audio_id=${encodeURIComponent(aid)}`);
+    await sleep(120);
+    out.push({ audio_id: aid, call_analysis: ca, transcription: tr });
+    const A = ca.status === 200 && ca.body && ca.body.data ? ca.body.data : null;
+    const T = tr.status === 200 && tr.body && tr.body.data ? tr.body.data : null;
+    if (!A || !T) continue; // ещё не готов / 404 — оставляем pending, добёрем следующим проходом
+    // НАША привязка (чей звонок): из заготовки analyze либо из attrib для backfill
+    const idx = await rgetJSON(CA_LIST(org), []);
+    const stub = idx.find((x) => String(x.audioFileId) === String(aid))
+      || attrib.find((a) => String(a.audioFileId || a.audio_id) === String(aid))
+      || {};
+    const rec = {
+      audioFileId: aid, leadId: stub.leadId || null, mop: stub.mop || null, mopId: stub.mopId || null,
+      status: stub.status || null, callDate: stub.callDate || null, talkSec: stub.talkSec || null,
+      fileSec: (T.audio && T.audio.duration) || stub.fileSec || null,
+      category: (A.category && A.category.name) || null,
+      overallScore: A.overall_score != null ? A.overall_score : null,
+      criteriaScores: A.criteria_scores || {}, criteriaExplanations: A.criteria_explanations || {},
+      talkRatio: T.talk_ratio != null ? T.talk_ratio : null,
+      objections: A.objections || [], mistakes: A.mistakes || [], mistakesCount: A.mistakes_count || (A.mistakes || []).length,
+      finalOutcome: A.final_outcome || null, nextSteps: A.next_steps || null, feedback: A.feedback || null,
+      infoAboutClient: A.info_about_client || null,
+      transcript: (T.segments || []).map((s) => ({ speaker: s.speaker, text: s.text, timestamp: s.timestamp })),
+      state: "done", analyzedAt: new Date().toISOString(),
+    };
+    await caRecordUpsert(org, rec.leadId, rec);
+    await caIndexUpsert(org, {
+      audioFileId: aid, leadId: rec.leadId, mop: rec.mop, mopId: rec.mopId, status: rec.status,
+      callDate: rec.callDate, talkSec: rec.talkSec, fileSec: rec.fileSec,
+      score: rec.overallScore, talkRatio: rec.talkRatio, headline: headlineOf(A),
+      mistakeTags: (rec.mistakes || []).map((m) => m.tag).filter(Boolean),
+      objectionTags: (rec.objections || []).map((o) => o.tag).filter(Boolean),
+      criteriaScores: rec.criteriaScores || {},
+      mistakesCount: rec.mistakesCount, category: rec.category, state: "done", analyzedAt: rec.analyzedAt,
+    });
+    saved++;
+  }
+  return { out, saved };
+}
 async function caRecordUpsert(org, leadId, rec) {
   const arr = await rgetJSON(CA_KEY(org, leadId), []);
   const i = arr.findIndex((x) => String(x.audioFileId) === String(rec.audioFileId));
@@ -508,7 +564,7 @@ export default async function handler(req, res) {
   const isAdmin = !!(sess && sess.role === "admin");
   const isRop = !!(sess && sess.role === "rop");
   const READ_ONLY = new Set(["list", "get", "bundle"]);
-  const CRON_OK = new Set(["metrics-digest", "plan-digest", "plan-exec", "audit-pick", "analyze", "progress-report"]);
+  const CRON_OK = new Set(["metrics-digest", "plan-digest", "plan-exec", "audit-pick", "analyze", "progress-report", "result-sweep"]);
   if (!(isAdmin || (isRop && READ_ONLY.has(action)) || (isCron && CRON_OK.has(action)))) { res.status(403).json({ error: "admin (или РОП — только чтение)" }); return; }
   const org = (sess && sess.org) || "hunter";
 
@@ -870,67 +926,28 @@ export default async function handler(req, res) {
     return;
   }
 
-  // === RESULT: опрос результата по audio_id (Bearer) ===
+  // === RESULT: опрос результата по audio_id (Bearer). Логика — в fetchAndSaveResults (её же зовёт крон).
   if (action === "result") {
     const ids = Array.isArray(b.ids) ? b.ids : (q.audio_id ? [q.audio_id] : []);
     if (!ids.length) { res.status(400).json({ error: "нужен ids: [audio_id] или ?audio_id=" }); return; }
     if (ids.length > 60) { res.status(400).json({ error: "не более 60 id за вызов" }); return; }
-    const bget = async (path) => {
-      const r = await fetch(`${DS}${path}`, { headers: { Authorization: `Bearer ${BEARER}`, Accept: "application/json" }, signal: AbortSignal.timeout(30000) });
-      let body; try { body = await r.json(); } catch (e) { body = { _s: r.status }; }
-      return { status: r.status, body };
-    };
-    const out = [];
-    let saved = 0;
-    for (const aid of ids) {
-      const ca = await bget(`/api/call-analysis?audio_id=${encodeURIComponent(aid)}`);
-      await sleep(120); // 600/мин analysis
-      const tr = await bget(`/api/transcription?audio_id=${encodeURIComponent(aid)}`);
-      await sleep(120);
-      out.push({ audio_id: aid, call_analysis: ca, transcription: tr });
-
-      // === СОХРАНЕНИЕ (не только показ) ===
-      const A = ca.status === 200 && ca.body && ca.body.data ? ca.body.data : null;
-      const T = tr.status === 200 && tr.body && tr.body.data ? tr.body.data : null;
-      if (!A || !T) continue;
-      // НАША привязка: из заготовки (analyze) либо из body.attrib — для backfill уже отправленных
-      // записей без повторной отправки аудио (бюджет минут не тратится).
-      const idx = await rgetJSON(CA_LIST(org), []);
-      const attrib = Array.isArray(b.attrib) ? b.attrib : [];
-      const stub = idx.find((x) => String(x.audioFileId) === String(aid))
-        || attrib.find((a) => String(a.audioFileId || a.audio_id) === String(aid))
-        || {};
-      const rec = {
-        audioFileId: aid, leadId: stub.leadId || null, mop: stub.mop || null, mopId: stub.mopId || null,
-        status: stub.status || null, callDate: stub.callDate || null, talkSec: stub.talkSec || null,
-        fileSec: (T.audio && T.audio.duration) || stub.fileSec || null,
-        category: (A.category && A.category.name) || null,
-        overallScore: A.overall_score != null ? A.overall_score : null,
-        criteriaScores: A.criteria_scores || {}, criteriaExplanations: A.criteria_explanations || {},
-        talkRatio: T.talk_ratio != null ? T.talk_ratio : null,
-        objections: A.objections || [], mistakes: A.mistakes || [], mistakesCount: A.mistakes_count || (A.mistakes || []).length,
-        finalOutcome: A.final_outcome || null, nextSteps: A.next_steps || null, feedback: A.feedback || null,
-        infoAboutClient: A.info_about_client || null,
-        transcript: (T.segments || []).map((s) => ({ speaker: s.speaker, text: s.text, timestamp: s.timestamp })),
-        state: "done", analyzedAt: new Date().toISOString(),
-      };
-      await caRecordUpsert(org, rec.leadId, rec);
-      await caIndexUpsert(org, {
-        audioFileId: aid, leadId: rec.leadId, mop: rec.mop, mopId: rec.mopId, status: rec.status,
-        callDate: rec.callDate, talkSec: rec.talkSec, fileSec: rec.fileSec,
-        score: rec.overallScore, talkRatio: rec.talkRatio, headline: headlineOf(A),
-        mistakeTags: (rec.mistakes || []).map((m) => m.tag).filter(Boolean),
-        objectionTags: (rec.objections || []).map((o) => o.tag).filter(Boolean),
-        // criteriaScores в индекс (плоский объект ~5-8 чисел) — чтобы бандл считал средние по критериям
-        // без чтения полных записей. Ось «достоверность продукта» = средний балл нужного критерия.
-        criteriaScores: rec.criteriaScores || {},
-        mistakesCount: rec.mistakesCount, category: rec.category, state: "done", analyzedAt: rec.analyzedAt,
-      });
-      saved++;
-    }
+    const { out, saved } = await fetchAndSaveResults(org, ids, Array.isArray(b.attrib) ? b.attrib : []);
     res.status(200).json({ ok: true, action: "result", results: out, saved });
     return;
   }
 
-  res.status(400).json({ error: "action: bundle | plan | list | get | pick | analyze | result" });
+  // === RESULT-SWEEP (крон, раз в час): САМ находит «pending» (отправлено в DeepSales, результат не забран)
+  // и добирает их. Без этого оплаченные разборы висят вечно и не попадают ни в бандл, ни в отчёты.
+  // Не готовые/404 остаются pending и будут добраны следующим проходом.
+  if (action === "result-sweep") {
+    const idx = await rgetJSON(CA_LIST(org), []);
+    const pend = idx.filter((x) => x && x.state === "pending" && x.audioFileId);
+    const ids = pend.slice(0, 60).map((x) => x.audioFileId); // лимит DeepSales на вызов
+    if (!ids.length) { res.status(200).json({ ok: true, action: "result-sweep", pending: 0, tried: 0, saved: 0 }); return; }
+    const { saved } = await fetchAndSaveResults(org, ids, []);
+    res.status(200).json({ ok: true, action: "result-sweep", pending: pend.length, tried: ids.length, saved, left: Math.max(0, pend.length - saved) });
+    return;
+  }
+
+  res.status(400).json({ error: "action: bundle | plan | list | get | pick | analyze | result | result-sweep" });
 }
