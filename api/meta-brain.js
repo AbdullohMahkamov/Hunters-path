@@ -170,6 +170,14 @@ D. Так же ищи ПРОТИВОРЕЧИЯ (Growth предлагает од
 [{"title":"кратко суть","statement":"1-2 фразы что видно","sources":[{"agent":"MOP|Dev|Growth|DeepSales","signal":"конкретный сигнал с цифрой"}],"independentSignals":2,"confidence":"high|med|low","contradiction":false,"caveats":["выборка звонков 1.1%"],"proposedTask":{"title":"задача РОПу кратко","why":"зачем и что сделать","deadlineDays":3,"scope":"pointwise|department","mop":"имя или null"}}]
 Если действие преждевременно (низкая уверенность/противоречие) — proposedTask всё равно дай, но как «проверить/не действовать» (напр. поручить проверить это на большем числе звонков).
 
+‼️ КОНКРЕТИКА — ГЛАВНОЕ ТРЕБОВАНИЕ (без неё наблюдение БЕСПОЛЕЗНО):
+В данных есть массив "examples" — реальные случаи из разборов: кто (mop), когда (date), что ИМЕННО сказано не так (whatWasSaid), как исправить (howToFix).
+- Если наблюдение про качество разговоров — ты ОБЯЗАН опереться на examples и назвать в statement: ИМЯ менеджера, ДАТУ и СУТЬ сказанного своими словами («Komiljon 18 июля обещал гарантированное трудоустройство после курса»).
+- Обобщённые формулировки БЕЗ примера — ЗАПРЕЩЕНЫ. Нельзя писать «неточная информация о продукте», «проблемы с гарантиями», «ошибки в презентации» и т.п., не сказав ЧТО именно прозвучало.
+- Если по теме в examples примеров НЕТ — не выдумывай их и не выдавай размытое наблюдение вовсе: пропусти эту тему.
+- proposedTask тоже конкретный: не «проверить формулировки», а «разобрать с Komiljon: он обещает гарантированное трудоустройство — заменить на честную формулировку».
+- Имена менеджеров называть МОЖНО (это факт из разбора). Нельзя — вешать ярлыки на человека («слабый», «плохо работает») и делать вывод о его квалификации по паре звонков.
+
 ЯЗЫК (КРИТИЧНО — читает ВЛАДЕЛЕЦ бизнеса, не программист; во ВСЕХ полях, включая title/statement/sources.signal/caveats/proposedTask):
 - СТРОГО ЗАПРЕЩЕНЫ технические слова и коды: call_greeting, greeting, won, lost, closing, no_call, названия полей, английские термины, слова «находка», «сигнал», «ось», «выборка», «покрытие», «trust». Дроби вида «13/76» и «(~17%)» — тоже нельзя.
 - Пиши как живому человеку, простыми словами, объясняя суть.
@@ -178,6 +186,30 @@ D. Так же ищи ПРОТИВОРЕЧИЯ (Growth предлагает од
 - Источники называй по-человечески: DeepSales → «разбор реальных звонков»; воронка/Dev → «путь клиента по этапам продаж»; MOP → «наблюдение по работе менеджеров»; Growth → «анализ точек роста». В поле sources.agent оставляй короткий код (MOP/Dev/Growth/DeepSales) — его подменит приложение, а вот sources.signal пиши ПОЛНОСТЬЮ человеческим языком без цифр-дробей.
 - Цифры — ориентирами словами: не «каждый 13-й из 76», а «примерно каждый шестой звонок»; проценты можно («около 17%»), дроби нельзя.
 - Про малое число разобранных звонков говори по-человечески: «звонков разобрано пока мало — это повод проверить, а не вывод».`;
+
+// КОНКРЕТНЫЕ ПРИМЕРЫ ошибок из разборов: кто, когда, что ИМЕННО сказал не так.
+// Без этого мозг говорит обобщённо («неточная информация о продукте»), и владельцу нечего поручить.
+// В записи разбора: mistakes[] = { tag, timestamp, mistake (описание), recommendation }.
+async function callExamples(org, tags, perTag = 2) {
+  const idx = await rgetJSON(`callanalysis:list:${org}`, []);
+  if (!Array.isArray(idx) || !idx.length) return [];
+  const out = [];
+  for (const tag of tags) {
+    const rows = idx.filter((r) => r && Array.isArray(r.mistakeTags) && r.mistakeTags.includes(tag)).slice(0, perTag);
+    for (const r of rows) {
+      try {
+        const recs = await rgetJSON(`callanalysis:${org}:${r.leadId}`, []);
+        const arr = Array.isArray(recs) ? recs : [recs].filter(Boolean);
+        const rec = arr.find((x) => x && String(x.audioFileId) === String(r.audioFileId)) || arr[0];
+        const m = rec && (rec.mistakes || []).find((x) => x && x.tag === tag);
+        if (!m) continue;
+        out.push({ tag, mop: r.mop || rec.mop || null, date: r.callDate || rec.callDate || null,
+          status: r.status || rec.status || null, whatWasSaid: shortT(m.mistake, 240), howToFix: shortT(m.recommendation, 140) });
+      } catch (e) { /* пример не достался — не блокирует остальные */ }
+    }
+  }
+  return out;
+}
 
 async function gatherForBrain(org) {
   const [funnel, ca, mopFindings, growthHyps, devFindings] = await Promise.all([
@@ -192,12 +224,17 @@ async function gatherForBrain(org) {
     team: ca.team ? { wonMistakes: ca.team.won && ca.team.won.mistakeTags, lostMistakes: ca.team.lost && ca.team.lost.mistakeTags } : null,
     recent: (ca.recent || []).slice(0, 8).map((r) => ({ mop: r.mop, status: r.status, score: r.score, headline: shortT(r.headline, 80) })),
   } : null;
+  // примеры берём по самым частым ошибкам в ПРОИГРАННЫХ разговорах — там, где потери
+  const lostTags = (ca && ca.team && ca.team.lost && ca.team.lost.mistakeTags) || {};
+  const topTags = Object.entries(lostTags).sort((a, b) => b[1] - a[1]).slice(0, 4).map(([t]) => t);
+  const examples = topTags.length ? await callExamples(org, topTags, 2).catch(() => []) : [];
   return {
     funnel: funnel ? { bottleneck: funnel.bottleneck, undiagnosable: funnel.undiagnosable, telephonySuspicious: funnel.telephonySuspicious, stages: (funnel.stages || []).map((s) => ({ stage: s.stage, value: s.value, trust: s.trust, transition: s.transitionFromPrev })) } : null,
     mop: mopFindings.map((f) => ({ scope: f.scope, type: f.type, mop: f.mop || null, title: shortT(f.title, 120), fact: shortT(f.fact, 160) })),
     growth: growthHyps.filter((h) => (h.status || "open") === "open").slice(0, 8).map((h) => ({ status: h.status, obs: shortT(h.observation || h.claim, 140) })),
     dev: devFindings.slice(0, 8).map((f) => ({ status: f.status, claim: shortT(f.claim, 140) })),
     deepsales: caSummary,
+    examples, // КТО / КОГДА / ЧТО ИМЕННО сказано не так — обязательны для конкретики наблюдения
   };
 }
 
