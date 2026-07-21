@@ -244,13 +244,18 @@ export async function runDailyBrain(org = ORG, force = false) {
   const cfg = await getConfig();
   if (!cfg.enabled && !force) return { ok: true, skipped: "disabled" };
   const bundle = await gatherForBrain(org);
-  let observations = [];
+  // 16000: Sonnet-5 тратит часть бюджета на рассуждения, а с требованием конкретики ответ длиннее.
+  // ДИАГНОСТИКА обязательна: при обрыве вывода observed=0 выглядит как «нечего сказать» — это уже
+  // дважды маскировало реальный сбой. Пишем причину в lastrun и в ответ.
+  let observations = [], diag = {};
   try {
-    const raw = await callModel(BRAIN_SYSTEM, "Данные системы за сутки:\n" + JSON.stringify(bundle), 8000); // Sonnet-5 тратит часть бюджета на рассуждения — даём запас, иначе JSON обрывается
+    const raw = await callModel(BRAIN_SYSTEM, "Данные системы за сутки:\n" + JSON.stringify(bundle), 16000);
+    diag.rawLen = raw.length;
     const m = raw.replace(/```json|```/g, "").match(/\[[\s\S]*\]/);
+    if (!m) diag.err = "JSON-массив не найден — похоже, вывод оборвался";
     observations = m ? JSON.parse(m[0]) : [];
     if (!Array.isArray(observations)) observations = [];
-  } catch (e) { observations = []; }
+  } catch (e) { observations = []; diag.err = String((e && e.message) || e).slice(0, 200); }
 
   // дедуп против seen (кулдаун) + против уже висящих pending
   const seen = await rgetJSON(K.seen, {});
@@ -277,14 +282,14 @@ export async function runDailyBrain(org = ORG, force = false) {
     await sendProposalToOwner(rec);
   }
   await rsetJSON(K.proposals, proposals.slice(-CAP.proposals));
-  await rsetJSON(K.lastrun, { at: nowMs, day: nowDay, observed: observations.length, sent: created.length });
+  await rsetJSON(K.lastrun, { at: nowMs, day: nowDay, observed: observations.length, sent: created.length, diag });
 
   // тихо при нуле; РАЗ В НЕДЕЛЮ (heartbeatDow) — короткий признак жизни, даже если наблюдений нет
   if (!created.length && tkDow() === cfg.heartbeatDow) {
     const ppl = await getPeople().catch(() => ({}));
     if (ppl.owner && ppl.owner.chatId) await sendTg("owner", ppl.owner.chatId, `🧠 Общий мозг: за неделю сводных наблюдений уровня «предложить действие» не набралось. Источники сверяю ежедневно — как появится подтверждённый с двух сторон сигнал, пришлю предложение.`);
   }
-  return { ok: true, observed: observations.length, sent: created.length, ids: created.map((c) => c.id) };
+  return { ok: true, observed: observations.length, sent: created.length, ids: created.map((c) => c.id), diag };
 }
 
 const CONF_BADGE = { high: "🟢 высокая", med: "🟡 средняя", low: "🔴 низкая" };
