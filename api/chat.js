@@ -490,7 +490,10 @@ export default async function handler(req, res) {
       ]);
       let sys = SYSTEM_CORE + progressNote;
       if (intent.agents || intent.calls) sys += DISCIPLINE_FULL;
-      if (intent.act) sys += ACTIONS_BLOCK;
+      // Кнопки-действия подключаем на ЛЮБОЙ содержательный ответ, а не только по явной просьбе «сделай»:
+      // советник по правилу ВСЕГДА заканчивает конкретным шагом (поручить РОПу и т.п.) — и этот шаг
+      // должен быть КНОПКОЙ, а не текстовым советом «поручите сами». Иначе действие остаётся на словах.
+      if (intent.act || intent.live || intent.agents || intent.calls) sys += ACTIONS_BLOCK;
       if (intent.live) sys += LIVE_INTRO + live + trustBlock(speed);
       if (intent.agents) sys += agBlk;
       if (intent.calls) sys += caBlk;
