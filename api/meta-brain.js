@@ -168,7 +168,7 @@ D. Так же ищи ПРОТИВОРЕЧИЯ (Growth предлагает од
 
 Верни СТРОГО валидный JSON-массив (без markdown), максимум 5 наблюдений, отсортируй по важности:
 [{"topicKey":"stable_english_slug","title":"кратко суть","statement":"1-2 фразы что видно","sources":[{"agent":"MOP|Dev|Growth|DeepSales","signal":"конкретный сигнал с цифрой"}],"independentSignals":2,"confidence":"high|med|low","contradiction":false,"caveats":["выборка звонков 1.1%"],"proposedTask":{"title":"задача РОПу кратко","why":"зачем и что сделать","deadlineDays":3,"scope":"pointwise|department","mop":"имя или null"}}]
-‼️ topicKey — СТАБИЛЬНЫЙ короткий английский слаг ТЕМЫ проблемы (напр. false_guarantees, premature_pricing, uncalled_leads, closing_dropoff, misclassified_no_answer). Для ОДНОЙ И ТОЙ ЖЕ проблемы всегда возвращай ОДИН И ТОТ ЖЕ слаг, даже если формулировка меняется день ко дню — по нему система не показывает уже принятое повторно.
+‼️ topicKey — СТАБИЛЬНЫЙ короткий английский слаг ТЕМЫ проблемы (напр. false_guarantees, premature_pricing, uncalled_leads, closing_dropoff, misclassified_no_answer). Для ОДНОЙ И ТОЙ ЖЕ проблемы всегда один и тот же слаг, даже если формулировка меняется день ко дню. ЕСЛИ в конце данных есть список «УЖЕ ОТКРЫТЫЕ ТЕМЫ» — и твоё наблюдение про ту же проблему, то БЕРИ topicKey ТОЧНО оттуда (буква в букву) И НЕ включай это наблюдение в ответ вовсе (оно уже показано/принято). Новый topicKey — только для действительно НОВОЙ проблемы, которой в списке нет. По topicKey система гасит повторы — поэтому стабильность слага критична.
 Если действие преждевременно (низкая уверенность/противоречие) — proposedTask всё равно дай, но как «проверить/не действовать» (напр. поручить проверить это на большем числе звонков).
 
 ‼️ КОНКРЕТИКА — ГЛАВНОЕ ТРЕБОВАНИЕ (без неё наблюдение БЕСПОЛЕЗНО):
@@ -241,18 +241,27 @@ async function gatherForBrain(org) {
 
 // Отпечаток для дедупа — по СТАБИЛЬНОМУ topicKey (модель даёт один и тот же слаг для одной проблемы),
 // а не по тексту: формулировка каждый день чуть другая, и текстовый отпечаток не совпадал → дубли.
-function fingerprint(o) { return `${(o.proposedTask && o.proposedTask.mop) || "team"}|${o.topicKey || themeOf(o.title + " " + o.statement) || (o.title || "").toLowerCase().slice(0, 24)}`; }
+function fingerprint(o) { const k = String(o.topicKey || "").toLowerCase().trim(); return k || themeOf((o.title || "") + " " + (o.statement || "")) || String(o.title || "").toLowerCase().slice(0, 24); }
 
 export async function runDailyBrain(org = ORG, force = false) {
   const cfg = await getConfig();
   if (!cfg.enabled && !force) return { ok: true, skipped: "disabled" };
   const bundle = await gatherForBrain(org);
+  const nowMs = Date.now();
+  const coolMs = (cfg.cooldownDays || 7) * 86400000;
+  const proposals = await rgetJSON(K.proposals, []);
+  // УЖЕ ОТКРЫТЫЕ/НЕДАВНИЕ темы → отдаём модели, чтобы она ПЕРЕИСПОЛЬЗОВАЛА topicKey (а не выдумывала новый слаг для той же проблемы).
+  const existingTopics = proposals
+    .filter((p) => p && p.topicKey && (["pending", "awaiting_edit", "edited", "confirmed", "delivered"].includes(p.status) || (p.status === "closed" && p.closedAt && (nowMs - p.closedAt) < coolMs)))
+    .map((p) => ({ topicKey: p.topicKey, about: shortT(p.title, 60) }));
   // 16000: Sonnet-5 тратит часть бюджета на рассуждения, а с требованием конкретики ответ длиннее.
   // ДИАГНОСТИКА обязательна: при обрыве вывода observed=0 выглядит как «нечего сказать» — это уже
   // дважды маскировало реальный сбой. Пишем причину в lastrun и в ответ.
   let observations = [], diag = {};
   try {
-    const raw = await callModel(BRAIN_SYSTEM, "Данные системы за сутки:\n" + JSON.stringify(bundle), 16000);
+    const userMsg = "Данные системы за сутки:\n" + JSON.stringify(bundle)
+      + (existingTopics.length ? "\n\nУЖЕ ОТКРЫТЫЕ ТЕМЫ (эти проблемы уже показаны владельцу и/или приняты РОПом). Если твоё наблюдение про ТУ ЖЕ проблему — используй ЕЁ topicKey и НЕ включай её повторно в ответ:\n" + JSON.stringify(existingTopics) : "");
+    const raw = await callModel(BRAIN_SYSTEM, userMsg, 16000);
     diag.rawLen = raw.length;
     const m = raw.replace(/```json|```/g, "").match(/\[[\s\S]*\]/);
     if (!m) diag.err = "JSON-массив не найден — похоже, вывод оборвался";
@@ -266,9 +275,7 @@ export async function runDailyBrain(org = ORG, force = false) {
   //  • в seen-кулдауне (ранее отклонено или подтверждено).
   // Без этого подтверждённая или принятая РОПом задача возвращалась заново каждый день.
   const seen = await rgetJSON(K.seen, {});
-  const proposals = await rgetJSON(K.proposals, []);
-  const nowDay = tkDay(); const nowMs = Date.now();
-  const coolMs = (cfg.cooldownDays || 7) * 86400000;
+  const nowDay = tkDay();
   const blockedFps = new Set();
   for (const p of proposals) {
     if (!p || !p.fingerprint) continue;
