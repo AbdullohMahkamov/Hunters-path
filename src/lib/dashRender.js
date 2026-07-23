@@ -8,6 +8,8 @@ import { escapeHtml } from './format.js'
 
 // orgSettings — дефолт 1:1 из монолита; loadOrgSettings подтягивает сохранённые.
 export let orgSettings = { goal: null, workdays: [1, 2, 3, 4, 5, 6], workStart: '10:00', workEnd: '20:00', margin: null, adSpend: null, adSpendMonth: null, adSpendAll: null }
+// getGoal() (appState) читает window.orgSettings — держим ссылку синхронной с модульной orgSettings, иначе цель «висит» на дефолте 250М.
+if (typeof window !== 'undefined') window.orgSettings = orgSettings
 
 let suspData = []
 let suspReviewed = {}
@@ -477,6 +479,7 @@ async function loadOrgSettings() {
     const d = await r.json()
     if (d && d.ok && d.settings) {
       orgSettings = { ...orgSettings, ...d.settings }
+      if (typeof window !== 'undefined') window.orgSettings = orgSettings // getGoal() читает именно window.orgSettings
       if (_lastDashData) renderForecast(_lastDashData)
     }
   } catch (e) { /* ignore */ }
@@ -513,6 +516,7 @@ function editForecastGoal() {
   const cleaned = parseInt(String(inp).replace(/[^0-9]/g, ''), 10)
   if (!cleaned || cleaned <= 0) { alert(uz ? 'Nol emas, masalan 250000000' : 'Введите число больше нуля, например 250000000'); return }
   orgSettings.goal = cleaned
+  if (typeof window !== 'undefined') window.orgSettings = orgSettings // чтобы getGoal() увидел новую цель сразу
   state.goal = cleaned; save()
   saveOrgSettings({ goal: cleaned })
   renderForecast(_lastDashData)
