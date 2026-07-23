@@ -167,7 +167,8 @@ D. Так же ищи ПРОТИВОРЕЧИЯ (Growth предлагает од
 5. Наблюдение = связь ≥2 НЕЗАВИСИМЫХ осей ИЛИ противоречие. Тема, которую видно и в воронке, и в звонках — это НЕ «дубль одиночной находки», а ГЛАВНАЯ ценность: связать их и дать честную уверенность. Не подавляй такое.
 
 Верни СТРОГО валидный JSON-массив (без markdown), максимум 5 наблюдений, отсортируй по важности:
-[{"title":"кратко суть","statement":"1-2 фразы что видно","sources":[{"agent":"MOP|Dev|Growth|DeepSales","signal":"конкретный сигнал с цифрой"}],"independentSignals":2,"confidence":"high|med|low","contradiction":false,"caveats":["выборка звонков 1.1%"],"proposedTask":{"title":"задача РОПу кратко","why":"зачем и что сделать","deadlineDays":3,"scope":"pointwise|department","mop":"имя или null"}}]
+[{"topicKey":"stable_english_slug","title":"кратко суть","statement":"1-2 фразы что видно","sources":[{"agent":"MOP|Dev|Growth|DeepSales","signal":"конкретный сигнал с цифрой"}],"independentSignals":2,"confidence":"high|med|low","contradiction":false,"caveats":["выборка звонков 1.1%"],"proposedTask":{"title":"задача РОПу кратко","why":"зачем и что сделать","deadlineDays":3,"scope":"pointwise|department","mop":"имя или null"}}]
+‼️ topicKey — СТАБИЛЬНЫЙ короткий английский слаг ТЕМЫ проблемы (напр. false_guarantees, premature_pricing, uncalled_leads, closing_dropoff, misclassified_no_answer). Для ОДНОЙ И ТОЙ ЖЕ проблемы всегда возвращай ОДИН И ТОТ ЖЕ слаг, даже если формулировка меняется день ко дню — по нему система не показывает уже принятое повторно.
 Если действие преждевременно (низкая уверенность/противоречие) — proposedTask всё равно дай, но как «проверить/не действовать» (напр. поручить проверить это на большем числе звонков).
 
 ‼️ КОНКРЕТИКА — ГЛАВНОЕ ТРЕБОВАНИЕ (без неё наблюдение БЕСПОЛЕЗНО):
@@ -238,7 +239,9 @@ async function gatherForBrain(org) {
   };
 }
 
-function fingerprint(o) { return `${(o.proposedTask && o.proposedTask.mop) || "team"}|${themeOf(o.title + " " + o.statement) || (o.title || "").toLowerCase().slice(0, 24)}`; }
+// Отпечаток для дедупа — по СТАБИЛЬНОМУ topicKey (модель даёт один и тот же слаг для одной проблемы),
+// а не по тексту: формулировка каждый день чуть другая, и текстовый отпечаток не совпадал → дубли.
+function fingerprint(o) { return `${(o.proposedTask && o.proposedTask.mop) || "team"}|${o.topicKey || themeOf(o.title + " " + o.statement) || (o.title || "").toLowerCase().slice(0, 24)}`; }
 
 export async function runDailyBrain(org = ORG, force = false) {
   const cfg = await getConfig();
@@ -257,18 +260,29 @@ export async function runDailyBrain(org = ORG, force = false) {
     if (!Array.isArray(observations)) observations = [];
   } catch (e) { observations = []; diag.err = String((e && e.message) || e).slice(0, 200); }
 
-  // дедуп против seen (кулдаун) + против уже висящих pending
+  // ДЕДУП. Блокируем повтор наблюдения, если его отпечаток уже:
+  //  • у АКТИВНОГО предложения (ждёт решения / подтверждено / доставлено РОПу) — оно в работе;
+  //  • у НЕДАВНО ЗАКРЫТОГО (РОП принял/выполнил) — в пределах кулдауна;
+  //  • в seen-кулдауне (ранее отклонено или подтверждено).
+  // Без этого подтверждённая или принятая РОПом задача возвращалась заново каждый день.
   const seen = await rgetJSON(K.seen, {});
   const proposals = await rgetJSON(K.proposals, []);
-  const pendingFps = new Set(proposals.filter((p) => p.status === "pending").map((p) => p.fingerprint));
   const nowDay = tkDay(); const nowMs = Date.now();
+  const coolMs = (cfg.cooldownDays || 7) * 86400000;
+  const blockedFps = new Set();
+  for (const p of proposals) {
+    if (!p || !p.fingerprint) continue;
+    const active = ["pending", "awaiting_edit", "edited", "confirmed", "delivered"].includes(p.status);
+    const recentClosed = p.status === "closed" && p.closedAt && (nowMs - p.closedAt) < coolMs;
+    if (active || recentClosed) blockedFps.add(p.fingerprint);
+  }
   const fresh = [];
   for (const o of observations) {
     if (!o || !o.title || !o.proposedTask) continue;
     const fp = fingerprint(o);
-    if (pendingFps.has(fp)) continue; // уже висит на решении
+    if (blockedFps.has(fp)) continue; // активное или недавно закрытое — не повторяем
     const s = seen[fp];
-    if (s && s.until && nowMs < s.until) continue; // в кулдауне (недавно отклонено/решено)
+    if (s && s.until && nowMs < s.until) continue; // в кулдауне
     fresh.push({ ...o, fingerprint: fp });
   }
   fresh.sort((a, b) => ({ high: 0, med: 1, low: 2 }[a.confidence] ?? 3) - ({ high: 0, med: 1, low: 2 }[b.confidence] ?? 3));
@@ -367,6 +381,7 @@ export async function closeMetaProposal(taskId, reason) {
   if (i < 0) return false;
   proposals[i] = { ...proposals[i], status: "closed", closeReason: reason || "", closedAt: Date.now() };
   await rsetJSON(K.proposals, proposals);
+  try { await setSeen(proposals[i].fingerprint, 14); } catch (e) {} // принято/выполнено РОПом → не всплывать 2 недели
   return true;
 }
 
@@ -388,6 +403,7 @@ export async function handleMetaButton(act, id, host) {
     if (p.status !== "pending" && p.status !== "edited") return { ok: true, toast: "уже обработано" };
     proposals[i] = { ...p, status: "confirmed", confirmedAt: Date.now() };
     await rsetJSON(K.proposals, proposals);
+    await setSeen(p.fingerprint, cfg.cooldownDays); // подтверждённое не всплывёт заново, пока в работе
     await triggerTaskTick(host); // задача уходит РОПу СРАЗУ существующим путём
     return { ok: true, toast: "Подтверждено — задача уходит РОПу", ownerMsg: `✅ <b>Подтверждено.</b> Поставил РОПу задачу по этому наблюдению (с пометкой «подтверждено владельцем»). Отслеживайте в Тренере.` };
   }
