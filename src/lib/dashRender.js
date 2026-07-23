@@ -10,6 +10,9 @@ import { escapeHtml } from './format.js'
 export let orgSettings = { goal: null, workdays: [1, 2, 3, 4, 5, 6], workStart: '10:00', workEnd: '20:00', margin: null, adSpend: null, adSpendMonth: null, adSpendAll: null }
 // getGoal() (appState) читает window.orgSettings — держим ссылку синхронной с модульной orgSettings, иначе цель «висит» на дефолте 250М.
 if (typeof window !== 'undefined') window.orgSettings = orgSettings
+// Цель, которую владелец только что задал и она ещё сохраняется. Защищает от гонки: loadOrgSettings
+// бежит на КАЖДОМ обновлении дашборда (applySuspicious) и иначе перезатирал бы свежую правку старым бэкендом.
+let _goalPending = null
 
 let suspData = []
 let suspReviewed = {}
@@ -478,7 +481,9 @@ async function loadOrgSettings() {
     const r = await fetch('/api/user-data', { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ action: 'settings-get', session: getSession() }) })
     const d = await r.json()
     if (d && d.ok && d.settings) {
-      orgSettings = { ...orgSettings, ...d.settings }
+      const loaded = { ...orgSettings, ...d.settings }
+      if (_goalPending != null) loaded.goal = _goalPending // не перетираем правку, которая ещё сохраняется
+      orgSettings = loaded
       if (typeof window !== 'undefined') window.orgSettings = orgSettings // getGoal() читает именно window.orgSettings
       if (_lastDashData) renderForecast(_lastDashData)
     }
@@ -508,18 +513,20 @@ async function saveOrgSettings(partial) {
     await fetch('/api/user-data', { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ action: 'settings-set', session: getSession(), settings: partial }) })
   } catch (e) { /* ignore */ }
 }
-function editForecastGoal() {
+async function editForecastGoal() {
   const uz = state.lang === 'uz'
   const cur = orgSettings.goal || getGoal()
   const inp = prompt(uz ? 'Oylik maqsad (summa, soʻm):' : 'Цель по выручке на месяц (сум):', cur)
   if (inp === null) return
   const cleaned = parseInt(String(inp).replace(/[^0-9]/g, ''), 10)
   if (!cleaned || cleaned <= 0) { alert(uz ? 'Nol emas, masalan 250000000' : 'Введите число больше нуля, например 250000000'); return }
+  _goalPending = cleaned // защита от перезатирания асинхронным loadOrgSettings, пока сохраняем
   orgSettings.goal = cleaned
   if (typeof window !== 'undefined') window.orgSettings = orgSettings // чтобы getGoal() увидел новую цель сразу
   state.goal = cleaned; save()
-  saveOrgSettings({ goal: cleaned })
   renderForecast(_lastDashData)
+  await saveOrgSettings({ goal: cleaned }) // ждём подтверждения бэкенда, только потом снимаем защиту
+  _goalPending = null
 }
 
 // ===== МОДАЛКА: ПОДОЗРИТЕЛЬНЫЕ =====
