@@ -41,6 +41,9 @@
     },
     "api/meta-brain.js": {
       "maxDuration": 300
+    },
+    "api/marketing-agent.js": {
+      "maxDuration": 120
     }
   },
   "crons": [
@@ -111,6 +114,10 @@
     {
       "path": "/api/meta-brain?action=daily&cron=1",
       "schedule": "0 5 * * *"
+    },
+    {
+      "path": "/api/marketing-agent?action=daily&cron=1",
+      "schedule": "45 4 * * *"
     }
   ]
 }
