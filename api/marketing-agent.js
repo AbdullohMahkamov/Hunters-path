@@ -31,6 +31,8 @@ const ORG = "hunter";
 const GRAPH_VERSION = "v21.0";
 const IG_TTL_HOURS = 3;                                 // не дёргаем Instagram чаще раза в 3 часа (Insights обновляются небыстро)
 const IG_CACHE_EX = 6 * 3600;                           // сам кэш живёт до 6 часов
+const REVENUE_CCY = "UZS";                              // валюта выручки из CRM (по контракту docs/hunter-ai-integration-spec.md)
+const USD_UZS_RATE = Number(process.env.USD_UZS_RATE) || 12100; // явный проверяемый курс (в проекте mop.js использует 12000; здесь по указанию владельца — 12100)
 
 // helper-функции Redis — 1:1 из meta-brain.js (не изобретаем заново)
 async function rget(key) { try { const r = await fetch(`${REDIS_URL}/get/${encodeURIComponent(key)}`, { headers: { Authorization: `Bearer ${REDIS_TOKEN}` } }); const d = await r.json(); return d && d.result != null ? d.result : null; } catch (e) { return null; } }
@@ -56,7 +58,7 @@ function fmtPct(v) { return v == null ? "н/д" : (v > 0 ? "+" : "") + v + "%"; 
 // ─────────────────────────────────────────────────────────────────────────────
 function deriveAds(cache) {
   if (!cache || !Array.isArray(cache.adsets) || cache.adsets.length === 0) {
-    return { available: false, reason: "кэш meta_spend пуст — запусти /api/meta-ads?action=get (или дождись его cron)", adsets: [], total: null, updatedAt: cache && cache.updatedAt || null };
+    return { available: false, reason: "кэш meta_spend пуст — запусти /api/meta-ads?action=get (или дождись его cron)", adsets: [], total: null, currency: cache && cache.currency || null, updatedAt: cache && cache.updatedAt || null };
   }
   const adsets = cache.adsets.map((a) => {
     const spend = a.spend || 0, impr = a.impressions || 0, clicks = a.clicks || 0;
@@ -76,7 +78,7 @@ function deriveAds(cache) {
     cpc: tClicks > 0 ? r2(tSpend / tClicks) : null,
     cpm: tImpr > 0 ? r2(tSpend / tImpr * 1000) : null,
   };
-  return { available: true, period: cache.period || null, updatedAt: cache.updatedAt || null, adsets, total };
+  return { available: true, period: cache.period || null, currency: cache.currency || null, updatedAt: cache.updatedAt || null, adsets, total };
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -100,21 +102,33 @@ async function fetchInstagramFresh() {
   if (!META_TOKEN) return { ok: false, error: "META_TOKEN не задан", errors: [] };
   if (!IG_USER_ID) return { ok: false, error: "META_IG_USER_ID не задан (id бизнес-аккаунта Instagram)", errors: [] };
 
-  const out = { ok: true, updatedAt: new Date().toISOString(), followers_count: null, media_count: null, reach: null, profile_views: null, media: [], errors: [] };
+  const out = { ok: true, updatedAt: new Date().toISOString(), followers_count: null, media_count: null, reach: null, profile_views: null, media: [], rawInsights: null, errors: [] };
 
   // 2.1 followers_count / media_count — это ПОЛЯ узла IG User (не insights-метрики)
   const uf = await graph(`${IG_USER_ID}`, { fields: "followers_count,media_count" });
   if (uf.ok) { out.followers_count = uf.data.followers_count != null ? uf.data.followers_count : null; out.media_count = uf.data.media_count != null ? uf.data.media_count : null; }
   else out.errors.push("user_fields: " + uf.error);
 
-  // 2.2 reach / profile_views — insights-метрики аккаунта (период day, берём последнее значение ряда)
-  const ins = await graph(`${IG_USER_ID}/insights`, { metric: "reach,profile_views", period: "day" });
+  // 2.2 reach / profile_views — insights-метрики аккаунта. В Graph v21+ им нужны ЯВНЫЕ параметры:
+  // period=day + окно since/until + metric_type=total_value (иначе Meta часто отдаёт пустой data[] или ошибку).
+  const until = Math.floor(Date.now() / 1000), since = until - 7 * 86400; // последние 7 дней
+  let ins = await graph(`${IG_USER_ID}/insights`, { metric: "reach,profile_views", period: "day", metric_type: "total_value", since: String(since), until: String(until) });
+  if (!ins.ok) {
+    // fallback: старая форма без metric_type (некоторые метрики отдаются рядом values[])
+    const alt = await graph(`${IG_USER_ID}/insights`, { metric: "reach,profile_views", period: "day", since: String(since), until: String(until) });
+    out.rawInsights = { primaryError: ins.error, fallback: alt.ok ? alt.data : { error: alt.error } };
+    ins = alt;
+  } else {
+    out.rawInsights = ins.data;
+  }
   if (ins.ok && Array.isArray(ins.data.data)) {
     for (const m of ins.data.data) {
-      const vals = Array.isArray(m.values) ? m.values : [];
-      const last = vals.length ? vals[vals.length - 1].value : null;
-      if (m.name === "reach") out.reach = last;
-      if (m.name === "profile_views") out.profile_views = last;
+      // v21+ отдаёт агрегат в total_value.value; старая форма — в values[последний].value
+      let v = null;
+      if (m.total_value && m.total_value.value != null) v = m.total_value.value;
+      else if (Array.isArray(m.values) && m.values.length) v = m.values[m.values.length - 1].value;
+      if (m.name === "reach") out.reach = v;
+      if (m.name === "profile_views") out.profile_views = v;
     }
   } else out.errors.push("insights: " + (ins.error || "нет data"));
 
@@ -190,27 +204,46 @@ function assessPeriodAlignment(ads, ff) {
   return { aligned: true, target, adsMonth, month: target };
 }
 
+// ── СОГЛАСОВАННОСТЬ ВАЛЮТ (критично для CAC/ROAS — та же ловушка, что и с периодами) ─────────────
+// revenue приходит из CRM в UZS (контракт docs/hunter-ai-integration-spec.md). spend приходит из Meta
+// в валюте рекламного аккаунта (её кладёт meta-ads.js в кэш meta_spend.currency). ROAS = revenue/spend
+// без конверсии = деление РАЗНЫХ валют → молча неверное число (то самое 300 000x вместо ~25x).
+// Правило: считаем ТОЛЬКО если обе стороны приведены к UZS по явному проверяемому курсу; иначе —
+// «не диагностируется». Возвращаем spend, приведённый к UZS (spendUZS), которым и считаются метрики.
+function assessCurrencyAlignment(ads) {
+  const raw = ads.available && ads.total ? ads.total.spend : null;
+  if (raw == null) return { aligned: false, adCurrency: null, reason: "нет расходов (кэш meta_spend пуст)" };
+  const cur = (ads.currency || "").toUpperCase();
+  if (!cur) return { aligned: false, adCurrency: null, spendRaw: raw, reason: "валюта рекламного аккаунта неизвестна (в кэше meta_spend нет currency — обнови /api/meta-ads?action=refresh)" };
+  if (cur === REVENUE_CCY) return { aligned: true, adCurrency: cur, rate: 1, spendRaw: raw, spendUZS: raw, note: `валюта аккаунта = ${REVENUE_CCY}, конверсия не нужна` };
+  if (cur === "USD") return { aligned: true, adCurrency: "USD", rate: USD_UZS_RATE, spendRaw: raw, spendUZS: Math.round(raw * USD_UZS_RATE), note: `USD→UZS по курсу ${USD_UZS_RATE}` };
+  // другая валюта, курса нет — НЕ считаем числом
+  return { aligned: false, adCurrency: cur, spendRaw: raw, reason: `revenue в ${REVENUE_CCY}, adspend в ${cur}, курс конвертации не задан` };
+}
+
 // CAC и ROAS с дисциплиной «не диагностируется» (то же правило, что growth-agent применяет к переходам).
-// ВАЖНО: сначала период-гейт (окна сошлись?), потом — наличие/trust данных. Если окна разъехались —
-// метрика НЕ выдаётся числом, даже когда оба куска формально есть.
-function computeUnitEconomics(ads, ff, period) {
-  const spend = ads.available && ads.total ? ads.total.spend : null;
-  // общий гейт для обеих метрик: adspend есть → окна сошлись → нужные данные verified
+// ВАЖНО: сначала два гейта — период (окна сошлись?) и валюта (приведены к одной?), потом наличие/trust.
+// Если окна ИЛИ валюты разъехались — метрика НЕ выдаётся числом, даже когда оба куска формально есть.
+// Считаем на spendUZS (adspend, приведённый к UZS), чтобы обе метрики были в одной валюте с выручкой.
+function computeUnitEconomics(ads, ff, period, currency) {
+  const rawSpend = ads.available && ads.total ? ads.total.spend : null;
+  const spendUZS = currency.aligned ? currency.spendUZS : null;
   const gate = (dataOk, dataReason, compute) => {
-    if (!spend) return { undiagnosable: "нет расходов на рекламу (кэш meta_spend пуст или spend=0)" };
+    if (!rawSpend) return { undiagnosable: "нет расходов на рекламу (кэш meta_spend пуст или spend=0)" };
     if (!period.aligned) return { undiagnosable: `adspend и данные продаж за разные периоды — ${period.reason}` };
+    if (!currency.aligned) return { undiagnosable: `adspend и выручка в разных валютах — ${currency.reason}` };
     if (!dataOk) return { undiagnosable: dataReason };
     return compute();
   };
   const cac = gate(
     ff.customers != null && ff.trust === "verified",
     `число клиентов не verified (trust=${ff.trust}) — считаем по выигранным сделкам, они сейчас недоступны/ненадёжны`,
-    () => ({ value: Math.round(spend / ff.customers), spend, customers: ff.customers, period: period.month, note: "клиент = выигранная сделка (Sotildi); окно — текущий месяц, единое с adspend" })
+    () => ({ value: Math.round(spendUZS / ff.customers), currency: REVENUE_CCY, spendUZS, spendRaw: currency.spendRaw, adCurrency: currency.adCurrency, rate: currency.rate, customers: ff.customers, period: period.month, note: "клиент = выигранная сделка (Sotildi); adspend приведён к UZS, окно — текущий месяц" })
   );
   const roas = gate(
     ff.revenue != null && ff.trust === "verified",
     `выручка не verified (trust=${ff.trust})`,
-    () => ({ value: r2(ff.revenue / spend), revenue: ff.revenue, spend, period: period.month })
+    () => ({ value: r2(ff.revenue / spendUZS), revenue: ff.revenue, spendUZS, spendRaw: currency.spendRaw, adCurrency: currency.adCurrency, rate: currency.rate, period: period.month })
   );
   return { cac, roas };
 }
@@ -267,15 +300,23 @@ function buildDigest(snap) {
   const undiag = []; // сюда собираем явные «не диагностируется»
   const dyn = snap.dynamics || {};
 
+  // (0) Реальная трата на рекламу по цифрам Meta: raw в валюте аккаунта + приведение к UZS
+  const cy = snap.currency || {};
+  if (snap.ads.available && cy.spendRaw != null) {
+    if (cy.adCurrency === "USD" && cy.spendUZS != null) L.push(`• Реклама по Meta: $${fmtMoney(cy.spendRaw)} ≈ <b>${fmtMoney(cy.spendUZS)} сум</b> (курс ${cy.rate}).`);
+    else if (cy.adCurrency === REVENUE_CCY) L.push(`• Реклама по Meta: <b>${fmtMoney(cy.spendRaw)} сум</b>.`);
+    else L.push(`• Реклама по Meta: ${fmtMoney(cy.spendRaw)} ${cy.adCurrency || "?"} (в сум не привёл — ${cy.reason || "нет курса"}).`);
+  }
+
   // (1) Главная метрика недели: CAC или ROAS — что сильнее изменилось WoW
   const cac = snap.unit.cac, roas = snap.unit.roas;
   const cacMove = dyn.cac && dyn.cac.pct != null ? Math.abs(dyn.cac.pct) : -1;
   const roasMove = dyn.roas && dyn.roas.pct != null ? Math.abs(dyn.roas.pct) : -1;
   if (cacMove < 0 && roasMove < 0) {
     // нет WoW-сравнения — показываем абсолютные, если посчитались
-    if (cac.value != null) L.push(`• CAC: <b>${fmtMoney(cac.value)}</b> за клиента (${cac.customers} сделок / реклама ${fmtMoney(cac.spend)}). Динамики нет — нужна неделя истории.`);
+    if (cac.value != null) L.push(`• CAC: <b>${fmtMoney(cac.value)} сум</b> за клиента (${cac.customers} сделок / реклама ${fmtMoney(cac.spendUZS)} сум). Динамики нет — нужна неделя истории.`);
     else undiag.push(`CAC — ${cac.undiagnosable}`);
-    if (roas.value != null) L.push(`• ROAS: <b>${roas.value}×</b> (выручка ${fmtMoney(roas.revenue)} / реклама ${fmtMoney(roas.spend)}).`);
+    if (roas.value != null) L.push(`• ROAS: <b>${roas.value}×</b> (выручка ${fmtMoney(roas.revenue)} / реклама ${fmtMoney(roas.spendUZS)} сум).`);
     else undiag.push(`ROAS — ${roas.undiagnosable}`);
   } else if (cacMove >= roasMove) {
     const dir = dyn.cac.abs > 0 ? "вырос (хуже)" : "снизился (лучше)";
@@ -332,10 +373,11 @@ export async function runMarketingDaily(org = ORG, force = false) {
   const ads = deriveAds(adsCache);
   const ff = funnelFacts(funnel);
   const period = assessPeriodAlignment(ads, ff);      // окна adspend и продаж сходятся?
-  const unit = computeUnitEconomics(ads, ff, period);
+  const currency = assessCurrencyAlignment(ads);      // валюты приведены к одной (UZS)?
+  const unit = computeUnitEconomics(ads, ff, period, currency);
 
   const day = tkDay();
-  const snap = { org, day, generatedAt: new Date().toISOString(), ads, instagram: ig, funnel: ff, period, unit };
+  const snap = { org, day, generatedAt: new Date().toISOString(), ads, instagram: ig, funnel: ff, period, currency, unit };
 
   // WoW: подтягиваем историю, находим точку ~7 дней назад, считаем динамику
   const history = await rgetJSON(K.history, []);
@@ -376,6 +418,22 @@ export default async function handler(req, res) {
   try {
     if (action === "daily") { res.status(200).json(await runMarketingDaily(ORG, req.query && req.query.force === "1")); return; }
     if (action === "state") { res.status(200).json({ snapshot: await rgetJSON(K.snapshot, null), lastrun: await rgetJSON(K.lastrun, null) }); return; }
+    if (action === "ui") {
+      // ЖИВОЙ расчёт для панели дашборда: без записи снапшота и без телеграма owner (IG — из кэша).
+      const [adsCache, ig, funnel] = await Promise.all([rgetJSON("meta_spend", null), getInstagram(false), getVerifiedFunnel(ORG).catch(() => null)]);
+      const ads = deriveAds(adsCache);
+      const ff = funnelFacts(funnel);
+      const period = assessPeriodAlignment(ads, ff);
+      const currency = assessCurrencyAlignment(ads);
+      const unit = computeUnitEconomics(ads, ff, period, currency);
+      res.status(200).json({
+        ok: true, day: tkDay(),
+        ads: { available: ads.available, reason: ads.reason || null, currency: ads.currency || null, period: ads.period || null, updatedAt: ads.updatedAt || null, total: ads.total, adsets: ads.adsets },
+        instagram: ig.ok ? { ok: true, followers_count: ig.followers_count, media_count: ig.media_count, reach: ig.reach, profile_views: ig.profile_views, media: ig.media } : { ok: false, error: ig.error },
+        funnel: ff, period, currency, unit,
+      });
+      return;
+    }
     if (action === "peek") {
       // ЧТО агент видит на входе — БЕЗ записи в Redis (Instagram тянем свежим, но не кэшируем).
       const [adsCache, ig, funnel] = await Promise.all([
@@ -386,13 +444,18 @@ export default async function handler(req, res) {
       const ads = deriveAds(adsCache);
       const ff = funnelFacts(funnel);
       const period = assessPeriodAlignment(ads, ff);
-      const unit = computeUnitEconomics(ads, ff, period);
+      const currency = assessCurrencyAlignment(ads);
+      const unit = computeUnitEconomics(ads, ff, period, currency);
+      const debug = req.query && req.query.debug === "1";
       res.status(200).json({
         ok: true,
-        ads: { available: ads.available, reason: ads.reason || null, period: ads.period || null, adsetCount: ads.adsets.length, total: ads.total },
-        instagram: ig.ok ? { ok: true, followers_count: ig.followers_count, reach: ig.reach, profile_views: ig.profile_views, mediaCount: ig.media.length } : { ok: false, error: ig.error, errors: ig.errors },
+        ads: { available: ads.available, reason: ads.reason || null, period: ads.period || null, currency: ads.currency || null, adsetCount: ads.adsets.length, total: ads.total },
+        instagram: ig.ok
+          ? { ok: true, followers_count: ig.followers_count, media_count: ig.media_count, reach: ig.reach, profile_views: ig.profile_views, mediaCount: ig.media.length, errors: ig.errors, ...(debug ? { rawInsights: ig.rawInsights || null } : {}) }
+          : { ok: false, error: ig.error, errors: ig.errors, ...(debug ? { rawInsights: ig.rawInsights || null } : {}) },
         funnel: ff,
         period,          // {aligned, target, adsMonth, reason} — видно, за одно ли окно считаются CAC/ROAS
+        currency,        // {aligned, adCurrency, rate, spendRaw, spendUZS, reason} — валютная сверка ROAS
         unit,
       });
       return;

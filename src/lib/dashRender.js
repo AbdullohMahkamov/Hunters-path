@@ -451,6 +451,7 @@ export function applySuspicious(d) {
   loadSuspReviewed()
   loadOrgSettings()
   loadMetaSpend()
+  loadMarketingAgent()
 }
 
 async function loadSuspReviewed() {
@@ -700,6 +701,60 @@ async function loadMetaSpend() {
     const d = await r.json()
     if (d && d.ok) { _metaSpend = d; renderAdsets(_lastDashData) }
   } catch (e) { /* ignore */ }
+}
+// ===== АГЕНТ-МАРКЕТОЛОГ: панель юнит-метрик (CAC/ROAS с валютной сверкой) + выводы (только админ) =====
+let _marketingData = null
+async function loadMarketingAgent() {
+  if (getRole() !== 'admin' || !getSession()) return
+  try {
+    const r = await fetch('/api/marketing-agent?action=ui&session=' + encodeURIComponent(getSession()))
+    const d = await r.json()
+    if (d && d.ok) { _marketingData = d; const blk = document.getElementById('marketingAgentBlock'); if (blk) blk.style.display = ''; renderMarketingAgent(d) }
+  } catch (e) { /* ignore — панель просто не покажется */ }
+}
+function mUndiag(x) { return (x && x.undiagnosable) ? x.undiagnosable : null }
+function renderMarketingAgent(m) {
+  const box = document.getElementById('marketingAgentPanel'); if (!box) return
+  const num = (n) => n == null ? '—' : Number(n).toLocaleString('ru-RU')
+  const cy = m.currency || {}, unit = m.unit || {}, ads = m.ads || {}, ig = m.instagram || {}
+  const cac = unit.cac || {}, roas = unit.roas || {}, t = ads.total || {}
+  const card = (label, value, sub, color) => `<div style="background:var(--card2);border-radius:10px;padding:10px 12px;min-width:0;">
+    <div style="font-size:10.5px;color:var(--txt2);">${label}</div>
+    <div style="font-size:18px;font-weight:800;color:${color || 'var(--txt)'};line-height:1.2;">${value}</div>
+    ${sub ? `<div style="font-size:10.5px;color:var(--txt3);margin-top:2px;">${sub}</div>` : ''}</div>`
+  // реальная трата на рекламу по Meta (raw + приведение к UZS)
+  let spendVal = '—', spendSub = ''
+  if (ads.available && cy.spendRaw != null) {
+    if (cy.adCurrency === 'USD' && cy.spendUZS != null) { spendVal = num(cy.spendUZS) + ' сум'; spendSub = '$' + num(cy.spendRaw) + ' · курс ' + cy.rate }
+    else if (cy.adCurrency === 'UZS') { spendVal = num(cy.spendRaw) + ' сум' }
+    else { spendVal = num(cy.spendRaw) + ' ' + (cy.adCurrency || '?'); spendSub = 'в сум не привёл — нет курса' }
+  } else if (!ads.available) { spendSub = ads.reason || 'нет кэша Meta' }
+  const roasVal = roas.value != null ? roas.value + '×' : '—'
+  const roasColor = roas.value == null ? 'var(--txt3)' : (roas.value >= 1 ? 'var(--green)' : 'var(--red)')
+  const cacVal = cac.value != null ? num(cac.value) + ' сум' : '—'
+  const cards = [
+    card('Реклама по Meta (реально)', spendVal, spendSub, 'var(--accent)'),
+    card('ROAS', roasVal, roas.value != null ? 'выручка ÷ реклама' : (mUndiag(roas) ? 'не диагностируется' : ''), roasColor),
+    card('CAC (за клиента)', cacVal, cac.value != null ? cac.customers + ' сделок' : (mUndiag(cac) ? 'не диагностируется' : ''), 'var(--txt)'),
+    card('CTR / CPC / CPM', (t.ctr != null ? t.ctr + '%' : '—'), (t.cpc != null ? 'CPC ' + num(t.cpc) + ' · ' : '') + (t.cpm != null ? 'CPM ' + num(t.cpm) : ''), 'var(--txt)'),
+  ]
+  if (ig.ok) cards.push(card('Instagram', num(ig.followers_count) + ' подпис.', ig.reach != null ? 'reach ' + num(ig.reach) : 'reach н/д', 'var(--txt)'))
+  // ВЫВОДЫ — детерминированные, из тех же чисел
+  const concl = []
+  if (mUndiag(roas)) concl.push('⚠️ ROAS не диагностируется: ' + roas.undiagnosable)
+  else if (roas.value != null) { if (roas.value >= 3) concl.push('✅ Реклама окупается: ROAS ' + roas.value + '× — на 1 сум рекламы ' + roas.value + ' сум выручки.'); else if (roas.value < 1) concl.push('🔴 Реклама в минус: ROAS ' + roas.value + '× (<1).'); else concl.push('🟡 Реклама на грани: ROAS ' + roas.value + '×.') }
+  if (mUndiag(cac) && !mUndiag(roas)) concl.push('⚠️ CAC не диагностируется: ' + cac.undiagnosable)
+  if (m.period && !m.period.aligned) concl.push('⚠️ Периоды adspend/продаж разошлись: ' + m.period.reason)
+  if (cy && !cy.aligned && cy.reason) concl.push('⚠️ Валюта: ' + cy.reason)
+  if (!ig.ok) concl.push('ℹ️ Instagram выключен: ' + (ig.error || 'нет данных') + ' — нужны права токена instagram_basic + instagram_manage_insights и META_IG_USER_ID.')
+  if (!concl.length) concl.push('Данных достаточно, критичных отклонений нет.')
+  box.innerHTML = `
+    <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(150px,1fr));gap:8px;">${cards.join('')}</div>
+    <div style="margin-top:10px;font-size:10.5px;color:var(--txt3);">Окно: текущий месяц${m.period && m.period.target ? (' (' + m.period.target + ')') : ''} · валюта аккаунта: ${cy.adCurrency || 'н/д'}${ads.updatedAt ? (' · Meta обновлён ' + new Date(ads.updatedAt).toLocaleDateString('ru-RU')) : ''}</div>
+    <div style="margin-top:8px;padding-top:8px;border-top:1px solid var(--line);">
+      <div style="font-size:11px;font-weight:700;color:var(--txt2);margin-bottom:4px;">Выводы</div>
+      ${concl.map((c) => `<div style="font-size:12px;color:var(--txt);margin-bottom:3px;line-height:1.35;">${c}</div>`).join('')}
+    </div>`
 }
 async function refreshMetaSpend() {
   const btn = document.getElementById('metaRefreshBtn')

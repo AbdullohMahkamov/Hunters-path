@@ -82,7 +82,15 @@ export default async function handler(req, res) {
       name, spend: Math.round(e.spend), impressions: e.impressions, clicks: e.clicks,
     }));
 
-    const result = { updatedAt: new Date().toISOString(), period: `${fmt(since)}..${fmt(now)}`, adsets: adsetsSpend };
+    // ВАЛЮТА рекламного аккаунта — критично: spend Meta может быть в USD, а выручка в CRM — в UZS.
+    // Без явной валюты ROAS = revenue(UZS)/spend(USD) молча неверен. Забираем currency прямо из Graph.
+    try {
+      const cr = await fetch(`https://graph.facebook.com/${GRAPH_VERSION}/${adAccount}?fields=currency&access_token=${metaToken}`);
+      const cd = await cr.json();
+      if (cd && cd.currency) currency = cd.currency;
+    } catch (e) {}
+
+    const result = { updatedAt: new Date().toISOString(), period: `${fmt(since)}..${fmt(now)}`, currency: currency || null, adsets: adsetsSpend };
     await redisSet(redisUrl, redisToken, "meta_spend", JSON.stringify(result));
     res.status(200).json({ ok: true, ...result });
   } catch (e) {
