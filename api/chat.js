@@ -517,9 +517,14 @@ export default async function handler(req, res) {
       messages: messages,
       stream: true,
     };
-    // ВИДИМОЕ «ДУМАНЬЕ» советника (по просьбе владельца): extended thinking на содержательных ответах.
-    // Тривиальным (приветствия, Haiku) не нужно. budget на рассуждение + запас max_tokens на сам ответ.
-    if (!trivial) { anthropicReq.thinking = { type: "enabled", budget_tokens: 1600 }; anthropicReq.max_tokens = 4200; }
+    // ВИДИМОЕ «ДУМАНЬЕ» советника (по просьбе владельца). Sonnet-5: adaptive thinking (старый budget_tokens
+    // даёт 400), глубина — через output_config.effort; display:"summarized" даёт читаемую сводку рассуждения
+    // (иначе thinking-блоки приходят пустыми). Тривиальным (приветствия, Haiku) не нужно.
+    if (!trivial) {
+      anthropicReq.thinking = { type: "adaptive", display: "summarized" };
+      anthropicReq.output_config = { effort: "medium" };
+      anthropicReq.max_tokens = 4000; // total = рассуждение + ответ
+    }
 
     const r = await fetch("https://api.anthropic.com/v1/messages", {
       method: "POST",
