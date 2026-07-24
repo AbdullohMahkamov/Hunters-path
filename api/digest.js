@@ -7,6 +7,8 @@
 // с ЧЕСТНОЙ фразой уверенности (никогда не завышаем) и шлёт. Логику находок агентов НЕ трогаем —
 // меняется только ФОРМА подачи. Пороги/confidence/trust-гейты остаются в самих агентах.
 
+import { sleep } from "./tg-bot.js"; // общий хелпер паузы (без дубликатов)
+
 const REDIS_URL = process.env.UPSTASH_REDIS_REST_URL;
 const REDIS_TOKEN = process.env.UPSTASH_REDIS_REST_TOKEN;
 const DIGEST_TOKEN = process.env.TELEGRAM_DIGEST_BOT_TOKEN || "";
@@ -151,7 +153,7 @@ async function digestSweep(opts = {}) {
     const token = genToken();
     await saveHandoff(token, x.kind, x.item); // контекст для кнопки «Обсудить с помощником»
     const r = await sendDigest(text, handoffKb(token));
-    if (r.ok) { sent[x.id] = Date.now(); sentNow.push({ kind: x.kind, id: x.id }); }
+    if (r.ok) { sent[x.id] = Date.now(); sentNow.push({ kind: x.kind, id: x.id }); await sleep(400); } // пауза между отправками в один чат владельца
   }
   await rsetJSON(SENT_KEY, capSent(sent));
   return { ok: true, considered: all.length, fresh: fresh.length, sent: sentNow.length, sentNow, remaining: fresh.length - sentNow.length };

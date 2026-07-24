@@ -85,7 +85,7 @@
     },
     {
       "path": "/api/task-agent?action=tick&cron=1",
-      "schedule": "0 4-9 * * *"
+      "schedule": "10 4-9 * * *"
     },
     {
       "path": "/api/digest?action=cron-sweep",

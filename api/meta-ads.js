@@ -31,6 +31,16 @@ export default async function handler(req, res) {
       return;
     }
 
+    // ЗАЩИТА ДОСТУПА: refresh дёргает ЖИВОЙ Meta API → закрыт cron-секретом (Vercel шлёт крону
+    // Authorization: Bearer $CRON_SECRET). Ручной вызов из браузера без секрета → понятный 401.
+    // action=get выше остаётся открытым — он читает только Redis-кэш и в Meta не ходит.
+    const cronSecret = process.env.CRON_SECRET || "";
+    const authHeader = (req.headers && (req.headers.authorization || req.headers.Authorization)) || "";
+    if (!cronSecret || authHeader !== `Bearer ${cronSecret}`) {
+      res.status(401).json({ ok: false, error: "unauthorized: /api/meta-ads?action=refresh требует cron-секрет (эндпоинт вызывается по расписанию). Данные для дашборда берите через action=get." });
+      return;
+    }
+
     // refresh — тянем свежие расходы из Meta
     if (!metaToken || !adAccount) {
       res.status(200).json({ ok: false, error: "META_TOKEN или META_AD_ACCOUNT_ID не заданы в переменных окружения" });

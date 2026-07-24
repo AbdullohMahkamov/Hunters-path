@@ -13,8 +13,8 @@ import { getSession } from '../lib/session.js'
 import { SCENE_AGENTS } from '../lib/sceneAdapters.js'
 
 const RW = 352, RH = 224
-const NAME = { dev: 'Менеджер по аналитике', growth: 'Агент по развитию', task: 'Тренер', mop: 'Супервайзер', ceo: 'ALTRONE' }
-const ACC = { dev: '#3b9eff', growth: '#27c08a', task: '#f2b134', mop: '#9b8cff', ceo: '#e0667a' }
+const NAME = { dev: 'Менеджер по аналитике', growth: 'Агент по развитию', task: 'Тренер', mop: 'Супервайзер', ceo: 'ALTRONE', marketing: 'Маркетолог' }
+const ACC = { dev: '#3b9eff', growth: '#27c08a', task: '#f2b134', mop: '#9b8cff', ceo: '#e0667a', marketing: '#f2683c' }
 const ZONES = {
   dev: { pts: [[52, 95], [95, 90], [115, 100]], att: [128, 66] },
   growth: { pts: [[52, 190], [95, 185], [115, 195]], att: [128, 178] },
@@ -22,6 +22,8 @@ const ZONES = {
   mop: { pts: [[288, 150], [278, 182], [298, 162]], att: [290, 178] },
   // CEO — стартует в коридоре и непрерывно ходит по всем комнатам (см. CEO_LOOP). att не используется: он не замирает.
   ceo: { pts: [[156, 167]], att: [156, 167] }, // старт на сквозном проходе
+  // Маркетолог — в комнате «Аналитика» (средний ряд слева), бродит по своим точкам как остальные агенты
+  marketing: { pts: [[58, 150], [98, 146], [126, 152]], att: [140, 132] },
 }
 // МАРШРУТ CEO — по СКВОЗНОМУ проходу y=167 (проверено по маске пола: непрерывное дерево x62..335,
 // вся ширина офиса). Пол в room.png нарезан рядами столов и стенами на несвязные карманы, и это
@@ -57,7 +59,7 @@ const FLOW_KEY = { 'dev-agent>growth-agent': 'd2g', 'mop-agent>task-agent': 'm2t
 // декоративные — mop1..5 и rop (в /decor/); агенты — dev/growth/task/mop (в /characters/).
 // ВАЖНО: агент 'mop' (Супервайзер) НЕ decor — иначе тянулся бы несуществующий decor/mop.png и спрайт пропадал.
 // CEO (временно) переиспользует лист dev.png + CSS hue-rotate (см. ниже) — до появления настоящего ceo.png.
-const imgFor = (id) => id === 'ceo' ? `/assets/scene/characters/dev.png` : ((/^mop[1-5]$/.test(id) || id === 'rop') ? `/assets/scene/characters/decor/${id}.png` : `/assets/scene/characters/${id}.png`)
+const imgFor = (id) => id === 'ceo' ? `/assets/scene/characters/dev.png` : id === 'marketing' ? `/assets/scene/characters/growth.png` : ((/^mop[1-5]$/.test(id) || id === 'rop') ? `/assets/scene/characters/decor/${id}.png` : `/assets/scene/characters/${id}.png`)
 
 export default function ScenePanel({ active = true }) {
   const hostRef = useRef(null)
@@ -91,6 +93,8 @@ export default function ScenePanel({ active = true }) {
     for (const id of agentIds) { const z = ZONES[id]; A[id] = mk(id, z.pts[0][0], z.pts[0][1], false, NAME[id], ACC[id]); A[id].pts = z.pts; A[id].sayWork = NAME[id] }
     // CEO — ВРЕМЕННЫЙ перекрас: тот же лист dev.png, но сдвиг тона в тёплый (отличается от 4 операционных). Заменить фильтр на настоящий ceo.png, когда будет.
     if (A.ceo) A.ceo.spr.style.filter = 'hue-rotate(135deg) saturate(1.35) brightness(1.03)'
+    // Маркетолог — тот же лист growth.png (зелёный), сдвиг тона в оранжевый (отличается от 5 остальных). Заменить на настоящий marketing.png, когда будет.
+    if (A.marketing) A.marketing.spr.style.filter = 'hue-rotate(-70deg) saturate(1.4) brightness(1.02)'
     DECOR.forEach((d, i) => { const a = mk(d.id, d.home[0], d.home[1], true, d.name, '#b0aa9c'); a.home = d.home; a.homeDir = d.dir; a.dir = d.dir; a.bubHideUntil = 2500 + i * 2500; if (/^mop[1-5]$/.test(d.id)) { a.presence = 'unknown'; a.hidden = true; a.el.style.display = 'none' } A[d.id] = a }) // только отслеживаемые МОПы скрыты до 1-го ответа; РОП (не в scene-activity) виден всегда
     const ALL = Object.values(A)
 

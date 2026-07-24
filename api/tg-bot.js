@@ -53,6 +53,9 @@ async function clearReplyMarkup(botKind, chatId, messageId) {
 }
 
 // ── ОТПРАВКА от имени бота (экспортируется для task-agent.js) ──
+// небольшая пауза между отправками в один чат — Telegram троттлит частые сообщения подряд (~1/сек в чат)
+export const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
+
 export async function sendTg(botKind, chatId, text, extra) {
   const token = BOT_TOKENS[botKind];
   if (!token || !chatId) return { ok: false, error: "no token or chatId" };

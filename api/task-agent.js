@@ -14,7 +14,7 @@
 // КАНАЛЫ: два служебных бота (api/tg-bot.js): "rop" — диалог с РОПом, "owner" — эскалации владельцу.
 // Эскалации дублируются в UI /dev-agent (вкладка Task Agent).
 
-import { sendTg, getPeople, pushChat, getChat } from "./tg-bot.js";
+import { sendTg, getPeople, pushChat, getChat, sleep } from "./tg-bot.js";
 // MOP Agent не строит свой канал — его находки вливаются в ЭТОТ же список задач РОПа
 // и дальше едут по уже работающей машине: пинг → диалог → порог 13:00 → эскалация владельцу.
 import { getOpenMopFindings, getFreshAutoClosed, closeMopFinding, getMopLastRun, runMopAgent } from "./mop-agent.js";
@@ -636,7 +636,7 @@ export async function runTick(force) {
             : `✅ <b>Автоматически закрыто</b>\n\n«${f.title}»\n\nПри проверке проблема больше не подтвердилась — в данных её уже нет. От вас ничего не требуется.`;
         }
         const r = await sendTg("rop", people.rop.chatId, txt);
-        if (r.ok) { await pushChat({ role: "agent", text: txt, taskId: f.id }); autoClosedNotified.push(f.title); }
+        if (r.ok) { await pushChat({ role: "agent", text: txt, taskId: f.id }); autoClosedNotified.push(f.title); await sleep(400); } // пауза между отправками в один чат
       }
     }
   } catch (e) { /* не блокируем тик */ }
@@ -660,6 +660,7 @@ export async function runTick(force) {
           await rememberMsgTask("rop", r.messageId, t.id); // Reply РОПа на этот пинг → сопоставим с задачей
           st[t.id] = { ...s, pingDay: day, pingAt: Date.now(), state: s.state || "pinged" };
           pinged.push({ id: t.id, title: t.title });
+          await sleep(400); // пауза между пингами в один чат РОПа
         }
       } catch (e) { /* пропускаем задачу */ }
     }
@@ -700,7 +701,7 @@ export async function runTick(force) {
           [{ text: "✅ Снять с контроля", callback_data: `esc:close:${t.id}` }, { text: "✍️ Написать самому", callback_data: `esc:self:${t.id}` }],
         ] } };
         const er = await sendTg("owner", people.owner.chatId, txt, kb);
-        if (er.ok) await rememberMsgTask("owner", er.messageId, t.id); // владелец сможет ответить Reply'ем на эскалацию
+        if (er.ok) { await rememberMsgTask("owner", er.messageId, t.id); await sleep(400); } // reply-контекст + пауза между отправками в один чат
       }
       st[t.id] = { ...s2, escalatedDay: day, escalatedAt: Date.now() };
       escalated.push({ id: t.id, title: t.title, status });

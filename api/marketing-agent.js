@@ -40,7 +40,8 @@ async function rgetJSON(key, dflt) { const raw = await rget(key); if (raw == nul
 async function rsetJSON(key, v) { try { await fetch(`${REDIS_URL}/set/${encodeURIComponent(key)}`, { method: "POST", headers: { Authorization: `Bearer ${REDIS_TOKEN}` }, body: JSON.stringify(v) }); return true; } catch (e) { return false; } }
 async function rsetJSONex(key, v, ttlSec) { try { await fetch(`${REDIS_URL}/set/${encodeURIComponent(key)}?EX=${ttlSec}`, { method: "POST", headers: { Authorization: `Bearer ${REDIS_TOKEN}` }, body: JSON.stringify(v) }); return true; } catch (e) { return false; } }
 
-const K = { snapshot: "marketingagent:snapshot", instagram: "marketingagent:instagram", history: "marketingagent:history", lastrun: "marketingagent:lastrun" };
+const K = { snapshot: "marketingagent:snapshot", instagram: "marketingagent:instagram", history: "marketingagent:history", lastrun: "marketingagent:lastrun", peekLast: "marketingagent:peek:last" };
+const PEEK_MIN_INTERVAL_MS = 60000; // не бить в Meta по peek чаще раза в 60с — вернём кэш последнего peek
 
 // день по ташкентскому времени (UTC+5) — как tkDay в meta-brain
 function tkDay() { return new Date(Date.now() + 5 * 3600000).toISOString().slice(0, 10); }
@@ -435,7 +436,15 @@ export default async function handler(req, res) {
       return;
     }
     if (action === "peek") {
-      // ЧТО агент видит на входе — БЕЗ записи в Redis (Instagram тянем свежим, но не кэшируем).
+      // ТРОТТЛ: peek тянет Instagram свежим (без кэша) — при частых вызовах шторм запросов в Meta.
+      // Не чаще раза в 60с; иначе возвращаем ПОСЛЕДНИЙ кэш peek с throttled:true (не ошибку — отладка не ломается).
+      const now = Date.now();
+      const last = await rgetJSON(K.peekLast, null);
+      if (last && last.at && (now - last.at) < PEEK_MIN_INTERVAL_MS) {
+        res.status(200).json({ ...last.result, throttled: true, cachedAt: new Date(last.at).toISOString() });
+        return;
+      }
+      // ЧТО агент видит на входе (Instagram тянем свежим). Результат кэшируем для троттла выше.
       const [adsCache, ig, funnel] = await Promise.all([
         rgetJSON("meta_spend", null),
         fetchInstagramFresh(),
@@ -447,7 +456,7 @@ export default async function handler(req, res) {
       const currency = assessCurrencyAlignment(ads);
       const unit = computeUnitEconomics(ads, ff, period, currency);
       const debug = req.query && req.query.debug === "1";
-      res.status(200).json({
+      const result = {
         ok: true,
         ads: { available: ads.available, reason: ads.reason || null, period: ads.period || null, currency: ads.currency || null, adsetCount: ads.adsets.length, total: ads.total },
         instagram: ig.ok
@@ -457,7 +466,9 @@ export default async function handler(req, res) {
         period,          // {aligned, target, adsMonth, reason} — видно, за одно ли окно считаются CAC/ROAS
         currency,        // {aligned, adCurrency, rate, spendRaw, spendUZS, reason} — валютная сверка ROAS
         unit,
-      });
+      };
+      await rsetJSON(K.peekLast, { at: now, result });
+      res.status(200).json(result);
       return;
     }
     res.status(400).json({ error: "unknown action" });

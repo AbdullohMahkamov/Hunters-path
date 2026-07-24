@@ -15,7 +15,7 @@
 
 import { getVerifiedFunnel } from "./dev-agent.js";
 import { getCallAnalysisBundle } from "./deepsales.js";
-import { sendTg, getPeople } from "./tg-bot.js";
+import { sendTg, getPeople, sleep } from "./tg-bot.js";
 // growthagent:* и mopagent:* читаем СЫРЫМИ ключами — чтобы НЕ импортировать mop-agent (он импортирует нас → цикл).
 
 const REDIS_URL = process.env.UPSTASH_REDIS_REST_URL;
@@ -301,6 +301,7 @@ export async function runDailyBrain(org = ORG, force = false) {
     const rec = { id, at: nowMs, day: nowDay, ...o, status: "pending" };
     proposals.push(rec); created.push(rec);
     await sendProposalToOwner(rec);
+    await sleep(400); // пауза между предложениями в один чат владельца
   }
   await rsetJSON(K.proposals, proposals.slice(-CAP.proposals));
   await rsetJSON(K.lastrun, { at: nowMs, day: nowDay, observed: observations.length, sent: created.length, diag });
