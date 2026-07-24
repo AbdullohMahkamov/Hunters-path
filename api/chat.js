@@ -517,6 +517,9 @@ export default async function handler(req, res) {
       messages: messages,
       stream: true,
     };
+    // ВИДИМОЕ «ДУМАНЬЕ» советника (по просьбе владельца): extended thinking на содержательных ответах.
+    // Тривиальным (приветствия, Haiku) не нужно. budget на рассуждение + запас max_tokens на сам ответ.
+    if (!trivial) { anthropicReq.thinking = { type: "enabled", budget_tokens: 1600 }; anthropicReq.max_tokens = 4200; }
 
     const r = await fetch("https://api.anthropic.com/v1/messages", {
       method: "POST",
@@ -535,6 +538,7 @@ export default async function handler(req, res) {
     const decoder = new TextDecoder();
     let buffer = "";
     let inTok = 0, outTok = 0; // расход токенов за этот ответ
+    let thinkOpen = false;     // открыт ли блок рассуждения (стримим его в маркерах [[THINK]]…[[/THINK]])
     while (true) {
       const { done, value } = await reader.read();
       if (done) break;
@@ -550,12 +554,15 @@ export default async function handler(req, res) {
           const evt = JSON.parse(payload);
           if (evt.type === "message_start" && evt.message && evt.message.usage) inTok = evt.message.usage.input_tokens || 0;
           if (evt.type === "message_delta" && evt.usage && evt.usage.output_tokens != null) outTok = evt.usage.output_tokens;
-          if (evt.type === "content_block_delta" && evt.delta && evt.delta.type === "text_delta") {
-            res.write(evt.delta.text);
+          if (evt.type === "content_block_start" && evt.content_block && evt.content_block.type === "thinking") { res.write("[[THINK]]"); thinkOpen = true; }
+          if (evt.type === "content_block_delta" && evt.delta) {
+            if (evt.delta.type === "thinking_delta") res.write(evt.delta.thinking || "");
+            else if (evt.delta.type === "text_delta") { if (thinkOpen) { res.write("[[/THINK]]"); thinkOpen = false; } res.write(evt.delta.text); }
           }
         } catch (e) { /* пропускаем неполные */ }
       }
     }
+    if (thinkOpen) res.write("[[/THINK]]"); // на случай, если пришло только рассуждение без текста
     res.write(`\n[[TOK:${inTok},${outTok}]]`); // маркер расхода токенов — фронт покажет мелко под ответом
     res.end();
   } catch (err) {
