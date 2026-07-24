@@ -325,20 +325,13 @@ export default function AppShell({ onLogout }) {
               <div className="side-group-lbl">{uz ? 'So‘nggi chatlar' : 'Недавние чаты'}</div>
               <div className="side-list" id="sideList">
                 {chats.map((c) => {
-                  // подсветка активного чата: inline-стиль перебивал CSS-класс .active (background:none),
-                  // поэтому задаём фон/цвет/жирность прямо здесь — так видно, в каком чате находишься
+                  // Вёрстка — через CSS .side-item/.si-t (как в эталоне): ровный flex, gap у .side-list,
+                  // обрезка троеточием на .si-t (по одной строке, без вертикального реза). Активный — класс .on.
                   const isActive = c.id === state.activeChatId && tab === 'chat'
                   return (
-                    <button key={c.id} className={'side-item' + (isActive ? ' active' : '')} onClick={() => { state.activeChatId = c.id; save(); force((n) => n + 1); applyTab('chat') }}
-                      style={{
-                        display: 'block', width: '100%', textAlign: 'left', border: 'none', cursor: 'pointer',
-                        padding: '8px 10px', marginBottom: 3, lineHeight: 1.3, borderRadius: 8, fontSize: 13, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis',
-                        background: isActive ? 'var(--card2)' : 'none',
-                        color: isActive ? 'var(--txt)' : 'inherit',
-                        fontWeight: isActive ? 600 : 400,
-                        boxShadow: isActive ? 'inset 2px 0 0 var(--accent)' : 'none',
-                      }}>
-                      {c.title || 'Чат'}
+                    <button key={c.id} className={'side-item' + (isActive ? ' on' : '')} onClick={() => { state.activeChatId = c.id; save(); force((n) => n + 1); applyTab('chat') }}>
+                      <svg className="si-ic" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.7" strokeLinecap="round" strokeLinejoin="round"><path d="M21 11.5a8.38 8.38 0 0 1-.9 3.8 8.5 8.5 0 0 1-7.6 4.7 8.38 8.38 0 0 1-3.8-.9L3 21l1.9-5.7a8.38 8.38 0 0 1-.9-3.8 8.5 8.5 0 0 1 4.7-7.6 8.38 8.38 0 0 1 3.8-.9h.5a8.48 8.48 0 0 1 8 8v.5z" /></svg>
+                      <span className="si-t">{c.title || 'Чат'}</span>
                     </button>
                   )
                 })}

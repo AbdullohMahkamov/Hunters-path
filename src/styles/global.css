@@ -682,6 +682,9 @@
   .side-list{flex:1;overflow-y:auto;display:flex;flex-direction:column;gap:3px;-webkit-overflow-scrolling:touch;}
   .side-item{display:flex;align-items:center;gap:8px;padding:9px 10px;border-radius:8px;cursor:pointer;
     font-size:13px;color:var(--txt2);position:relative;}
+  button.side-item{background:none;border:none;width:100%;text-align:left;font-family:inherit;line-height:1.35;}
+  .side-item .si-ic{width:16px;height:16px;flex:0 0 auto;color:var(--txt3);}
+  .side-item:hover .si-ic,.side-item.on .si-ic{color:var(--txt2);}
   .side-item:hover{background:var(--card);}
   .side-item.on{background:var(--card);color:var(--txt);font-weight:500;}
   .side-item .si-t{flex:1;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;}
