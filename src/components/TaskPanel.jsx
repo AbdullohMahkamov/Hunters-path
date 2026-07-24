@@ -5,7 +5,7 @@ import { taskAgent, mopAgent } from '../lib/api.js'
 
 const fmtTime = (ts) => { try { return new Date(ts).toLocaleString('ru', { day: '2-digit', month: '2-digit', hour: '2-digit', minute: '2-digit' }) } catch (e) { return '' } }
 
-// Задачи РОПа приходят ДВУМЯ потоками в одном списке: план Hunter AI и находки MOP Agent (Агент Г).
+// Задачи РОПа приходят ДВУМЯ потоками в одном списке: план Altrone и находки MOP Agent (Агент Г).
 // Бейдж отличает «наладить процесс в отделе» от «поговори с конкретным человеком».
 function ScopeBadge({ t }) {
   if (t.source !== 'mop-agent') return null

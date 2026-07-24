@@ -23,7 +23,7 @@ async function rsetJSON(key, v) { try { await fetch(`${REDIS_URL}/set/${encodeUR
 async function getSession(session) { if (!session) return null; try { const raw = await rget(`session:${session}`); return raw ? JSON.parse(raw) : null; } catch (e) { return null; } }
 function genId(p) { return p + Date.now().toString(36) + Math.random().toString(36).slice(2, 6); }
 
-// rop_task → в план Hunter AI. Task Agent ([api/task-agent.js] loadSalesTasks) читает appdata.customPlan.sales
+// rop_task → в план Altrone. Task Agent ([api/task-agent.js] loadSalesTasks) читает appdata.customPlan.sales
 // и ведёт задачу по полной машине (пинг → диалог → порог 13:00 → эскалация). РОП закрывает её в интерфейсе.
 async function createRopTask({ title, why, deadline, steps }) {
   const app = (await rgetJSON(`appdata:${ORG}`, {})) || {};

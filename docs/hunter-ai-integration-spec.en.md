@@ -1,19 +1,19 @@
-# Hunter AI — Integration API Spec
+# Altrone — Integration API Spec
 
 **Version 1.0**
 
-A document for developers of a CRM system that wants to connect to Hunter AI. You don't need to
-understand Hunter AI's internals — this describes the **single data format** your side must expose.
+A document for developers of a CRM system that wants to connect to Altrone. You don't need to
+understand Altrone's internals — this describes the **single data format** your side must expose.
 Implement it once (a "bridge"), and it works.
 
 ---
 
-## 1. What Hunter AI is and why this integration
+## 1. What Altrone is and why this integration
 
-Hunter AI is an analytics layer that sits on top of your CRM. Once connected, it reads your sales
+Altrone is an analytics layer that sits on top of your CRM. Once connected, it reads your sales
 data (leads, calls, outcomes) and turns it into live dashboards, per-salesperson performance
 metrics, and automatic recommendations for the sales manager. To connect, your CRM **doesn't need
-to know anything about how Hunter AI works** — you just expose your data in one common format
+to know anything about how Altrone works** — you just expose your data in one common format
 described below. Instead of us writing a separate adapter for each CRM, you write a small "bridge"
 to our standard once, and the connection is done.
 
@@ -25,7 +25,7 @@ Two modes are supported. Implementing **either one** is enough; you may do both.
 
 ### Mode A — Pull (default, simplest)
 
-Hunter AI periodically calls **read-only** endpoints on your side. You authenticate our requests
+Altrone periodically calls **read-only** endpoints on your side. You authenticate our requests
 with a **static API key** you issue to us once. The key goes in the `Authorization` header:
 
 ```http
@@ -203,7 +203,7 @@ export — return `is_complete: false` and, if possible, a short explanation in 
 }
 ```
 
-**Why this matters** (in plain terms): Hunter AI builds management decisions on this data — who among
+**Why this matters** (in plain terms): Altrone builds management decisions on this data — who among
 the salespeople is falling behind, where money is leaking, what to advise the manager. If you
 silently return an **incomplete** list without warning, the system will treat it as complete and draw
 a **wrong conclusion** (for example, it will decide a salesperson didn't make calls, when the call
@@ -219,7 +219,7 @@ a false conclusion about a person or a team.
 
 A single endpoint returning all entities for a period at once (separate endpoints are fine too — see FAQ).
 
-**Request from Hunter AI:**
+**Request from Altrone:**
 
 ```http
 GET /hunter/export?updated_since=2026-07-16T00:00:00Z HTTP/1.1

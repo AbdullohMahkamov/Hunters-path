@@ -1,10 +1,10 @@
-// /api/tg-bot.js — ДВА служебных Telegram-бота Hunter AI (НЕ бизнес-бот для клиентов!).
+// /api/tg-bot.js — ДВА служебных Telegram-бота Altrone (НЕ бизнес-бот для клиентов!).
 //   ?bot=rop    — бот для РОПа  (Task Agent ведёт с ним диалог по задачам)
 //   ?bot=owner  — бот для владельца (эскалации Task Agent'а)
 //
 // Существующий api/telegram.js (бизнес-бот, переписка с КЛИЕНТАМИ) не трогаем — там другой режим
 // (business_connection, отправка ОТ ИМЕНИ владельца). Здесь — обычные боты: пишут ОТ СЕБЯ и честно
-// представляются как система Hunter AI (требование ТЗ: не маскироваться под человека).
+// представляются как система Altrone (требование ТЗ: не маскироваться под человека).
 //
 // ENV: TELEGRAM_ROP_BOT_TOKEN, TELEGRAM_OWNER_BOT_TOKEN, TELEGRAM_WEBHOOK_SECRET (общий).
 //
@@ -28,7 +28,7 @@ export const BOT_TOKENS = {
   owner: process.env.TELEGRAM_OWNER_BOT_TOKEN || "",
 };
 const K = { people: "taskagent:people", codes: "taskagent:bindcode", chat: "taskagent:chat" };
-// «Hunter AI Digest» — отдельный бот для человекочитаемых сводок Dev/Growth/MOP агентов (НЕ Task Agent).
+// «Altrone Digest» — отдельный бот для человекочитаемых сводок Dev/Growth/MOP агентов (НЕ Task Agent).
 const DIGEST_TOKEN = process.env.TELEGRAM_DIGEST_BOT_TOKEN || "";
 const DIGEST_KEY = "digest:cfg"; // { chatId, name, boundAt } — кому слать сводки (владелец лично)
 
@@ -131,7 +131,7 @@ export default async function handler(req, res) {
       return;
     }
 
-    // ── HUNTER AI DIGEST: разовое получение chat_id (у digest-бота вебхука нет → getUpdates работает) ──
+    // ── ALTRONE DIGEST: разовое получение chat_id (у digest-бота вебхука нет → getUpdates работает) ──
     if (action === "digest-updates") {
       if (!DIGEST_TOKEN) { res.status(400).json({ error: "нет TELEGRAM_DIGEST_BOT_TOKEN в env" }); return; }
       try {
@@ -210,7 +210,7 @@ export default async function handler(req, res) {
       const who = b.who || q.who || "rop";
       const p = people[who];
       if (!p || !p.chatId) { res.status(200).json({ ok: false, error: `${who} не привязан` }); return; }
-      const r = await sendTg(who, p.chatId, "🤖 <b>Hunter AI</b> — проверка связи. Если вы это видите, бот настроен верно.");
+      const r = await sendTg(who, p.chatId, "🤖 <b>Altrone</b> — проверка связи. Если вы это видите, бот настроен верно.");
       res.status(200).json({ ok: r.ok, result: r });
       return;
     }
@@ -265,15 +265,15 @@ export default async function handler(req, res) {
       const code = text.split(/\s+/)[1] || "";
       const codes = await getCodes();
       if (!code || code.toUpperCase() !== String(codes[kind]).toUpperCase()) {
-        await sendTg(kind, chatId, "🤖 <b>Hunter AI</b>\n\nЭто служебный бот системы Hunter AI. Чтобы подключиться, отправьте:\n<code>/start КОД</code>\n\nКод вам выдаст владелец в панели Hunter AI.");
+        await sendTg(kind, chatId, "🤖 <b>Altrone</b>\n\nЭто служебный бот системы Altrone. Чтобы подключиться, отправьте:\n<code>/start КОД</code>\n\nКод вам выдаст владелец в панели Altrone.");
         res.status(200).json({ ok: true, bind: "bad_code" }); return;
       }
       const people = await getPeople();
       people[kind] = { chatId, name, username, boundAt: Date.now() };
       await rsetJSON(K.people, people);
       const hello = kind === "rop"
-        ? `🤖 <b>Hunter AI</b> — подключено.\n\nЯ система Hunter AI (не человек). Буду писать вам по задачам отдела продаж: напоминать о сроках, спрашивать статус и фиксировать результат по каждой задаче.\n\nОтвечайте мне прямо здесь — я всё зафиксирую.`
-        : `🤖 <b>Hunter AI</b> — подключено.\n\nСюда буду присылать эскалации Task-агента: задача, дословная переписка с РОПом и текущий статус. Решение остаётся за вами.`;
+        ? `🤖 <b>Altrone</b> — подключено.\n\nЯ система Altrone (не человек). Буду писать вам по задачам отдела продаж: напоминать о сроках, спрашивать статус и фиксировать результат по каждой задаче.\n\nОтвечайте мне прямо здесь — я всё зафиксирую.`
+        : `🤖 <b>Altrone</b> — подключено.\n\nСюда буду присылать эскалации Task-агента: задача, дословная переписка с РОПом и текущий статус. Решение остаётся за вами.`;
       await sendTg(kind, chatId, hello);
       await askLang(kind, chatId); // сразу спрашиваем язык общения
       res.status(200).json({ ok: true, bound: kind }); return;
@@ -283,7 +283,7 @@ export default async function handler(req, res) {
     const people = await getPeople();
     const bound = people[kind];
     if (!bound || bound.chatId !== chatId) {
-      await sendTg(kind, chatId, "🤖 <b>Hunter AI</b>\n\nВы не подключены. Отправьте <code>/start КОД</code> (код выдаёт владелец).");
+      await sendTg(kind, chatId, "🤖 <b>Altrone</b>\n\nВы не подключены. Отправьте <code>/start КОД</code> (код выдаёт владелец).");
       res.status(200).json({ ok: true, ignored: "not bound" }); return;
     }
 

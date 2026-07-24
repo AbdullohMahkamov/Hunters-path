@@ -58,7 +58,7 @@ function dayKey() { return mskNow().toISOString().slice(0, 10); }
 function weekKey() { const d = mskNow(); const oneJan = new Date(Date.UTC(d.getUTCFullYear(), 0, 1)); const days = Math.floor((d - oneJan) / 86400000); const w = Math.ceil((days + oneJan.getUTCDay() + 1) / 7); return `${d.getUTCFullYear()}-W${w}`; }
 async function getConfig() { const c = await rgetJSON(K.config, null); return { ...DEFAULT_CONFIG, ...(c || {}) }; }
 
-const SYSTEM = `Ты — Growth-аналитик (Агент Б) для SaaS Hunter AI. Твоя задача — находить ГИПОТЕЗЫ РОСТА продаж для ОДНОГО клиента, сопоставляя его воронку с внешними бенчмарками.
+const SYSTEM = `Ты — Growth-аналитик (Агент Б) для SaaS Altrone. Твоя задача — находить ГИПОТЕЗЫ РОСТА продаж для ОДНОГО клиента, сопоставляя его воронку с внешними бенчмарками.
 
 ЖЁСТКИЕ ПРАВИЛА (нарушать нельзя):
 1. Ты строишь гипотезу ТОЛЬКО на переходе воронки со статусом trust="verified". Если переход "suspicious" или "insufficient" — НЕ выдвигай гипотезу по нему, а явно добавь в "undiagnosable" строку вида «этап X не диагностируется — данные ненадёжны/недостаточны».

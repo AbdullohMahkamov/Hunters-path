@@ -1,4 +1,4 @@
-// api/digest.js — «Hunter AI Digest»: человекочитаемые сводки агентов Dev/Growth/MOP владельцу лично.
+// api/digest.js — «Altrone Digest»: человекочитаемые сводки агентов Dev/Growth/MOP владельцу лично.
 // ЭТО НЕ Task Agent (у того свой бот и свой диалоговый режим). Отдельный бот (TELEGRAM_DIGEST_BOT_TOKEN),
 // получатель — digest:cfg.chatId (владелец, привязывается через tg-bot ?action=digest-bind).
 //
@@ -36,7 +36,7 @@ async function callModel(system, user, maxTokens = 700) {
   return (d.content || []).filter((b) => b.type === "text").map((b) => b.text).join("").trim();
 }
 
-const SYSTEM_DIGEST = `Ты — «Hunter AI Digest». Превращаешь техническую находку внутреннего агента (Dev/Growth/MOP) в КОРОТКОЕ сообщение владельцу бизнеса, который НЕ разработчик.
+const SYSTEM_DIGEST = `Ты — «Altrone Digest». Превращаешь техническую находку внутреннего агента (Dev/Growth/MOP) в КОРОТКОЕ сообщение владельцу бизнеса, который НЕ разработчик.
 
 ЦЕЛЬ: человек понимает с первого взгляда, БЕЗ похода в код — что нашли, почему это важно и насколько это надёжно.
 

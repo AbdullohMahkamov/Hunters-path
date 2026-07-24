@@ -98,7 +98,7 @@ export default function AppShell({ onLogout }) {
       else start = 'chat'
       bootedRef.current = true
       applyTab(start)
-      // Диплинк из «Hunter AI Digest»: ?advisor=<token> → НОВЫЙ чат в Советнике с полным контекстом находки
+      // Диплинк из «Altrone Digest»: ?advisor=<token> → НОВЫЙ чат в Советнике с полным контекстом находки
       if (role !== 'rop') {
         try {
           const advToken = new URLSearchParams(location.search).get('advisor')
@@ -223,7 +223,7 @@ export default function AppShell({ onLogout }) {
           <div className="h-logo" onClick={() => applyTab('map')} style={{ cursor: 'pointer' }}>
             <svg className="ic" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" strokeLinejoin="round"><path d="M4 20L20 4M7 4H4v3M17 20h3v-3M12 12l4-1-1 4z" /></svg>
           </div>
-          <div className="h-title">Hunter AI</div>
+          <div className="h-title">Altrone</div>
           <div style={{ flex: 1 }} />
           <div className="lang">
             <button className={!uz ? 'on' : ''} onClick={() => changeLang('ru')}>РУ</button>
@@ -283,7 +283,7 @@ export default function AppShell({ onLogout }) {
                     {isAdmin && <a className="menu-item" href="/dev-agent" onClick={() => setSecOpen(false)}><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round"><rect x="4" y="8" width="16" height="12" rx="2" /><path d="M12 8V4M9 4h6" /><circle cx="9" cy="14" r="1" /><circle cx="15" cy="14" r="1" /><path d="M2 13v3M22 13v3" /></svg>{uz ? 'Agentlar' : 'Агенты'}</a>}
                   </div>
                 </div>
-                <div className="side-brand" onClick={() => applyTab('chat')} style={{ cursor: 'pointer' }} title="Hunter AI"><div className="side-logo">H</div><span>Hunter AI</span></div>
+                <div className="side-brand" onClick={() => applyTab('chat')} style={{ cursor: 'pointer' }} title="Altrone"><div className="side-logo">A</div><span>Altrone</span></div>
                 {isAdmin && (
                   <div className="notif-wrap" ref={notifWrapRef} style={{ marginLeft: 'auto', marginRight: '-4px', position: 'relative', flex: '0 0 auto' }}>
                     <button className="side-nav-ic notif-bell" onClick={(e) => { e.stopPropagation(); setNotifOpen((v) => !v) }} title={uz ? 'Bildirishnomalar' : 'Уведомления'}>

@@ -140,7 +140,7 @@ export default function Login({ onLoggedIn }) {
           <div style={{ width: 56, height: 56, borderRadius: 15, background: 'var(--accent-bg)', display: 'flex', alignItems: 'center', justifyContent: 'center', margin: '0 auto 12px' }}>
             <svg className="ic" width="26" height="26" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" strokeLinejoin="round"><path d="M4 20L20 4M7 4H4v3M17 20h3v-3M12 12l4-1-1 4z" /></svg>
           </div>
-          <div style={{ fontSize: 20, fontWeight: 700 }}>Hunter AI</div>
+          <div style={{ fontSize: 20, fontWeight: 700 }}>Altrone</div>
           <div style={{ fontSize: 13, color: 'var(--txt2)', marginTop: 3 }}>Выберите вход</div>
         </div>
 

@@ -1,4 +1,4 @@
-# Миграция фронтенда Hunter AI: монолит → React + Vite
+# Миграция фронтенда Altrone: монолит → React + Vite
 
 Живой production SaaS. Backend (`api/`) НЕ трогается. Цель — перенести фронт из
 `public/index.html` (~5500 строк ванильного JS+HTML+CSS) на React + Vite, 1:1 по виду и логике.

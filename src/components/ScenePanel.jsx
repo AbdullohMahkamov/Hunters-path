@@ -13,7 +13,7 @@ import { getSession } from '../lib/session.js'
 import { SCENE_AGENTS } from '../lib/sceneAdapters.js'
 
 const RW = 352, RH = 224
-const NAME = { dev: 'Менеджер по аналитике', growth: 'Агент по развитию', task: 'Тренер', mop: 'Супервайзер', ceo: 'CEO' }
+const NAME = { dev: 'Менеджер по аналитике', growth: 'Агент по развитию', task: 'Тренер', mop: 'Супервайзер', ceo: 'ALTRONE' }
 const ACC = { dev: '#3b9eff', growth: '#27c08a', task: '#f2b134', mop: '#9b8cff', ceo: '#e0667a' }
 const ZONES = {
   dev: { pts: [[52, 95], [95, 90], [115, 100]], att: [128, 66] },

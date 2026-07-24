@@ -122,7 +122,7 @@ const mopAdapter = {
 // в OWNER-БОТЕ (Telegram), не в вебе — поэтому карточка ИНФОРМАЦИОННАЯ, без кнопок-действий
 // (та же честность, что у Task Agent: не рисуем на сцене кнопку, которой в вебе нет).
 const ceoAdapter = {
-  id: 'ceo', name: 'CEO', role: 'сверяет сигналы агентов', accent: '#e0667a', attr: 'folder',
+  id: 'ceo', name: 'ALTRONE', role: 'сверяет сигналы агентов', accent: '#e0667a', attr: 'folder',
   load: async () => {
     const d = await metaBrain.state()
     const props = (d && d.proposals) || []

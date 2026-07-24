@@ -62,7 +62,7 @@ const BANDS = [
 ];
 // призы по умолчанию (крупные на квартальных вехах 3/6/9/12)
 const LEVEL_PRIZES = [
-  { prizeName: "Стикерпак Hunter", prizeValue: 10000 },
+  { prizeName: "Стикерпак Altrone", prizeValue: 10000 },
   { prizeName: "Фирменная кружка", prizeValue: 30000 },
   { prizeName: "TWS-наушники", prizeValue: 150000 },
   { prizeName: "Ваучер 50 000", prizeValue: 50000 },
