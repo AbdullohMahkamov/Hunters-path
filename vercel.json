@@ -118,6 +118,10 @@
     {
       "path": "/api/marketing-agent?action=daily&cron=1",
       "schedule": "45 4 * * *"
+    },
+    {
+      "path": "/api/meta-ads?action=refresh",
+      "schedule": "0 */4 * * *"
     }
   ]
 }

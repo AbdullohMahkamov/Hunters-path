@@ -694,6 +694,24 @@ let _adsetsExpanded = false
 let _metaSpend = null
 let _autoMargin = null
 let _autoMarginTried = false
+const MKT_USD_UZS = 12100 // курс USD→UZS для конверсии расходов Meta (аккаунт в USD); тот же, что в marketing-agent
+// расход Meta → в сумы по валюте аккаунта из кэша meta_spend.currency (без конверсии ROAS был бы неверен в тысячи раз)
+function metaSpendToUZS(spend) {
+  if (spend == null) return null
+  const cur = ((_metaSpend && _metaSpend.currency) || '').toUpperCase()
+  if (cur === 'UZS') return spend
+  return Math.round(spend * MKT_USD_UZS) // USD или пустая валюта (аккаунт USD) → конвертируем
+}
+function getCplNorm() { return orgSettings.cplNorm != null ? orgSettings.cplNorm : 15000 } // ориентир CPL edtech B2C (сум), редактируемый
+function editCplNorm() {
+  const uz = state.lang === 'uz'
+  const cur = orgSettings.cplNorm != null ? orgSettings.cplNorm : 15000
+  const inp = prompt(uz ? 'Bozor bo‘yicha lid narxi ORIYENTIRI (so‘m):' : 'Ориентир цены за лида по рынку (сум):', cur)
+  if (inp === null) return
+  const s = parseInt(String(inp).replace(/[^0-9]/g, ''), 10)
+  if (!s || s <= 0) { alert(uz ? 'Nol emas' : 'Введите число больше нуля'); return }
+  orgSettings.cplNorm = s; saveOrgSettings({ cplNorm: s }); renderAdsets(_lastDashData)
+}
 function toggleAdsets() { _adsetsExpanded = !_adsetsExpanded; renderAdsets(_lastDashData) }
 async function loadMetaSpend() {
   try {
@@ -837,7 +855,7 @@ function renderAdsets(d) {
     avgCheck: isAll ? a.avgCheck : (a.avgCheckMonth != null ? a.avgCheckMonth : a.avgCheck),
   })).filter((a) => a.leads > 0 || a.revenue > 0).sort((x, y) => y.revenue - x.revenue)
   const spendMap = {}
-  if (_metaSpend && _metaSpend.adsets) for (const s of _metaSpend.adsets) spendMap[s.name] = s.spend
+  if (_metaSpend && _metaSpend.adsets) for (const s of _metaSpend.adsets) spendMap[s.name] = metaSpendToUZS(s.spend) // в сумах (конвертировано)
   const hasSpend = _metaSpend && _metaSpend.adsets && _metaSpend.adsets.length
   if (!arr.length) {
     box.innerHTML = '<div style="font-size:12px;color:var(--txt3);">' + (uz ? 'Bu davr uchun manba maʼlumoti yoʻq' : 'Нет данных об источниках за этот период') + '</div>'
@@ -846,38 +864,50 @@ function renderAdsets(d) {
   let summaryHtml = ''
   if (isAdmin) {
     const adRevenue = arr.reduce((s, a) => s + (a.revenue || 0), 0)
-    const adSpend = getAdSpendForPeriod(isAll)
+    // расход БОЛЬШЕ не вводится вручную — берём реальные цифры Meta (все adset), приведённые к сумам
+    const adSpend = (_metaSpend && _metaSpend.adsets) ? _metaSpend.adsets.reduce((s, x) => s + (metaSpendToUZS(x.spend) || 0), 0) : 0
+    const metaCur = ((_metaSpend && _metaSpend.currency) || '').toUpperCase()
+    const spendSrc = !hasSpend ? (uz ? 'Meta yuklanmagan' : 'Meta не загружен')
+      : (metaCur === 'UZS' ? (uz ? 'Meta’dan' : 'из Meta') : (uz ? `Meta · $→so‘m (${MKT_USD_UZS})` : `из Meta · $→сум (${MKT_USD_UZS})`))
     const marginInfo = getMargin()
     const margin = marginInfo.val
     const roas = (adSpend > 0) ? adRevenue / adSpend : null
     let roi = null
     if (adSpend > 0 && margin != null) { const profit = adRevenue * (margin / 100); roi = (profit - adSpend) / adSpend * 100 }
-    const spendTxt = adSpend > 0 ? fmtSum(adSpend) : (uz ? 'kiriting' : 'укажите')
     const marginSrc = margin == null ? (uz ? 'marjani kiriting' : 'укажите маржу') : (marginInfo.auto ? (uz ? 'moliyadan · sof foyda' : 'из финансов · чистая прибыль') : (uz ? 'sof foyda' : 'чистая прибыль'))
     const marginLbl = margin != null ? ` (${uz ? 'marja' : 'маржа'} ${String(margin).replace('.', ',')}%) ✏️` : ' ✏️'
     const perLabel = isAll ? (uz ? 'butun davr' : 'всё время') : (uz ? 'shu oy' : 'текущий месяц')
+    // CPL (цена за лида): факт по Meta vs ориентир рынка (редактируемый)
+    const totalLeads = arr.reduce((s, a) => s + (a.leads || 0), 0)
+    const cpl = (adSpend > 0 && totalLeads > 0) ? Math.round(adSpend / totalLeads) : null
+    const cplNorm = getCplNorm()
+    const cplColor = cpl == null ? 'var(--txt3)' : (cpl <= cplNorm ? 'var(--green)' : 'var(--red)')
+    const cplVerdict = cpl == null ? (uz ? 'lidlar yoʻq' : 'нет лидов') : (cpl <= cplNorm ? (uz ? 'bozordan past ✓' : 'ниже рынка ✓') : (uz ? 'bozordan yuqori' : 'выше рынка'))
     summaryHtml = `<div style="background:var(--card);border:1px solid var(--line2);border-radius:11px;padding:13px;margin-bottom:14px;">
       <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:10px;">
         <div style="font-size:12.5px;font-weight:700;">${uz ? 'Reklama qoplanishi' : 'Окупаемость рекламы'} · ${perLabel}</div>
         <span style="font-size:10px;color:var(--gold);border:1px solid var(--gold);border-radius:6px;padding:1px 6px;">${uz ? 'faqat admin' : 'только админ'}</span>
       </div>
-      <div style="display:grid;grid-template-columns:repeat(2,1fr);gap:10px;margin-bottom:10px;">
-        <div style="background:var(--bg2);border-radius:9px;padding:9px 11px;cursor:pointer;" onclick="editAdSpend()" title="${uz ? 'Oʻzgartirish' : 'Изменить'}">
-          <div style="font-size:10.5px;color:var(--txt2);">${uz ? 'Reklama xarajati ✏️' : 'Расход на рекламу ✏️'}</div>
-          <div style="font-size:16px;font-weight:700;color:var(--red);">${spendTxt}</div>
-          <div style="font-size:9.5px;color:var(--txt3);">${uz ? 'qoʻlda kiritiladi' : 'вводится вручную'}</div>
+      <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(128px,1fr));gap:10px;">
+        <div style="background:var(--bg2);border-radius:9px;padding:9px 11px;">
+          <div style="font-size:10.5px;color:var(--txt2);">${uz ? 'Reklama xarajati' : 'Расход на рекламу'}</div>
+          <div style="font-size:16px;font-weight:700;color:var(--red);">${adSpend > 0 ? fmtSum(adSpend) : '—'}</div>
+          <div style="font-size:9.5px;color:var(--txt3);">${spendSrc}</div>
         </div>
         <div style="background:var(--bg2);border-radius:9px;padding:9px 11px;">
           <div style="font-size:10.5px;color:var(--txt2);">${uz ? 'Reklamadan tushum' : 'Выручка с рекламы'}</div>
           <div style="font-size:16px;font-weight:700;color:var(--green);">${fmtSum(adRevenue)}</div>
           <div style="font-size:9.5px;color:var(--txt3);">${arr.reduce((s, a) => s + (a.sold || 0), 0)} ${uz ? 'sotuv' : 'продаж'}</div>
         </div>
-      </div>
-      <div style="display:grid;grid-template-columns:repeat(2,1fr);gap:10px;">
         <div style="background:var(--bg2);border-radius:9px;padding:9px 11px;">
           <div style="font-size:10.5px;color:var(--txt2);">ROAS ${hintIcon('roas')}</div>
           <div style="font-size:19px;font-weight:800;color:${roas == null ? 'var(--txt3)' : (roas >= 1 ? 'var(--green)' : 'var(--red)')};">${roas != null ? roas.toFixed(1) + 'x' : '—'}</div>
           <div style="font-size:9.5px;color:var(--txt3);">${uz ? 'tushum ÷ xarajat' : 'выручка ÷ расход'}</div>
+        </div>
+        <div style="background:var(--bg2);border-radius:9px;padding:9px 11px;cursor:pointer;" onclick="editCplNorm()" title="${uz ? 'Bozor oriyentirini oʻzgartirish' : 'Изменить ориентир рынка'}">
+          <div style="font-size:10.5px;color:var(--txt2);">${uz ? 'Lid narxi (CPL) ✏️' : 'Цена за лида (CPL) ✏️'}</div>
+          <div style="font-size:19px;font-weight:800;color:${cplColor};">${cpl != null ? fmtSum(cpl) : '—'}</div>
+          <div style="font-size:9.5px;color:var(--txt3);">${uz ? 'norma' : 'норма'} ~${fmtSum(cplNorm)} · ${cplVerdict}</div>
         </div>
         <div style="background:var(--bg2);border-radius:9px;padding:9px 11px;cursor:pointer;" onclick="editMargin()" title="${uz ? 'Marjani oʻzgartirish' : 'Изменить маржу'}">
           <div style="font-size:10.5px;color:var(--txt2);">ROI${marginLbl}</div>
@@ -892,8 +922,7 @@ function renderAdsets(d) {
   const shown = _adsetsExpanded ? arr : arr.slice(0, LIMIT)
   let html = summaryHtml
   html += `<div style="display:flex;justify-content:space-between;align-items:center;gap:8px;margin-bottom:10px;flex-wrap:wrap;">
-    <div style="font-size:11px;color:var(--txt3);flex:1;min-width:150px;">${hasSpend ? (uz ? 'Har auditoriya ROI (Meta’dan)' : 'ROI по каждой аудитории (из Meta)') : (uz ? 'Auditoriyalar boʻyicha tushum' : 'Выручка по аудиториям')}</div>
-    ${isAdmin ? `<button id="metaRefreshBtn" onclick="refreshMetaSpend()" style="padding:7px 12px;border-radius:8px;background:var(--accent);border:none;color:#fff;font-size:12px;font-weight:600;cursor:pointer;white-space:nowrap;">${uz ? 'Meta xarajati' : 'Расходы Meta'}</button>` : ''}
+    <div style="font-size:11px;color:var(--txt3);flex:1;min-width:150px;">${hasSpend ? (uz ? 'Har auditoriya ROI (Meta’dan, avto)' : 'ROI по каждой аудитории (из Meta, авто)') : (uz ? 'Auditoriyalar boʻyicha tushum' : 'Выручка по аудиториям')}</div>
   </div>`
   html += shown.map((a) => {
     const spend = spendMap[a.name]
@@ -929,6 +958,27 @@ function renderAdsets(d) {
     html += `<button onclick="toggleAdsets()" style="margin-top:12px;width:100%;padding:9px;border-radius:8px;background:var(--card);border:1px solid var(--line2);color:var(--txt2);font-size:12.5px;font-weight:600;cursor:pointer;">
       ${_adsetsExpanded ? (uz ? 'Yigʻish' : 'Свернуть') : (uz ? `Yana ${rest} ta koʻrsatish` : `Показать ещё ${rest}`)}
     </button>`
+  }
+  // ВЫВОДЫ ПО КРЕАТИВАМ + советы (расход уже в сумах — ROAS/CPL честные)
+  if (isAdmin && hasSpend) {
+    const cr = arr.map((a) => { const sp = spendMap[a.name]; return { name: a.name, spend: sp, revenue: a.revenue || 0, sold: a.sold || 0, leads: a.leads || 0, roas: (sp > 0) ? a.revenue / sp : null, cpl: (sp > 0 && a.leads > 0) ? Math.round(sp / a.leads) : null } }).filter((c) => c.spend > 0)
+    const withSales = cr.filter((c) => c.sold > 0)
+    const best = withSales.slice().sort((x, y) => y.roas - x.roas)[0]
+    const burning = cr.filter((c) => c.sold === 0).sort((x, y) => y.spend - x.spend)[0]
+    const worstRoas = withSales.slice().sort((x, y) => x.roas - y.roas)[0]
+    const cplNorm = getCplNorm()
+    const highCpl = cr.filter((c) => c.cpl != null && c.cpl > cplNorm).sort((x, y) => y.cpl - x.cpl)[0]
+    const lines = []
+    if (best) lines.push(`🚀 <b>${uz ? 'Masshtablash' : 'Масштабировать'}:</b> «${escapeHtml(best.name)}» — ROAS ${best.roas.toFixed(1)}x${best.cpl != null ? `, CPL ${fmtSum(best.cpl)}` : ''}. ${uz ? 'Eng foydali — byudjetni oshiring.' : 'Самый прибыльный — поднимите бюджет.'}`)
+    if (burning && burning.spend > 0) lines.push(`🔴 <b>${uz ? 'Toʻxtatish/tekshirish' : 'Пауза/проверка'}:</b> «${escapeHtml(burning.name)}» — ${fmtSum(burning.spend)} ${uz ? 'sarf, 0 sotuv' : 'расхода, 0 продаж'}. ${uz ? 'Kreativ yoki auditoriyani almashtiring.' : 'Смените креатив или аудиторию.'}`)
+    else if (worstRoas && best && worstRoas.name !== best.name && worstRoas.roas < 1) lines.push(`🟡 <b>${uz ? 'Zaif' : 'Слабый'}:</b> «${escapeHtml(worstRoas.name)}» — ROAS ${worstRoas.roas.toFixed(1)}x (<1). ${uz ? 'Optimallashtiring yoki kamaytiring.' : 'Оптимизируйте или сократите.'}`)
+    if (highCpl) lines.push(`💸 <b>${uz ? 'Qimmat lidlar' : 'Дорогие лиды'}:</b> «${escapeHtml(highCpl.name)}» — CPL ${fmtSum(highCpl.cpl)} (${uz ? 'norma' : 'норма'} ~${fmtSum(cplNorm)}).`)
+    if (lines.length) {
+      html += `<div style="margin-top:12px;padding:11px 12px;background:var(--card);border:1px solid var(--line2);border-radius:10px;">
+        <div style="font-size:11px;font-weight:700;color:var(--txt2);margin-bottom:6px;">${uz ? 'Kreativlar boʻyicha xulosa va tavsiyalar' : 'Выводы по креативам и советы'}</div>
+        ${lines.map((l) => `<div style="font-size:12px;color:var(--txt);margin-bottom:4px;line-height:1.4;">${l}</div>`).join('')}
+      </div>`
+    }
   }
   box.innerHTML = html
 }
@@ -1134,6 +1184,6 @@ export function initDashModals() {
     openSuspModal, closeSuspModal, toggleSuspHistory, reviewSusp,
     openWorkdaysModal, closeWorkdaysModal, saveWorkdays,
     editForecastGoal, syncAll, saveOrgSettings,
-    toggleAdsets, refreshMetaSpend, editMargin, editAdSpend,
+    toggleAdsets, refreshMetaSpend, editMargin, editAdSpend, editCplNorm,
   })
 }

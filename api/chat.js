@@ -185,6 +185,34 @@ function liveBlock(d, fin, realGoal, workdays, tg) {
   return s;
 }
 
+// МАРКЕТИНГОВЫЙ СРЕЗ для советника: реклама Meta (расход в сумах — конвертируем валюту аккаунта),
+// ROAS/CAC/CPL на verified-выручке, топ-аудитории и органика Instagram. Расход БЕЗ конверсии дал бы
+// неверный ROAS в тысячи раз — приводим к UZS тем же курсом, что marketing-agent.
+const MKT_RATE = 12100;
+function marketingBlock(d, metaSpend, ig) {
+  const t = (d && d.totals) || {};
+  let s = "\n\n=== МАРКЕТИНГ (реклама Meta + Instagram) ===\n";
+  if (!metaSpend || !Array.isArray(metaSpend.adsets) || !metaSpend.adsets.length) {
+    s += "Расходы Meta пока не загружены — CAC/ROAS/CPL по рекламе не считаю (не выдумывай их).\n";
+  } else {
+    const cur = (metaSpend.currency || "").toUpperCase();
+    const toUZS = (x) => x == null ? null : (cur === "UZS" ? x : Math.round(x * MKT_RATE));
+    const spendUZS = metaSpend.adsets.reduce((a, x) => a + (toUZS(x.spend) || 0), 0);
+    const revenue = t.revenue != null ? t.revenue : null;
+    const sold = t.sold != null ? t.sold : null;
+    const leads = t.leads != null ? t.leads : null;
+    s += `• Расход на рекламу (Meta, ${metaSpend.period || "тек. месяц"}): ${num(spendUZS)} сум` + (cur && cur !== "UZS" ? ` (валюта аккаунта ${cur}, курс ${MKT_RATE})` : "") + `\n`;
+    s += `• ROAS: ${(revenue && spendUZS) ? (revenue / spendUZS).toFixed(1) + "x" : "н/д"} · CAC: ${(sold && spendUZS) ? num(Math.round(spendUZS / sold)) + " сум/клиент" : "н/д"} · CPL (цена лида): ${(leads && spendUZS) ? num(Math.round(spendUZS / leads)) + " сум/лид" : "н/д"}\n`;
+    const rows = metaSpend.adsets.map((x) => ({ name: x.name, spendUZS: toUZS(x.spend), ctr: x.impressions > 0 ? +(x.clicks / x.impressions * 100).toFixed(2) : null }));
+    const top = rows.slice().sort((a, b) => (b.spendUZS || 0) - (a.spendUZS || 0)).slice(0, 3);
+    if (top.length) s += `• Аудитории по расходу: ${top.map((r) => `${r.name} — ${num(r.spendUZS)} сум${r.ctr != null ? `, CTR ${r.ctr}%` : ""}`).join("; ")}\n`;
+  }
+  if (ig && ig.ok && ig.followers_count != null) s += `• Instagram: подписчиков ${num(ig.followers_count)}` + (ig.reach != null ? `, охват ${num(ig.reach)}` : "") + `\n`;
+  else s += `• Instagram: органика не подключена (нужны права токена instagram_basic + instagram_manage_insights).\n`;
+  s += "ТВОЯ ЗОНА ПО МАРКЕТИНГУ: следи за окупаемостью (ROAS), ценой лида (CPL) против нормы рынка, ростом бренда и подписчиков Instagram. Советуй масштабировать прибыльные аудитории и отключать убыточные.\n";
+  return s;
+}
+
 async function setCache(key, value, ttlSec) {
   const url = process.env.UPSTASH_REDIS_REST_URL, token = process.env.UPSTASH_REDIS_REST_TOKEN;
   if (!url || !token) return;
@@ -341,7 +369,9 @@ export default async function handler(req, res) {
     const tgDigest = await readCache("tg:digest", null);
     const tgSeg = await readCache(`tgseg:${org}`, null);
     const tgHist = await readCache(`tghist:${org}`, null); // анализ истории (вся база переписки)
-    const live = liveBlock(cache, fin, GOAL, workdays, { digest: tgDigest, seg: tgSeg, hist: tgHist });
+    const metaSpend = await readCache("meta_spend", null);
+    const igCache = await readCache("marketingagent:instagram", null);
+    const live = liveBlock(cache, fin, GOAL, workdays, { digest: tgDigest, seg: tgSeg, hist: tgHist }) + marketingBlock(cache, metaSpend, igCache);
 
     // === УМНЫЕ ВОПРОСЫ: AI находит проблемы и предлагает, что спросить ===
     if (action === "smart-questions") {
@@ -391,7 +421,7 @@ export default async function handler(req, res) {
       ? `${nowTk.getUTCDate()}-${M_UZ[nowTk.getUTCMonth()]} ${nowTk.getUTCFullYear()}, ${W_UZ[nowTk.getUTCDay()]}`
       : `${nowTk.getUTCDate()} ${M_RU[nowTk.getUTCMonth()]} ${nowTk.getUTCFullYear()} г., ${W_RU[nowTk.getUTCDay()]}`;
 
-    const SYSTEM_CORE = `Ты — личный директор по продажам (РОП) для владельца бизнеса. Твоя работа — смотреть на все данные бизнеса и отвечать простым языком: ЧТО НЕ ТАК, КАК ИСПРАВИТЬ, ЧЕГО НЕ ХВАТАЕТ ДО ЦЕЛИ.
+    const SYSTEM_CORE = `Ты — личный директор по продажам И маркетингу для владельца бизнеса. Твоя работа — смотреть на все данные бизнеса (продажи, воронка, менеджеры И маркетинг: реклама, ROAS, цена лида, бренд, Instagram) и отвечать простым языком: ЧТО НЕ ТАК, КАК ИСПРАВИТЬ, ЧЕГО НЕ ХВАТАЕТ ДО ЦЕЛИ. По маркетингу — держи метрики под контролем, качай бренд и рост подписчиков, сравнивай цену лида с нормой рынка.
 
 СЕГОДНЯ: ${dateStr}. Все ЖИВЫЕ ДАННЫЕ ниже — актуальный срез на этот момент.
 АКТУАЛЬНОСТЬ (ОЧЕНЬ ВАЖНО): переписка может тянуться много дней. На КАЖДЫЙ вопрос делай анализ ЗАНОВО по сегодняшним живым данным. Если похожий вопрос уже был в истории переписки и ты отвечал раньше — НЕ повторяй тот ответ и НЕ отсылай к нему («как я уже говорил», «как выше»): с того сообщения прошло время и цифры изменились. Всегда давай СВЕЖИЙ ответ по текущим данным на сегодня, даже если вопрос похож на прошлый.
