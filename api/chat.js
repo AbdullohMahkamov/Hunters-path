@@ -198,7 +198,8 @@ function marketingBlock(d, metaSpend, ig) {
     const cur = (metaSpend.currency || "").toUpperCase();
     const toUZS = (x) => x == null ? null : (cur === "UZS" ? x : Math.round(x * MKT_RATE));
     const spendUZS = metaSpend.adsets.reduce((a, x) => a + (toUZS(x.spend) || 0), 0);
-    const revenue = t.revenue != null ? t.revenue : null;
+    // ROAS/CAC — от продаж ТЕКУЩЕГО месяца (без доплат по сделкам прошлых месяцев)
+    const revenue = t.newSalesRevenue != null ? t.newSalesRevenue : (t.revenue != null ? t.revenue : null);
     const sold = t.sold != null ? t.sold : null;
     const leads = t.leads != null ? t.leads : null;
     s += `• Расход на рекламу (Meta, ${metaSpend.period || "тек. месяц"}): ${num(spendUZS)} сум` + (cur && cur !== "UZS" ? ` (валюта аккаунта ${cur}, курс ${MKT_RATE})` : "") + `\n`;

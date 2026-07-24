@@ -752,7 +752,7 @@ function renderMarketingAgent(m) {
   const cacVal = cac.value != null ? num(cac.value) + ' сум' : '—'
   const cards = [
     card('Реклама по Meta (реально)', spendVal, spendSub, 'var(--accent)'),
-    card('ROAS', roasVal, roas.value != null ? 'выручка ÷ реклама' : (mUndiag(roas) ? 'не диагностируется' : ''), roasColor),
+    card('ROAS', roasVal, roas.value != null ? 'продажи месяца ÷ реклама' : (mUndiag(roas) ? 'не диагностируется' : ''), roasColor),
     card('CAC (за клиента)', cacVal, cac.value != null ? cac.customers + ' сделок' : (mUndiag(cac) ? 'не диагностируется' : ''), 'var(--txt)'),
     card('CTR / CPC / CPM', (t.ctr != null ? t.ctr + '%' : '—'), (t.cpc != null ? 'CPC ' + num(t.cpc) + ' · ' : '') + (t.cpm != null ? 'CPM ' + num(t.cpm) : ''), 'var(--txt)'),
   ]

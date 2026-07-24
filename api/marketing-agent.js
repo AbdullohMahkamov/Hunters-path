@@ -168,9 +168,12 @@ async function getInstagram(force) {
 function funnelFacts(funnel) {
   if (!funnel) return { revenue: null, customers: null, trust: "insufficient", period: null, telephonySuspicious: null, dataFresh: null };
   const deal = (funnel.stages || []).find((s) => /Сделка выиграна/.test(s.stage)) || null;
+  // ВЫРУЧКА для CAC/ROAS — ТОЛЬКО продажи текущего месяца (monthNewSalesRevenue, без доплат по сделкам прошлых
+  // месяцев). Доплаты идут в кассу (deal.money=soldSum), но это не «продажи за текущий месяц» → в ROAS не берём.
+  const revenue = funnel.monthNewSalesRevenue != null ? funnel.monthNewSalesRevenue : (deal ? deal.money : null);
   return {
-    revenue: deal ? deal.money : null,
-    customers: deal ? deal.value : null,      // выигранные сделки (= прокси оплативших клиентов)
+    revenue,
+    customers: deal ? deal.value : null,      // выигранные сделки текущего месяца (= прокси оплативших клиентов)
     trust: deal ? deal.trust : "insufficient",
     period: funnel.period || null,
     telephonySuspicious: funnel.telephonySuspicious,

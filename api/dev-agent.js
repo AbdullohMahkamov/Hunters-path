@@ -282,6 +282,8 @@ export async function getVerifiedFunnel(org) {
   return {
     org, period: "текущий месяц", dataFresh, telephonySuspicious: telSuspicious,
     stages,
+    // выручка ТОЛЬКО новых продаж текущего месяца (без доплат по сделкам прошлых месяцев) — для CAC/ROAS «от продаж за месяц»
+    monthNewSalesRevenue: t.newSalesRevenue != null ? t.newSalesRevenue : null,
     avgCheck: { mean: avgCheck, median: avgCheckMedian, trust: tSold, note: "медиана устойчивее к редким крупным сделкам" },
     dealCycle: { companyMedianDays: dealCycleDays, byMop: (dash && dash.mopsByConv || []).map((m) => ({ name: m.name, days: m.dealCycleDays })).filter((x) => x.days != null), trust: tSold },
     ltv: { value: null, trust: "insufficient", note: "повторные продажи/LTV по контактам пока не считаются (нужна contact-группировка)" },
