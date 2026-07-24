@@ -332,7 +332,7 @@ export default function AppShell({ onLogout }) {
                     <button key={c.id} className={'side-item' + (isActive ? ' active' : '')} onClick={() => { state.activeChatId = c.id; save(); force((n) => n + 1); applyTab('chat') }}
                       style={{
                         display: 'block', width: '100%', textAlign: 'left', border: 'none', cursor: 'pointer',
-                        padding: '7px 10px', borderRadius: 8, fontSize: 13, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis',
+                        padding: '8px 10px', marginBottom: 3, lineHeight: 1.3, borderRadius: 8, fontSize: 13, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis',
                         background: isActive ? 'var(--card2)' : 'none',
                         color: isActive ? 'var(--txt)' : 'inherit',
                         fontWeight: isActive ? 600 : 400,
