@@ -9,7 +9,7 @@
 
 import { sendTg, getPeople, pushChat } from "./tg-bot.js";
 import { runChat as devRunChat, runNightly } from "./dev-agent.js";
-import { runTick } from "./task-agent.js";
+import { runTick, addMarketingTask } from "./task-agent.js";
 import { runGrowth } from "./growth-agent.js";
 import { runMopAgent } from "./mop-agent.js";
 
@@ -96,6 +96,15 @@ export default async function handler(req, res) {
       if (!title) { res.status(400).json({ error: "нужен title" }); return; }
       const r = await createRopTask({ title, why: b.why, deadline: b.deadline, steps: b.steps });
       res.status(200).json({ ok: true, type, taskId: r.id, note: "задача добавлена в план — Task Agent начнёт вести её (пинг/эскалация)" });
+      return;
+    }
+    if (type === "marketing_task") {
+      // маркетинг-задача → отдельный список marketingtasks; Task Agent доставит её МАРКЕТОЛОГУ (пинг/эскалация)
+      const title = String(b.title || "").trim();
+      if (!title) { res.status(400).json({ error: "нужен title" }); return; }
+      const action = b.action || (Array.isArray(b.steps) ? b.steps.join(" | ") : (b.steps || ""));
+      const r = await addMarketingTask({ title, why: b.why, action, deadline: b.deadline, source: "advisor" });
+      res.status(200).json({ ok: true, type, taskId: r.id, note: "маркетинг-задача создана — Task Agent доставит её Маркетологу (пинг/эскалация)" });
       return;
     }
     if (type === "analyst") {

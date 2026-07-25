@@ -393,7 +393,10 @@ export async function runMarketingDaily(org = ORG, force = false) {
   await rsetJSON(K.history, newHist);
 
   // дайджест владельцу — раз в сутки (адресат ТОЛЬКО owner)
-  const text = buildDigest(snap);
+  let text = buildDigest(snap);
+  // напоминание об открытых маркетинг-задачах (ведёт Task Agent) — чтобы ничего не терялось
+  const openMk = (await rgetJSON("marketingtasks", [])).filter((t) => !t.status || t.status === "open");
+  if (openMk.length) text += `\n\n📋 <b>Открытых маркетинг-задач: ${openMk.length}</b>\n` + openMk.slice(0, 5).map((t) => `• ${t.title}`).join("\n");
   let sent = false;
   const ppl = await getPeople().catch(() => null);
   if (ppl && ppl.owner && ppl.owner.chatId) { await sendTg("owner", ppl.owner.chatId, text); sent = true; }
@@ -430,12 +433,27 @@ export default async function handler(req, res) {
       const period = assessPeriodAlignment(ads, ff);
       const currency = assessCurrencyAlignment(ads);
       const unit = computeUnitEconomics(ads, ff, period, currency);
+      // маркетинг-задачи (создаёт советник, ведёт Task Agent) — тот же ключ marketingtasks
+      const mkTasks = (await rgetJSON("marketingtasks", [])).filter((t) => !t.status || t.status === "open")
+        .map((t) => ({ id: t.id, title: t.title, why: t.why || "", action: t.action || "", deadline: t.deadline || "", createdAt: t.createdAt || null }));
       res.status(200).json({
         ok: true, day: tkDay(),
         ads: { available: ads.available, reason: ads.reason || null, currency: ads.currency || null, period: ads.period || null, updatedAt: ads.updatedAt || null, total: ads.total, adsets: ads.adsets },
         instagram: ig.ok ? { ok: true, followers_count: ig.followers_count, media_count: ig.media_count, reach: ig.reach, profile_views: ig.profile_views, media: ig.media } : { ok: false, error: ig.error },
-        funnel: ff, period, currency, unit,
+        funnel: ff, period, currency, unit, marketingTasks: mkTasks,
       });
+      return;
+    }
+    if (action === "task-close") {
+      // закрыть маркетинг-задачу из дашборда (владелец пометил «выполнено»). Тот же список, что ведёт Task Agent.
+      const id = (req.query && req.query.id) || (req.body && req.body.id);
+      if (!id) { res.status(400).json({ error: "нужен id" }); return; }
+      const list = await rgetJSON("marketingtasks", []);
+      const t = list.find((x) => x.id === id);
+      if (!t) { res.status(404).json({ ok: false, error: "not found" }); return; }
+      t.status = "done"; t.doneAt = Date.now(); t.doneBy = "owner";
+      await rsetJSON("marketingtasks", list);
+      res.status(200).json({ ok: true, id, closed: true });
       return;
     }
     if (action === "peek") {

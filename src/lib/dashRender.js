@@ -766,13 +766,26 @@ function renderMarketingAgent(m) {
   if (cy && !cy.aligned && cy.reason) concl.push('⚠️ Валюта: ' + cy.reason)
   if (!ig.ok) concl.push('ℹ️ Instagram выключен: ' + (ig.error || 'нет данных') + ' — нужны права токена instagram_basic + instagram_manage_insights и META_IG_USER_ID.')
   if (!concl.length) concl.push('Данных достаточно, критичных отклонений нет.')
+  // маркетинг-задачи (создаёт советник → ведёт Task Agent → доставляет Маркетологу)
+  const tasks = Array.isArray(m.marketingTasks) ? m.marketingTasks : []
+  const tasksHtml = tasks.length
+    ? `<div style="font-size:11px;font-weight:700;color:var(--txt2);margin-bottom:4px;">Маркетинг-задачи (${tasks.length}) — ведёт Task Agent</div>` +
+      tasks.map((t) => `<div style="display:flex;justify-content:space-between;gap:8px;align-items:center;font-size:12px;color:var(--txt);margin-bottom:5px;">
+        <span style="min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">• ${escapeHtml(t.title)}${t.deadline ? ` <span style="color:var(--txt3)">· ${t.deadline}</span>` : ''}</span>
+        <button onclick="closeMarketingTaskUI('${t.id}')" style="flex:0 0 auto;padding:3px 9px;border-radius:6px;border:1px solid var(--line2);background:var(--card2);color:var(--txt2);font-size:11px;cursor:pointer;white-space:nowrap;">Выполнено</button>
+      </div>`).join('')
+    : `<div style="font-size:11px;color:var(--txt3);">Маркетинг-задач нет. Советник создаёт их кнопкой «Поставить задачу маркетологу».</div>`
   box.innerHTML = `
     <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(150px,1fr));gap:8px;">${cards.join('')}</div>
     <div style="margin-top:10px;font-size:10.5px;color:var(--txt3);">Окно: текущий месяц${m.period && m.period.target ? (' (' + m.period.target + ')') : ''} · валюта аккаунта: ${cy.adCurrency || 'н/д'}${ads.updatedAt ? (' · Meta обновлён ' + new Date(ads.updatedAt).toLocaleDateString('ru-RU')) : ''}</div>
     <div style="margin-top:8px;padding-top:8px;border-top:1px solid var(--line);">
       <div style="font-size:11px;font-weight:700;color:var(--txt2);margin-bottom:4px;">Выводы</div>
       ${concl.map((c) => `<div style="font-size:12px;color:var(--txt);margin-bottom:3px;line-height:1.35;">${c}</div>`).join('')}
-    </div>`
+    </div>
+    <div style="margin-top:8px;padding-top:8px;border-top:1px solid var(--line);">${tasksHtml}</div>`
+}
+async function closeMarketingTaskUI(id) {
+  try { await fetch('/api/marketing-agent?action=task-close&session=' + encodeURIComponent(getSession()) + '&id=' + encodeURIComponent(id)); loadMarketingAgent() } catch (e) { /* ignore */ }
 }
 async function refreshMetaSpend() {
   const btn = document.getElementById('metaRefreshBtn')
@@ -1184,6 +1197,6 @@ export function initDashModals() {
     openSuspModal, closeSuspModal, toggleSuspHistory, reviewSusp,
     openWorkdaysModal, closeWorkdaysModal, saveWorkdays,
     editForecastGoal, syncAll, saveOrgSettings,
-    toggleAdsets, refreshMetaSpend, editMargin, editAdSpend, editCplNorm,
+    toggleAdsets, refreshMetaSpend, editMargin, editAdSpend, editCplNorm, closeMarketingTaskUI,
   })
 }

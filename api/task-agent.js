@@ -144,7 +144,39 @@ async function loadSalesTasks() {
       });
     }
   } catch (e) { /* общий мозг недоступен — остальные задачи едут */ }
+  // ── источник 4: МАРКЕТИНГ-задачи (recipient=marketing, доставляет Маркетологу тот же Task Agent) ──
+  try {
+    const mk = await rgetJSON(MK_KEY, []);
+    const openMk = mk.filter((t) => !t.status || t.status === "open");
+    if (openMk.length) await logFlow("advisor", "task-agent");
+    for (const t of openMk) {
+      out.push({ id: t.id, title: t.title, why: t.why || "", deadline: t.deadline || "", deadlineLabel: t.deadlineLabel || "",
+        steps: t.action ? [t.action] : [], done: false, report: null,
+        source: "marketing", scope: "marketing", recipient: "marketing",
+        daysLeft: daysLeft(t.deadline), hoursOverdue: hoursOverdue(t.deadline) });
+    }
+  } catch (e) { /* маркетинг-задачи недоступны — остальное едет */ }
   return out;
+}
+
+// ── МАРКЕТИНГ-ЗАДАЧИ: отдельный список (recipient=marketing). Создаёт советник (advisor-act marketing_task),
+// доставляет и ведёт тот же Task Agent, что и продажи — просто адресат другой. Продажный поток не трогается.
+const MK_KEY = "marketingtasks";
+export async function addMarketingTask(t) {
+  const list = await rgetJSON(MK_KEY, []);
+  const id = "mk_" + Date.now().toString(36) + Math.random().toString(36).slice(2, 5);
+  const rec = { id, title: String(t.title || "").slice(0, 200), why: String(t.why || "").slice(0, 500),
+    action: String(t.action || "").slice(0, 300), deadline: t.deadline || "", deadlineLabel: t.deadlineLabel || "",
+    createdAt: Date.now(), status: "open", source: t.source || "advisor", recipient: "marketing" };
+  list.push(rec); await rsetJSON(MK_KEY, list.slice(-200));
+  return rec;
+}
+export async function getAllMarketingTasks() { return await rgetJSON(MK_KEY, []); }
+export async function closeMarketingTask(id, report) {
+  const list = await rgetJSON(MK_KEY, []);
+  const t = list.find((x) => x.id === id); if (!t) return { ok: false, error: "not found" };
+  t.status = "done"; t.doneAt = Date.now(); if (report) t.report = String(report).slice(0, 500);
+  await rsetJSON(MK_KEY, list); return { ok: true, task: t };
 }
 
 async function callModel(system, user, maxTokens = 900, model = MODEL) {
@@ -188,6 +220,23 @@ const SYSTEM_ROP = `Ты — Task-агент системы Altrone. Ты общ
 
 Если ответ ожидается простой (да/нет, подтверждение) — список НЕ нужен.`;
 
+// Марк-версия того же промпта: адресат — Маркетолог/таргетолог, домен — маркетинг (реклама, креативы,
+// бюджеты, Instagram/бренд). Границы и честность те же; DeepSales-правила не нужны (это не про звонки).
+const SYSTEM_MK = `Ты — Task-агент системы Altrone. Ты общаешься с МАРКЕТОЛОГОМ (таргетолог / SMM) в Telegram.
+
+ЧЕСТНОСТЬ: ты — СИСТЕМА, а не человек. Если спросят — прямо скажи, что ты бот Altrone.
+
+ТВОЯ РОЛЬ: держать порядок по маркетинговым задачам (реклама, креативы, бюджеты аудиторий, Instagram/бренд, цена лида). Ты добиваешься, чтобы по КАЖДОЙ задаче был явный результат/статус. Ведёшь диалог: уточняешь статус, спрашиваешь что мешает, помогаешь сузить следующий шаг. НЕ давишь и НЕ оцениваешь человека.
+
+ТОН: спокойный, уважительный, деловой, коротко. Без эмодзи-спама. Обращение на «вы».
+
+ГРАНИЦЫ: не ставишь оценок человеку, не угрожаешь. Не меняешь сам бюджеты/кампании — это делает маркетолог. Ты фиксируешь то, что он сказал.
+
+Если задача просрочена — говори факт спокойно и спрашивай, что мешает сдвинуть.
+
+━━━ ПОДСКАЗКА-ШАБЛОН ━━━
+Когда ждёшь СОДЕРЖАТЕЛЬНЫЙ ответ — приложи 2-4 коротких пункта, что полезно указать (подстрой под суть: если про CPL/ROAS — спрашивай цифру и по какой аудитории; если про креатив — что заменили и когда; если буксует — что мешает и когда закончит). Если ждёшь простое да/нет — список не нужен.`;
+
 // Собираем финальное сообщение: вопрос + подсказка-шаблон (если ждём содержательный ответ).
 // Подсказку генерирует САМА модель под конкретную задачу — здесь только склейка.
 function assembleMsg(out) {
@@ -212,7 +261,12 @@ function scopeTag(task) {
   if (task.scope === "department") return "🏢 ПО ОТДЕЛУ";
   return `👤 ПО МОПУ${task.mop ? ` (${task.mop})` : ""}`;
 }
-async function composePing(task, chatHistory, lang) {
+async function composePing(task, chatHistory, lang, recipient = "rop") {
+  const isMk = recipient === "marketing";
+  const whoDat = isMk ? "Маркетологу" : "РОПу";        // кому пишем (дат. падеж)
+  const whoWith = isMk ? "Маркетологом" : "РОПом";      // «переписка с …»
+  const domainLbl = isMk ? "МАРКЕТИНГОВАЯ ЗАДАЧА" : "ЗАДАЧА ОТДЕЛА ПРОДАЖ";
+  const sysPrompt = isMk ? SYSTEM_MK : SYSTEM_ROP;
   const overdue = task.hoursOverdue > 0;
   const tag = scopeTag(task);
   // Состав затронутых людей у задачи ПО ОТДЕЛУ меняется день ко дню — он пересобирается при каждом
@@ -227,7 +281,7 @@ ${tag ? `\nМАСШТАБ ЗАДАЧИ: ${tag}. Начни сообщение р
 ${who ? `ЗАТРОНУТЫЕ СОТРУДНИКИ (актуально на сейчас, состав мог смениться со вчера): ${who}. ОБЯЗАТЕЛЬНО назови их поимённо в сообщении — иначе РОПу непонятно, с кем говорить.` : ""}
 ${task.deadlineLabel ? `СРОК (жёсткое правило, не обсуждается): ${task.deadlineLabel}` : ""}
 
-ЗАДАЧА ОТДЕЛА ПРОДАЖ:
+${domainLbl}:
 Название: ${task.title}
 Зачем: ${task.why}
 Шаги: ${(task.steps || []).join(" | ")}
@@ -235,10 +289,10 @@ ${task.deadlineLabel ? `СРОК (жёсткое правило, не обсуж
 Статус в системе: ${task.done ? "отмечена выполненной" : "НЕ выполнена"}
 Отчёт по задаче: ${task.report ? "есть" : "НЕТ"}
 
-ПРЕДЫДУЩАЯ ПЕРЕПИСКА С РОПом ПО ЭТОЙ ЗАДАЧЕ (может быть пустой):
+ПРЕДЫДУЩАЯ ПЕРЕПИСКА С ${whoWith} ПО ЭТОЙ ЗАДАЧЕ (может быть пустой):
 ${chatHistory || "(переписки ещё не было)"}
 
-Напиши РОПу ОДНО короткое сообщение (2-4 предложения). Если это первое обращение — представься как система Altrone. Спроси конкретно про статус ЭТОЙ задачи. Если просрочено — скажи факт спокойно и спроси, что мешает.
+Напиши ${whoDat} ОДНО короткое сообщение (2-4 предложения). Если это первое обращение — представься как система Altrone. Спроси конкретно про статус ЭТОЙ задачи. Если просрочено — скажи факт спокойно и спроси, что мешает.
 И СРАЗУ приложи подсказку-шаблон: что полезно указать в ответе ИМЕННО ПО ЭТОЙ ЗАДАЧЕ (см. правила в системном промпте). Пункты подстрой под суть задачи — у задачи с измеримым критерием и у задачи про причину задержки списки ДОЛЖНЫ отличаться.
 
 Верни СТРОГО JSON, весь текст — на ВЫБРАННОМ ЧЕЛОВЕКОМ языке (см. ЯЗЫК ОТВЕТА выше), а не на языке задачи:
@@ -247,7 +301,7 @@ needsDetail=false и пустой checklist — только если ждёшь
   let out;
   // 1400 токенов: вопрос + подсказка (на 700 JSON обрывался и агент сваливался в дефолтный шаблон)
   // Haiku: формирование пинга — routine (scope/люди уже решены выше). При сбое — надёжный fallback ниже.
-  try { out = parseJSON(await callModel(SYSTEM_ROP, user, 1400, MODEL_LIGHT)); }
+  try { out = parseJSON(await callModel(sysPrompt, user, 1400, MODEL_LIGHT)); }
   // Fallback тоже должен нести пометку масштаба, имена и срок — иначе при сбое модели РОП получит
   // обезличенное «какой статус?», из которого непонятно ни с кем говорить, ни к какому сроку.
   catch (e) {
@@ -392,6 +446,60 @@ disputed ставь СТРОГО: только когда РОП оспарив�
   return { ok: true, taskId, status: out.status };
 }
 
+// ── ОБРАБОТКА ОТВЕТА МАРКЕТОЛОГА (вызывается из tg-bot webhook, ?bot=marketing) ──
+// Тот же движок статус/закрытие, что у РОПа, но только по маркетинг-задачам и без dispute-цикла
+// (маркетинг-задачи создаёт советник — это action-item, а не спорная находка по человеку).
+export async function handleMarketingReply(text, replyToMsgId) {
+  const cfg = await getConfig();
+  if (!cfg.enabled || !AKEY) return;
+  const tasks = (await loadSalesTasks()).filter((t) => t.recipient === "marketing" && !t.done);
+  const replyTaskId = await lookupMsgTask("marketing", replyToMsgId);
+  const replyTask = replyTaskId ? tasks.find((t) => t.id === replyTaskId) : null;
+  const chat = await getChat();
+  const recent = chat.slice(-16).map((m) => `${m.role === "agent" ? "АГЕНТ" : (m.role === "marketing" ? "МАРКЕТОЛОГ" : (m.role === "owner" ? "ВЛАДЕЛЕЦ" : "РОП"))}${m.taskId ? ` [задача ${m.taskId}]` : ""}: ${m.text}`).join("\n");
+  const people0 = await getPeople();
+  const lang = (people0.marketing && people0.marketing.lang) || "ru";
+  const user = `${langLine(lang)}
+
+ОТКРЫТЫЕ МАРКЕТИНГОВЫЕ ЗАДАЧИ:
+${tasks.map((t) => `- [${t.id}] ${t.title} | срок ${t.deadlineLabel || t.deadline || "нет"} ${t.hoursOverdue > 0 ? "(ПРОСРОЧЕНО)" : ""}`).join("\n") || "(открытых задач нет)"}
+
+ПЕРЕПИСКА (последнее):
+${recent}
+${replyTask ? `\nМАРКЕТОЛОГ ОТВЕТИЛ (Reply) на сообщение по задаче [${replyTask.id}] «${replyTask.title}» — используй этот taskId, если из текста явно не следует другое.` : ""}
+НОВОЕ СООБЩЕНИЕ МАРКЕТОЛОГА: ${text}
+
+Ответь по делу (2-4 предложения) и определи, к какой задаче относится. Если ждёшь содержательный ответ — приложи подсказку-шаблон.
+Верни СТРОГО JSON, на языке переписки:
+{"reply":"текст","needsDetail":true,"hintHeader":"заголовок","checklist":["п1","п2"],"taskId":"id или пусто","status":"in_progress|blocked|claims_done|unclear|none","note":"кратко"}
+claims_done ставь СТРОГО: только если ЯВНО и КОНКРЕТНО сказал, что сделал (что именно). Расплывчатое «вроде ок / посмотрю» — это unclear, needsDetail=true. По claims_done+needsDetail=false задача ЗАКРЫВАЕТСЯ автоматически, откатить нельзя.`;
+  let out = null, err = null;
+  for (let a = 0; a < 2 && !out; a++) { try { out = parseJSON(await callModel(SYSTEM_MK, user, 1200)); } catch (e) { err = e; } }
+  if (!out) {
+    await logDiag("handleMarketingReply", err, text);
+    out = { reply: lang === "uz" ? "Xabaringizni oldim va saqladim. Tez orada javob beraman." : "Сообщение получил и сохранил. Вернусь с ответом совсем скоро.", needsDetail: false, hintHeader: "", checklist: [], taskId: replyTaskId || "", status: "unclear", note: "LLM/parse error" };
+  }
+  out.reply = assembleMsg({ question: out.reply, needsDetail: out.needsDetail, hintHeader: out.hintHeader, checklist: out.checklist });
+  const taskId = out.taskId || replyTaskId || "";
+  if (taskId) {
+    const all = await getChat();
+    for (let i = all.length - 1; i >= 0; i--) { if (all[i].role === "marketing" && !all[i].taskId) { all[i].taskId = taskId; break; } }
+    await rsetJSON("taskagent:chat", all.slice(-400));
+  }
+  const st = await rgetJSON(K.status, {});
+  if (taskId) { st[taskId] = { ...(st[taskId] || {}), ropRepliedAt: Date.now(), ropRepliedDay: tkDay(), state: out.status || "unclear", note: out.note || "" }; await rsetJSON(K.status, st); }
+  if (taskId && out.status === "claims_done" && out.needsDetail === false) {
+    try { await closeMarketingTask(taskId, out.note || text); } catch (e) {}
+  }
+  const people = await getPeople();
+  if (people.marketing && people.marketing.chatId && out.reply) {
+    const r = await sendTg("marketing", people.marketing.chatId, out.reply);
+    await pushChat({ role: "agent", text: out.reply, taskId });
+    if (r.ok && taskId) await rememberMsgTask("marketing", r.messageId, taskId);
+  }
+  return { ok: true, taskId, status: out.status };
+}
+
 // Решение владельца по ОСПАРИВАНИЮ (кнопки disp:agent|rop|noted). Обе версии остаются в истории — финальный статус их НЕ затирает.
 // Необратимых авто-действий нет: агент лишь фиксирует решение владельца.
 export async function handleDisputeResolve(action, taskId) {
@@ -532,12 +640,15 @@ ${recent || "(пусто)"}
     return { ok: false, error: "llm" };
   }
 
+  // адресат инструкции владельца — по задаче: продажи → РОП, маркетинг → Маркетолог
+  const rcpt = (task && task.recipient) || "rop";
+  const person = people[rcpt];
   let sentToRop = false;
-  if (out.action === "message_rop" && String(out.ropMessage || "").trim() && people.rop && people.rop.chatId) {
-    const r = await sendTg("rop", people.rop.chatId, out.ropMessage);
+  if (out.action === "message_rop" && String(out.ropMessage || "").trim() && person && person.chatId) {
+    const r = await sendTg(rcpt, person.chatId, out.ropMessage);
     if (r.ok) {
       await pushChat({ role: "agent", text: out.ropMessage, taskId });
-      await rememberMsgTask("rop", r.messageId, taskId); // РОП сможет ответить Reply'ем — попадёт в handleRopReply
+      await rememberMsgTask(rcpt, r.messageId, taskId); // получатель сможет ответить Reply'ем
       sentToRop = true;
       // владелец вмешался и дал задаче ход → отметим, чтобы не эскалировать её повторно в тот же день
       if (taskId) { const st = await rgetJSON(K.status, {}); st[taskId] = { ...(st[taskId] || {}), ownerActedDay: tkDay(), ownerActedAt: Date.now() }; await rsetJSON(K.status, st); }
@@ -563,40 +674,44 @@ export async function handleOwnerButton(action, taskId) {
   const cfg = await getConfig();
   if (!cfg.enabled) return { ok: false, toast: "агент выключен" };
   const people = await getPeople();
-  const ropLang = (people.rop && people.rop.lang) || "ru";
   const escs = await rgetJSON(K.escalations, []);
   const esc = [...escs].reverse().find((e) => e.taskId === taskId) || null;
   const tasks = await loadSalesTasks();
   const task = tasks.find((t) => t.id === taskId) || (esc ? { id: taskId, title: esc.title, deadline: esc.deadline, source: "plan" } : null);
+  // получатель напоминания — по задаче: продажи → РОП, маркетинг → Маркетолог
+  const rcpt = (task && task.recipient) || "rop";
+  const person = people[rcpt];
+  const rLang = (person && person.lang) || "ru";
+  const rWho = rcpt === "marketing" ? "Маркетологу" : "РОПу";
 
   if (action === "close") {
     const st = await rgetJSON(K.status, {});
     st[taskId] = { ...(st[taskId] || {}), ownerResolved: true, ownerResolvedAt: Date.now() };
     await rsetJSON(K.status, st);
     if (esc) { esc.resolved = true; await rsetJSON(K.escalations, escs.slice(-200)); }
-    return { ok: true, action, toast: "Снято с контроля", ownerMsg: `✅ Снято с контроля: «${task ? task.title : taskId}». РОПу не пишу.` };
+    return { ok: true, action, toast: "Снято с контроля", ownerMsg: `✅ Снято с контроля: «${task ? task.title : taskId}». ${rWho} не пишу.` };
   }
   if (action === "self") {
-    return { ok: true, action, toast: "Ответьте текстом (Reply)", ownerMsg: "✍️ Ответьте на это сообщение (Reply) вашей инструкцией — я передам РОПу в нужном тоне (например «напомни мягко, не к спеху»)." };
+    return { ok: true, action, toast: "Ответьте текстом (Reply)", ownerMsg: `✍️ Ответьте на это сообщение (Reply) вашей инструкцией — я передам ${rWho} в нужном тоне (например «напомни мягко, не к спеху»).` };
   }
   if (action === "remind") {
     if (!task) return { ok: false, toast: "Задача не найдена" };
     let sent = false;
     try {
       const chat = await getChat();
-      const hist = chat.filter((m) => m.taskId === taskId).map((m) => `${m.role === "rop" ? "РОП" : "АГЕНТ"}: ${m.text}`).join("\n");
-      const msg = await composePing(task, hist, ropLang);
-      if (people.rop && people.rop.chatId) {
-        const r = await sendTg("rop", people.rop.chatId, msg);
+      const hist = chat.filter((m) => m.taskId === taskId).map((m) => `${m.role === "agent" ? "АГЕНТ" : (m.role === "marketing" ? "МАРКЕТОЛОГ" : "РОП")}: ${m.text}`).join("\n");
+      const msg = await composePing(task, hist, rLang, rcpt);
+      if (person && person.chatId) {
+        const r = await sendTg(rcpt, person.chatId, msg);
         if (r.ok) {
           await pushChat({ role: "agent", text: msg, taskId });
-          await rememberMsgTask("rop", r.messageId, taskId);
+          await rememberMsgTask(rcpt, r.messageId, taskId);
           const st = await rgetJSON(K.status, {}); st[taskId] = { ...(st[taskId] || {}), ownerActedDay: tkDay(), ownerActedAt: Date.now() }; await rsetJSON(K.status, st);
           sent = true;
         }
       }
     } catch (e) { await logDiag("handleOwnerButton/remind", e, taskId); }
-    return { ok: sent, action, toast: sent ? "Напомнил РОПу" : "Не удалось отправить", ownerMsg: sent ? `🔔 Напомнил РОПу по задаче «${task.title}».` : "Не удалось напомнить — попробуйте позже." };
+    return { ok: sent, action, toast: sent ? `Напомнил ${rWho}` : "Не удалось отправить", ownerMsg: sent ? `🔔 Напомнил ${rWho} по задаче «${task.title}».` : "Не удалось напомнить — попробуйте позже." };
   }
   return { ok: false, toast: "неизвестное действие" };
 }
@@ -648,19 +763,22 @@ export async function runTick(force) {
     const near = t.source === "mop-agent" || t.source === "metabrain" || (t.daysLeft != null && t.daysLeft <= cfg.remindBeforeDays);
     if (!near && !force) continue;
 
-    // 1) ПИНГ РОПу — один раз в день по задаче, в рабочие часы
-    const canPing = people.rop && people.rop.chatId && (hour >= cfg.pingFromHour || force) && s.pingDay !== day;
+    // получатель задачи: продажи → РОП (по умолчанию), маркетинг → Маркетолог
+    const rcpt = t.recipient || "rop";
+    const person = people[rcpt];
+    // 1) ПИНГ получателю — один раз в день по задаче, в рабочие часы
+    const canPing = person && person.chatId && (hour >= cfg.pingFromHour || force) && s.pingDay !== day;
     if (canPing) {
-      const hist = chat.filter((m) => m.taskId === t.id).map((m) => `${m.role === "rop" ? "РОП" : "АГЕНТ"}: ${m.text}`).join("\n");
+      const hist = chat.filter((m) => m.taskId === t.id).map((m) => `${m.role === "agent" ? "АГЕНТ" : (m.role === "marketing" ? "МАРКЕТОЛОГ" : "РОП")}: ${m.text}`).join("\n");
       try {
-        const msg = await composePing(t, hist, (people.rop && people.rop.lang) || "ru");
-        const r = await sendTg("rop", people.rop.chatId, msg);
+        const msg = await composePing(t, hist, person.lang || "ru", rcpt);
+        const r = await sendTg(rcpt, person.chatId, msg);
         if (r.ok) {
           await pushChat({ role: "agent", text: msg, taskId: t.id });
-          await rememberMsgTask("rop", r.messageId, t.id); // Reply РОПа на этот пинг → сопоставим с задачей
+          await rememberMsgTask(rcpt, r.messageId, t.id); // Reply получателя на этот пинг → сопоставим с задачей
           st[t.id] = { ...s, pingDay: day, pingAt: Date.now(), state: s.state || "pinged" };
-          pinged.push({ id: t.id, title: t.title });
-          await sleep(400); // пауза между пингами в один чат РОПа
+          pinged.push({ id: t.id, title: t.title, recipient: rcpt });
+          await sleep(400); // пауза между пингами в один чат
         }
       } catch (e) { /* пропускаем задачу */ }
     }
@@ -691,10 +809,12 @@ export async function runTick(force) {
       await rsetJSON(K.escalations, list.slice(-200));
       // владельцу в Telegram — ТОЛЬКО факты + дословная переписка
       if (people.owner && people.owner.chatId) {
+        const rWho = rcpt === "marketing" ? "Маркетолог" : "РОП";
+        const rWhoDat = rcpt === "marketing" ? "Маркетологу" : "РОПу";
         const convTxt = conv.length
-          ? conv.map((m) => `${m.role === "rop" ? "РОП" : "Агент"}: ${m.text}`).join("\n\n")
-          : "(переписки не было — РОП не отвечал)";
-        const txt = `⚠️ <b>Эскалация Task-агента</b>\n${tag ? `${tag}\n` : ""}\n<b>Задача:</b> ${t.title}\n<b>Срок:</b> ${t.deadlineLabel || t.deadline || "не задан"}\n<b>Статус:</b> ${status}\n\n<b>Переписка с РОПом (дословно):</b>\n${convTxt}\n\n<i>Ответьте на это сообщение — я передам РОПу (например «напомни мягко, не к спеху») или сниму задачу с контроля.</i>`;
+          ? conv.map((m) => `${m.role === "agent" ? "Агент" : (m.role === "marketing" ? "Маркетолог" : "РОП")}: ${m.text}`).join("\n\n")
+          : `(переписки не было — ${rWho} не отвечал)`;
+        const txt = `⚠️ <b>Эскалация Task-агента</b>\n${tag ? `${tag}\n` : ""}\n<b>Задача:</b> ${t.title}\n<b>Срок:</b> ${t.deadlineLabel || t.deadline || "не задан"}\n<b>Статус:</b> ${status}\n\n<b>Переписка с ${rWho === "Маркетолог" ? "Маркетологом" : "РОПом"} (дословно):</b>\n${convTxt}\n\n<i>Ответьте на это сообщение — я передам ${rWhoDat} или сниму задачу с контроля.</i>`;
         // Кнопки — быстрые типовые решения (дополнение к текстовому ответу, не замена).
         const kb = { reply_markup: { inline_keyboard: [
           [{ text: "🔔 Напомнить РОПу ещё раз", callback_data: `esc:remind:${t.id}` }],

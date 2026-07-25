@@ -26,6 +26,7 @@ const WEBHOOK_SECRET = process.env.TELEGRAM_WEBHOOK_SECRET || "";
 export const BOT_TOKENS = {
   rop: process.env.TELEGRAM_ROP_BOT_TOKEN || "",
   owner: process.env.TELEGRAM_OWNER_BOT_TOKEN || "",
+  marketing: process.env.TELEGRAM_MARKETING_BOT_TOKEN || "",
 };
 const K = { people: "taskagent:people", codes: "taskagent:bindcode", chat: "taskagent:chat" };
 // «Altrone Digest» — отдельный бот для человекочитаемых сводок Dev/Growth/MOP агентов (НЕ Task Agent).
@@ -100,9 +101,9 @@ export async function getChat() { return await rgetJSON(K.chat, []); }
 // коды привязки: генерим один раз, показываем админу в UI, он передаёт РОПу
 async function getCodes() {
   let c = await rgetJSON(K.codes, null);
-  if (!c || !c.rop || !c.owner) {
+  if (!c || !c.rop || !c.owner || !c.marketing) {
     const gen = () => Math.random().toString(36).slice(2, 8).toUpperCase();
-    c = { rop: (c && c.rop) || gen(), owner: (c && c.owner) || gen() };
+    c = { rop: (c && c.rop) || gen(), owner: (c && c.owner) || gen(), marketing: (c && c.marketing) || gen() };
     await rsetJSON(K.codes, c);
   }
   return c;
@@ -121,7 +122,7 @@ export default async function handler(req, res) {
     if (action === "status") {
       const [people, codes] = await Promise.all([getPeople(), getCodes()]);
       const hooks = {};
-      for (const kind of ["rop", "owner"]) {
+      for (const kind of ["rop", "owner", "marketing"]) {
         if (!BOT_TOKENS[kind]) { hooks[kind] = { token: false }; continue; }
         try {
           const r = await fetch(`https://api.telegram.org/bot${BOT_TOKENS[kind]}/getWebhookInfo`);
@@ -167,6 +168,7 @@ export default async function handler(req, res) {
       const targets = [
         { key: "rop", token: BOT_TOKENS.rop, url: `https://${host}/api/tg-bot?bot=rop`, updates: ["message"] },
         { key: "owner", token: BOT_TOKENS.owner, url: `https://${host}/api/tg-bot?bot=owner`, updates: ["message", "callback_query"] },
+        { key: "marketing", token: BOT_TOKENS.marketing, url: `https://${host}/api/tg-bot?bot=marketing`, updates: ["message"] },
         // бизнес-бот для клиентов — НЕ трогаем его логику, только синхронизируем секрет webhook'а
         { key: "business", token: process.env.TELEGRAM_BOT_TOKEN || "", url: `https://${host}/api/telegram`, updates: ["business_connection", "business_message", "edited_business_message"] },
       ];
@@ -197,7 +199,7 @@ export default async function handler(req, res) {
       // спросить язык у УЖЕ подключённых (они привязались до появления этого шага)
       const people = await getPeople();
       const out = {};
-      for (const kind of ["rop", "owner"]) {
+      for (const kind of ["rop", "owner", "marketing"]) {
         const p = people[kind];
         if (!p || !p.chatId) { out[kind] = "не привязан"; continue; }
         if (p.lang && !(b.force || q.force)) { out[kind] = `уже выбран: ${p.lang}`; continue; }
@@ -225,7 +227,7 @@ export default async function handler(req, res) {
   // ── WEBHOOK ОТ TELEGRAM ──
   if (req.method !== "POST") { res.status(200).json({ ok: true, note: "tg-bot webhook alive" }); return; }
   if (WEBHOOK_SECRET && req.headers["x-telegram-bot-api-secret-token"] !== WEBHOOK_SECRET) { res.status(401).json({ error: "bad secret" }); return; }
-  const kind = q.bot === "owner" ? "owner" : (q.bot === "rop" ? "rop" : null);
+  const kind = q.bot === "owner" ? "owner" : (q.bot === "rop" ? "rop" : (q.bot === "marketing" ? "marketing" : null));
   if (!kind) { res.status(200).json({ ok: true, ignored: "no bot kind" }); return; }
 
   try {
@@ -276,7 +278,9 @@ export default async function handler(req, res) {
       await rsetJSON(K.people, people);
       const hello = kind === "rop"
         ? `🤖 <b>Altrone</b> — подключено.\n\nЯ система Altrone (не человек). Буду писать вам по задачам отдела продаж: напоминать о сроках, спрашивать статус и фиксировать результат по каждой задаче.\n\nОтвечайте мне прямо здесь — я всё зафиксирую.`
-        : `🤖 <b>Altrone</b> — подключено.\n\nСюда буду присылать эскалации Task-агента: задача, дословная переписка с РОПом и текущий статус. Решение остаётся за вами.`;
+        : kind === "marketing"
+        ? `🤖 <b>Altrone</b> — подключено.\n\nЯ система Altrone (не человек). Буду писать вам по маркетинговым задачам: реклама, креативы, бюджеты аудиторий, Instagram/бренд — напоминать о сроках, спрашивать статус и фиксировать результат.\n\nОтвечайте мне прямо здесь — я всё зафиксирую.`
+        : `🤖 <b>Altrone</b> — подключено.\n\nСюда буду присылать эскалации Task-агента: задача, дословная переписка с исполнителем и текущий статус. Решение остаётся за вами.`;
       await sendTg(kind, chatId, hello);
       await askLang(kind, chatId); // сразу спрашиваем язык общения
       res.status(200).json({ ok: true, bound: kind }); return;
@@ -317,6 +321,17 @@ export default async function handler(req, res) {
         const mod = await import("./task-agent.js");
         await mod.handleRopReply(text.slice(0, 2000), replyToId);
       } catch (e) { /* агент недоступен — сообщение всё равно сохранено */ }
+      res.status(200).json({ ok: true, stored: true }); return;
+    }
+
+    if (kind === "marketing") {
+      // ответ Маркетолога → тот же тред; Task Agent разбирает статус/закрытие по маркетинг-задачам
+      const replyToId = (msg.reply_to_message && msg.reply_to_message.message_id) || null;
+      await pushChat({ role: "marketing", text: text.slice(0, 2000), name });
+      try {
+        const mod = await import("./task-agent.js");
+        await mod.handleMarketingReply(text.slice(0, 2000), replyToId);
+      } catch (e) { /* агент недоступен — сообщение сохранено */ }
       res.status(200).json({ ok: true, stored: true }); return;
     }
 
