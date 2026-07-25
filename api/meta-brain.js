@@ -151,6 +151,7 @@ const BRAIN_SYSTEM = `Ты — «общий мозг» бизнес-систем
 - MOP-находки: проблемы по отделу / конкретным менеджерам (из amoCRM).
 - Growth-гипотезы: идеи роста на verified-воронке + web-бенчмарки.
 - DeepSales: разборы реальных звонков (баллы, ошибки, возражения) — выборка КРОШЕЧНАЯ (<2%), не случайная.
+- Маркетинг (marketing-agent): окупаемость рекламы (ROAS), цена клиента (CAC), эффективность аудиторий (CTR/CPC/расход по adset), рост Instagram. Метрики с той же честностью: если написано «не диагностируется» — НЕ выдавай по ним вывод, это отдельное наблюдение о нехватке данных, а не о рекламе.
 
 КАК АКТИВНО ИСКАТЬ (делай это ВСЕГДА, по шагам):
 A. Возьми узкое место воронки (funnel.bottleneck) — это ГЛАВНЫЙ подозреваемый. Определи его тему (закрытие / дозвон / etc).
@@ -167,7 +168,8 @@ D. Так же ищи ПРОТИВОРЕЧИЯ (Growth предлагает од
 5. Наблюдение = связь ≥2 НЕЗАВИСИМЫХ осей ИЛИ противоречие. Тема, которую видно и в воронке, и в звонках — это НЕ «дубль одиночной находки», а ГЛАВНАЯ ценность: связать их и дать честную уверенность. Не подавляй такое.
 
 Верни СТРОГО валидный JSON-массив (без markdown), максимум 5 наблюдений, отсортируй по важности:
-[{"topicKey":"stable_english_slug","title":"кратко суть","statement":"1-2 фразы что видно","sources":[{"agent":"MOP|Dev|Growth|DeepSales","signal":"конкретный сигнал с цифрой"}],"independentSignals":2,"confidence":"high|med|low","contradiction":false,"caveats":["выборка звонков 1.1%"],"proposedTask":{"title":"задача РОПу кратко","why":"зачем и что сделать","deadlineDays":3,"scope":"pointwise|department","mop":"имя или null"}}]
+[{"topicKey":"stable_english_slug","title":"кратко суть","statement":"1-2 фразы что видно","sources":[{"agent":"MOP|Dev|Growth|DeepSales|Marketing","signal":"конкретный сигнал с цифрой"}],"independentSignals":2,"confidence":"high|med|low","contradiction":false,"caveats":["выборка звонков 1.1%"],"proposedTask":{"title":"задача кратко","why":"зачем и что сделать","deadlineDays":3,"scope":"pointwise|department","mop":"имя или null","recipient":"rop|marketing"}}]
+‼️ recipient — КОМУ поручить исполнение: "marketing" — если наблюдение и действие про РЕКЛАМУ / окупаемость (ROAS) / цену лида (CPL/CAC) / аудитории-креативы / подписчиков-бренд / Instagram; "rop" — про отдел продаж / менеджеров / дозвон / скрипты / закрытие сделок. По умолчанию "rop". ВАЖНО про противоречия: если лидов много (реклама льёт), но конверсия в продажу низкая — проблема в ОТДЕЛЕ ПРОДАЖ (recipient="rop"), а не в маркетинге; и наоборот, если продажи закрывают хорошо, но лид дорогой/ROAS падает — это маркетинг (recipient="marketing"). Не путай, кто виноват.
 ‼️ topicKey — СТАБИЛЬНЫЙ короткий английский слаг ТЕМЫ проблемы (напр. false_guarantees, premature_pricing, uncalled_leads, closing_dropoff, misclassified_no_answer). Для ОДНОЙ И ТОЙ ЖЕ проблемы всегда один и тот же слаг, даже если формулировка меняется день ко дню. ЕСЛИ в конце данных есть список «УЖЕ ОТКРЫТЫЕ ТЕМЫ» — и твоё наблюдение про ту же проблему, то БЕРИ topicKey ТОЧНО оттуда (буква в букву) И НЕ включай это наблюдение в ответ вовсе (оно уже показано/принято). Новый topicKey — только для действительно НОВОЙ проблемы, которой в списке нет. По topicKey система гасит повторы — поэтому стабильность слага критична.
 Если действие преждевременно (низкая уверенность/противоречие) — proposedTask всё равно дай, но как «проверить/не действовать» (напр. поручить проверить это на большем числе звонков).
 
@@ -213,13 +215,24 @@ async function callExamples(org, tags, perTag = 2) {
 }
 
 async function gatherForBrain(org) {
-  const [funnel, ca, mopFindings, growthHyps, devFindings] = await Promise.all([
+  const [funnel, ca, mopFindings, growthHyps, devFindings, mkSnap] = await Promise.all([
     getVerifiedFunnel(org).catch(() => null),
     getCallAnalysisBundle(org).catch(() => null),
     rgetJSON("mopagent:findings", []).then((x) => (Array.isArray(x) ? x.filter((f) => f.status === "open") : [])).catch(() => []),
     rgetJSON("growthagent:hypotheses", []).then((x) => (Array.isArray(x) ? x : [])).catch(() => []),
     rgetJSON("devagent:findings", []).then((x) => (Array.isArray(x) ? x.filter((f) => f.status === "open") : [])).catch(() => []),
+    rgetJSON("marketingagent:snapshot", null).catch(() => null),
   ]);
+  // МАРКЕТИНГ-срез (marketing-agent): та же дисциплина «не диагностируется» — если метрика не посчиталась, так и пишем
+  const um = (u) => u ? (u.value != null ? u.value : (u.undiagnosable ? "не диагностируется: " + u.undiagnosable : null)) : null;
+  const marketing = mkSnap ? {
+    roas: um(mkSnap.unit && mkSnap.unit.roas),
+    cac: um(mkSnap.unit && mkSnap.unit.cac),
+    adAccount: (mkSnap.ads && mkSnap.ads.total) ? { ctr: mkSnap.ads.total.ctr, cpc: mkSnap.ads.total.cpc, spendUZS: mkSnap.currency && mkSnap.currency.spendUZS } : null,
+    adsets: (mkSnap.ads && Array.isArray(mkSnap.ads.adsets)) ? mkSnap.ads.adsets.slice(0, 6).map((a) => ({ name: a.name, ctr: a.ctr, cpc: a.cpc, spend: a.spend })) : [],
+    instagram: (mkSnap.instagram && mkSnap.instagram.ok) ? { followers: mkSnap.instagram.followers_count, reach: mkSnap.instagram.reach } : null,
+    dynamicsWoW: mkSnap.dynamics ? { followers: mkSnap.dynamics.followers, roas: mkSnap.dynamics.roas, cac: mkSnap.dynamics.cac, adsets: mkSnap.dynamics.adsets } : null,
+  } : null;
   const caSummary = ca && ca.coverage ? {
     analyzed: ca.coverage.analyzed, byMop: ca.coverage.byMop,
     team: ca.team ? { wonMistakes: ca.team.won && ca.team.won.mistakeTags, lostMistakes: ca.team.lost && ca.team.lost.mistakeTags } : null,
@@ -235,6 +248,7 @@ async function gatherForBrain(org) {
     growth: growthHyps.filter((h) => (h.status || "open") === "open").slice(0, 8).map((h) => ({ status: h.status, obs: shortT(h.observation || h.claim, 140) })),
     dev: devFindings.slice(0, 8).map((f) => ({ status: f.status, claim: shortT(f.claim, 140) })),
     deepsales: caSummary,
+    marketing, // окупаемость рекламы (ROAS), цена клиента (CAC), эффективность аудиторий, Instagram — с той же честностью
     examples, // КТО / КОГДА / ЧТО ИМЕННО сказано не так — обязательны для конкретики наблюдения
   };
 }
@@ -327,9 +341,10 @@ function fmtProposal(p) {
   s += `Насколько уверен: ${CONF_BADGE[p.confidence] || p.confidence}`;
   if (p.caveats && p.caveats.length) s += ` — ${p.caveats.join("; ")}`;
   s += `\n\n`;
+  const whoTo = t.recipient === "marketing" ? "маркетологу" : "руководителю продаж";
   s += p.contradiction
     ? `Предлагаю пока НЕ действовать: ${t.why || t.title}\n`
-    : `Предлагаю поручить руководителю продаж:\n«${t.title}»${t.why ? ` — ${t.why}` : ""}${t.deadlineDays ? ` Срок: ${t.deadlineDays} дн.` : ""}\n`;
+    : `Предлагаю поручить ${whoTo}:\n«${t.title}»${t.why ? ` — ${t.why}` : ""}${t.deadlineDays ? ` Срок: ${t.deadlineDays} дн.` : ""}\n`;
   return s;
 }
 
@@ -372,9 +387,12 @@ export async function getConfirmedMetaTasks() {
   return proposals.filter((p) => p.status === "confirmed").map((p) => {
     const t = p.finalTask || p.proposedTask || {};
     const dl = t.deadlineDays ? new Date(Date.now() + t.deadlineDays * 86400000 + 5 * 3600000).toISOString().slice(0, 10) : "";
+    const recipient = t.recipient === "marketing" ? "marketing" : "rop";
     return {
       id: `mb_${p.id}`, title: t.title || p.title, fact: t.why || p.statement || "", action: t.why || "",
-      deadline: dl, scope: t.scope === "department" ? "department" : "pointwise", mop: t.mop || null,
+      // маркетинг-задача → scope "marketing" (не показываем сейлз-пометки 🏢/👤), получатель — Маркетолог
+      deadline: dl, scope: recipient === "marketing" ? "marketing" : (t.scope === "department" ? "department" : "pointwise"),
+      mop: recipient === "marketing" ? null : (t.mop || null), recipient,
       corroboration: `по сводному наблюдению общего мозга, подтверждено владельцем${p.confidence ? ` (уверенность ${p.confidence})` : ""}`,
       metaSource: true,
     };

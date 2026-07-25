@@ -139,6 +139,7 @@ async function loadSalesTasks() {
         id: f.id, title: f.title, why: f.fact || "", deadline: f.deadline || "",
         steps: f.action ? [f.action] : [], done: false, report: null,
         source: "metabrain", scope: f.scope, mop: f.mop || null, mops: f.mop ? [f.mop] : [], issueType: "metabrain",
+        recipient: f.recipient === "marketing" ? "marketing" : "rop", // общий мозг может адресовать Маркетологу
         repeatCount: 1, corroboration: f.corroboration || "",
         daysLeft: daysLeft(f.deadline), hoursOverdue: hoursOverdue(f.deadline),
       });
@@ -258,6 +259,7 @@ function langLine(lang) {
 // Пометка масштаба: РОП должен сразу понимать — работать с процессом или поговорить с человеком.
 function scopeTag(task) {
   if (task.source !== "mop-agent" && task.source !== "metabrain") return "";
+  if (task.scope === "marketing" || task.recipient === "marketing") return ""; // маркетинг — без сейлз-пометок 🏢/👤
   if (task.scope === "department") return "🏢 ПО ОТДЕЛУ";
   return `👤 ПО МОПУ${task.mop ? ` (${task.mop})` : ""}`;
 }
@@ -489,7 +491,10 @@ claims_done ставь СТРОГО: только если ЯВНО и КОНК�
   const st = await rgetJSON(K.status, {});
   if (taskId) { st[taskId] = { ...(st[taskId] || {}), ropRepliedAt: Date.now(), ropRepliedDay: tkDay(), state: out.status || "unclear", note: out.note || "" }; await rsetJSON(K.status, st); }
   if (taskId && out.status === "claims_done" && out.needsDetail === false) {
-    try { await closeMarketingTask(taskId, out.note || text); } catch (e) {}
+    const t0 = tasks.find((t) => t.id === taskId);
+    // маркетинг-задача от общего мозга (mb_) закрывается в его предложениях, своя (mk_) — в marketingtasks
+    if (t0 && t0.source === "metabrain") { try { await closeMetaProposal(taskId, "marketing_reported"); } catch (e) {} }
+    else { try { await closeMarketingTask(taskId, out.note || text); } catch (e) {} }
   }
   const people = await getPeople();
   if (people.marketing && people.marketing.chatId && out.reply) {
