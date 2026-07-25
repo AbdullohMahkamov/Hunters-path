@@ -102,8 +102,9 @@ export default async function handler(req, res) {
       // маркетинг-задача → отдельный список marketingtasks; Task Agent доставит её МАРКЕТОЛОГУ (пинг/эскалация)
       const title = String(b.title || "").trim();
       if (!title) { res.status(400).json({ error: "нужен title" }); return; }
-      const action = b.action || (Array.isArray(b.steps) ? b.steps.join(" | ") : (b.steps || ""));
-      const r = await addMarketingTask({ title, why: b.why, action, deadline: b.deadline, source: "advisor" });
+      // ВАЖНО: поле шага — `step`, а НЕ `action` (иначе коллизия с маршрутным action:"act" → 400)
+      const step = b.step || (Array.isArray(b.steps) ? b.steps.join(" | ") : (b.steps || ""));
+      const r = await addMarketingTask({ title, why: b.why, action: step, deadline: b.deadline, source: "advisor" });
       res.status(200).json({ ok: true, type, taskId: r.id, note: "маркетинг-задача создана — Task Agent доставит её Маркетологу (пинг/эскалация)" });
       return;
     }
