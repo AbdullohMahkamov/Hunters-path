@@ -208,8 +208,11 @@ function marketingBlock(d, metaSpend, ig) {
     const top = rows.slice().sort((a, b) => (b.spendUZS || 0) - (a.spendUZS || 0)).slice(0, 3);
     if (top.length) s += `• Аудитории по расходу: ${top.map((r) => `${r.name} — ${num(r.spendUZS)} сум${r.ctr != null ? `, CTR ${r.ctr}%` : ""}`).join("; ")}\n`;
   }
-  if (ig && ig.ok && ig.followers_count != null) s += `• Instagram: подписчиков ${num(ig.followers_count)}` + (ig.reach != null ? `, охват ${num(ig.reach)}` : "") + `\n`;
-  else s += `• Instagram: органика не подключена (нужны права токена instagram_basic + instagram_manage_insights).\n`;
+  if (ig && ig.ok && ig.followers_count != null) {
+    s += `• Instagram: подписчиков ${num(ig.followers_count)}` + (ig.reach != null ? `, охват ${num(ig.reach)}` : "") + `\n`;
+    const posts = Array.isArray(ig.media) ? ig.media.filter((p) => p.engagement != null).sort((a, b) => (b.engagement || 0) - (a.engagement || 0)).slice(0, 3) : [];
+    if (posts.length) s += `• Лучшие посты по вовлечённости (лайки+комменты): ${posts.map((p) => `«${(p.caption || "без подписи").slice(0, 40)}» — ${p.engagement}`).join("; ")}\n`;
+  } else s += `• Instagram: органика не подключена (нужны права токена instagram_basic + instagram_manage_insights).\n`;
   s += "ТВОЯ ЗОНА ПО МАРКЕТИНГУ: следи за окупаемостью (ROAS), ценой лида (CPL) против нормы рынка, ростом бренда и подписчиков Instagram. Советуй масштабировать прибыльные аудитории и отключать убыточные.\n";
   return s;
 }
@@ -372,7 +375,9 @@ export default async function handler(req, res) {
     const tgHist = await readCache(`tghist:${org}`, null); // анализ истории (вся база переписки)
     const metaSpend = await readCache("meta_spend", null);
     const igCache = await readCache("marketingagent:instagram", null);
-    const live = liveBlock(cache, fin, GOAL, workdays, { digest: tgDigest, seg: tgSeg, hist: tgHist }) + marketingBlock(cache, metaSpend, igCache);
+    const live = liveBlock(cache, fin, GOAL, workdays, { digest: tgDigest, seg: tgSeg, hist: tgHist });
+    // маркетинг-срез небольшой и нужен на маркетинговые/контентные вопросы, которые классификатор часто НЕ метит live → даём ВСЕГДА (нетривиальный вопрос)
+    const mktBlock = marketingBlock(cache, metaSpend, igCache);
 
     // === УМНЫЕ ВОПРОСЫ: AI находит проблемы и предлагает, что спросить ===
     if (action === "smart-questions") {
@@ -529,8 +534,9 @@ export default async function handler(req, res) {
       // Кнопки-действия подключаем на ЛЮБОЙ содержательный ответ, а не только по явной просьбе «сделай»:
       // советник по правилу ВСЕГДА заканчивает конкретным шагом (поручить РОПу и т.п.) — и этот шаг
       // должен быть КНОПКОЙ, а не текстовым советом «поручите сами». Иначе действие остаётся на словах.
-      if (intent.act || intent.live || intent.agents || intent.calls) sys += ACTIONS_BLOCK;
+      sys += ACTIONS_BLOCK; // кнопки-действия — на ЛЮБОЙ содержательный ответ (в т.ч. «Поставить задачу маркетологу» на контент/рекламу)
       if (intent.live) sys += LIVE_INTRO + live + trustBlock(speed);
+      sys += mktBlock; // маркетинг-срез ВСЕГДА — чтобы советник не отвечал «нет данных» на контент/бренд/Instagram
       if (intent.agents) sys += agBlk;
       if (intent.calls) sys += caBlk;
       systemText = sys; model = "claude-sonnet-5"; maxTok = 2500;
