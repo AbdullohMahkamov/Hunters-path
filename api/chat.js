@@ -10,6 +10,7 @@ import { getTaskStateBundle } from "./task-agent.js";
 import { getOpenMopFindings, getFreshAutoClosed, getMopLastRun, getMopConfig } from "./mop-agent.js";
 import { getBalancesSummary } from "./gamification.js";
 import { getCallAnalysisBundle } from "./deepsales.js";
+import { parseGoalText, setGoal } from "./goal.js";
 
 async function readDashboardCache() {
   const url = process.env.UPSTASH_REDIS_REST_URL;
@@ -529,7 +530,20 @@ export default async function handler(req, res) {
         intent.agents ? agentsStateBlock(org) : Promise.resolve(""),
         intent.calls ? callAnalysisBlock(org) : Promise.resolve(""),
       ]);
-      let sys = SYSTEM_CORE + progressNote;
+      // ── ПОСТАНОВКА ЦЕЛИ обычным сообщением: детект → сохраняем структурный объект (goal.js) → план придёт отдельно ──
+      let goalNote = "";
+      if (!/\?/.test(lastMsg) && /(цель|нужно сделать|хочу сделать|поставь цель|план на|maqsad|reja)/i.test(lastMsg)) {
+        try {
+          const parsed = await parseGoalText(lastMsg);
+          if (parsed.ok) {
+            await setGoal(parsed);
+            goalNote = `\n\nВЛАДЕЛЕЦ ТОЛЬКО ЧТО ЗАДАЛ ЦЕЛЬ: ${parsed.amount.toLocaleString("ru-RU")} ${parsed.currency}${parsed.currency === "USD" ? ` (~${parsed.amountUZS.toLocaleString("ru-RU")} сум)` : " сум"} за период «${parsed.period.label}». Она СОХРАНЕНА как управляемая цель. В ответе КРАТКО подтверди сумму и период, и скажи, что уже считаешь план догона — он придёт отдельным сообщением в Telegram с задачами и кнопкой подтверждения. НЕ выдумывай цифры плана здесь.`;
+            const host = req.headers && req.headers.host;
+            if (host) fetch(`https://${host}/api/planner?action=propose&force=1&cron=1`, { method: "POST", headers: { "content-type": "application/json", Authorization: `Bearer ${process.env.CRON_SECRET}` }, body: "{}" }).catch(() => {});
+          }
+        } catch (e) { /* не критично — обычный ответ */ }
+      }
+      let sys = SYSTEM_CORE + progressNote + goalNote;
       if (intent.agents || intent.calls) sys += DISCIPLINE_FULL;
       // Кнопки-действия подключаем на ЛЮБОЙ содержательный ответ, а не только по явной просьбе «сделай»:
       // советник по правилу ВСЕГДА заканчивает конкретным шагом (поручить РОПу и т.п.) — и этот шаг

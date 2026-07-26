@@ -44,6 +44,12 @@
     },
     "api/marketing-agent.js": {
       "maxDuration": 120
+    },
+    "api/planner.js": {
+      "maxDuration": 120
+    },
+    "api/goal.js": {
+      "maxDuration": 30
     }
   },
   "crons": [
@@ -122,6 +128,14 @@
     {
       "path": "/api/meta-ads?action=refresh",
       "schedule": "0 */4 * * *"
+    },
+    {
+      "path": "/api/planner?action=propose&cron=1",
+      "schedule": "0 3 * * *"
+    },
+    {
+      "path": "/api/planner?action=daily-report&cron=1",
+      "schedule": "30 3 * * *"
     }
   ]
 }

@@ -66,13 +66,18 @@ const SYSTEM = `Ты — Growth-аналитик (Агент Б) для SaaS Alt
 3. web_search: 3-4 КОНКРЕТНЫХ запроса про бенчмарки/причины для НИШИ клиента (не общие «как поднять продажи»). НИКОГДА не упоминай в запросах реальное название компании — только нишу и метрику. Не повторяй темы, которые уже искались недавно (список дам) — используй уже найденное или бери новый угол.
 4. Каждая гипотеза строго в формате полей: observation (verified-факт клиента с цифрой), benchmark (внешний ориентир с диапазоном), source (что за источник), cause (гипотеза причины: вероятно X, потому что Y), howToVerify (конкретный измеримый способ проверки на данных клиента), confidence (low|medium|high — тем выше, чем больше внешних источников совпадают).
 
+5. ДВА ТИПА гипотез — НЕ смешивай (поле kind):
+   • kind="problem" — ДИАГНОЗ того, что уже мешает (из узкого места воронки). Таких мало, и они повторяются от прогона к прогону. НЕ подавай уже известную открытую проблему как «новый инсайт» — если тема есть в списке открытых ниже, бери её topicKey и НЕ дублируй.
+   • kind="experiment" — НОВОЕ, чего ещё НЕ пробовали и стоит протестировать: непроверенный канал привлечения, новый оффер/сообщение, эксперимент с ценой/форматом для сегмента, время/частота контакта с лидом. ИМЕННО здесь источник новизны — опирайся на web_search (что работает в нише). Если весь ответ только пересказ воронки без экспериментов — работа не сделана.
+6. topicKey — СТАБИЛЬНЫЙ короткий английский слаг ТЕМЫ (напр. leads_dont_understand_offer, weak_first_contact, untested_telegram_channel). Для ОДНОЙ темы ВСЕГДА один слаг, даже если формулировка меняется. Если тема уже в «ОТКРЫТЫХ ТЕМАХ» ниже — бери ТОЧНО тот же topicKey.
+
 ЯЗЫК: читатель — ВЛАДЕЛЕЦ БИЗНЕСА, не программист. Пиши простым человеческим языком, как объяснял бы собственнику. Никаких имён полей кода, переменных, английских терминов (verified/insufficient/confidence в тексте), названий файлов. Вместо «этап trust=insufficient» пиши «этот этап проверить нельзя — в CRM нет нужных данных». Цифры и суть обязательны, жаргон — нет.
 
 Пиши по-русски, коротко, честно. Если данных на надёжную гипотезу нет вообще — так и скажи, не выдумывай.
 
 ФОРМАТ ОТВЕТА — строго JSON, без markdown и текста вокруг:
 {
-  "hypotheses":[{"observation":"...","benchmark":"...","source":"...","cause":"...","howToVerify":"...","confidence":"low|medium|high"}],
+  "hypotheses":[{"topicKey":"stable_english_slug","kind":"problem|experiment","observation":"...","benchmark":"...","source":"...","cause":"...","howToVerify":"...","confidence":"low|medium|high"}],
   "undiagnosable":["этап ... не диагностируется — ..."],
   "report":"краткий вывод для основателя (3-8 строк)"
 }
@@ -88,7 +93,7 @@ ${JSON.stringify(funnel)}
 Переходы, которые НЕЛЬЗЯ диагностировать (suspicious/insufficient): ${JSON.stringify(funnel.undiagnosable)}
 
 УЖЕ ПРОВЕРЕНО РАНЕЕ (не переоткрывай, учись на результатах): ${JSON.stringify((tested || []).slice(-15).map((x) => ({ cause: x.cause, result: x.result })))}
-ОТКРЫТЫЕ ГИПОТЕЗЫ (не дублируй, можешь уточнить): ${JSON.stringify((openHyps || []).map((h) => h.cause))}
+ОТКРЫТЫЕ ТЕМЫ, УЖЕ ПОКАЗАННЫЕ ВЛАДЕЛЬЦУ (бери ТОТ ЖЕ topicKey, НЕ подавай как новое; проблему-диагноз НЕ повторяй, лучше дай новый эксперимент): ${JSON.stringify((openHyps || []).map((h) => ({ topicKey: h.topicKey || null, about: String(h.observation || h.cause || "").slice(0, 60), kind: h.kind || "problem" })))}
 ТЕМЫ, УЖЕ ИСКАННЫЕ ЗА ПОСЛЕДНИЕ ДНИ (НЕ повторяй эти запросы): ${JSON.stringify(recentQueries || [])}
 
 ЗАДАЧА:
@@ -241,20 +246,22 @@ ${baseUser}`;
   const allSources = [...sources, ...newSourceEntries].slice(-CAP.sources);
   await rsetJSON(K.sources, allSources);
 
-  // новые гипотезы → в память (дедуп по cause), сохраняем существующие открытые
-  const openByCause = {}; for (const h of openHyps) openByCause[String(h.cause || "").toLowerCase().slice(0, 80)] = h;
-  const testedCauses = new Set(tested.map((x) => String(x.cause || "").toLowerCase().slice(0, 80)));
+  // новые гипотезы → в память. ДЕДУП ПО СТАБИЛЬНОМУ topicKey (не по «плывущему» тексту cause) —
+  // иначе одна и та же тема каждый прогон получала новый id и дайджест слал её как «новую».
+  const slug = (h) => (String(h.topicKey || "").toLowerCase().replace(/[^a-z0-9_]+/g, "_").replace(/^_+|_+$/g, "").slice(0, 40)) || String(h.cause || h.observation || "").toLowerCase().slice(0, 40);
+  const openByKey = {}; for (const h of openHyps) openByKey[slug(h)] = h;
+  const testedKeys = new Set(tested.map((x) => slug(x)));
   const merged = [...openHyps];
   for (const h of (Array.isArray(out.hypotheses) ? out.hypotheses : [])) {
-    if (!h || !h.cause) continue;
-    const key = String(h.cause).toLowerCase().slice(0, 80);
-    if (testedCauses.has(key)) continue;          // не переоткрываем проверенное
-    if (openByCause[key]) {                         // обновляем существующую
-      const ex = openByCause[key];
-      Object.assign(ex, { observation: h.observation || ex.observation, benchmark: h.benchmark || ex.benchmark, source: h.source || ex.source, howToVerify: h.howToVerify || ex.howToVerify, confidence: h.confidence || ex.confidence, updated: Date.now() });
+    if (!h || !(h.cause || h.observation)) continue;
+    const key = slug(h);
+    if (testedKeys.has(key)) continue;          // не переоткрываем проверенное
+    if (openByKey[key]) {                         // ИЗВЕСТНАЯ тема → обновляем, id/дату первого показа сохраняем
+      const ex = openByKey[key];
+      Object.assign(ex, { observation: h.observation || ex.observation, benchmark: h.benchmark || ex.benchmark, source: h.source || ex.source, howToVerify: h.howToVerify || ex.howToVerify, confidence: h.confidence || ex.confidence, kind: h.kind || ex.kind || "problem", updated: Date.now() });
       continue;
     }
-    merged.push({ id: newId("gh"), observation: h.observation || "", benchmark: h.benchmark || "", source: h.source || "", cause: h.cause, howToVerify: h.howToVerify || "", confidence: h.confidence || "low", status: "open", created: Date.now(), updated: Date.now() });
+    merged.push({ id: newId("gh"), topicKey: h.topicKey || key, kind: h.kind === "experiment" ? "experiment" : "problem", observation: h.observation || "", benchmark: h.benchmark || "", source: h.source || "", cause: h.cause || "", howToVerify: h.howToVerify || "", confidence: h.confidence || "low", status: "open", created: Date.now(), firstSurfacedDay: dayKey(), updated: Date.now() });
   }
   const hypotheses = merged.slice(-CAP.hypotheses);
   await rsetJSON(K.hypotheses, hypotheses);

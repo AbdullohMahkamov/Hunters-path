@@ -73,7 +73,16 @@ async function formatOne(kind, item) {
 ${JSON.stringify(item).slice(0, 2600)}
 
 Верни только готовое сообщение по правилам системного промпта.`;
-  return (await callModel(SYSTEM_DIGEST, user, 700)).trim();
+  let text = (await callModel(SYSTEM_DIGEST, user, 700)).trim();
+  // ВИЗУАЛЬНОЕ РАЗДЕЛЕНИЕ типов growth: 🔧 известная проблема (диагноз) vs 💡 новая гипотеза для теста —
+  // это разные типы информации, нельзя мешать в одну кучу.
+  if (kind === "growth") {
+    const isExp = item.kind === "experiment";
+    const since = item.firstSurfacedDay ? ` (замечена ${item.firstSurfacedDay})` : "";
+    const head = isExp ? "💡 <b>Новая гипотеза для теста</b>" : `🔧 <b>Известная проблема, ещё не решена</b>${since}`;
+    text = `${head}\n${text}`;
+  }
+  return text;
 }
 
 // ── HANDOFF: контекст находки для советника (кнопка «Обсудить с помощником») ──
