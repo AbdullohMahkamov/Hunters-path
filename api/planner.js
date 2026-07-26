@@ -26,7 +26,8 @@ async function rget(key) { try { const r = await fetch(`${REDIS_URL}/get/${encod
 async function rgetJSON(key, dflt) { const raw = await rget(key); if (raw == null) return dflt; try { return JSON.parse(raw); } catch (e) { return dflt; } }
 async function rsetJSON(key, v) { try { await fetch(`${REDIS_URL}/set/${encodeURIComponent(key)}`, { method: "POST", headers: { Authorization: `Bearer ${REDIS_TOKEN}` }, body: JSON.stringify(v) }); return true; } catch (e) { return false; } }
 async function getSession(session) { if (!session) return null; try { const raw = await rget(`session:${session}`); return raw ? JSON.parse(raw) : null; } catch (e) { return null; } }
-const K = { pending: `planner:pending:${ORG}`, active: `planner:active:${ORG}`, appdata: `appdata:${ORG}` };
+const K = { pending: `planner:pending:${ORG}`, active: `planner:active:${ORG}`, appdata: `appdata:${ORG}`, history: `planner:history:${ORG}` };
+async function archivePlan(rec, status) { try { const h = await rgetJSON(K.history, []); h.push({ periodKey: rec.periodKey, at: rec.at, closedAt: Date.now(), status, gap: rec.plan && rec.plan.facts && rec.plan.facts.gap, tasks: rec.plan && rec.plan.tasks }); await rsetJSON(K.history, h.slice(-60)); } catch (e) {} }
 const num = (n) => (n == null ? "н/д" : Number(Math.round(n)).toLocaleString("ru-RU"));
 const tkNow = () => new Date(Date.now() + 5 * 3600000);
 
@@ -193,6 +194,8 @@ export async function proposePlan(org = ORG, force = false) {
     await rsetJSON(K.active, { periodKey, onPace: true, at: Date.now() });
     return { ok: true, onPace: true };
   }
+  // старое неподтверждённое предложение под ДРУГОЙ (прошлый) период → в историю как «не реализован», не теряем молча
+  if (pending && pending.periodKey && pending.periodKey !== periodKey) await archivePlan(pending, "expired_unconfirmed");
   // гейт: предложение владельцу с кнопками
   const rec = { periodKey, at: Date.now(), plan, reminded: false };
   await rsetJSON(K.pending, rec);
@@ -213,6 +216,7 @@ export async function handlePlanButton(act) {
   const pending = await rgetJSON(K.pending, null);
   if (!pending || !pending.plan) return { toast: "план не найден" };
   if (act === "reject") {
+    await archivePlan(pending, "rejected"); // в историю: что предлагали, но владелец отклонил
     await rsetJSON(K.pending, null);
     await rsetJSON(K.active, { periodKey: pending.periodKey, rejected: true, at: Date.now() });
     return { toast: "План отклонён", ownerMsg: `❌ План под цель «${pending.periodKey}» отклонён — задачи не раздаются.` };
@@ -281,7 +285,15 @@ export async function buildDailyReport(org = ORG) {
       if (crit) s += `Самое важное: «${crit.title}» (${crit.who})${crit.overdue ? " — просрочено" : ""}.\n`;
     }
   } else {
-    s += `\n📋 План под цель ещё не подтверждён — предложение уходит отдельно.\n`;
+    // план предложен, но владелец не решил → показываем ЯВНО, что он завис (а не «плана нет»)
+    const pending = await rgetJSON(K.pending, null);
+    if (pending && pending.at) {
+      const d = new Date(pending.at + 5 * 3600000).toISOString().slice(0, 10);
+      const days = Math.floor((Date.now() - pending.at) / 86400000);
+      s += `\n⏳ План от ${d} ждёт вашего решения${days >= 1 ? ` (${days} дн.)` : ""} — Подтвердить / Отклонить (в owner-боте).\n`;
+    } else {
+      s += `\n📋 План под цель ещё не построен.\n`;
+    }
   }
   // одна главная рекомендация из узкого места
   if (g.bottleneck) s += `\n🎯 Фокус дня: узкое место — ${g.bottleneck.stage} (конверсия ${g.bottleneck.pct}%). Разберитесь здесь в первую очередь.`;
@@ -313,7 +325,7 @@ export default async function handler(req, res) {
     if (action === "propose") { res.status(200).json(await proposePlan(ORG, req.query && req.query.force === "1")); return; } // крон: предложить владельцу
     if (action === "daily-report") { res.status(200).json(await sendDailyReport(ORG)); return; }   // крон: утренний отчёт
     if (action === "report-preview") { res.status(200).json(await buildDailyReport(ORG)); return; } // предпросмотр отчёта без отправки
-    if (action === "state") { res.status(200).json({ pending: await rgetJSON(K.pending, null), active: await rgetJSON(K.active, null), goal: await getGoal() }); return; }
+    if (action === "state") { res.status(200).json({ pending: await rgetJSON(K.pending, null), active: await rgetJSON(K.active, null), history: await rgetJSON(K.history, []), goal: await getGoal() }); return; }
     if (action === "button") { const r = await handlePlanButton((req.body && req.body.act) || (req.query && req.query.act)); res.status(200).json(r); return; }
     res.status(400).json({ error: "unknown action" });
   } catch (e) { res.status(500).json({ error: String(e && e.message || e) }); }
