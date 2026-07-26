@@ -11,6 +11,7 @@ import { getOpenMopFindings, getFreshAutoClosed, getMopLastRun, getMopConfig } f
 import { getBalancesSummary } from "./gamification.js";
 import { getCallAnalysisBundle } from "./deepsales.js";
 import { parseGoalText, setGoal } from "./goal.js";
+import { parseMargin, parseCpl, parseSchedule, setMargin, setCpl, setSchedule, missingSettings } from "./biz-settings.js";
 
 async function readDashboardCache() {
   const url = process.env.UPSTASH_REDIS_REST_URL;
@@ -530,20 +531,36 @@ export default async function handler(req, res) {
         intent.agents ? agentsStateBlock(org) : Promise.resolve(""),
         intent.calls ? callAnalysisBlock(org) : Promise.resolve(""),
       ]);
-      // ── ПОСТАНОВКА ЦЕЛИ обычным сообщением: детект → сохраняем структурный объект (goal.js) → план придёт отдельно ──
+      // ── НАСТРОЙКИ ОБЫЧНЫМ СООБЩЕНИЕМ: цель / маржа / CPL-ориентир / график → структурные сущности (goal.js, biz-settings.js) ──
       let goalNote = "";
-      if (!/\?/.test(lastMsg) && /(цель|нужно сделать|хочу сделать|поставь цель|план на|maqsad|reja)/i.test(lastMsg)) {
-        try {
+      const notQ = !/\?/.test(lastMsg);
+      try {
+        if (notQ && /(цель|нужно сделать|хочу сделать|поставь цель|план на|maqsad|reja)/i.test(lastMsg)) {
           const parsed = await parseGoalText(lastMsg);
           if (parsed.ok) {
             await setGoal(parsed);
-            goalNote = `\n\nВЛАДЕЛЕЦ ТОЛЬКО ЧТО ЗАДАЛ ЦЕЛЬ: ${parsed.amount.toLocaleString("ru-RU")} ${parsed.currency}${parsed.currency === "USD" ? ` (~${parsed.amountUZS.toLocaleString("ru-RU")} сум)` : " сум"} за период «${parsed.period.label}». Она СОХРАНЕНА как управляемая цель. В ответе КРАТКО подтверди сумму и период, и скажи, что уже считаешь план догона — он придёт отдельным сообщением в Telegram с задачами и кнопкой подтверждения. НЕ выдумывай цифры плана здесь.`;
+            goalNote += `\n\nВЛАДЕЛЕЦ ЗАДАЛ ЦЕЛЬ: ${parsed.amount.toLocaleString("ru-RU")} ${parsed.currency}${parsed.currency === "USD" ? ` (~${parsed.amountUZS.toLocaleString("ru-RU")} сум)` : " сум"} за «${parsed.period.label}». Сохранена как управляемая цель. КРАТКО подтверди сумму и период и скажи, что считаешь план догона — он придёт отдельным сообщением в Telegram с кнопкой подтверждения. Цифры плана здесь НЕ выдумывай.`;
             const host = req.headers && req.headers.host;
             if (host) fetch(`https://${host}/api/planner?action=propose&force=1&cron=1`, { method: "POST", headers: { "content-type": "application/json", Authorization: `Bearer ${process.env.CRON_SECRET}` }, body: "{}" }).catch(() => {});
           }
-        } catch (e) { /* не критично — обычный ответ */ }
-      }
-      let sys = SYSTEM_CORE + progressNote + goalNote;
+        }
+        if (notQ && /(маржа|рентабельн)/i.test(lastMsg)) { const p = parseMargin(lastMsg); if (p.ok) { await setMargin(p.value, "manual", p.raw); goalNote += `\n\nВЛАДЕЛЕЦ ЗАДАЛ МАРЖУ ${p.value}%. Сохранена (используется как ваш override поверх авто-расчёта). Кратко подтверди.`; } }
+        if (notQ && /(цена лида|cpl|ориентир.*лид)/i.test(lastMsg)) { const p = parseCpl(lastMsg); if (p.ok) { await setCpl(p.value, p.raw); goalNote += `\n\nВЛАДЕЛЕЦ ЗАДАЛ ОРИЕНТИР ЦЕНЫ ЛИДА ${p.value.toLocaleString("ru-RU")} сум. Сохранён. Кратко подтверди.`; } }
+        if (notQ && /(рабоч.{0,4}(график|дн)|работаем|выходн|с\s*\d{1,2}\s*(до|[-–])\s*\d{1,2})/i.test(lastMsg)) { const p = await parseSchedule(lastMsg); if (p.ok) { await setSchedule(p); goalNote += `\n\nВЛАДЕЛЕЦ ЗАДАЛ РАБОЧИЙ ГРАФИК (дни ${JSON.stringify(p.workdays)}, ${p.workStart}–${p.workEnd}). Сохранён. Кратко подтверди дни и часы.`; } }
+      } catch (e) { /* не критично — обычный ответ */ }
+      // Чего не хватает/устарело → советник ДОЛЖЕН САМ спросить (блокирующе для маржи, мягко для остального)
+      let askNote = "";
+      try {
+        const miss = await missingSettings(!!(fin && fin.margin != null));
+        if (miss.length) {
+          const bl = miss.filter((m) => m.severity === "blocking"), rq = miss.filter((m) => m.severity === "reask"), op = miss.filter((m) => m.severity === "optional");
+          askNote = "\n\nНАСТРОЙКИ, КОТОРЫХ НЕ ХВАТАЕТ (спрашивай САМ у владельца в чате — НЕ подставляй дефолт, НЕ выдавай «не диагностируется» там, где можно просто спросить):";
+          if (bl.length) askNote += `\n- БЛОКИРУЮЩЕЕ: ${bl.map((m) => `${m.field} (${m.why})`).join("; ")}. Если вопрос касается этого расчёта — СНАЧАЛА спроси значение, не выдавай неполный результат.`;
+          if (rq.length) askNote += `\n- ПЕРЕСПРОСИТЬ: ${rq.map((m) => `${m.field}=${m.current} (${m.why})`).join("; ")}. Уточни, актуально ли ещё.`;
+          if (op.length) askNote += `\n- ЖЕЛАТЕЛЬНОЕ: ${op.map((m) => m.field).join(", ")}. Можно посчитать без них, но предупреди «посчитал без X — скажете, уточню точнее».`;
+        }
+      } catch (e) { /* не критично */ }
+      let sys = SYSTEM_CORE + progressNote + goalNote + askNote;
       if (intent.agents || intent.calls) sys += DISCIPLINE_FULL;
       // Кнопки-действия подключаем на ЛЮБОЙ содержательный ответ, а не только по явной просьбе «сделай»:
       // советник по правилу ВСЕГДА заканчивает конкретным шагом (поручить РОПу и т.п.) — и этот шаг

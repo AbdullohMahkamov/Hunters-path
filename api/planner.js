@@ -33,7 +33,7 @@ const tkNow = () => new Date(Date.now() + 5 * 3600000);
 
 // ── РАБОЧИЕ ДНИ периода (та же логика, что дашборд: считаем по будням из настроек, воскресенье по умолч. выходной)
 async function workingDays(period) {
-  const cfg = (await rgetJSON("metricscfg:hunter", {})) || {};
+  const cfg = (await rgetJSON("settings:hunter", {})) || {}; // рабочий график живёт в settings:<org>, не в metricscfg
   const wd = Array.isArray(cfg.workdays) && cfg.workdays.length ? cfg.workdays : [1, 2, 3, 4, 5, 6]; // Пн-Сб
   const today = tkNow().toISOString().slice(0, 10);
   let total = 0, passed = 0;

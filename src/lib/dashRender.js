@@ -166,10 +166,10 @@ function renderForecast(d) {
     <div style="font-size:19px;font-weight:700;color:var(--accent);margin-top:2px;">${forecast != null ? fc(forecast) : '—'}</div>
     <div style="font-size:10px;color:var(--txt3);">${uz ? `${passed}/${total} ish kuni oʻtdi` : `прошло ${passed} из ${total} раб. дней`}</div>
   </div>`
-  html += `<div style="background:var(--card);border:1px solid var(--line);border-radius:10px;padding:11px 12px;cursor:pointer;" onclick="editForecastGoal()" title="${uz ? 'Maqsadni oʻzgartirish' : 'Изменить цель'}">
-    <div style="font-size:11px;color:var(--txt2);">${uz ? 'Maqsad ✏️' : 'Цель ✏️'}</div>
+  html += `<div style="background:var(--card);border:1px solid var(--line);border-radius:10px;padding:11px 12px;">
+    <div style="font-size:11px;color:var(--txt2);">${uz ? 'Maqsad' : 'Цель'}</div>
     <div style="font-size:19px;font-weight:700;margin-top:2px;">${goal > 0 ? fc(goal) : '—'}</div>
-    <div style="font-size:10px;color:var(--txt3);">${goalPct != null ? (uz ? `prognoz: ${goalPct}%` : `прогноз: ${goalPct}%`) : ''}</div>
+    <div style="font-size:10px;color:var(--txt3);">${goal > 0 ? (goalPct != null ? (uz ? `prognoz: ${goalPct}%` : `прогноз: ${goalPct}%`) : '') : (uz ? 'chatda qo‘ying' : 'задайте в чате')}</div>
   </div>`
   html += '</div>'
   if (goal > 0) {
@@ -514,20 +514,10 @@ async function saveOrgSettings(partial) {
     await fetch('/api/user-data', { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ action: 'settings-set', session: getSession(), settings: partial }) })
   } catch (e) { /* ignore */ }
 }
-async function editForecastGoal() {
+// Ручной ввод убран: цель задаётся ТОЛЬКО через чат-советника (структурная сущность goal + план догона).
+function editForecastGoal() {
   const uz = state.lang === 'uz'
-  const cur = orgSettings.goal || getGoal()
-  const inp = prompt(uz ? 'Oylik maqsad (summa, soʻm):' : 'Цель по выручке на месяц (сум):', cur)
-  if (inp === null) return
-  const cleaned = parseInt(String(inp).replace(/[^0-9]/g, ''), 10)
-  if (!cleaned || cleaned <= 0) { alert(uz ? 'Nol emas, masalan 250000000' : 'Введите число больше нуля, например 250000000'); return }
-  _goalPending = cleaned // защита от перезатирания асинхронным loadOrgSettings, пока сохраняем
-  orgSettings.goal = cleaned
-  if (typeof window !== 'undefined') window.orgSettings = orgSettings // чтобы getGoal() увидел новую цель сразу
-  state.goal = cleaned; save()
-  renderForecast(_lastDashData)
-  await saveOrgSettings({ goal: cleaned }) // ждём подтверждения бэкенда, только потом снимаем защиту
-  _goalPending = null
+  alert(uz ? 'Maqsadni chatda qo‘ying — maslahatchiga yozing, masalan: «Bu oy 200 mln qilish kerak». Dashboard endi faqat hisob-kitobni ko‘rsatadi.' : 'Цель ставится в чате — напишите советнику, напр. «В этом месяце нужно сделать 200 млн выручки». Дашборд теперь только показывает расчёты.')
 }
 
 // ===== МОДАЛКА: ПОДОЗРИТЕЛЬНЫЕ =====
@@ -627,35 +617,14 @@ async function reviewSusp(id, status) {
 const DAY_NAMES_RU = ['Воскресенье', 'Понедельник', 'Вторник', 'Среда', 'Четверг', 'Пятница', 'Суббота']
 const DAY_NAMES_UZ = ['Yakshanba', 'Dushanba', 'Seshanba', 'Chorshanba', 'Payshanba', 'Juma', 'Shanba']
 const DAY_ORDER = [1, 2, 3, 4, 5, 6, 0]
+// Ручной ввод графика убран: задаётся в чате (разово). Клик по «графику» — подсказка, а не редактор.
 function openWorkdaysModal() {
   const uz = state.lang === 'uz'
-  document.getElementById('wdTitle').textContent = uz ? 'Ish kunlari' : 'Рабочие дни'
-  document.getElementById('wdHint').textContent = uz ? 'Ish kunlarini belgilang — prognoz faqat shularni hisobga oladi.' : 'Отметьте рабочие дни — прогноз будет учитывать только их.'
-  document.getElementById('wdSaveBtn').textContent = uz ? 'Saqlash' : 'Сохранить'
-  const names = uz ? DAY_NAMES_UZ : DAY_NAMES_RU
-  const wd = orgSettings.workdays || []
-  document.getElementById('wdDays').innerHTML = DAY_ORDER.map((dn) => `
-    <label style="display:flex;align-items:center;gap:10px;padding:9px 12px;border-radius:9px;border:1px solid var(--line2);background:var(--card);cursor:pointer;font-size:13.5px;">
-      <input type="checkbox" value="${dn}" ${wd.includes(dn) ? 'checked' : ''} style="width:17px;height:17px;cursor:pointer;accent-color:var(--accent);">
-      <span>${names[dn]}</span>
-    </label>`).join('')
-  document.getElementById('whStart').value = orgSettings.workStart || '10:00'
-  document.getElementById('whEnd').value = orgSettings.workEnd || '20:00'
-  document.getElementById('workdaysOverlay').style.display = 'block'
+  const wd = (orgSettings.workdays && orgSettings.workdays.length ? orgSettings.workdays : [1, 2, 3, 4, 5, 6]).map((d) => (uz ? DAY_NAMES_UZ : DAY_NAMES_RU)[d]).join(', ')
+  alert((uz ? `Ish grafigi hozir: ${wd}, ${orgSettings.workStart || '10:00'}–${orgSettings.workEnd || '20:00'}.\n\nO‘zgartirish uchun chatda ayting — masalan: «Dushanba-shanba, 10 dan 20 gacha ishlaymiz».` : `Рабочий график сейчас: ${wd}, ${orgSettings.workStart || '10:00'}–${orgSettings.workEnd || '20:00'}.\n\nЧтобы изменить — напишите в чате, напр. «Работаем пн-сб с 10 до 20».`))
 }
-function closeWorkdaysModal() { document.getElementById('workdaysOverlay').style.display = 'none' }
-async function saveWorkdays() {
-  const checks = document.querySelectorAll('#wdDays input[type=checkbox]:checked')
-  const days = Array.from(checks).map((c) => parseInt(c.value, 10))
-  if (!days.length) { alert(state.lang === 'uz' ? 'Kamida bitta kun tanlang' : 'Выберите хотя бы один день'); return }
-  orgSettings.workdays = days
-  const ws = document.getElementById('whStart').value || '10:00'
-  const we = document.getElementById('whEnd').value || '20:00'
-  orgSettings.workStart = ws; orgSettings.workEnd = we
-  await saveOrgSettings({ workdays: days, workStart: ws, workEnd: we })
-  closeWorkdaysModal()
-  renderForecast(_lastDashData)
-}
+function closeWorkdaysModal() { const el = document.getElementById('workdaysOverlay'); if (el) el.style.display = 'none' }
+function saveWorkdays() { openWorkdaysModal() } // ручное сохранение убрано — график через чат
 
 // ===== СИНХРОНИЗАЦИЯ С amoCRM =====
 let syncingAll = false
@@ -702,15 +671,10 @@ function metaSpendToUZS(spend) {
   if (cur === 'UZS') return spend
   return Math.round(spend * MKT_USD_UZS) // USD или пустая валюта (аккаунт USD) → конвертируем
 }
-function getCplNorm() { return orgSettings.cplNorm != null ? orgSettings.cplNorm : 15000 } // ориентир CPL edtech B2C (сум), редактируемый
+function getCplNorm() { return orgSettings.cplNorm != null ? orgSettings.cplNorm : null } // ориентир CPL (сум); задаётся в чате, дефолта нет
 function editCplNorm() {
   const uz = state.lang === 'uz'
-  const cur = orgSettings.cplNorm != null ? orgSettings.cplNorm : 15000
-  const inp = prompt(uz ? 'Bozor bo‘yicha lid narxi ORIYENTIRI (so‘m):' : 'Ориентир цены за лида по рынку (сум):', cur)
-  if (inp === null) return
-  const s = parseInt(String(inp).replace(/[^0-9]/g, ''), 10)
-  if (!s || s <= 0) { alert(uz ? 'Nol emas' : 'Введите число больше нуля'); return }
-  orgSettings.cplNorm = s; saveOrgSettings({ cplNorm: s }); renderAdsets(_lastDashData)
+  alert(uz ? 'Bozor lid narxi oriyentirini chatda ayting — masalan: «lid narxi oriyentiri 20000 so‘m».' : 'Ориентир цены лида задайте в чате — напр. «ориентир цены лида 20 000 сум».')
 }
 function toggleAdsets() { _adsetsExpanded = !_adsetsExpanded; renderAdsets(_lastDashData) }
 async function loadMetaSpend() {
@@ -800,62 +764,33 @@ async function refreshMetaSpend() {
   if (btn) { btn.disabled = false; btn.textContent = uz ? 'Xarajatlarni yangilash' : 'Обновить расходы' }
 }
 function fmtRoi(rev, spend) { if (!spend || spend <= 0) return null; return (rev / spend) }
+// Ручной ввод маржи убран: задаётся в чате. Приоритет — АВТО из финансов; ручное = override (вариант «б»).
 function editMargin() {
   const uz = state.lang === 'uz'
-  const cur = orgSettings.margin != null ? orgSettings.margin : ''
-  const inp = prompt(uz ? 'Sof foyda marjasi (%): sotuvdan necha % foyda qoladi?' : 'Маржа прибыли (%): сколько % прибыли остаётся с продажи?', cur)
-  if (inp === null) return
-  const m = parseFloat(String(inp).replace(/[^0-9.]/g, ''))
-  if (isNaN(m) || m < 0 || m > 100) { alert(uz ? '0 dan 100 gacha son kiriting' : 'Введите число от 0 до 100'); return }
-  orgSettings.margin = m
-  saveOrgSettings({ margin: m })
-  renderAdsets(_lastDashData)
+  alert(uz ? 'Marjani chatda ayting — masalan: «marja 40%». Agar moliya ulangan bo‘lsa, marja avtomatik hisoblanadi.' : 'Маржу задайте в чате — напр. «маржа 40%». Если финансы подключены — маржа считается автоматически из них.')
 }
-function editAdSpend() {
-  const uz = state.lang === 'uz'
-  const per = window._dashPeriod || 'month'
-  const isAll = per === 'all'
-  const cur = isAll ? (orgSettings.adSpendAll || '') : (orgSettings.adSpendMonth || '')
-  const label = isAll ? (uz ? 'Reklama xarajati (BUTUN DAVR, soʻm):' : 'Расход на рекламу (ВСЁ ВРЕМЯ, сум):')
-    : (uz ? 'Reklama xarajati (SHU OY, soʻm):' : 'Расход на рекламу (ТЕКУЩИЙ МЕСЯЦ, сум):')
-  const inp = prompt(label, cur)
-  if (inp === null) return
-  const s = parseInt(String(inp).replace(/[^0-9]/g, ''), 10)
-  if (!s || s <= 0) { alert(uz ? 'Nol emas' : 'Введите число больше нуля'); return }
-  if (isAll) { orgSettings.adSpendAll = s; saveOrgSettings({ adSpendAll: s }) }
-  else { orgSettings.adSpendMonth = s; saveOrgSettings({ adSpendMonth: s }) }
-  renderAdsets(_lastDashData)
-}
-function getAdSpendForPeriod(isAll) {
-  const v = isAll ? orgSettings.adSpendAll : orgSettings.adSpendMonth
-  if (v != null && v > 0) return v
-  if (orgSettings.adSpend != null && orgSettings.adSpend > 0) return orgSettings.adSpend
-  return null
-}
+// авто-маржа из финансов (профит/выручка) — единственный НЕ-ручной источник
 async function autoLoadMargin() {
   if (_autoMarginTried) return
   _autoMarginTried = true
-  if (orgSettings.margin != null) return
   try {
     const r = await fetch('/api/finance' + orgQ(), { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ session: getSession() }) })
     const d = await r.json()
-    if (d && d.ok && d.revenue > 0 && d.profit != null) {
-      const m = +(d.profit / d.revenue * 100).toFixed(1)
-      _autoMargin = m
-      renderAdsets(_lastDashData)
-    }
+    if (d && d.ok && d.revenue > 0 && d.profit != null) { _autoMargin = +(d.profit / d.revenue * 100).toFixed(1); renderAdsets(_lastDashData) }
   } catch (e) { /* ignore */ }
 }
+// ВАРИАНТ «б»: ручной override держится в силе; авто показываем рядом. source: manual|auto|none.
 function getMargin() {
-  if (orgSettings.margin != null) return { val: orgSettings.margin, auto: false }
-  if (_autoMargin != null) return { val: _autoMargin, auto: true }
-  return { val: null, auto: false }
+  const manual = orgSettings.margin != null
+  if (manual) return { val: orgSettings.margin, source: 'manual', override: true, autoVal: _autoMargin, setAt: orgSettings.marginSetAt || null, conflict: _autoMargin != null && Math.abs(_autoMargin - orgSettings.margin) >= 3 }
+  if (_autoMargin != null) return { val: _autoMargin, source: 'auto', override: false }
+  return { val: null, source: 'none', override: false }
 }
 function renderAdsets(d) {
   const box = document.getElementById('adsetsChart'); if (!box) return
   const uz = state.lang === 'uz'
   const isAdmin = getRole() === 'admin'
-  if (isAdmin && !_autoMarginTried && orgSettings.margin == null) autoLoadMargin()
+  if (isAdmin && !_autoMarginTried) autoLoadMargin() // тянем авто-маржу всегда (нужна рядом с override — вариант «б»)
   const per = window._dashPeriod || 'month'
   const isAll = per === 'all'
   const arrRaw = (d && d.adsets) || []
@@ -887,15 +822,24 @@ function renderAdsets(d) {
     const roas = (adSpend > 0) ? adRevenue / adSpend : null
     let roi = null
     if (adSpend > 0 && margin != null) { const profit = adRevenue * (margin / 100); roi = (profit - adSpend) / adSpend * 100 }
-    const marginSrc = margin == null ? (uz ? 'marjani kiriting' : 'укажите маржу') : (marginInfo.auto ? (uz ? 'moliyadan · sof foyda' : 'из финансов · чистая прибыль') : (uz ? 'sof foyda' : 'чистая прибыль'))
-    const marginLbl = margin != null ? ` (${uz ? 'marja' : 'маржа'} ${String(margin).replace('.', ',')}%) ✏️` : ' ✏️'
+    // МАРЖА — read-only, вариант «б»: ручной override держится в силе, авто из финансов показываем рядом
+    let marginLblTxt = '', marginSub = ''
+    if (marginInfo.source === 'manual') {
+      const dt = marginInfo.setAt ? new Date(marginInfo.setAt).toLocaleDateString('ru-RU') : ''
+      marginLblTxt = ` (${uz ? 'marja' : 'маржа'} ${String(margin).replace('.', ',')}%)`
+      marginSub = (uz ? `siz kiritgansiz${dt ? ' · ' + dt : ''}` : `ваше значение${dt ? ' · с ' + dt : ''}`) + (marginInfo.autoVal != null ? ` · ${uz ? 'avto' : 'авто'} ${marginInfo.autoVal}%${marginInfo.conflict ? ' ⚠️' : ''}` : '')
+    } else if (marginInfo.source === 'auto') {
+      marginLblTxt = ` (${uz ? 'marja' : 'маржа'} ${String(margin).replace('.', ',')}%)`
+      marginSub = uz ? 'moliyadan · avto' : 'из финансов · авто'
+    } else { marginSub = uz ? 'marja berilmagan — chatda ayting' : 'маржа не задана — уточните в чате' }
     const perLabel = isAll ? (uz ? 'butun davr' : 'всё время') : (uz ? 'shu oy' : 'текущий месяц')
-    // CPL (цена за лида): факт по Meta vs ориентир рынка (редактируемый)
+    // CPL (цена за лида): факт по Meta vs ориентир рынка. Дефолта нет — ориентир задаётся в чате.
     const totalLeads = arr.reduce((s, a) => s + (a.leads || 0), 0)
     const cpl = (adSpend > 0 && totalLeads > 0) ? Math.round(adSpend / totalLeads) : null
     const cplNorm = getCplNorm()
-    const cplColor = cpl == null ? 'var(--txt3)' : (cpl <= cplNorm ? 'var(--green)' : 'var(--red)')
-    const cplVerdict = cpl == null ? (uz ? 'lidlar yoʻq' : 'нет лидов') : (cpl <= cplNorm ? (uz ? 'bozordan past ✓' : 'ниже рынка ✓') : (uz ? 'bozordan yuqori' : 'выше рынка'))
+    const cplColor = (cpl == null || cplNorm == null) ? 'var(--txt3)' : (cpl <= cplNorm ? 'var(--green)' : 'var(--red)')
+    const cplNormTxt = cplNorm != null ? `~${fmtSum(cplNorm)}` : (uz ? 'chatda ayting' : 'уточните в чате')
+    const cplVerdict = cpl == null ? (uz ? 'lidlar yoʻq' : 'нет лидов') : (cplNorm == null ? (uz ? 'oriyentir berilmagan' : 'ориентир не задан') : (cpl <= cplNorm ? (uz ? 'bozordan past ✓' : 'ниже рынка ✓') : (uz ? 'bozordan yuqori' : 'выше рынка')))
     summaryHtml = `<div style="background:var(--card);border:1px solid var(--line2);border-radius:11px;padding:13px;margin-bottom:14px;">
       <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:10px;">
         <div style="font-size:12.5px;font-weight:700;">${uz ? 'Reklama qoplanishi' : 'Окупаемость рекламы'} · ${perLabel}</div>
@@ -917,15 +861,15 @@ function renderAdsets(d) {
           <div style="font-size:19px;font-weight:800;color:${roas == null ? 'var(--txt3)' : (roas >= 1 ? 'var(--green)' : 'var(--red)')};">${roas != null ? roas.toFixed(1) + 'x' : '—'}</div>
           <div style="font-size:9.5px;color:var(--txt3);">${uz ? 'tushum ÷ xarajat' : 'выручка ÷ расход'}</div>
         </div>
-        <div style="background:var(--bg2);border-radius:9px;padding:9px 11px;cursor:pointer;" onclick="editCplNorm()" title="${uz ? 'Bozor oriyentirini oʻzgartirish' : 'Изменить ориентир рынка'}">
-          <div style="font-size:10.5px;color:var(--txt2);">${uz ? 'Lid narxi (CPL) ✏️' : 'Цена за лида (CPL) ✏️'}</div>
+        <div style="background:var(--bg2);border-radius:9px;padding:9px 11px;">
+          <div style="font-size:10.5px;color:var(--txt2);">${uz ? 'Lid narxi (CPL)' : 'Цена за лида (CPL)'}</div>
           <div style="font-size:19px;font-weight:800;color:${cplColor};">${cpl != null ? fmtSum(cpl) : '—'}</div>
-          <div style="font-size:9.5px;color:var(--txt3);">${uz ? 'norma' : 'норма'} ~${fmtSum(cplNorm)} · ${cplVerdict}</div>
+          <div style="font-size:9.5px;color:var(--txt3);">${uz ? 'norma' : 'норма'} ${cplNormTxt} · ${cplVerdict}</div>
         </div>
-        <div style="background:var(--bg2);border-radius:9px;padding:9px 11px;cursor:pointer;" onclick="editMargin()" title="${uz ? 'Marjani oʻzgartirish' : 'Изменить маржу'}">
-          <div style="font-size:10.5px;color:var(--txt2);">ROI${marginLbl}</div>
+        <div style="background:var(--bg2);border-radius:9px;padding:9px 11px;">
+          <div style="font-size:10.5px;color:var(--txt2);">ROI${marginLblTxt}</div>
           <div style="font-size:19px;font-weight:800;color:${roi == null ? 'var(--txt3)' : (roi >= 0 ? 'var(--green)' : 'var(--red)')};">${roi != null ? (roi > 0 ? '+' : '') + Math.round(roi) + '%' : '—'}</div>
-          <div style="font-size:9.5px;color:var(--txt3);">${marginSrc}</div>
+          <div style="font-size:9.5px;color:var(--txt3);">${marginSub}</div>
         </div>
       </div>
     </div>`
@@ -1197,6 +1141,6 @@ export function initDashModals() {
     openSuspModal, closeSuspModal, toggleSuspHistory, reviewSusp,
     openWorkdaysModal, closeWorkdaysModal, saveWorkdays,
     editForecastGoal, syncAll, saveOrgSettings,
-    toggleAdsets, refreshMetaSpend, editMargin, editAdSpend, editCplNorm, closeMarketingTaskUI,
+    toggleAdsets, refreshMetaSpend, editMargin, editCplNorm, closeMarketingTaskUI,
   })
 }

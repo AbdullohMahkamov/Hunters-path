@@ -123,17 +123,9 @@ function deadlineInfo(q, uz) {
   if (days <= 2) return { text: `${fmt} · ${uz ? 'qoldi' : 'осталось'} ${days} ${uz ? 'kun' : 'дн'}`, color: 'var(--gold)' }
   return { text: `${fmt} · ${uz ? 'qoldi' : 'осталось'} ${days} ${uz ? 'kun' : 'дн'}`, color: 'var(--txt3)' }
 }
-// правка срока владельцем (РОПу не даём — он исполнитель)
-function setTaskDeadline(id) {
-  const cp = state.customPlan; if (!cp) return
-  const q = [...(cp.marketing || []), ...(cp.sales || [])].find((x) => x.id === id); if (!q) return
-  const cur = q.deadline || ''
-  const v = window.prompt('Срок выполнения (ГГГГ-ММ-ДД), пусто — убрать срок:', cur)
-  if (v === null) return
-  const val = String(v).trim()
-  if (val && !/^\d{4}-\d{2}-\d{2}$/.test(val)) { alert('Формат: 2026-07-20'); return }
-  q.deadline = val
-  save(); renderStages()
+// Ручной ввод срока убран: сроки ставит планировщик/советник при создании задачи (deadlineDays).
+function setTaskDeadline() {
+  alert('Сроки задач ставит советник при создании задачи. Нужно изменить срок — скажите советнику в чате.')
 }
 
 function renderCustomPlan() {

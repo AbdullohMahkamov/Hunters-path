@@ -105,10 +105,10 @@ export async function setGoal(g, org = ORG) {
   delete rec.ok; delete rec.error;
   await rsetJSON(K.goal, rec);
   try {
-    const mkKey = org === "hunter" ? "metricscfg:hunter" : `clientcfg:${org}`;
-    const cur = (await rgetJSON(mkKey, {})) || {};
+    const skey = `settings:${org}`; // дашборд (orgSettings) и sync-speed читают именно settings:<org>
+    const cur = (await rgetJSON(skey, {})) || {};
     cur.goal = g.amountUZS; // существующие форекаст/дашборд/чат читают число в сумах
-    await rsetJSON(mkKey, cur);
+    await rsetJSON(skey, cur);
   } catch (e) { /* совместимость не критична для самого объекта */ }
   return rec;
 }
