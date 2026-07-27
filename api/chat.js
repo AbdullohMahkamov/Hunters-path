@@ -12,6 +12,7 @@ import { getBalancesSummary } from "./gamification.js";
 import { getCallAnalysisBundle } from "./deepsales.js";
 import { parseGoalText, setGoal } from "./goal.js";
 import { parseMargin, parseCpl, parseSchedule, setMargin, setCpl, setSchedule, missingSettings } from "./biz-settings.js";
+import { buildDiagnosticBundle, formatDiagnostic } from "./diagnostic.js";
 
 async function readDashboardCache() {
   const url = process.env.UPSTASH_REDIS_REST_URL;
@@ -323,29 +324,36 @@ function trustBlock(speed) {
 
 // ИНТЕНТ-ПРЕПАСС: дешёвый Haiku-классификатор ДО основного вызова решает, какие тяжёлые блоки нужны.
 // Смещение к ИЗБЫТОЧНОМУ подключению (при сомнении true), при сбое — безопасный дефолт (данные подключены).
+// детерминированный форс диагностики: открытый «почему/что происходит/падает/сравни» — минуя ошибку LLM-классификатора
+function forceDiagnostic(msg) {
+  const t = String(msg || "").toLowerCase();
+  return /почему|отчего|из-за чего|что\s+(происходит|случилось|не так|со|стало)|падает|упал|просел|спад|снизил|нет\s+продаж|мало\s+продаж|сравни|nega|nima\s+bo|why/.test(t);
+}
 async function classifyIntent(apiKey, lastMsg) {
-  const dflt = { live: true, agents: true, calls: true, act: false }; // сбой → полный контекст (кроме действий)
+  const forced = forceDiagnostic(lastMsg);
+  const dflt = { live: true, agents: true, calls: true, act: false, diagnostic: forced }; // сбой → полный контекст (кроме действий)
   const msg = String(lastMsg || "").slice(0, 800);
-  if (!msg.trim()) return { live: false, agents: false, calls: false, act: false };
+  if (!msg.trim()) return { live: false, agents: false, calls: false, act: false, diagnostic: false };
   const sys = `Ты — маршрутизатор запросов к бизнес-советнику. Реши, какие блоки данных нужны для ответа на вопрос владельца. Ответь ТОЛЬКО JSON одной строкой, без markdown:
-{"live":bool,"agents":bool,"calls":bool,"act":bool}
+{"live":bool,"agents":bool,"calls":bool,"act":bool,"diagnostic":bool}
 live=true — вопрос про метрики/продажи/выручку/менеджеров/дозвон/воронку/рекламу/финансы/переписку с клиентами/план/цель/прогноз, ИЛИ общий («как дела», «что по бизнесу»).
 agents=true — вопрос про находки/гипотезы/задачи агентов (аналитик/рост/тренер/супервайзер), «что нашли агенты», «что ждёт моего решения», «какие задачи у РОПа».
 calls=true — вопрос про звонки/разговоры/качество продаж на звонках/скрипт/что менеджеры говорят клиентам по телефону.
 act=true — владелец просит ЧТО-ТО СДЕЛАТЬ: поставить задачу РОПу, написать РОПу, поручить аналитику проверить, прогнать агента заново, закрыть гипотезу.
-ПРАВИЛО: при СОМНЕНИИ ставь true (лучше лишний блок, чем неполный ответ). Общий/диагностический вопрос («как дела в целом», «что не так», «что улучшить») → live+agents+calls=true.`;
+diagnostic=true — ОТКРЫТЫЙ причинно-следственный вопрос «ПОЧЕМУ X / что происходит / почему упало/нет продаж / сравни период», особенно с временным окном («2 дня», «за неделю»). НЕ ставь diagnostic на прямой запрос числа/факта («сколько лидов сегодня», «какая выручка»).
+ПРАВИЛО: при СОМНЕНИИ ставь true (лучше лишний блок). Общий/диагностический («что не так», «что улучшить») → live+agents+calls=true.`;
   try {
     const r = await fetch("https://api.anthropic.com/v1/messages", {
       method: "POST",
       headers: { "content-type": "application/json", "x-api-key": apiKey, "anthropic-version": "2023-06-01" },
-      body: JSON.stringify({ model: "claude-haiku-4-5-20251001", max_tokens: 60, system: sys, messages: [{ role: "user", content: msg }] }),
+      body: JSON.stringify({ model: "claude-haiku-4-5-20251001", max_tokens: 70, system: sys, messages: [{ role: "user", content: msg }] }),
     });
     if (!r.ok) return dflt;
     const d = await r.json();
     let txt = ""; for (const b of (d.content || [])) if (b.type === "text") txt += b.text;
     const m = txt.replace(/```json|```/g, "").match(/\{[\s\S]*\}/); if (!m) return dflt;
     const o = JSON.parse(m[0]);
-    return { live: !!o.live, agents: !!o.agents, calls: !!o.calls, act: !!o.act };
+    return { live: !!o.live, agents: !!o.agents, calls: !!o.calls, act: !!o.act, diagnostic: !!o.diagnostic || forced };
   } catch (e) { return dflt; }
 }
 
@@ -416,6 +424,15 @@ export default async function handler(req, res) {
       const out = questions.slice(0, 4);
       await setCache(sqKey, { questions: out, forUpdatedAt: upd }, 7200); // держим до смены снимка (backstop 2ч)
       res.status(200).json({ ok: true, questions: out });
+      return;
+    }
+
+    // ДИАГНОСТИКА (админ): детерминированный оконный бандл для вопроса — без LLM (для проверки режима)
+    if (action === "diag") {
+      if (!(_sinfo && _sinfo.role === "admin")) { res.status(403).json({ error: "admin only" }); return; }
+      const text = (req.body && req.body.text) || "Почему уже 2ой день нету продаж?";
+      const bundle = await buildDiagnosticBundle(org, text);
+      res.status(200).json({ ok: true, question: text, diagnostic: forceDiagnostic(text), bundle, formatted: formatDiagnostic(bundle) });
       return;
     }
 
@@ -570,7 +587,24 @@ export default async function handler(req, res) {
       sys += mktBlock; // маркетинг-срез ВСЕГДА — чтобы советник не отвечал «нет данных» на контент/бренд/Instagram
       if (intent.agents) sys += agBlk;
       if (intent.calls) sys += caBlk;
-      systemText = sys; model = "claude-sonnet-5"; maxTok = 2500;
+      maxTok = 2500;
+      // ДИАГНОСТИЧЕСКИЙ РЕЖИМ: открытый «почему X» → оконный анализ всех осей + сравнение + готовые вердикты по порогам
+      if (intent.diagnostic) {
+        try {
+          const diag = await buildDiagnosticBundle(org, lastMsg);
+          const DIAGNOSTIC_INSTRUCTION = `\n\n=== РЕЖИМ ДИАГНОСТИКИ (обязателен для этого ответа) ===
+Вопрос причинно-следственный. Не пересказывай цифры одного дня. Ниже дан ОКОННЫЙ анализ по осям с ГОТОВЫМИ вердиктами по числовым порогам — используй их как ДАННОСТЬ, НЕ решай сам «много это или мало».
+Твой ответ ОБЯЗАН:
+1) Прямо сказать: это ОТКЛОНЕНИЕ ОТ НОРМЫ или в пределах колебаний — и если отклонение, то на КАКОЙ оси (продажи/лиды, маркетинг, звонки).
+2) Взвесить шум цикла сделки: короткая серия без продаж в пределах медианного цикла — это НОРМА, а не тревога (смотри серию нулевых дней и порог).
+3) Если ось помечена insufficient — честно сказать «по этой оси данных за окно мало», НЕ выдумывать вывод.
+4) TRUST-дисциплина: причина = ГИПОТЕЗА, если причинность не доказана напрямую (особенно по звонкам — покрытие ничтожно).
+5) Закончить одним конкретным первым шагом (кнопкой действия, если уместно).`;
+          sys += DIAGNOSTIC_INSTRUCTION + formatDiagnostic(diag);
+          maxTok = 3800; // больше на оконные данные + глубже синтез
+        } catch (e) { /* диагностика не критична — обычный ответ */ }
+      }
+      systemText = sys; model = "claude-sonnet-5";
     }
 
     // ДИАГНОСТИКА сборки (не стримим): фронт этого флага не шлёт, только ручная проверка интента/размера.
