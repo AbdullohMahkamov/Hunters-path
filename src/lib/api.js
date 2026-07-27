@@ -31,6 +31,8 @@ export const auth = {
   demo: (code) => postJSON('/api/auth', { action: 'demo', code }).then((r) => r.json()),
   // Клиент (мультитенант): логин+пароль
   client: (login, password) => postJSON('/api/auth', { action: 'client', login, password }).then((r) => r.json()),
+  // Саппорт: логин+пароль (доступ только к /support)
+  support: (login, password) => postJSON('/api/auth', { action: 'support', login, password }).then((r) => r.json()),
   // Проверка существующей сессии
   check: (session) => postJSON('/api/auth', { action: 'check', session }).then((r) => r.json()),
   // Выход
@@ -168,6 +170,17 @@ export const mopAgent = {
 // ===== META-BRAIN (общий мозг / CEO — сводные наблюдения; для сцены только чтение) =====
 export const metaBrain = {
   state: () => getJSON('/api/meta-brain?action=state&session=' + encodeURIComponent(getSession())),
+}
+
+// ===== SUPPORT (панель саппорта — изолированный модуль, роль support/admin) =====
+export const support = {
+  templatesGet: () => postJSON('/api/support', { action: 'templates-get', session: getSession() }).then((r) => r.json()),
+  templatesSet: (payload) => postJSON('/api/support', { action: 'templates-set', session: getSession(), ...payload }).then((r) => r.json()),
+  create: (payload) => postJSON('/api/support', { action: 'create', session: getSession(), ...payload }).then((r) => r.json()),
+  list: ({ status, phone } = {}) => postJSON('/api/support', { action: 'list', session: getSession(), status, phone }).then((r) => r.json()),
+  accountsList: () => postJSON('/api/support', { action: 'accounts-list', session: getSession() }).then((r) => r.json()),
+  accountAdd: ({ login, password, name }) => postJSON('/api/support', { action: 'account-add', session: getSession(), login, password, name }).then((r) => r.json()),
+  accountDel: (login) => postJSON('/api/support', { action: 'account-del', session: getSession(), login }).then((r) => r.json()),
 }
 
 export { postJSON, getJSON }

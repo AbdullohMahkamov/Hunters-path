@@ -5,10 +5,11 @@ import { setSession } from '../lib/session.js'
 // Экран входа — 1:1 перенос из public/index.html (#loginScreen).
 // Шаги: roles → rop | mop | demo | admin. Роутинг по роли делает App через onLoggedIn.
 export default function Login({ onLoggedIn }) {
-  const [step, setStep] = useState('roles') // roles | rop | mop | admin | demo
+  const [step, setStep] = useState('roles') // roles | rop | mop | admin | demo | support
   const [loginError, setLoginError] = useState('') // общий (демо/админ)
   const [ropErr, setRopErr] = useState('')
   const [mopErr, setMopErr] = useState('')
+  const [supErr, setSupErr] = useState('')
   const [passType, setPassType] = useState('password')
   const [remember, setRemember] = useState(false)
   const [loginBtnText, setLoginBtnText] = useState('Войти')
@@ -19,6 +20,8 @@ export default function Login({ onLoggedIn }) {
   const mopPassRef = useRef(null)
   const demoCodeRef = useRef(null)
   const passRef = useRef(null)
+  const supLoginRef = useRef(null)
+  const supPassRef = useRef(null)
 
   const isMopDirect = (() => {
     try { return new URLSearchParams(location.search).get('mop') === '1' } catch (e) { return false }
@@ -104,6 +107,23 @@ export default function Login({ onLoggedIn }) {
     } catch (e) { setLoginError('Нет связи с сервером') }
   }
 
+  async function supLoginGo() {
+    const login = (supLoginRef.current?.value || '').trim()
+    const password = supPassRef.current?.value || ''
+    if (!login || !password) { setSupErr('Введите логин и пароль'); return }
+    setSupErr('')
+    try {
+      const d = await auth.support(login, password)
+      if (d && d.ok) {
+        setSession(d.session, { role: 'support', org: d.org || 'hunter' })
+        try { window.history.replaceState(null, '', '/support') } catch (e) {}
+        onLoggedIn({ role: 'support', org: d.org || 'hunter' })
+      } else {
+        setSupErr((d && d.error) || 'Ошибка входа')
+      }
+    } catch (e) { setSupErr('Нет связи с сервером') }
+  }
+
   async function doLogin(e) {
     if (e) e.preventDefault()
     const password = passRef.current?.value || ''
@@ -160,6 +180,9 @@ export default function Login({ onLoggedIn }) {
             <div style={{ textAlign: 'center', marginTop: 18 }}>
               <button onClick={() => { setStep('demo'); setLoginError('') }} style={{ background: 'none', border: 'none', color: 'var(--accent)', fontSize: 13, cursor: 'pointer', textDecoration: 'underline' }}>Войти в демо по коду</button>
             </div>
+            <div style={{ textAlign: 'center', marginTop: 10 }}>
+              <button onClick={() => { setStep('support'); setSupErr('') }} style={{ background: 'none', border: 'none', color: 'var(--txt3)', fontSize: 12.5, cursor: 'pointer', textDecoration: 'underline' }}>Вход для саппорта</button>
+            </div>
           </div>
         )}
 
@@ -197,6 +220,19 @@ export default function Login({ onLoggedIn }) {
               onKeyDown={(e) => { if (e.key === 'Enter') demoLoginGo() }}
               style={{ ...inputStyle, marginBottom: 12, textAlign: 'center', letterSpacing: 2 }} />
             <button onClick={demoLoginGo} style={{ width: '100%', padding: 14, borderRadius: 11, background: 'var(--accent)', border: 'none', color: '#fff', fontSize: 15, fontWeight: 600, cursor: 'pointer' }}>Войти в демо</button>
+            <button onClick={backToRoles} style={{ width: '100%', padding: 11, borderRadius: 11, background: 'none', border: 'none', color: 'var(--txt2)', fontSize: 13, cursor: 'pointer', marginTop: 8 }}>← Назад</button>
+          </div>
+        )}
+
+        {/* Вход саппорта (логин+пароль) */}
+        {step === 'support' && (
+          <div id="supportLogin">
+            <input ref={supLoginRef} type="text" placeholder="Логин саппорта" autoComplete="username" style={{ ...inputStyle, marginBottom: 10 }} />
+            <input ref={supPassRef} type="password" placeholder="Пароль" autoComplete="current-password"
+              onKeyDown={(e) => { if (e.key === 'Enter') supLoginGo() }}
+              style={{ ...inputStyle, marginBottom: 12 }} />
+            <button onClick={supLoginGo} style={{ width: '100%', padding: 14, borderRadius: 11, background: 'var(--accent)', border: 'none', color: '#fff', fontSize: 15, fontWeight: 600, cursor: 'pointer' }}>Войти</button>
+            {supErr && <div style={{ color: 'var(--red)', fontSize: 12.5, marginTop: 10, textAlign: 'center' }}>{supErr}</div>}
             <button onClick={backToRoles} style={{ width: '100%', padding: 11, borderRadius: 11, background: 'none', border: 'none', color: 'var(--txt2)', fontSize: 13, cursor: 'pointer', marginTop: 8 }}>← Назад</button>
           </div>
         )}

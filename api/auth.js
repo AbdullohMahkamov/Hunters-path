@@ -135,6 +135,30 @@ export default async function handler(req, res) {
       return;
     }
 
+    // Вход САППОРТА: логин/пароль из реестра support:accounts (создаёт админ в панели /support).
+    // Роль "support" — доступ ТОЛЬКО к маршруту /support, не к дашборду/продажам/целям.
+    if (action === "support") {
+      const login = String((req.body && req.body.login) || "").trim().toLowerCase();
+      const pass = String((req.body && req.body.password) || "");
+      const accounts = (await (async () => {
+        try {
+          const r = await fetch(`${redisUrl}/get/support:accounts`, { headers: { Authorization: `Bearer ${redisToken}` } });
+          const d = await r.json();
+          return d && d.result != null ? JSON.parse(d.result) : [];
+        } catch (e) { return []; }
+      })());
+      const a = accounts.find(x => (x.login || "").toLowerCase() === login);
+      if (!a || a.password !== pass) {
+        res.status(200).json({ ok: false, error: "Неверный логин или пароль" });
+        return;
+      }
+      const sessToken = crypto.randomBytes(24).toString("hex");
+      const info = { role: "support", org: "hunter", supportName: a.name || a.login, login: a.login };
+      await redisSet(redisUrl, redisToken, `session:${sessToken}`, JSON.stringify(info), 30 * 24 * 3600);
+      res.status(200).json({ ok: true, session: sessToken, ...info });
+      return;
+    }
+
     // Вход РОПа — по коду (защита от чужих)
     if (action === "rop") {
       const code = String((req.body && req.body.code) || "").trim();
