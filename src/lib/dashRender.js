@@ -397,7 +397,11 @@ function renderDiscipline(sp) {
   }
   const mops = isToday ? (sp.mopsDay || []) : (sp.mops || [])
   if (!mops.length) { chart.innerHTML = '<div style="font-size:12px;color:var(--txt3);">' + (isToday ? (uz ? 'Bugun uchun maʼlumot yoʻq' : 'Сегодня ещё нет обработанных лидов') : (uz ? 'Oy uchun maʼlumot yoʻq' : 'Нет данных за месяц')) + '</div>'; return }
-  chart.innerHTML = mops.map((m) => {
+  // выходной по графику: сегодня weekday не в рабочих днях → «1-й звонок» в рабочих минутах не считается (даёт 0), показываем честно «выходной»
+  const wdSet = (orgSettings.workdays && orgSettings.workdays.length ? orgSettings.workdays : [1, 2, 3, 4, 5, 6])
+  const dayOff = isToday && !wdSet.includes(new Date().getDay())
+  const banner = dayOff ? `<div style="font-size:11.5px;color:var(--txt2);background:var(--card2);border-radius:8px;padding:8px 10px;margin-bottom:9px;">${uz ? '📅 Bugun dam olish kuni (grafik boʻyicha) — «1-chi qoʻngʻiroq» vaqti hisoblanmaydi (dam kunida ish daqiqalari yoʻq). Aloqa/vazifalar — haqiqiy.' : '📅 Сегодня выходной по графику — время «1-го звонка» не считается (в выходной рабочие минуты не идут). Дозвон и задачи ниже — фактические.'}</div>` : ''
+  chart.innerHTML = banner + mops.map((m) => {
     const speedOk = m.medianFirstCallMin != null && m.medianFirstCallMin <= 30
     const speedBad = m.medianFirstCallMin != null && m.medianFirstCallMin > 180
     const taskOk = m.taskRate >= 60
@@ -414,6 +418,8 @@ function renderDiscipline(sp) {
     const doneBad = (m.tasksDonePct || 0) < 40
     const c = (ok, bad) => ok ? 'var(--green)' : (bad ? 'var(--red)' : 'var(--txt2)')
     const doneDisplay = m.tasksTotal ? `${m.tasksDonePct}% <span style="color:var(--txt3);font-weight:400;">(${m.tasksDone} из ${m.tasksTotal})</span>` : '<span style="color:var(--txt3);font-weight:400;">нет задач</span>'
+    const talkMin = m.talkMinToday // время общения за сегодня (мин)
+    const talkTxt = talkMin == null ? '—' : (talkMin >= 60 ? `${Math.floor(talkMin / 60)} ${uz ? 'soat' : 'ч'} ${talkMin % 60} ${uz ? 'daq' : 'мин'}` : `${talkMin} ${uz ? 'daq' : 'мин'}`)
     let reachAbs = '', fakeNote = ''
     if (isToday) {
       if (m.reached != null && m.leads) reachAbs = ` <span style="font-size:10px;color:var(--txt3);">(${m.reached} из ${m.leads})</span>`
@@ -433,11 +439,12 @@ function renderDiscipline(sp) {
     return `<div style="background:var(--card);border:1px solid var(--line);border-radius:10px;padding:11px 12px;margin-bottom:9px;">
       <div style="font-size:14px;font-weight:600;margin-bottom:7px;">${escapeHtml(m.name)} <span style="font-size:11px;color:var(--txt3);font-weight:400;">· ${m.leads} ${uz ? 'lid' : 'лидов'}</span></div>
       <div style="display:grid;grid-template-columns:1fr 1fr;gap:6px 12px;font-size:12px;">
-        <div>⚡ 1-й звонок (создание)${hintIcon('firstcall')}: <b style="color:${c(speedOk, speedBad)}">${fmtMin(m.medianFirstCallMin)}</b></div>
-        <div>⚡ 1-й звонок (назначение): <b style="color:${m.medianFirstCallAssignMin != null ? c(m.medianFirstCallAssignMin <= 30, m.medianFirstCallAssignMin > 180) : 'var(--txt3)'}">${m.medianFirstCallAssignMin != null ? fmtMin(m.medianFirstCallAssignMin) : '—'}</b></div>
+        <div>⚡ 1-й звонок (создание)${hintIcon('firstcall')}: <b style="color:${dayOff ? 'var(--txt3)' : c(speedOk, speedBad)}">${dayOff ? (uz ? 'dam olish' : 'выходной') : fmtMin(m.medianFirstCallMin)}</b></div>
+        <div>⚡ 1-й звонок (назначение): <b style="color:${dayOff ? 'var(--txt3)' : (m.medianFirstCallAssignMin != null ? c(m.medianFirstCallAssignMin <= 30, m.medianFirstCallAssignMin > 180) : 'var(--txt3)')}">${dayOff ? (uz ? 'dam olish' : 'выходной') : (m.medianFirstCallAssignMin != null ? fmtMin(m.medianFirstCallAssignMin) : '—')}</b></div>
         ${reachCell}
         <div>📋 Ставит задачи${hintIcon('tasks')}: <b style="color:${c(taskOk, m.taskRate < 30)}">${m.taskRate}%</b></div>
         <div>✅ Задач выполнено${hintIcon('tasksdone')}: <b style="color:${m.tasksTotal ? c(doneOk, doneBad) : 'var(--txt3)'}">${doneDisplay}</b></div>
+        ${isToday ? `<div>💬 ${uz ? 'Muloqot bugun' : 'Общение сегодня'}: <b style="color:${m.talkMinToday ? 'var(--txt)' : 'var(--txt3)'}">${talkTxt}</b></div>` : ''}
       </div>
     </div>`
   }).join('')

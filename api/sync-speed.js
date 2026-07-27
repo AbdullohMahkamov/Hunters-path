@@ -566,6 +566,8 @@ export default async function handler(req, res) {
         const p = n.params || {};
         const dur = parseInt(p.duration != null ? p.duration : (p.DURATION || 0), 10) || 0;
         const nts = n.created_at || 0;
+        if (leadInfo[lid] && nts >= dayStart2) leadInfo[lid].talkSecToday = (leadInfo[lid].talkSecToday || 0) + dur; // сумма разговоров сегодня → время общения
+
         // debug: копим сырые ноты звонков за сегодня (для сверки события звонка с длительностью)
         if (DEBUG_CALLS && nts >= dayStart2) {
           // link/pkeys — только для разовой диагностики формата ссылки на аудиозапись (DeepSales-интеграция)
@@ -665,7 +667,7 @@ export default async function handler(req, res) {
     for (const name of Object.values(ACTIVE_MOPS)) {
       stat[name] = { leads:0, firstCallTimes:[], firstCallAssignTimes:[], reached:0, callsTotal:0, withTask:0,
                      closedEarly:0, noReachClosed:0, tasksTotal:0, tasksDone:0 };
-      statDay[name] = { leads:0, firstCallTimes:[], firstCallAssignTimes:[], callsTotal:0, withTask:0, tasksTotal:0, tasksDone:0, reached:0, calledLeads:0, fakeNums:0, _fcDebug:[] };
+      statDay[name] = { leads:0, firstCallTimes:[], firstCallAssignTimes:[], callsTotal:0, withTask:0, tasksTotal:0, tasksDone:0, reached:0, calledLeads:0, fakeNums:0, talkSecToday:0 };
     }
 
     const suspicious2 = []; // подозрительные по звонкам (этап 2)
@@ -744,18 +746,12 @@ export default async function handler(req, res) {
             if (before.length) assignTs = Math.max(...before);
           }
           if (assignTs === null && L.created <= L.firstCall) assignTs = L.created;
-          let minsA = null;
           if (assignTs !== null && L.firstCall >= assignTs) {
-            minsA = workingMinutes(assignTs, L.firstCall);
+            const minsA = workingMinutes(assignTs, L.firstCall);
             if (minsA >= 0 && minsA < 60*24*14) D.firstCallAssignTimes.push(minsA);
           }
-          // ДИАГНОСТИКА (временно): сырые метки, чтобы понять, почему время до 1-го звонка ~0
-          if (D._fcDebug.length < 8) D._fcDebug.push({
-            created: L.created, firstCall: L.firstCall, assignTs,
-            gapSec: L.firstCall - L.created, mins, minsA,
-            hasAssignEvent: !!(Array.isArray(L._assignTs) && L._assignTs.length),
-          });
         }
+        D.talkSecToday += (L.talkSecToday || 0); // время общения (сумма длительностей звонков) за сегодня
         }
       }
       // РЕАЛЬНЫЙ ДОЗВОН — только если был разговор ≥ REACHED_SEC (40 сек)
@@ -858,12 +854,8 @@ export default async function handler(req, res) {
         tasksTotal: D.tasksTotal,
         tasksDone: D.tasksDone,
         tasksDonePct: D.tasksTotal ? Math.min(100, Math.round(D.tasksDone / D.tasksTotal * 100)) : 0,
-        // ДИАГНОСТИКА (временно): сырые метки created vs firstCall по Ташкенту — виден ли разрыв
-        firstCallDebug: (D._fcDebug || []).map(x => ({
-          created: new Date((x.created + TZ_OFFSET) * 1000).toISOString().slice(5, 16).replace('T', ' '),
-          firstCall: new Date((x.firstCall + TZ_OFFSET) * 1000).toISOString().slice(5, 16).replace('T', ' '),
-          gapSec: x.gapSec, mins: x.mins, minsA: x.minsA, hasAssignEvent: x.hasAssignEvent,
-        })),
+        talkSecToday: D.talkSecToday || 0,                          // время общения за сегодня (сек)
+        talkMinToday: Math.round((D.talkSecToday || 0) / 60),       // …в минутах (для отображения)
       };
     }).sort((a,b)=> (a.medianFirstCallMin??9e9) - (b.medianFirstCallMin??9e9));
 
