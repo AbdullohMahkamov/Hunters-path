@@ -182,10 +182,10 @@ async function notifyTeam(rec) {
   const chat = TEAM_CHAT();
   if (!chat) return;
   const who = `${esc(rec.firstName)} ${esc(rec.lastName)}`.trim();
-  const files = rec.docs.map((d) => `${esc(d.name)}${d.version ? ` (в.${d.version})` : ""}`).join(", ");
+  const files = rec.docs.map((d) => `${esc(d.name)}${d.version ? ` (v.${d.version})` : ""}`).join(", ");
   const when = new Date(rec.confirmedAt + 5 * 3600000).toISOString().replace("T", " ").slice(0, 16);
   const uname = rec.tg && rec.tg.username ? ` @${esc(rec.tg.username)}` : "";
-  const text = `✅ <b>Ученик подтвердил документы</b>\n\n👤 ${who}\n📞 ${esc(rec.phone)}\n🕒 ${when} (Ташкент)\n📄 ${files}${uname}\n🧑‍💼 Отправлял: ${esc(rec.supportName || "—")}`;
+  const text = `✅ <b>O'quvchi hujjatlarni tasdiqladi</b>\n\n👤 ${who}\n📞 ${esc(rec.phone)}\n🕒 ${when} (Toshkent)\n📄 ${files}${uname}\n🧑‍💼 Yuborgan: ${esc(rec.supportName || "—")}`;
   await tgSend(chat, text);
 }
 

@@ -13,13 +13,13 @@ const REDIS_TOKEN = process.env.UPSTASH_REDIS_REST_TOKEN;
 const BOT_TOKEN = () => process.env.TELEGRAM_SUPPORT_BOT_TOKEN || "";
 const WEBHOOK_SECRET = process.env.TELEGRAM_WEBHOOK_SECRET || "";
 
-// узбекские тексты (из ТЗ владельца)
+// узбекские тексты (латиница, C1)
 const T = {
-  intro: "Ассалому алайкум! 👋\nҚуйидаги ҳужжатлар билан танишиб чиқинг ва тасдиқланг:",
-  confirmBtn: "✅ Тасдиқлайман",
-  done: "Рахмат, қабул қилинди ✅",
-  already: "Сиз аллақачон тасдиқлагансиз. Рахмат! ✅",
-  notFound: "Кечирасиз, ҳавола нотўғри ёки муддати ўтган. Илтимос, операторга мурожаат қилинг.",
+  intro: "Assalomu alaykum! 👋\nQuyidagi hujjatlar bilan tanishib chiqing va tasdiqlang:",
+  confirmBtn: "✅ Tasdiqlayman",
+  done: "Rahmat, qabul qilindi ✅",
+  already: "Siz allaqachon tasdiqlagansiz. Rahmat! ✅",
+  notFound: "Kechirasiz, havola noto'g'ri yoki muddati o'tgan. Iltimos, operatorga murojaat qiling.",
 };
 
 async function getSession(session) {

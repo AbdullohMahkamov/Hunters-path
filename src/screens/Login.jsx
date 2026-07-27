@@ -110,7 +110,7 @@ export default function Login({ onLoggedIn }) {
   async function supLoginGo() {
     const login = (supLoginRef.current?.value || '').trim()
     const password = supPassRef.current?.value || ''
-    if (!login || !password) { setSupErr('Введите логин и пароль'); return }
+    if (!login || !password) { setSupErr('Login va parolni kiriting'); return }
     setSupErr('')
     try {
       const d = await auth.support(login, password)
@@ -119,9 +119,9 @@ export default function Login({ onLoggedIn }) {
         try { window.history.replaceState(null, '', '/support') } catch (e) {}
         onLoggedIn({ role: 'support', org: d.org || 'hunter' })
       } else {
-        setSupErr((d && d.error) || 'Ошибка входа')
+        setSupErr((d && d.error) || 'Kirishda xatolik')
       }
-    } catch (e) { setSupErr('Нет связи с сервером') }
+    } catch (e) { setSupErr('Server bilan aloqa yo\'q') }
   }
 
   async function doLogin(e) {
@@ -181,7 +181,7 @@ export default function Login({ onLoggedIn }) {
               <button onClick={() => { setStep('demo'); setLoginError('') }} style={{ background: 'none', border: 'none', color: 'var(--accent)', fontSize: 13, cursor: 'pointer', textDecoration: 'underline' }}>Войти в демо по коду</button>
             </div>
             <div style={{ textAlign: 'center', marginTop: 10 }}>
-              <button onClick={() => { setStep('support'); setSupErr('') }} style={{ background: 'none', border: 'none', color: 'var(--txt3)', fontSize: 12.5, cursor: 'pointer', textDecoration: 'underline' }}>Вход для саппорта</button>
+              <button onClick={() => { setStep('support'); setSupErr('') }} style={{ background: 'none', border: 'none', color: 'var(--txt3)', fontSize: 12.5, cursor: 'pointer', textDecoration: 'underline' }}>Operatorlar uchun kirish</button>
             </div>
           </div>
         )}
@@ -227,13 +227,13 @@ export default function Login({ onLoggedIn }) {
         {/* Вход саппорта (логин+пароль) */}
         {step === 'support' && (
           <div id="supportLogin">
-            <input ref={supLoginRef} type="text" placeholder="Логин саппорта" autoComplete="username" style={{ ...inputStyle, marginBottom: 10 }} />
-            <input ref={supPassRef} type="password" placeholder="Пароль" autoComplete="current-password"
+            <input ref={supLoginRef} type="text" placeholder="Operator logini" autoComplete="username" style={{ ...inputStyle, marginBottom: 10 }} />
+            <input ref={supPassRef} type="password" placeholder="Parol" autoComplete="current-password"
               onKeyDown={(e) => { if (e.key === 'Enter') supLoginGo() }}
               style={{ ...inputStyle, marginBottom: 12 }} />
-            <button onClick={supLoginGo} style={{ width: '100%', padding: 14, borderRadius: 11, background: 'var(--accent)', border: 'none', color: '#fff', fontSize: 15, fontWeight: 600, cursor: 'pointer' }}>Войти</button>
+            <button onClick={supLoginGo} style={{ width: '100%', padding: 14, borderRadius: 11, background: 'var(--accent)', border: 'none', color: '#fff', fontSize: 15, fontWeight: 600, cursor: 'pointer' }}>Kirish</button>
             {supErr && <div style={{ color: 'var(--red)', fontSize: 12.5, marginTop: 10, textAlign: 'center' }}>{supErr}</div>}
-            <button onClick={backToRoles} style={{ width: '100%', padding: 11, borderRadius: 11, background: 'none', border: 'none', color: 'var(--txt2)', fontSize: 13, cursor: 'pointer', marginTop: 8 }}>← Назад</button>
+            <button onClick={backToRoles} style={{ width: '100%', padding: 11, borderRadius: 11, background: 'none', border: 'none', color: 'var(--txt2)', fontSize: 13, cursor: 'pointer', marginTop: 8 }}>← Orqaga</button>
           </div>
         )}
 

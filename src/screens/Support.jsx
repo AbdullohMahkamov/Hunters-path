@@ -2,9 +2,10 @@ import React, { useEffect, useRef, useState } from 'react'
 import { support } from '../lib/api.js'
 import { getRole } from '../lib/session.js'
 
-// Панель саппорта — изолированный инструмент (НЕ часть ALTRONE). Три вкладки:
-// «Новая отправка» / «Отправки» / «Шаблоны» (+ «Саппорты» для админа).
-// Отправка оферты/правил ученикам через отдельного Telegram-бота, учёт подтверждений.
+// Qo'llab-quvvatlash paneli — alohida, mustaqil vosita (ALTRONE tarkibiga kirmaydi). Uch bo'lim:
+// «Yangi yuborish» / «Yuborilganlar» / «Shablonlar» (+ admin uchun «Operatorlar»).
+// O'quvchilarga oferta/qoidalarni alohida Telegram-bot orqali yuborish va tasdiqlarni hisobga olish.
+// Интерфейс полностью на узбекской латинице (C1). Internal-логика/ключи не переводятся.
 
 const C = {
   card: 'var(--card)', line: 'var(--line2)', txt: 'var(--txt)', txt2: 'var(--txt2)', txt3: 'var(--txt3)',
@@ -22,7 +23,13 @@ function fileToBase64(file) {
   })
 }
 function fmtDate(ts) { if (!ts) return '—'; try { return new Date(ts + 5 * 3600000).toISOString().replace('T', ' ').slice(0, 16) } catch (e) { return '—' } }
-const STATUS = { created: { label: 'создана', color: C.txt3 }, opened: { label: 'открыл бот', color: C.gold }, confirmed: { label: 'подтвердил', color: C.green } }
+// Telefon faqat +998XXXXXXXXX ko'rinishida. Kiritilgan raqamni shu ko'rinishga keltiradi yoki null qaytaradi.
+function normUzPhone(raw) {
+  let d = String(raw || '').replace(/\D/g, '')
+  if (d.startsWith('998')) d = d.slice(3)
+  return d.length === 9 ? '+998' + d : null
+}
+const STATUS = { created: { label: 'yaratilgan', color: C.txt3 }, opened: { label: 'botni ochdi', color: C.gold }, confirmed: { label: 'tasdiqladi', color: C.green } }
 
 export default function Support({ onLogout }) {
   const isAdmin = getRole() === 'admin'
@@ -36,14 +43,14 @@ export default function Support({ onLogout }) {
       <div style={{ maxWidth: 860, margin: '0 auto', padding: '20px 16px 60px' }}>
         <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 18 }}>
           <div>
-            <div style={{ fontSize: 19, fontWeight: 700 }}>Панель саппорта</div>
-            <div style={{ fontSize: 12.5, color: C.txt2, marginTop: 2 }}>Отправка документов ученикам и учёт подтверждений</div>
+            <div style={{ fontSize: 19, fontWeight: 700 }}>Qo'llab-quvvatlash paneli</div>
+            <div style={{ fontSize: 12.5, color: C.txt2, marginTop: 2 }}>O'quvchilarga hujjat yuborish va tasdiqlarni hisobga olish</div>
           </div>
-          <button onClick={onLogout} style={{ ...btn(C.card, C.txt2), border: `1px solid ${C.line}` }}>Выйти</button>
+          <button onClick={onLogout} style={{ ...btn(C.card, C.txt2), border: `1px solid ${C.line}` }}>Chiqish</button>
         </div>
 
         <div style={{ display: 'flex', gap: 8, marginBottom: 18, flexWrap: 'wrap' }}>
-          {[['new', 'Новая отправка'], ['list', 'Отправки'], ['tpl', 'Шаблоны'], ...(isAdmin ? [['acc', 'Саппорты']] : [])].map(([k, label]) => (
+          {[['new', 'Yangi yuborish'], ['list', 'Yuborilganlar'], ['tpl', 'Shablonlar'], ...(isAdmin ? [['acc', 'Operatorlar']] : [])].map(([k, label]) => (
             <button key={k} onClick={() => setTab(k)}
               style={{ ...btn(tab === k ? C.accent : C.card, tab === k ? '#fff' : C.txt2), border: tab === k ? 'none' : `1px solid ${C.line}` }}>{label}</button>
           ))}
@@ -58,7 +65,7 @@ export default function Support({ onLogout }) {
   )
 }
 
-// ─────────── Вкладка 1: Новая отправка ───────────
+// ─────────── 1-bo'lim: Yangi yuborish ───────────
 function NewSend({ templates }) {
   const [firstName, setFirstName] = useState('')
   const [lastName, setLastName] = useState('')
@@ -82,15 +89,17 @@ function NewSend({ templates }) {
 
   async function generate() {
     setErr(''); setLink(''); setCopied(false)
-    if (!firstName.trim() || !phone.trim()) { setErr('Заполните имя и телефон'); return }
+    if (!firstName.trim()) { setErr('Ismni to\'ldiring'); return }
+    const nPhone = normUzPhone(phone)
+    if (!nPhone) { setErr('Telefon raqami +998XXXXXXXXX ko\'rinishida bo\'lishi kerak (masalan, +998933957755)'); return }
     const keys = Object.keys(docKeys).filter((k) => docKeys[k] && templates[k])
-    if (!keys.length && !custom) { setErr('Выберите хотя бы один документ или приложите файл'); return }
+    if (!keys.length && !custom) { setErr('Kamida bitta hujjat tanlang yoki fayl biriktiring'); return }
     setBusy(true)
     try {
-      const d = await support.create({ firstName, lastName, phone, docKeys: keys, customFile: custom, message })
+      const d = await support.create({ firstName, lastName, phone: nPhone, docKeys: keys, customFile: custom, message })
       if (d && d.ok) { setLink(d.link); setFirstName(''); setLastName(''); setPhone(''); setCustom(null); if (fileRef.current) fileRef.current.value = '' }
-      else setErr((d && d.error) || 'Не удалось создать ссылку')
-    } catch (e) { setErr('Нет связи с сервером') }
+      else setErr((d && d.error) || 'Havola yaratib bo\'lmadi')
+    } catch (e) { setErr('Server bilan aloqa yo\'q') }
     setBusy(false)
   }
 
@@ -100,34 +109,34 @@ function NewSend({ templates }) {
   return (
     <div style={card}>
       <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 10, marginBottom: 10 }}>
-        <input style={inp} placeholder="Имя" value={firstName} onChange={(e) => setFirstName(e.target.value)} />
-        <input style={inp} placeholder="Фамилия" value={lastName} onChange={(e) => setLastName(e.target.value)} />
+        <input style={inp} placeholder="Ism" value={firstName} onChange={(e) => setFirstName(e.target.value)} />
+        <input style={inp} placeholder="Familiya" value={lastName} onChange={(e) => setLastName(e.target.value)} />
       </div>
-      <input style={{ ...inp, marginBottom: 14 }} placeholder="Телефон" value={phone} onChange={(e) => setPhone(e.target.value)} />
+      <input style={{ ...inp, marginBottom: 14 }} placeholder="Telefon: +998933957755" value={phone} onChange={(e) => setPhone(e.target.value)} />
 
-      <div style={{ fontSize: 13, fontWeight: 600, color: C.txt2, marginBottom: 8 }}>Документы</div>
+      <div style={{ fontSize: 13, fontWeight: 600, color: C.txt2, marginBottom: 8 }}>Hujjatlar</div>
       {['offer', 'rules'].map((k) => (
         <label key={k} style={{ display: 'flex', alignItems: 'center', gap: 10, marginBottom: 8, opacity: templates[k] ? 1 : 0.45, cursor: templates[k] ? 'pointer' : 'not-allowed' }}>
           <input type="checkbox" disabled={!templates[k]} checked={!!docKeys[k] && !!templates[k]} onChange={(e) => setDocKeys((s) => ({ ...s, [k]: e.target.checked }))} style={{ width: 16, height: 16 }} />
-          <span style={{ fontSize: 14 }}>{k === 'offer' ? 'Оферта' : 'Правила обучения'}{templates[k] ? ` — ${templates[k].name} (в.${templates[k].version})` : ' — не загружен'}</span>
+          <span style={{ fontSize: 14 }}>{k === 'offer' ? 'Oferta' : 'O\'qish qoidalari'}{templates[k] ? ` — ${templates[k].name} (v.${templates[k].version})` : ' — yuklanmagan'}</span>
         </label>
       ))}
       <div style={{ marginTop: 8, marginBottom: 14 }}>
-        <div style={{ fontSize: 12.5, color: C.txt3, marginBottom: 6 }}>Файл-исключение (необязательно):</div>
+        <div style={{ fontSize: 12.5, color: C.txt3, marginBottom: 6 }}>Istisno fayl (ixtiyoriy):</div>
         <input ref={fileRef} type="file" onChange={onFile} style={{ fontSize: 13, color: C.txt2 }} />
       </div>
 
-      <div style={{ fontSize: 13, fontWeight: 600, color: C.txt2, marginBottom: 6 }}>Текст сообщения ученику</div>
-      <textarea style={{ ...inp, minHeight: 90, resize: 'vertical', marginBottom: 14 }} value={message} onChange={(e) => setMessage(e.target.value)} placeholder="Текст, который увидит ученик" />
+      <div style={{ fontSize: 13, fontWeight: 600, color: C.txt2, marginBottom: 6 }}>O'quvchiga xabar matni</div>
+      <textarea style={{ ...inp, minHeight: 90, resize: 'vertical', marginBottom: 14 }} value={message} onChange={(e) => setMessage(e.target.value)} placeholder="O'quvchi ko'radigan matn" />
 
-      <button onClick={generate} disabled={busy} style={{ ...btn(), opacity: busy ? 0.6 : 1 }}>{busy ? 'Создаю…' : 'Сгенерировать ссылку'}</button>
+      <button onClick={generate} disabled={busy} style={{ ...btn(), opacity: busy ? 0.6 : 1 }}>{busy ? 'Yaratilmoqda…' : 'Havola yaratish'}</button>
       {err && <div style={{ color: C.red, fontSize: 13, marginTop: 10 }}>{err}</div>}
       {link && (
         <div style={{ marginTop: 14, padding: 12, borderRadius: 10, background: C.bg, border: `1px solid ${C.line}` }}>
-          <div style={{ fontSize: 12.5, color: C.txt3, marginBottom: 6 }}>Персональная ссылка (отправьте ученику):</div>
+          <div style={{ fontSize: 12.5, color: C.txt3, marginBottom: 6 }}>Shaxsiy havola (o'quvchiga yuboring):</div>
           <div style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
             <input readOnly value={link} style={{ ...inp, fontSize: 13 }} onFocus={(e) => e.target.select()} />
-            <button onClick={copyLink} style={btn(copied ? C.green : C.accent)}>{copied ? 'Скопировано' : 'Копировать'}</button>
+            <button onClick={copyLink} style={btn(copied ? C.green : C.accent)}>{copied ? 'Nusxalandi' : 'Nusxalash'}</button>
           </div>
         </div>
       )}
@@ -135,7 +144,7 @@ function NewSend({ templates }) {
   )
 }
 
-// ─────────── Вкладка 2: Отправки ───────────
+// ─────────── 2-bo'lim: Yuborilganlar ───────────
 function SendList() {
   const [items, setItems] = useState([])
   const [status, setStatus] = useState('all')
@@ -153,13 +162,13 @@ function SendList() {
     <div>
       <div style={{ display: 'flex', gap: 8, marginBottom: 14, flexWrap: 'wrap', alignItems: 'center' }}>
         <select value={status} onChange={(e) => setStatus(e.target.value)} style={{ ...inp, width: 'auto' }}>
-          <option value="all">Все статусы</option>
-          <option value="created">Создана</option>
-          <option value="opened">Открыл бот</option>
-          <option value="confirmed">Подтвердил</option>
+          <option value="all">Barcha holatlar</option>
+          <option value="created">Yaratilgan</option>
+          <option value="opened">Botni ochdi</option>
+          <option value="confirmed">Tasdiqladi</option>
         </select>
-        <input style={{ ...inp, width: 200 }} placeholder="Поиск по телефону" value={phone} onChange={(e) => setPhone(e.target.value)} onKeyDown={(e) => { if (e.key === 'Enter') load() }} />
-        <button onClick={load} style={btn()}>{loading ? '…' : 'Найти'}</button>
+        <input style={{ ...inp, width: 200 }} placeholder="Telefon bo'yicha qidirish" value={phone} onChange={(e) => setPhone(e.target.value)} onKeyDown={(e) => { if (e.key === 'Enter') load() }} />
+        <button onClick={load} style={btn()}>{loading ? '…' : 'Qidirish'}</button>
       </div>
 
       <div style={{ background: C.card, border: `1px solid ${C.line}`, borderRadius: 14, overflow: 'hidden' }}>
@@ -167,13 +176,13 @@ function SendList() {
           <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 13.5, minWidth: 620 }}>
             <thead>
               <tr style={{ color: C.txt3, textAlign: 'left' }}>
-                {['Ученик', 'Телефон', 'Статус', 'Создана', 'Подтвердил', 'Саппорт'].map((h) => (
+                {['O\'quvchi', 'Telefon', 'Holat', 'Yaratilgan', 'Tasdiqladi', 'Operator'].map((h) => (
                   <th key={h} style={{ padding: '10px 12px', fontWeight: 600, borderBottom: `1px solid ${C.line}` }}>{h}</th>
                 ))}
               </tr>
             </thead>
             <tbody>
-              {items.length === 0 && <tr><td colSpan={6} style={{ padding: 18, color: C.txt3, textAlign: 'center' }}>{loading ? 'Загрузка…' : 'Пусто'}</td></tr>}
+              {items.length === 0 && <tr><td colSpan={6} style={{ padding: 18, color: C.txt3, textAlign: 'center' }}>{loading ? 'Yuklanmoqda…' : 'Bo\'sh'}</td></tr>}
               {items.map((r) => {
                 const st = STATUS[r.status] || { label: r.status, color: C.txt3 }
                 return (
@@ -195,7 +204,7 @@ function SendList() {
   )
 }
 
-// ─────────── Вкладка 3: Шаблоны ───────────
+// ─────────── 3-bo'lim: Shablonlar ───────────
 function Templates({ templates, onSaved }) {
   const [defaultText, setDefaultText] = useState(templates.defaultText || '')
   const [msg, setMsg] = useState('')
@@ -212,13 +221,13 @@ function Templates({ templates, onSaved }) {
       if (key) {
         const ref = key === 'offer' ? offerRef : rulesRef
         const f = ref.current && ref.current.files && ref.current.files[0]
-        if (!f) { setMsg('Выберите файл'); setBusy(false); return }
+        if (!f) { setMsg('Fayl tanlang'); setBusy(false); return }
         payload.key = key; payload.base64 = await fileToBase64(f); payload.fileName = f.name
       }
       const d = await support.templatesSet(payload)
-      if (d && d.ok) { onSaved(d.templates); setMsg('Сохранено'); if (offerRef.current) offerRef.current.value = ''; if (rulesRef.current) rulesRef.current.value = '' }
-      else setMsg((d && d.error) || 'Ошибка')
-    } catch (e) { setMsg('Нет связи с сервером') }
+      if (d && d.ok) { onSaved(d.templates); setMsg('Saqlandi'); if (offerRef.current) offerRef.current.value = ''; if (rulesRef.current) rulesRef.current.value = '' }
+      else setMsg((d && d.error) || 'Xatolik')
+    } catch (e) { setMsg('Server bilan aloqa yo\'q') }
     setBusy(false)
   }
 
@@ -227,42 +236,42 @@ function Templates({ templates, onSaved }) {
     <div style={card}>
       <div style={{ fontSize: 14, fontWeight: 600, marginBottom: 4 }}>{title}</div>
       <div style={{ fontSize: 12.5, color: C.txt3, marginBottom: 10 }}>
-        {templates[k] ? `Загружен: ${templates[k].name} · версия ${templates[k].version} · ${fmtDate(templates[k].updatedAt)}` : 'Пока не загружен'}
+        {templates[k] ? `Yuklangan: ${templates[k].name} · versiya ${templates[k].version} · ${fmtDate(templates[k].updatedAt)}` : 'Hali yuklanmagan'}
       </div>
       <div style={{ display: 'flex', gap: 8, alignItems: 'center', flexWrap: 'wrap' }}>
         <input ref={ref_} type="file" style={{ fontSize: 13, color: C.txt2 }} />
-        <button onClick={() => save(k)} disabled={busy} style={btn()}>{templates[k] ? 'Заменить' : 'Загрузить'}</button>
+        <button onClick={() => save(k)} disabled={busy} style={btn()}>{templates[k] ? 'Almashtirish' : 'Yuklash'}</button>
       </div>
     </div>
   )
 
   return (
     <div>
-      <Row k="offer" title="Оферта" ref_={offerRef} />
-      <Row k="rules" title="Правила обучения" ref_={rulesRef} />
+      <Row k="offer" title="Oferta" ref_={offerRef} />
+      <Row k="rules" title="O'qish qoidalari" ref_={rulesRef} />
       <div style={card}>
-        <div style={{ fontSize: 14, fontWeight: 600, marginBottom: 8 }}>Текст сообщения по умолчанию</div>
+        <div style={{ fontSize: 14, fontWeight: 600, marginBottom: 8 }}>Standart xabar matni</div>
         <textarea style={{ ...inp, minHeight: 90, resize: 'vertical', marginBottom: 12 }} value={defaultText} onChange={(e) => setDefaultText(e.target.value)} />
-        <button onClick={() => save(null)} disabled={busy} style={btn()}>Сохранить текст</button>
+        <button onClick={() => save(null)} disabled={busy} style={btn()}>Matnni saqlash</button>
       </div>
-      {msg && <div style={{ fontSize: 13, color: msg === 'Сохранено' ? C.green : C.red }}>{msg}</div>}
+      {msg && <div style={{ fontSize: 13, color: msg === 'Saqlandi' ? C.green : C.red }}>{msg}</div>}
     </div>
   )
 }
 
-// ─────────── Бот учеников: статус + настройка вебхука (только админ) ───────────
+// ─────────── O'quvchilar uchun bot: holat + vebhukni sozlash (faqat admin) ───────────
 function BotCard() {
   const [st, setSt] = useState(null)
   const [busy, setBusy] = useState(false)
   const [msg, setMsg] = useState('')
 
-  async function loadStatus() { try { const d = await support.botStatus(); setSt(d) } catch (e) { setSt({ ok: false, error: 'нет связи' }) } }
+  async function loadStatus() { try { const d = await support.botStatus(); setSt(d) } catch (e) { setSt({ ok: false, error: 'aloqa yo\'q' }) } }
   useEffect(() => { loadStatus() }, [])
 
   async function setup() {
     setBusy(true); setMsg('')
-    try { const d = await support.botSetup(); setMsg(d && d.ok ? 'Вебхук настроен ✓' : ('Ошибка: ' + ((d && (d.error || d.detail)) || '—'))); await loadStatus() }
-    catch (e) { setMsg('Нет связи с сервером') }
+    try { const d = await support.botSetup(); setMsg(d && d.ok ? 'Vebhuk sozlandi ✓' : ('Xatolik: ' + ((d && (d.error || d.detail)) || '—'))); await loadStatus() }
+    catch (e) { setMsg('Server bilan aloqa yo\'q') }
     setBusy(false)
   }
 
@@ -271,25 +280,25 @@ function BotCard() {
   const hookUrl = st && st.webhook && st.webhook.url
   return (
     <div style={card}>
-      <div style={{ fontSize: 14, fontWeight: 600, marginBottom: 8 }}>Бот для учеников</div>
-      {!st && <div style={{ fontSize: 13, color: C.txt3 }}>Проверяю…</div>}
-      {st && st.error && <div style={{ fontSize: 13, color: C.red }}>Не удалось проверить: {st.error}. Проверьте, что задан TELEGRAM_SUPPORT_BOT_TOKEN.</div>}
+      <div style={{ fontSize: 14, fontWeight: 600, marginBottom: 8 }}>O'quvchilar uchun bot</div>
+      {!st && <div style={{ fontSize: 13, color: C.txt3 }}>Tekshirilmoqda…</div>}
+      {st && st.error && <div style={{ fontSize: 13, color: C.red }}>Tekshirib bo'lmadi: {st.error}. TELEGRAM_SUPPORT_BOT_TOKEN o'rnatilganini tekshiring.</div>}
       {st && !st.error && (
         <div style={{ fontSize: 13, color: C.txt2, lineHeight: 1.7 }}>
-          Бот: {uname ? <b>@{uname}</b> : <span style={{ color: C.txt3 }}>токен не задан</span>}<br />
-          Вебхук: {hookUrl ? <span style={{ color: C.green }}>подключён</span> : <span style={{ color: C.gold }}>не настроен</span>}
+          Bot: {uname ? <b>@{uname}</b> : <span style={{ color: C.txt3 }}>token o'rnatilmagan</span>}<br />
+          Vebhuk: {hookUrl ? <span style={{ color: C.green }}>ulangan</span> : <span style={{ color: C.gold }}>sozlanmagan</span>}
         </div>
       )}
       <div style={{ marginTop: 12, display: 'flex', gap: 8, alignItems: 'center', flexWrap: 'wrap' }}>
-        <button onClick={setup} disabled={busy} style={{ ...btn(), opacity: busy ? 0.6 : 1 }}>{busy ? '…' : (hookUrl ? 'Перенастроить вебхук' : 'Настроить бота')}</button>
-        <button onClick={loadStatus} style={{ ...btn(C.card, C.txt2), border: `1px solid ${C.line}` }}>Обновить</button>
+        <button onClick={setup} disabled={busy} style={{ ...btn(), opacity: busy ? 0.6 : 1 }}>{busy ? '…' : (hookUrl ? 'Vebhukni qayta sozlash' : 'Botni sozlash')}</button>
+        <button onClick={loadStatus} style={{ ...btn(C.card, C.txt2), border: `1px solid ${C.line}` }}>Yangilash</button>
       </div>
       {msg && <div style={{ fontSize: 13, color: msg.includes('✓') ? C.green : C.red, marginTop: 10 }}>{msg}</div>}
     </div>
   )
 }
 
-// ─────────── Вкладка 4: Саппорты (только админ) ───────────
+// ─────────── 4-bo'lim: Operatorlar (faqat admin) ───────────
 function Accounts() {
   const [list, setList] = useState([])
   const [login, setLogin] = useState('')
@@ -302,28 +311,28 @@ function Accounts() {
 
   async function add() {
     setMsg('')
-    if (!login.trim() || !password) { setMsg('Нужны логин и пароль'); return }
+    if (!login.trim() || !password) { setMsg('Login va parol kerak'); return }
     const d = await support.accountAdd({ login, password, name })
-    if (d && d.ok) { setLogin(''); setPassword(''); setName(''); load() } else setMsg((d && d.error) || 'Ошибка')
+    if (d && d.ok) { setLogin(''); setPassword(''); setName(''); load() } else setMsg((d && d.error) || 'Xatolik')
   }
-  async function del(l) { if (!confirm(`Удалить саппорта «${l}»?`)) return; await support.accountDel(l); load() }
+  async function del(l) { if (!confirm(`«${l}» operatorini o'chirilsinmi?`)) return; await support.accountDel(l); load() }
 
   const card = { background: C.card, border: `1px solid ${C.line}`, borderRadius: 14, padding: 18 }
   return (
     <div style={card}>
-      <div style={{ fontSize: 14, fontWeight: 600, marginBottom: 12 }}>Учётные записи саппорта</div>
-      {list.length === 0 && <div style={{ fontSize: 13, color: C.txt3, marginBottom: 12 }}>Пока нет ни одного саппорта.</div>}
+      <div style={{ fontSize: 14, fontWeight: 600, marginBottom: 12 }}>Operator hisoblari</div>
+      {list.length === 0 && <div style={{ fontSize: 13, color: C.txt3, marginBottom: 12 }}>Hozircha birorta operator yo'q.</div>}
       {list.map((a) => (
         <div key={a.login} style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '9px 0', borderBottom: `1px solid ${C.line}` }}>
           <div style={{ fontSize: 14 }}><b>{a.login}</b>{a.name && a.name !== a.login ? <span style={{ color: C.txt3 }}> — {a.name}</span> : null}</div>
-          <button onClick={() => del(a.login)} style={{ ...btn('transparent', C.red), border: `1px solid ${C.line}`, padding: '6px 12px', fontSize: 13 }}>Удалить</button>
+          <button onClick={() => del(a.login)} style={{ ...btn('transparent', C.red), border: `1px solid ${C.line}`, padding: '6px 12px', fontSize: 13 }}>O'chirish</button>
         </div>
       ))}
       <div style={{ marginTop: 16, display: 'grid', gridTemplateColumns: '1fr 1fr 1fr auto', gap: 8, alignItems: 'center' }}>
-        <input style={inp} placeholder="Логин" value={login} onChange={(e) => setLogin(e.target.value)} />
-        <input style={inp} placeholder="Пароль" value={password} onChange={(e) => setPassword(e.target.value)} />
-        <input style={inp} placeholder="Имя (необяз.)" value={name} onChange={(e) => setName(e.target.value)} />
-        <button onClick={add} style={btn()}>Добавить</button>
+        <input style={inp} placeholder="Login" value={login} onChange={(e) => setLogin(e.target.value)} />
+        <input style={inp} placeholder="Parol" value={password} onChange={(e) => setPassword(e.target.value)} />
+        <input style={inp} placeholder="Ism (ixtiyoriy)" value={name} onChange={(e) => setName(e.target.value)} />
+        <button onClick={add} style={btn()}>Qo'shish</button>
       </div>
       {msg && <div style={{ fontSize: 13, color: C.red, marginTop: 10 }}>{msg}</div>}
     </div>
