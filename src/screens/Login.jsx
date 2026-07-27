@@ -27,10 +27,16 @@ export default function Login({ onLoggedIn }) {
     try { return new URLSearchParams(location.search).get('mop') === '1' } catch (e) { return false }
   })()
 
-  // ?mop=1 — сразу форма входа МОПа, без выбора роли
+  // Маршрут /support — вход саппорта доступен ТОЛЬКО по прямой ссылке (с экрана ролей ссылки нет).
+  const isSupportDirect = (() => {
+    try { return window.location.pathname.replace(/\/+$/, '') === '/support' } catch (e) { return false }
+  })()
+
+  // ?mop=1 — сразу форма входа МОПа; /support — сразу форма входа саппорта (без выбора роли)
   useEffect(() => {
     if (isMopDirect) setStep('mop')
-  }, [isMopDirect])
+    else if (isSupportDirect) setStep('support')
+  }, [isMopDirect, isSupportDirect])
 
   // фокус на активном инпуте (как setTimeout(...,100) в оригинале)
   useEffect(() => {
@@ -180,9 +186,6 @@ export default function Login({ onLoggedIn }) {
             <div style={{ textAlign: 'center', marginTop: 18 }}>
               <button onClick={() => { setStep('demo'); setLoginError('') }} style={{ background: 'none', border: 'none', color: 'var(--accent)', fontSize: 13, cursor: 'pointer', textDecoration: 'underline' }}>Войти в демо по коду</button>
             </div>
-            <div style={{ textAlign: 'center', marginTop: 10 }}>
-              <button onClick={() => { setStep('support'); setSupErr('') }} style={{ background: 'none', border: 'none', color: 'var(--txt3)', fontSize: 12.5, cursor: 'pointer', textDecoration: 'underline' }}>Operatorlar uchun kirish</button>
-            </div>
           </div>
         )}
 
@@ -233,7 +236,6 @@ export default function Login({ onLoggedIn }) {
               style={{ ...inputStyle, marginBottom: 12 }} />
             <button onClick={supLoginGo} style={{ width: '100%', padding: 14, borderRadius: 11, background: 'var(--accent)', border: 'none', color: '#fff', fontSize: 15, fontWeight: 600, cursor: 'pointer' }}>Kirish</button>
             {supErr && <div style={{ color: 'var(--red)', fontSize: 12.5, marginTop: 10, textAlign: 'center' }}>{supErr}</div>}
-            <button onClick={backToRoles} style={{ width: '100%', padding: 11, borderRadius: 11, background: 'none', border: 'none', color: 'var(--txt2)', fontSize: 13, cursor: 'pointer', marginTop: 8 }}>← Orqaga</button>
           </div>
         )}
 
