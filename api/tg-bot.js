@@ -244,11 +244,21 @@ export default async function handler(req, res) {
       const mTpl = data.match(/^tplan:(run|review|decline|spend|cancel)$/);   // решение по недельному плану транскрибации
       const mMb = data.match(/^mb:(confirm|reject|edit):(.+)$/); // решение владельца по сводному наблюдению общего мозга
       const mPl = data.match(/^pl:(confirm|reject|recalc)$/);   // решение владельца по плану под цель (planner)
-      if (!mEsc && !mDisp && !mTpl && !mMb && !mPl) { await answerCallback(kind, cq.id, ""); res.status(200).json({ ok: true, ignored: "cq no match" }); return; }
-      const act = mPl ? mPl[1] : (mMb ? mMb[1] : (mTpl ? mTpl[1] : (mDisp ? mDisp[1] : mEsc[1])));
+      const mAu = data.match(/^au:cancel:(.+)$/);               // владелец отзывает автономно поставленную задачу
+      if (!mEsc && !mDisp && !mTpl && !mMb && !mPl && !mAu) { await answerCallback(kind, cq.id, ""); res.status(200).json({ ok: true, ignored: "cq no match" }); return; }
+      const act = mAu ? "cancel" : (mPl ? mPl[1] : (mMb ? mMb[1] : (mTpl ? mTpl[1] : (mDisp ? mDisp[1] : mEsc[1]))));
       try {
         let r;
-        if (mPl) {
+        if (mAu) {
+          const am = await import("./autonomy.js");
+          const cr = await am.cancelAutonomousTask(mAu[1]);
+          if (cr.ok) {
+            const ppl = await getPeople();
+            if (ppl.rop && ppl.rop.chatId) await sendTg("rop", ppl.rop.chatId, `📌 Задача «${cr.title}» отменена руководителем — по ней ничего делать не нужно. Спасибо!`);
+            r = { toast: "Отозвано", ownerMsg: `↩️ Отозвал задачу «${cr.title}» — сообщил РОПу, что делать её не нужно.` };
+          } else r = { toast: cr.error || "не найдено", ownerMsg: `Не удалось отозвать: ${cr.error || "задача не найдена"}.` };
+        }
+        else if (mPl) {
           const pm = await import("./planner.js"); r = await pm.handlePlanButton(mPl[1]);
           if (r && r.triggerTick) { try { const host = req.headers && req.headers.host; if (host) await fetch(`https://${host}/api/task-agent?action=tick&cron=1`, { method: "POST", headers: { "content-type": "application/json", Authorization: `Bearer ${process.env.CRON_SECRET}` }, body: "{}" }); } catch (e) {} }
         }

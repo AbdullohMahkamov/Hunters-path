@@ -13,6 +13,7 @@ import { getGoal } from "./goal.js";
 import { getVerifiedFunnel } from "./dev-agent.js";
 import { sendTg, getPeople } from "./tg-bot.js";
 import { addMarketingTask } from "./task-agent.js";
+import { ROUTINE, getAutonomy, classifyTaskRisk, reassessBeforeDispatch, isWhitelisted, touchWhitelist, autonomousCountToday, recordAutonomous, getTodayAutonomous } from "./autonomy.js";
 
 const REDIS_URL = process.env.UPSTASH_REDIS_REST_URL;
 const REDIS_TOKEN = process.env.UPSTASH_REDIS_REST_TOKEN;
@@ -57,7 +58,7 @@ function funnelFacts(funnel) {
   const avgCheck = (funnel.avgCheck && (funnel.avgCheck.median || funnel.avgCheck.mean)) || null;
   const conv = (leads && sold != null) ? sold / leads : null; // лид → сделка
   const trust = deal ? deal.trust : "insufficient";
-  return { revenue, sold, leads, avgCheck, conv, trust, bottleneck: funnel.bottleneck || null, telephonySuspicious: funnel.telephonySuspicious };
+  return { revenue, sold, leads, avgCheck, conv, trust, bottleneck: funnel.bottleneck || null, telephonySuspicious: funnel.telephonySuspicious, dataFresh: funnel.dataFresh };
 }
 
 // ── РАЗБИВКА РАЗРЫВА (детерминированно) ──
@@ -110,10 +111,15 @@ export async function buildPlan(org = ORG) {
     return { ok: false, reason: "undiagnosable", missing, human: `План не построен: ${missing.join("; ") || "недостаточно данных для прогноза"}.`, facts: f, period, earned, forecast };
   }
 
-  const facts = { goalUZS: goal.amountUZS, currency: goal.currency, amount: goal.amount, period, earned, sold: f.sold, leads: f.leads, avgCheck: f.avgCheck, convPct: f.conv != null ? +(f.conv * 100).toFixed(1) : null, perWorkday, forecast, gap, workdays: wdays, bottleneck: f.bottleneck };
+  const gapPct = goal.amountUZS > 0 ? +(gap / goal.amountUZS * 100).toFixed(1) : null;
+  const facts = { goalUZS: goal.amountUZS, currency: goal.currency, amount: goal.amount, period, earned, sold: f.sold, leads: f.leads, avgCheck: f.avgCheck, convPct: f.conv != null ? +(f.conv * 100).toFixed(1) : null, perWorkday, forecast, gap, gapPct, workdays: wdays, bottleneck: f.bottleneck, trust: f.trust, dataFresh: f.dataFresh, telephonySuspicious: f.telephonySuspicious };
 
   if (gap <= 0) {
     return { ok: true, onPace: true, facts, decomposition: null, tasks: { rop: [], marketing: [] }, human: `На текущем темпе цель достигается (прогноз ${num(forecast)} ≥ цель ${num(goal.amountUZS)} сум). План догона не требуется.` };
+  }
+  // НИЖНИЙ ПОРОГ: разрыв < 5% цели — в пределах шума прогноза (±10%), темп закроет сам. Задачу НЕ создаём вообще.
+  if (gapPct != null && gapPct < ROUTINE.gapPctMin) {
+    return { ok: true, onPace: true, belowThreshold: true, facts, decomposition: null, tasks: { rop: [], marketing: [] }, human: `Разрыв ${gapPct}% (${num(gap)} сум) — в пределах нормальных колебаний (<${ROUTINE.gapPctMin}%). Текущий темп закрывает его сам, дёргать людей не нужно.` };
   }
 
   const dec = decomposeGap(gap, f);
@@ -142,6 +148,9 @@ export async function buildPlan(org = ORG) {
       if (o) tasks = { rop: Array.isArray(o.rop) ? o.rop.slice(0, 3) : [], marketing: Array.isArray(o.marketing) ? o.marketing.slice(0, 2) : [] };
     } catch (e) { /* задачи не сформулировались — план всё равно вернём с числами */ }
   }
+  // ДЕТЕРМИНИРОВАННЫЙ topicKey (НЕ из LLM-текста): РОП-задачи закрывают узкое место (in-process), маркетинг = лиды
+  for (const t of (tasks.rop || [])) { t.topicKey = "rop_conversion"; t.recipient = "rop"; }
+  for (const t of (tasks.marketing || [])) { t.topicKey = "mkt_leads"; t.recipient = "marketing"; }
   return { ok: true, onPace: false, facts, decomposition: dec, tasks, human: null };
 }
 
@@ -194,10 +203,40 @@ export async function proposePlan(org = ORG, force = false) {
     await rsetJSON(K.active, { periodKey, onPace: true, at: Date.now() });
     return { ok: true, onPace: true };
   }
-  // старое неподтверждённое предложение под ДРУГОЙ (прошлый) период → в историю как «не реализован», не теряем молча
   if (pending && pending.periodKey && pending.periodKey !== periodKey) await archivePlan(pending, "expired_unconfirmed");
-  // гейт: предложение владельцу с кнопками
-  const rec = { periodKey, at: Date.now(), plan, reminded: false };
+
+  // ── КЛАССИФИКАЦИЯ рутина vs стратегия (на числах) → авто-раздача рутинных, гейт остальных ──
+  const facts = plan.facts;
+  const auto = await getAutonomy();
+  const baseCtx = { autonomyEnabled: auto.enabled, gapPct: facts.gapPct, gapAbs: facts.gap, funnelTrust: facts.trust, dataFresh: facts.dataFresh, telephonySuspicious: facts.telephonySuspicious, maxPerDay: auto.maxPerDay, maxPerRopChat: auto.maxPerRopChat };
+  const allTasks = [...(plan.tasks.rop || []).map((t) => ({ ...t, recipient: "rop" })), ...(plan.tasks.marketing || []).map((t) => ({ ...t, recipient: "marketing" }))];
+  const gatedTasks = { rop: [], marketing: [] };
+  const dispatched = [];
+  for (const t of allTasks) {
+    const wl = t.recipient === "rop" ? await isWhitelisted(t.topicKey, facts.gap) : false;
+    // ПОВТОРНАЯ проверка ЖИВОГО флага + лимитов ПРЯМО ПЕРЕД отправкой (закрывает гонку kill switch ↔ раздача)
+    const d = await reassessBeforeDispatch(t, { ...baseCtx, whitelisted: wl });
+    if (d.decision === "skip") continue; // разрыв в пределах шума — задача не нужна вовсе
+    if (d.decision === "auto") {
+      const id = await createRopPlanTask(t, periodKey);
+      await touchWhitelist(t.topicKey, facts.gap);
+      await recordAutonomous({ taskId: id, title: t.title, recipient: "rop", topicKey: t.topicKey, gap: facts.gap, reason: d.reason });
+      dispatched.push({ id, title: t.title });
+      // ПОСТФАКТУМ владельцу — с кнопкой отзыва (автономно ≠ втайне)
+      if (ppl.owner && ppl.owner.chatId) await sendTg("owner", ppl.owner.chatId, `🤖 Автоматически поставил РОПу рутинную задачу: «${t.title}».\nРазрыв ${facts.gapPct}%, тема уже подтверждалась ранее. Если не согласны — отзовите.`, { reply_markup: { inline_keyboard: [[{ text: "❌ Отозвать", callback_data: `au:cancel:${id}` }]] } });
+    } else {
+      gatedTasks[t.recipient].push(t);
+    }
+  }
+
+  const hasGated = (gatedTasks.rop.length + gatedTasks.marketing.length) > 0;
+  if (!hasGated) { // всё ушло автономно (или гейтить нечего) — pending не создаём
+    await rsetJSON(K.active, { periodKey, at: Date.now(), autoOnly: true, dispatched, facts });
+    return { ok: true, autoDispatched: dispatched.length, gated: 0, periodKey };
+  }
+  // gated-часть → владельцу на подтверждение
+  const gatedPlan = { ...plan, tasks: gatedTasks };
+  const rec = { periodKey, at: Date.now(), plan: gatedPlan, reminded: false, autoDispatched: dispatched.length };
   await rsetJSON(K.pending, rec);
   let sent = false;
   if (ppl.owner && ppl.owner.chatId) {
@@ -205,10 +244,22 @@ export async function proposePlan(org = ORG, force = false) {
       [{ text: "✅ Подтвердить и раздать", callback_data: "pl:confirm" }],
       [{ text: "🔄 Пересчитать", callback_data: "pl:recalc" }, { text: "❌ Отклонить", callback_data: "pl:reject" }],
     ] } };
-    const r = await sendTg("owner", ppl.owner.chatId, fmtPlanForOwner(plan), kb);
+    const extra = dispatched.length ? `\n\n🤖 ${dispatched.length} рутинн(ых) задач(и) уже поставил сам (см. отдельные сообщения).` : "";
+    const r = await sendTg("owner", ppl.owner.chatId, fmtPlanForOwner(gatedPlan) + extra, kb);
     sent = !!(r && r.ok);
   }
-  return { ok: true, proposed: true, sent, periodKey, preview: fmtPlanForOwner(plan) };
+  return { ok: true, proposed: true, sent, autoDispatched: dispatched.length, gated: gatedTasks.rop.length + gatedTasks.marketing.length, periodKey, preview: fmtPlanForOwner(gatedPlan) };
+}
+
+// создание РОП-задачи плана (используется и авто-раздачей, и подтверждением) → id
+async function createRopPlanTask(t, periodKey) {
+  const app = (await rgetJSON(K.appdata, {})) || {};
+  app.customPlan = app.customPlan || {}; if (!Array.isArray(app.customPlan.sales)) app.customPlan.sales = [];
+  const dl = t.deadlineDays ? new Date(Date.now() + t.deadlineDays * 86400000 + 5 * 3600000).toISOString().slice(0, 10) : "";
+  const id = "plan_" + Date.now().toString(36) + Math.random().toString(36).slice(2, 5);
+  app.customPlan.sales.push({ id, t: t.title, d: [t.why, t.step].filter(Boolean).join(" — "), deadline: dl, steps: t.step ? [t.step] : [], source: "planner", topicKey: t.topicKey || null, goalPeriod: periodKey, createdAt: Date.now() });
+  await rsetJSON(K.appdata, app);
+  return id;
 }
 
 // ── КНОПКИ ПЛАНА (pl:confirm|reject|recalc) — из tg-bot webhook ──
@@ -229,17 +280,15 @@ export async function handlePlanButton(act) {
   if (act === "confirm") {
     const plan = pending.plan;
     const created = { rop: [], marketing: [] };
-    // РОП-задачи → в план Altrone (appdata.customPlan.sales) — их ведёт task-agent (пинг/эскалация)
-    const app = (await rgetJSON(K.appdata, {})) || {};
-    app.customPlan = app.customPlan || {}; if (!Array.isArray(app.customPlan.sales)) app.customPlan.sales = [];
+    const gapForWl = plan.facts && plan.facts.gap;
     const dl = (days) => days ? new Date(Date.now() + days * 86400000 + 5 * 3600000).toISOString().slice(0, 10) : "";
+    // РОП-задачи → план Altrone (task-agent ведёт). Подтверждение владельца → тема в whitelist (дальше идентичная — авто).
     for (const t of (plan.tasks.rop || [])) {
-      const id = "plan_" + Date.now().toString(36) + Math.random().toString(36).slice(2, 5);
-      app.customPlan.sales.push({ id, t: t.title, d: [t.why, t.step].filter(Boolean).join(" — "), deadline: dl(t.deadlineDays), steps: t.step ? [t.step] : [], source: "planner", goalPeriod: pending.periodKey, createdAt: Date.now() });
+      const id = await createRopPlanTask(t, pending.periodKey);
       created.rop.push(id);
+      if (t.topicKey && gapForWl != null) await touchWhitelist(t.topicKey, gapForWl);
     }
-    await rsetJSON(K.appdata, app);
-    // Маркетинг-задачи → канал маркетолога
+    // Маркетинг-задачи → канал маркетолога (в whitelist НЕ добавляем — маркетинг всегда под гейтом)
     for (const t of (plan.tasks.marketing || [])) {
       const r = await addMarketingTask({ title: t.title, why: t.why, action: t.step, deadline: dl(t.deadlineDays), source: "planner" });
       created.marketing.push(r.id);
@@ -268,6 +317,10 @@ export async function buildDailyReport(org = ORG) {
   s += `Цель: ${num(g.goalUZS)} сум · заработано <b>${num(g.earned)} (${pct}%)</b> · период пройден на ${periodPct}%\n`;
   if (plan.onPace) s += `✅ На темпе: прогноз ${num(g.forecast)} ≥ цель.\n`;
   else s += `⚠️ Разрыв до цели: <b>${num(g.gap)} сум</b> (≈${plan.decomposition ? plan.decomposition.extraSales : "?"} продаж), осталось ${g.workdays.left} раб. дн.\n`;
+
+  // ПОСТФАКТУМ: что система поставила САМА (автономно ≠ втайне)
+  const autoToday = await getTodayAutonomous();
+  if (autoToday.length) s += `\n🤖 Сегодня система сама поставила: ${autoToday.map((x) => `«${x.title}»`).join(", ")}. Не согласны — отзовите в отдельных сообщениях выше.\n`;
 
   // Активные задачи последнего плана: сколько выполнено/просрочено, критичное сверху
   if (active && active.taskIds) {

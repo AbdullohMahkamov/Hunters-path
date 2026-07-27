@@ -13,6 +13,7 @@ import { getCallAnalysisBundle } from "./deepsales.js";
 import { parseGoalText, setGoal } from "./goal.js";
 import { parseMargin, parseCpl, parseSchedule, setMargin, setCpl, setSchedule, missingSettings } from "./biz-settings.js";
 import { buildDiagnosticBundle, formatDiagnostic } from "./diagnostic.js";
+import { setAutonomyEnabled, getAutonomy } from "./autonomy.js";
 
 async function readDashboardCache() {
   const url = process.env.UPSTASH_REDIS_REST_URL;
@@ -564,6 +565,9 @@ export default async function handler(req, res) {
         if (notQ && /(маржа|рентабельн)/i.test(lastMsg)) { const p = parseMargin(lastMsg); if (p.ok) { await setMargin(p.value, "manual", p.raw); goalNote += `\n\nВЛАДЕЛЕЦ ЗАДАЛ МАРЖУ ${p.value}%. Сохранена (используется как ваш override поверх авто-расчёта). Кратко подтверди.`; } }
         if (notQ && /(цена лида|cpl|ориентир.*лид)/i.test(lastMsg)) { const p = parseCpl(lastMsg); if (p.ok) { await setCpl(p.value, p.raw); goalNote += `\n\nВЛАДЕЛЕЦ ЗАДАЛ ОРИЕНТИР ЦЕНЫ ЛИДА ${p.value.toLocaleString("ru-RU")} сум. Сохранён. Кратко подтверди.`; } }
         if (notQ && /(рабоч.{0,4}(график|дн)|работаем|выходн|с\s*\d{1,2}\s*(до|[-–])\s*\d{1,2})/i.test(lastMsg)) { const p = await parseSchedule(lastMsg); if (p.ok) { await setSchedule(p); goalNote += `\n\nВЛАДЕЛЕЦ ЗАДАЛ РАБОЧИЙ ГРАФИК (дни ${JSON.stringify(p.workdays)}, ${p.workStart}–${p.workEnd}). Сохранён. Кратко подтверди дни и часы.`; } }
+        // KILL SWITCH автономии — команды владельца в чате
+        if (notQ && /(включ|разреш|запуст)\w*\s+автоном/i.test(lastMsg)) { await setAutonomyEnabled(true); goalNote += `\n\nВЛАДЕЛЕЦ ВКЛЮЧИЛ автономию: рутинные РОП-задачи (малый разрыв, проверенная тема, надёжные данные) теперь раздаются сами, с уведомлением ему и кнопкой «Отозвать». Маркетинг и крупные решения — всё равно через него. Кратко подтверди и напомни, что выключить можно фразой «поставь всё на подтверждение».`; }
+        if (notQ && /(выключ|отключ)\w*\s+автоном|поставь\s+в?с[её]\s+на\s+подтвержд|верни\s+гейт/i.test(lastMsg)) { await setAutonomyEnabled(false); goalNote += `\n\nВЛАДЕЛЕЦ ВЫКЛЮЧИЛ автономию — 100% задач снова под его подтверждением, немедленно. Кратко подтверди.`; }
       } catch (e) { /* не критично — обычный ответ */ }
       // Чего не хватает/устарело → советник ДОЛЖЕН САМ спросить (блокирующе для маржи, мягко для остального)
       let askNote = "";
