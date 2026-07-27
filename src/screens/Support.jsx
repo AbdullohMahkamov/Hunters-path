@@ -72,20 +72,12 @@ function NewSend({ templates }) {
   const [phone, setPhone] = useState('')
   const [docKeys, setDocKeys] = useState({ offer: true, rules: true })
   const [message, setMessage] = useState('')
-  const [custom, setCustom] = useState(null) // { base64, name }
   const [busy, setBusy] = useState(false)
   const [err, setErr] = useState('')
   const [link, setLink] = useState('')
   const [copied, setCopied] = useState(false)
-  const fileRef = useRef(null)
 
   useEffect(() => { setMessage(templates.defaultText || '') }, [templates.defaultText])
-
-  async function onFile(e) {
-    const f = e.target.files && e.target.files[0]
-    if (!f) { setCustom(null); return }
-    setCustom({ base64: await fileToBase64(f), name: f.name })
-  }
 
   async function generate() {
     setErr(''); setLink(''); setCopied(false)
@@ -93,11 +85,11 @@ function NewSend({ templates }) {
     const nPhone = normUzPhone(phone)
     if (!nPhone) { setErr('Telefon raqami +998XXXXXXXXX ko\'rinishida bo\'lishi kerak (masalan, +998933957755)'); return }
     const keys = Object.keys(docKeys).filter((k) => docKeys[k] && templates[k])
-    if (!keys.length && !custom) { setErr('Kamida bitta hujjat tanlang yoki fayl biriktiring'); return }
+    if (!keys.length) { setErr('Kamida bitta hujjat tanlang'); return }
     setBusy(true)
     try {
-      const d = await support.create({ firstName, lastName, phone: nPhone, docKeys: keys, customFile: custom, message })
-      if (d && d.ok) { setLink(d.link); setFirstName(''); setLastName(''); setPhone(''); setCustom(null); if (fileRef.current) fileRef.current.value = '' }
+      const d = await support.create({ firstName, lastName, phone: nPhone, docKeys: keys, message })
+      if (d && d.ok) { setLink(d.link); setFirstName(''); setLastName(''); setPhone('') }
       else setErr((d && d.error) || 'Havola yaratib bo\'lmadi')
     } catch (e) { setErr('Server bilan aloqa yo\'q') }
     setBusy(false)
@@ -121,12 +113,7 @@ function NewSend({ templates }) {
           <span style={{ fontSize: 14 }}>{k === 'offer' ? 'Oferta' : 'O\'qish qoidalari'}{templates[k] ? ` — ${templates[k].name} (v.${templates[k].version})` : ' — yuklanmagan'}</span>
         </label>
       ))}
-      <div style={{ marginTop: 8, marginBottom: 14 }}>
-        <div style={{ fontSize: 12.5, color: C.txt3, marginBottom: 6 }}>Istisno fayl (ixtiyoriy):</div>
-        <input ref={fileRef} type="file" onChange={onFile} style={{ fontSize: 13, color: C.txt2 }} />
-      </div>
-
-      <div style={{ fontSize: 13, fontWeight: 600, color: C.txt2, marginBottom: 6 }}>O'quvchiga xabar matni</div>
+      <div style={{ marginTop: 8, fontSize: 13, fontWeight: 600, color: C.txt2, marginBottom: 6 }}>O'quvchiga xabar matni</div>
       <textarea style={{ ...inp, minHeight: 130, resize: 'vertical', marginBottom: 6 }} value={message} onChange={(e) => setMessage(e.target.value)} placeholder="O'quvchi ko'radigan matn" />
       <div style={{ fontSize: 11.5, color: C.txt3, marginBottom: 14 }}>«{'{ism}'}» — o'quvchining ismi bilan almashtiriladi.</div>
 
