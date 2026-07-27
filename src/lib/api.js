@@ -181,6 +181,9 @@ export const support = {
   accountsList: () => postJSON('/api/support', { action: 'accounts-list', session: getSession() }).then((r) => r.json()),
   accountAdd: ({ login, password, name }) => postJSON('/api/support', { action: 'account-add', session: getSession(), login, password, name }).then((r) => r.json()),
   accountDel: (login) => postJSON('/api/support', { action: 'account-del', session: getSession(), login }).then((r) => r.json()),
+  // бот учеников (только админ): статус/настройка вебхука
+  botStatus: () => getJSON('/api/support-bot?action=status&session=' + encodeURIComponent(getSession())),
+  botSetup: () => getJSON('/api/support-bot?action=setup&session=' + encodeURIComponent(getSession())),
 }
 
 export { postJSON, getJSON }

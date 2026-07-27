@@ -52,7 +52,7 @@ export default function Support({ onLogout }) {
         {tab === 'new' && <NewSend templates={templates} />}
         {tab === 'list' && <SendList />}
         {tab === 'tpl' && <Templates templates={templates} onSaved={setTemplates} />}
-        {tab === 'acc' && isAdmin && <Accounts />}
+        {tab === 'acc' && isAdmin && <><BotCard /><Accounts /></>}
       </div>
     </div>
   )
@@ -246,6 +246,45 @@ function Templates({ templates, onSaved }) {
         <button onClick={() => save(null)} disabled={busy} style={btn()}>Сохранить текст</button>
       </div>
       {msg && <div style={{ fontSize: 13, color: msg === 'Сохранено' ? C.green : C.red }}>{msg}</div>}
+    </div>
+  )
+}
+
+// ─────────── Бот учеников: статус + настройка вебхука (только админ) ───────────
+function BotCard() {
+  const [st, setSt] = useState(null)
+  const [busy, setBusy] = useState(false)
+  const [msg, setMsg] = useState('')
+
+  async function loadStatus() { try { const d = await support.botStatus(); setSt(d) } catch (e) { setSt({ ok: false, error: 'нет связи' }) } }
+  useEffect(() => { loadStatus() }, [])
+
+  async function setup() {
+    setBusy(true); setMsg('')
+    try { const d = await support.botSetup(); setMsg(d && d.ok ? 'Вебхук настроен ✓' : ('Ошибка: ' + ((d && (d.error || d.detail)) || '—'))); await loadStatus() }
+    catch (e) { setMsg('Нет связи с сервером') }
+    setBusy(false)
+  }
+
+  const card = { background: C.card, border: `1px solid ${C.line}`, borderRadius: 14, padding: 18, marginBottom: 14 }
+  const uname = st && st.username
+  const hookUrl = st && st.webhook && st.webhook.url
+  return (
+    <div style={card}>
+      <div style={{ fontSize: 14, fontWeight: 600, marginBottom: 8 }}>Бот для учеников</div>
+      {!st && <div style={{ fontSize: 13, color: C.txt3 }}>Проверяю…</div>}
+      {st && st.error && <div style={{ fontSize: 13, color: C.red }}>Не удалось проверить: {st.error}. Проверьте, что задан TELEGRAM_SUPPORT_BOT_TOKEN.</div>}
+      {st && !st.error && (
+        <div style={{ fontSize: 13, color: C.txt2, lineHeight: 1.7 }}>
+          Бот: {uname ? <b>@{uname}</b> : <span style={{ color: C.txt3 }}>токен не задан</span>}<br />
+          Вебхук: {hookUrl ? <span style={{ color: C.green }}>подключён</span> : <span style={{ color: C.gold }}>не настроен</span>}
+        </div>
+      )}
+      <div style={{ marginTop: 12, display: 'flex', gap: 8, alignItems: 'center', flexWrap: 'wrap' }}>
+        <button onClick={setup} disabled={busy} style={{ ...btn(), opacity: busy ? 0.6 : 1 }}>{busy ? '…' : (hookUrl ? 'Перенастроить вебхук' : 'Настроить бота')}</button>
+        <button onClick={loadStatus} style={{ ...btn(C.card, C.txt2), border: `1px solid ${C.line}` }}>Обновить</button>
+      </div>
+      {msg && <div style={{ fontSize: 13, color: msg.includes('✓') ? C.green : C.red, marginTop: 10 }}>{msg}</div>}
     </div>
   )
 }
