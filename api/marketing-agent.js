@@ -57,7 +57,7 @@ function fmtPct(v) { return v == null ? "н/д" : (v > 0 ? "+" : "") + v + "%"; 
 // meta-ads.js кладёт { updatedAt, period, adsets:[{ name, spend, impressions, clicks }] }.
 // Добавляем то, чего в кэше нет: CTR = clicks/impressions, CPC = spend/clicks, CPM = spend/impressions*1000.
 // ─────────────────────────────────────────────────────────────────────────────
-function deriveAds(cache) {
+export function deriveAds(cache) {
   if (!cache || !Array.isArray(cache.adsets) || cache.adsets.length === 0) {
     return { available: false, reason: "кэш meta_spend пуст — запусти /api/meta-ads?action=get (или дождись его cron)", adsets: [], total: null, currency: cache && cache.currency || null, updatedAt: cache && cache.updatedAt || null };
   }
@@ -165,7 +165,7 @@ async function getInstagram(force) {
 // Клиентом-«оплатившим» считаем ВЫИГРАННУЮ сделку (Sotildi): в amoCRM клиента нет отдельного статуса
 // «оплачено» (это прямо отмечено в самой воронке Dev-Agent), поэтому берём verified-этап сделки.
 // ─────────────────────────────────────────────────────────────────────────────
-function funnelFacts(funnel) {
+export function funnelFacts(funnel) {
   if (!funnel) return { revenue: null, customers: null, trust: "insufficient", period: null, telephonySuspicious: null, dataFresh: null };
   const deal = (funnel.stages || []).find((s) => /Сделка выиграна/.test(s.stage)) || null;
   // ВЫРУЧКА для CAC/ROAS — ТОЛЬКО продажи текущего месяца (monthNewSalesRevenue, без доплат по сделкам прошлых
@@ -197,7 +197,7 @@ function adsMonthOf(cache) {
   const sinceM = `${m[1]}-${m[2]}`, untilM = `${m[3]}-${m[4]}`;
   return sinceM === untilM ? sinceM : null;
 }
-function assessPeriodAlignment(ads, ff) {
+export function assessPeriodAlignment(ads, ff) {
   const target = monthKeyTZ();
   if (!ads.available) return { aligned: false, target, reason: "нет кэша расходов (meta_spend пуст)" };
   const adsMonth = adsMonthOf(ads);
@@ -214,7 +214,7 @@ function assessPeriodAlignment(ads, ff) {
 // без конверсии = деление РАЗНЫХ валют → молча неверное число (то самое 300 000x вместо ~25x).
 // Правило: считаем ТОЛЬКО если обе стороны приведены к UZS по явному проверяемому курсу; иначе —
 // «не диагностируется». Возвращаем spend, приведённый к UZS (spendUZS), которым и считаются метрики.
-function assessCurrencyAlignment(ads) {
+export function assessCurrencyAlignment(ads) {
   const raw = ads.available && ads.total ? ads.total.spend : null;
   if (raw == null) return { aligned: false, adCurrency: null, reason: "нет расходов (кэш meta_spend пуст)" };
   const cur = (ads.currency || "").toUpperCase();
@@ -229,7 +229,7 @@ function assessCurrencyAlignment(ads) {
 // ВАЖНО: сначала два гейта — период (окна сошлись?) и валюта (приведены к одной?), потом наличие/trust.
 // Если окна ИЛИ валюты разъехались — метрика НЕ выдаётся числом, даже когда оба куска формально есть.
 // Считаем на spendUZS (adspend, приведённый к UZS), чтобы обе метрики были в одной валюте с выручкой.
-function computeUnitEconomics(ads, ff, period, currency) {
+export function computeUnitEconomics(ads, ff, period, currency) {
   const rawSpend = ads.available && ads.total ? ads.total.spend : null;
   const spendUZS = currency.aligned ? currency.spendUZS : null;
   const gate = (dataOk, dataReason, compute) => {

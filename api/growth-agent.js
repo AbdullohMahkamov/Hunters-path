@@ -181,6 +181,27 @@ async function decideGrowthMode(cfg, funnel) {
   return { mode: "light", reason: `воронка не изменилась с полного прогона от ${rm.lastFullDay || "?"}`, streak, lastFullDay: rm.lastFullDay };
 }
 
+// ДЕДУП гипотез по СТАБИЛЬНОМУ topicKey (не по «плывущему» cause) — чистая функция, тестируется отдельно.
+// Регрессия: раньше ключ был свободный текст cause → одна тема каждый прогон получала новый id → дайджест слал её как «новую».
+export function mergeGrowthHypotheses(openHyps, incoming, tested) {
+  const slug = (h) => (String(h.topicKey || "").toLowerCase().replace(/[^a-z0-9_]+/g, "_").replace(/^_+|_+$/g, "").slice(0, 40)) || String(h.cause || h.observation || "").toLowerCase().slice(0, 40);
+  const openByKey = {}; for (const h of (openHyps || [])) openByKey[slug(h)] = h;
+  const testedKeys = new Set((tested || []).map((x) => slug(x)));
+  const merged = [...(openHyps || [])];
+  for (const h of (Array.isArray(incoming) ? incoming : [])) {
+    if (!h || !(h.cause || h.observation)) continue;
+    const key = slug(h);
+    if (testedKeys.has(key)) continue;          // не переоткрываем проверенное
+    if (openByKey[key]) {                         // ИЗВЕСТНАЯ тема → обновляем, id/дату первого показа сохраняем
+      const ex = openByKey[key];
+      Object.assign(ex, { observation: h.observation || ex.observation, benchmark: h.benchmark || ex.benchmark, source: h.source || ex.source, howToVerify: h.howToVerify || ex.howToVerify, confidence: h.confidence || ex.confidence, kind: h.kind || ex.kind || "problem", updated: Date.now() });
+      continue;
+    }
+    merged.push({ id: newId("gh"), topicKey: h.topicKey || key, kind: h.kind === "experiment" ? "experiment" : "problem", observation: h.observation || "", benchmark: h.benchmark || "", source: h.source || "", cause: h.cause || "", howToVerify: h.howToVerify || "", confidence: h.confidence || "low", status: "open", created: Date.now(), firstSurfacedDay: dayKey(), updated: Date.now() });
+  }
+  return merged;
+}
+
 export async function runGrowth(forceFull) {
   const cfg = await getConfig();
   const org = cfg.clientOrg || "hunter";
@@ -246,23 +267,8 @@ ${baseUser}`;
   const allSources = [...sources, ...newSourceEntries].slice(-CAP.sources);
   await rsetJSON(K.sources, allSources);
 
-  // новые гипотезы → в память. ДЕДУП ПО СТАБИЛЬНОМУ topicKey (не по «плывущему» тексту cause) —
-  // иначе одна и та же тема каждый прогон получала новый id и дайджест слал её как «новую».
-  const slug = (h) => (String(h.topicKey || "").toLowerCase().replace(/[^a-z0-9_]+/g, "_").replace(/^_+|_+$/g, "").slice(0, 40)) || String(h.cause || h.observation || "").toLowerCase().slice(0, 40);
-  const openByKey = {}; for (const h of openHyps) openByKey[slug(h)] = h;
-  const testedKeys = new Set(tested.map((x) => slug(x)));
-  const merged = [...openHyps];
-  for (const h of (Array.isArray(out.hypotheses) ? out.hypotheses : [])) {
-    if (!h || !(h.cause || h.observation)) continue;
-    const key = slug(h);
-    if (testedKeys.has(key)) continue;          // не переоткрываем проверенное
-    if (openByKey[key]) {                         // ИЗВЕСТНАЯ тема → обновляем, id/дату первого показа сохраняем
-      const ex = openByKey[key];
-      Object.assign(ex, { observation: h.observation || ex.observation, benchmark: h.benchmark || ex.benchmark, source: h.source || ex.source, howToVerify: h.howToVerify || ex.howToVerify, confidence: h.confidence || ex.confidence, kind: h.kind || ex.kind || "problem", updated: Date.now() });
-      continue;
-    }
-    merged.push({ id: newId("gh"), topicKey: h.topicKey || key, kind: h.kind === "experiment" ? "experiment" : "problem", observation: h.observation || "", benchmark: h.benchmark || "", source: h.source || "", cause: h.cause || "", howToVerify: h.howToVerify || "", confidence: h.confidence || "low", status: "open", created: Date.now(), firstSurfacedDay: dayKey(), updated: Date.now() });
-  }
+  // новые гипотезы → в память. Дедуп по СТАБИЛЬНОМУ topicKey — вынесен в чистую функцию (тестируется).
+  const merged = mergeGrowthHypotheses(openHyps, out.hypotheses, tested);
   const hypotheses = merged.slice(-CAP.hypotheses);
   await rsetJSON(K.hypotheses, hypotheses);
 

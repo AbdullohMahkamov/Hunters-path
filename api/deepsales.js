@@ -480,7 +480,7 @@ async function selfCall(body) {
 // ИСПОЛНИТЕЛЬ (ДНЕВНОЙ РИТМ): недельный бюджет тратится РАВНОМЕРНО по дням (≈недельная норма/7 в день на МОПа).
 // Один вызов = дневная порция ОДНОГО МОПа (audit-pick без оплаты → analyze с оплатой; дедуп внутри audit-pick).
 // Крон дёргает несколько раз в день → каждый МОП получает свою дневную порцию; прогресс виден каждый день.
-async function execDaily(org) {
+export async function execDaily(org) {
   const key = `transcriptplan:pending:${org}`;
   const pend = await rgetJSON(key, null);
   if (!pend || !pend.confirmed || !pend.spend) return { done: true, note: "нет активного запуска" };

@@ -61,7 +61,7 @@ function funnelFacts(funnel) {
 }
 
 // ── РАЗБИВКА РАЗРЫВА (детерминированно) ──
-function decomposeGap(gapUZS, f) {
+export function decomposeGap(gapUZS, f) {
   // сколько ДОП. продаж закрывает разрыв
   const extraSales = f.avgCheck ? Math.ceil(gapUZS / f.avgCheck) : null;
   const half = gapUZS / 2;
