@@ -127,7 +127,8 @@ function NewSend({ templates }) {
       </div>
 
       <div style={{ fontSize: 13, fontWeight: 600, color: C.txt2, marginBottom: 6 }}>O'quvchiga xabar matni</div>
-      <textarea style={{ ...inp, minHeight: 90, resize: 'vertical', marginBottom: 14 }} value={message} onChange={(e) => setMessage(e.target.value)} placeholder="O'quvchi ko'radigan matn" />
+      <textarea style={{ ...inp, minHeight: 130, resize: 'vertical', marginBottom: 6 }} value={message} onChange={(e) => setMessage(e.target.value)} placeholder="O'quvchi ko'radigan matn" />
+      <div style={{ fontSize: 11.5, color: C.txt3, marginBottom: 14 }}>«{'{ism}'}» — o'quvchining ismi bilan almashtiriladi.</div>
 
       <button onClick={generate} disabled={busy} style={{ ...btn(), opacity: busy ? 0.6 : 1 }}>{busy ? 'Yaratilmoqda…' : 'Havola yaratish'}</button>
       {err && <div style={{ color: C.red, fontSize: 13, marginTop: 10 }}>{err}</div>}

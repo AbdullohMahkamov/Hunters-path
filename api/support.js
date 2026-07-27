@@ -20,6 +20,17 @@ const TEAM_CHAT = () => process.env.SUPPORT_TEAM_CHAT_ID || "";
 const STORAGE_CHAT = () => process.env.SUPPORT_STORAGE_CHAT_ID || "";
 const SHEET_URL = () => process.env.SUPPORT_SHEET_WEBHOOK_URL || "";
 
+// Текст по умолчанию для сообщения ученику (используется, пока в шаблонах не задан свой).
+// {ism} подставляется именем ученика при создании отправки.
+const DEFAULT_MESSAGE = `Assalomu alaykum, {ism}!
+
+Hunter Academy safiga qo'shilganingiz bilan tabriklaymiz 🎉
+Bugundan boshlab siz nazariya emas, real sotuvni o'rganadigan jamoadasiz — bu qadamingiz albatta natija beradi.
+
+Kursni boshlashimizdan oldin bitta kichik ish qoladi: quyidagi ikki hujjat — shartnoma (oferta) va o'quv qoidalari bilan tanishib chiqing.
+
+O'qib bo'lgach, pastdagi "Tasdiqlayman" tugmasini bosing.`;
+
 export const K = {
   accounts: "support:accounts",
   templates: "support:templates",
@@ -101,7 +112,7 @@ export async function getBotUsername() {
 // ── ШАБЛОНЫ ──
 export async function getTemplates() {
   const t = await rgetJSON(K.templates, {});
-  return { defaultText: t.defaultText || "", offer: t.offer || null, rules: t.rules || null };
+  return { defaultText: t.defaultText || DEFAULT_MESSAGE, offer: t.offer || null, rules: t.rules || null };
 }
 // заменить файл шаблона (offer|rules) и/или дефолтный текст. Файл заливаем в служебный чат → file_id, версия +1.
 export async function setTemplate({ key, base64, fileName, defaultText }) {
@@ -114,7 +125,7 @@ export async function setTemplate({ key, base64, fileName, defaultText }) {
     t[key] = { fileId: up.fileId, name: fileName || key, version: prevVer + 1, updatedAt: Date.now() };
   }
   await rsetJSON(K.templates, t);
-  return { ok: true, templates: { defaultText: t.defaultText || "", offer: t.offer || null, rules: t.rules || null } };
+  return { ok: true, templates: { defaultText: t.defaultText || DEFAULT_MESSAGE, offer: t.offer || null, rules: t.rules || null } };
 }
 
 // ── ОТПРАВКИ ──
@@ -133,10 +144,14 @@ export async function createSend({ firstName, lastName, phone, docKeys, customFi
     docs.push({ key: "custom", name: customFile.name || "файл", version: null, fileId: up.fileId });
   }
   if (!docs.length) return { ok: false, error: "не выбран ни один документ" };
+  const fName = String(firstName || "").trim();
+  // текст: свой или дефолтный; {ism} → имя ученика
+  const rawMsg = (message && message.trim()) ? message : DEFAULT_MESSAGE;
+  const finalMsg = rawMsg.replace(/\{ism\}/gi, fName).slice(0, 4000);
   const rec = {
     id, token,
-    firstName: String(firstName || "").trim(), lastName: String(lastName || "").trim(), phone: String(phone || "").trim(),
-    docs, message: String(message || "").slice(0, 4000), supportName: supportName || "",
+    firstName: fName, lastName: String(lastName || "").trim(), phone: String(phone || "").trim(),
+    docs, message: finalMsg, supportName: supportName || "",
     createdAt: Date.now(), status: "created", openedAt: null, confirmedAt: null, tg: null,
   };
   await rsetJSON(K.send(id), rec);
