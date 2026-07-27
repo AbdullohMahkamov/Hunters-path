@@ -96,7 +96,7 @@ export async function buildPlan(org = ORG) {
 
   // ГЕЙТ ДАННЫХ: не строим план вслепую
   const missing = [];
-  if (f.trust !== "verified") missing.push(`продажи/выручка недостоверны (trust=${f.trust})`);
+  if (f.trust !== "verified") missing.push("по продажам и выручке пока мало данных, чтобы строить план");
   if (f.revenue == null) missing.push("нет выручки за период");
   if (!f.avgCheck) missing.push("нет среднего чека");
   const wdays = await workingDays(period);

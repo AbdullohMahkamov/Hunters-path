@@ -226,6 +226,21 @@ async function setCache(key, value, ttlSec) {
   if (!url || !token) return;
   try { await fetch(`${url}/set/${encodeURIComponent(key)}?EX=${ttlSec}`, { method: "POST", headers: { Authorization: `Bearer ${token}` }, body: JSON.stringify(value) }); } catch (e) {}
 }
+
+// Список внутренних слов, которых НЕ должно быть в ответе владельцу. Наблюдение, не блокировка (см. место вызова).
+const JARGON_LEAK_WORDS = ["trust", "verified", "suspicious", "insufficient", "snapshot", "topickey", "whitelist", "gated", "undiagnosable", "не диагностируется", "за окно"];
+function findJargonLeaks(text) { const low = String(text || "").toLowerCase(); return JARGON_LEAK_WORDS.filter((w) => low.includes(w)); }
+async function logJargonLeak(org, question, hits) {
+  const url = process.env.UPSTASH_REDIS_REST_URL, token = process.env.UPSTASH_REDIS_REST_TOKEN;
+  if (!url || !token) return;
+  try {
+    const key = "chatjargonleak:log";
+    const r = await fetch(`${url}/get/${encodeURIComponent(key)}`, { headers: { Authorization: `Bearer ${token}` } });
+    const d = await r.json(); let arr = []; try { arr = d && d.result ? JSON.parse(d.result) : []; } catch (e) {}
+    arr.push({ at: Date.now(), org: org || "hunter", q: String(question || "").slice(0, 200), hits });
+    await fetch(`${url}/set/${encodeURIComponent(key)}`, { method: "POST", headers: { Authorization: `Bearer ${token}` }, body: JSON.stringify(arr.slice(-200)) });
+  } catch (e) {}
+}
 // Тривиальное сообщение (приветствие/благодарность/подтверждение) целиком — без бизнес-сути.
 // Такие идут на Haiku и БЕЗ тяжёлого контекста (agentsBlock+live). Консервативно: только сплошной ack ≤40 симв.
 function isTrivial(msg) {
@@ -581,7 +596,9 @@ export default async function handler(req, res) {
           if (op.length) askNote += `\n- ЖЕЛАТЕЛЬНОЕ: ${op.map((m) => m.field).join(", ")}. Можно посчитать без них, но предупреди «посчитал без X — скажете, уточню точнее».`;
         }
       } catch (e) { /* не критично */ }
-      let sys = SYSTEM_CORE + progressNote + goalNote + askNote;
+      // Данные ниже содержат ВНУТРЕННИЕ пометки — владелец их видеть не должен, переводим на человеческий.
+      const DEJARGON_RULE = `\n\nВНУТРЕННИЕ ПОМЕТКИ В ДАННЫХ (не для владельца): в блоках данных ниже встречаются служебные слова — trust/verified/suspicious/insufficient, snapshot, topicKey, whitelist, gated, undiagnosable, «не диагностируется», «за окно». НИКОГДА не повторяй их владельцу дословно. Переводи по смыслу: verified → «проверено на достаточных данных»; suspicious/insufficient → «этим данным пока не доверяю, потому что…» (назови причину); «не диагностируется» → «не могу посчитать честно: не хватает …» (назови, чего). Смысл сохраняй, термин — убирай.`;
+      let sys = SYSTEM_CORE + progressNote + goalNote + askNote + DEJARGON_RULE;
       if (intent.agents || intent.calls) sys += DISCIPLINE_FULL;
       // Кнопки-действия подключаем на ЛЮБОЙ содержательный ответ, а не только по явной просьбе «сделай»:
       // советник по правилу ВСЕГДА заканчивает конкретным шагом (поручить РОПу и т.п.) — и этот шаг
@@ -651,6 +668,7 @@ export default async function handler(req, res) {
     let buffer = "";
     let inTok = 0, outTok = 0; // расход токенов за этот ответ
     let thinkOpen = false;     // открыт ли блок рассуждения (стримим его в маркерах [[THINK]]…[[/THINK]])
+    let answerText = "";       // накапливаем ТОЛЬКО ответ (не рассуждение) — для проверки на протечку жаргона
     while (true) {
       const { done, value } = await reader.read();
       if (done) break;
@@ -669,7 +687,7 @@ export default async function handler(req, res) {
           if (evt.type === "content_block_start" && evt.content_block && evt.content_block.type === "thinking") { res.write("[[THINK]]"); thinkOpen = true; }
           if (evt.type === "content_block_delta" && evt.delta) {
             if (evt.delta.type === "thinking_delta") res.write(evt.delta.thinking || "");
-            else if (evt.delta.type === "text_delta") { if (thinkOpen) { res.write("[[/THINK]]"); thinkOpen = false; } res.write(evt.delta.text); }
+            else if (evt.delta.type === "text_delta") { if (thinkOpen) { res.write("[[/THINK]]"); thinkOpen = false; } res.write(evt.delta.text); answerText += evt.delta.text; }
           }
         } catch (e) { /* пропускаем неполные */ }
       }
@@ -677,6 +695,10 @@ export default async function handler(req, res) {
     if (thinkOpen) res.write("[[/THINK]]"); // на случай, если пришло только рассуждение без текста
     res.write(`\n[[TOK:${inTok},${outTok}]]`); // маркер расхода токенов — фронт покажет мелко под ответом
     res.end();
+    // СТРАХОВКА (наблюдение, не блокировка): инструкция «не повторяй жаргон» — просьба к LLM, а не гарантия.
+    // После отправки прогоняем ответ по списку запрещённых слов и просто логируем протечки, чтобы через неделю
+    // понять, работает инструкция или нет. Ответ клиенту уже ушёл — на него это не влияет. Пусто → проверку снимем.
+    try { const leaks = findJargonLeaks(answerText); if (leaks.length) await logJargonLeak(org, lastMsg, leaks); } catch (e) {}
   } catch (err) {
     try { res.status(500).json({ error: "Server error", detail: String(err) }); } catch (e) { res.end(); }
   }

@@ -233,20 +233,20 @@ export function computeUnitEconomics(ads, ff, period, currency) {
   const rawSpend = ads.available && ads.total ? ads.total.spend : null;
   const spendUZS = currency.aligned ? currency.spendUZS : null;
   const gate = (dataOk, dataReason, compute) => {
-    if (!rawSpend) return { undiagnosable: "нет расходов на рекламу (кэш meta_spend пуст или spend=0)" };
-    if (!period.aligned) return { undiagnosable: `adspend и данные продаж за разные периоды — ${period.reason}` };
-    if (!currency.aligned) return { undiagnosable: `adspend и выручка в разных валютах — ${currency.reason}` };
+    if (!rawSpend) return { undiagnosable: "нет данных о расходах на рекламу за этот период" };
+    if (!period.aligned) return { undiagnosable: `расходы на рекламу и продажи посчитаны за разные периоды — сравнивать нельзя (${period.reason})` };
+    if (!currency.aligned) return { undiagnosable: `реклама и выручка в разных валютах — сначала свожу к одной (${currency.reason})` };
     if (!dataOk) return { undiagnosable: dataReason };
     return compute();
   };
   const cac = gate(
     ff.customers != null && ff.trust === "verified",
-    `число клиентов не verified (trust=${ff.trust}) — считаем по выигранным сделкам, они сейчас недоступны/ненадёжны`,
+    `сколько клиентов пришло — точно сказать не могу: данные по закрытым сделкам сейчас неполные`,
     () => ({ value: Math.round(spendUZS / ff.customers), currency: REVENUE_CCY, spendUZS, spendRaw: currency.spendRaw, adCurrency: currency.adCurrency, rate: currency.rate, customers: ff.customers, period: period.month, note: "клиент = выигранная сделка (Sotildi); adspend приведён к UZS, окно — текущий месяц" })
   );
   const roas = gate(
     ff.revenue != null && ff.trust === "verified",
-    `выручка не verified (trust=${ff.trust})`,
+    `выручке за период пока не доверяю — данных мало или они не сходятся`,
     () => ({ value: r2(ff.revenue / spendUZS), revenue: ff.revenue, spendUZS, spendRaw: currency.spendRaw, adCurrency: currency.adCurrency, rate: currency.rate, period: period.month })
   );
   return { cac, roas };
@@ -361,7 +361,7 @@ function buildDigest(snap) {
   }
 
   // (4) Явные «не диагностируется»
-  if (undiag.length) { L.push("⚠️ <b>Не диагностируется:</b>"); for (const u of undiag) L.push(`  – ${u}`); }
+  if (undiag.length) { L.push("⚠️ <b>Пока не могу посчитать честно — вот чего не хватает:</b>"); for (const u of undiag) L.push(`  – ${u}`); }
   return L.join("\n");
 }
 
