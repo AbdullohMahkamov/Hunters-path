@@ -13,14 +13,15 @@ beforeEach(() => resetMocks());
 
 // ── ПРИОРИТЕТ (границы) ──
 test("impactTier: юр.риск > выручка > прочее (детерминированно по смыслу)", () => {
-  assert.equal(M.impactTier(P({ title: "Обещания 100% гарантии трудоустройства" })), 3);
+  assert.equal(M.impactTier(P({ title: "Штраф от налоговой за неоформленный договор" })), 3);         // genuine liability
+  assert.equal(M.impactTier(P({ title: "Обещания 100% гарантии трудоустройства" })), 2);              // точность продаж, НЕ юр.риск
   assert.equal(M.impactTier(P({ title: "27 новых лидов без единой попытки звонка" })), 2);
   assert.equal(M.impactTier(P({ title: "103 лида с ложным статусом «не дозвонились»" })), 2);
   assert.equal(M.impactTier(P({ title: "Оформить единый шаблон приветствия" })), 1);
 });
 
 test("priorityScore: влияние доминирует, затем уверенность, затем возраст", () => {
-  const legal = P({ title: "гарантия трудоустройства", confidence: "low", at: now });
+  const legal = P({ title: "штраф от налоговой за договор", confidence: "low", at: now });
   const revHigh = P({ title: "лиды без звонка", confidence: "high", at: now });
   const revLow = P({ title: "лиды без звонка", confidence: "low", at: now });
   const revOld = P({ title: "лиды без звонка", confidence: "low", at: now - 10 * DAY });
