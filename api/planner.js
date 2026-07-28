@@ -306,7 +306,8 @@ export async function handlePlanButton(act) {
 // ── ЧАСТЬ B: УТРЕННИЙ ОТЧЁТ ПО ЦЕЛИ (детерминированный, без LLM-тона) ──
 export async function buildDailyReport(org = ORG) {
   const goal = await getGoal(org);
-  if (!goal || !goal.amountUZS) return { ok: false, human: null };
+  // ГРОМКО, а не молча: без цели утренний отчёт не исчезает, а прямо говорит, чего не хватает.
+  if (!goal || !goal.amountUZS) return { ok: true, noGoal: true, human: `🌅 <b>С чего начать день</b>\n\n⚠️ <b>Цель на период не задана.</b>\nЯ не строю план догона и не могу сказать, идёте ли вы к результату. Задайте цель одной фразой в чат: <b>сумма + период</b> — напр. «выручка 1.2 млрд сум за август» или «$100 000 в этом месяце». Как зададите — сразу пришлю план.` };
   const plan = await buildPlan(org); // пересчитываем факты/разрыв на сегодня
   const g = plan.facts || {};
   const active = await rgetJSON(K.active, null);

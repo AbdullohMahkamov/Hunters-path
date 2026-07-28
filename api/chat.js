@@ -10,7 +10,7 @@ import { getTaskStateBundle } from "./task-agent.js";
 import { getOpenMopFindings, getFreshAutoClosed, getMopLastRun, getMopConfig } from "./mop-agent.js";
 import { getBalancesSummary } from "./gamification.js";
 import { getCallAnalysisBundle } from "./deepsales.js";
-import { parseGoalText, setGoal } from "./goal.js";
+import { parseGoalText, setGoal, getGoal } from "./goal.js";
 import { parseMargin, parseCpl, parseSchedule, setMargin, setCpl, setSchedule, missingSettings } from "./biz-settings.js";
 import { buildDiagnosticBundle, formatDiagnostic } from "./diagnostic.js";
 import { setAutonomyEnabled, getAutonomy } from "./autonomy.js";
@@ -347,16 +347,17 @@ function forceDiagnostic(msg) {
 }
 async function classifyIntent(apiKey, lastMsg) {
   const forced = forceDiagnostic(lastMsg);
-  const dflt = { live: true, agents: true, calls: true, act: false, diagnostic: forced }; // сбой → полный контекст (кроме действий)
+  const dflt = { live: true, agents: true, calls: true, act: false, diagnostic: forced, goalIntent: false }; // сбой → полный контекст (кроме действий/цели)
   const msg = String(lastMsg || "").slice(0, 800);
-  if (!msg.trim()) return { live: false, agents: false, calls: false, act: false, diagnostic: false };
+  if (!msg.trim()) return { live: false, agents: false, calls: false, act: false, diagnostic: false, goalIntent: false };
   const sys = `Ты — маршрутизатор запросов к бизнес-советнику. Реши, какие блоки данных нужны для ответа на вопрос владельца. Ответь ТОЛЬКО JSON одной строкой, без markdown:
-{"live":bool,"agents":bool,"calls":bool,"act":bool,"diagnostic":bool}
+{"live":bool,"agents":bool,"calls":bool,"act":bool,"diagnostic":bool,"goalIntent":bool}
 live=true — вопрос про метрики/продажи/выручку/менеджеров/дозвон/воронку/рекламу/финансы/переписку с клиентами/план/цель/прогноз, ИЛИ общий («как дела», «что по бизнесу»).
 agents=true — вопрос про находки/гипотезы/задачи агентов (аналитик/рост/тренер/супервайзер), «что нашли агенты», «что ждёт моего решения», «какие задачи у РОПа».
 calls=true — вопрос про звонки/разговоры/качество продаж на звонках/скрипт/что менеджеры говорят клиентам по телефону.
 act=true — владелец просит ЧТО-ТО СДЕЛАТЬ: поставить задачу РОПу, написать РОПу, поручить аналитику проверить, прогнать агента заново, закрыть гипотезу.
 diagnostic=true — ОТКРЫТЫЙ причинно-следственный вопрос «ПОЧЕМУ X / что происходит / почему упало/нет продаж / сравни период», особенно с временным окном («2 дня», «за неделю»). НЕ ставь diagnostic на прямой запрос числа/факта («сколько лидов сегодня», «какая выручка»).
+goalIntent=true — владелец СТАВИТ или МЕНЯЕТ финансовую цель на период (сумма выручки/продаж к сроку), ДАЖЕ со знаком «?» или иначе сформулировано: «хочу 500 млн в августе», «нужно выйти на 1.2 млрд», «цель на месяц — 2 млрд», «давай сделаем $100k». НЕ ставь на ВОПРОС о текущей цели («какая у нас цель?», «мы достигли цели?») — это не установка.
 ПРАВИЛО: при СОМНЕНИИ ставь true (лучше лишний блок). Общий/диагностический («что не так», «что улучшить») → live+agents+calls=true.`;
   try {
     const r = await fetch("https://api.anthropic.com/v1/messages", {
@@ -369,7 +370,7 @@ diagnostic=true — ОТКРЫТЫЙ причинно-следственный �
     let txt = ""; for (const b of (d.content || [])) if (b.type === "text") txt += b.text;
     const m = txt.replace(/```json|```/g, "").match(/\{[\s\S]*\}/); if (!m) return dflt;
     const o = JSON.parse(m[0]);
-    return { live: !!o.live, agents: !!o.agents, calls: !!o.calls, act: !!o.act, diagnostic: !!o.diagnostic || forced };
+    return { live: !!o.live, agents: !!o.agents, calls: !!o.calls, act: !!o.act, diagnostic: !!o.diagnostic || forced, goalIntent: !!o.goalIntent };
   } catch (e) { return dflt; }
 }
 
@@ -568,13 +569,19 @@ export default async function handler(req, res) {
       let goalNote = "";
       const notQ = !/\?/.test(lastMsg);
       try {
-        if (notQ && /(цель|нужно сделать|хочу сделать|поставь цель|план на|maqsad|reja)/i.test(lastMsg)) {
+        // ЦЕЛЬ — САМАЯ ВАЖНАЯ КОМАНДА. Знак «?» НЕ отменяет. Распознаёт LLM (intent.goalIntent),
+        // regex — только узкий быстрый предфильтр (слово-цель + число), НЕ единственный вход.
+        const goalPrefilter = /\d/.test(lastMsg) && /(цел[ьяию]|целев\w*|maqsad|reja|план на|заработать|выйти на)/i.test(lastMsg);
+        if (intent.goalIntent || goalPrefilter) {
           const parsed = await parseGoalText(lastMsg);
           if (parsed.ok) {
             await setGoal(parsed);
             goalNote += `\n\nВЛАДЕЛЕЦ ЗАДАЛ ЦЕЛЬ: ${parsed.amount.toLocaleString("ru-RU")} ${parsed.currency}${parsed.currency === "USD" ? ` (~${parsed.amountUZS.toLocaleString("ru-RU")} сум)` : " сум"} за «${parsed.period.label}». Сохранена как управляемая цель. КРАТКО подтверди сумму и период и скажи, что считаешь план догона — он придёт отдельным сообщением в Telegram с кнопкой подтверждения. Цифры плана здесь НЕ выдумывай.`;
             const host = req.headers && req.headers.host;
             if (host) fetch(`https://${host}/api/planner?action=propose&force=1&cron=1`, { method: "POST", headers: { "content-type": "application/json", Authorization: `Bearer ${process.env.CRON_SECRET}` }, body: "{}" }).catch(() => {});
+          } else {
+            // НИКОГДА не молчим: владелец пытался задать цель — объясни, что не понято и как переформулировать.
+            goalNote += `\n\nВЛАДЕЛЕЦ ПЫТАЛСЯ ЗАДАТЬ ЦЕЛЬ, но извлечь не удалось (${parsed.error || "не распознал сумму/период"}). ОБЯЗАТЕЛЬНО скажи ему это простым языком и попроси переформулировать ОДНОЙ фразой: СУММА + ПЕРИОД — напр. «выручка 1.2 млрд сум за август» или «$100 000 в этом месяце». НЕ отвечай так, будто ничего не было.`;
           }
         }
         if (notQ && /(маржа|рентабельн)/i.test(lastMsg)) { const p = parseMargin(lastMsg); if (p.ok) { await setMargin(p.value, "manual", p.raw); goalNote += `\n\nВЛАДЕЛЕЦ ЗАДАЛ МАРЖУ ${p.value}%. Сохранена (используется как ваш override поверх авто-расчёта). Кратко подтверди.`; } }
@@ -583,6 +590,8 @@ export default async function handler(req, res) {
         // KILL SWITCH автономии — команды владельца в чате
         if (notQ && /(включ|разреш|запуст)\w*\s+автоном/i.test(lastMsg)) { await setAutonomyEnabled(true); goalNote += `\n\nВЛАДЕЛЕЦ ВКЛЮЧИЛ автономию: рутинные РОП-задачи (малый разрыв, проверенная тема, надёжные данные) теперь раздаются сами, с уведомлением ему и кнопкой «Отозвать». Маркетинг и крупные решения — всё равно через него. Кратко подтверди и напомни, что выключить можно фразой «поставь всё на подтверждение».`; }
         if (notQ && /(выключ|отключ)\w*\s+автоном|поставь\s+в?с[её]\s+на\s+подтвержд|верни\s+гейт/i.test(lastMsg)) { await setAutonomyEnabled(false); goalNote += `\n\nВЛАДЕЛЕЦ ВЫКЛЮЧИЛ автономию — 100% задач снова под его подтверждением, немедленно. Кратко подтверди.`; }
+        // ГРОМКО: цель не задана → советник обязан это сказать, а не молчать, будто план есть.
+        try { const gNow = await getGoal(); if (!gNow || !gNow.amountUZS) goalNote += `\n\nВАЖНО: ЦЕЛЬ НА ПЕРИОД НЕ ЗАДАНА — движок «план догона» не строится. Если разговор касается плана/цели/прогноза/«что делать/как дойти» — СКАЖИ это прямо и предложи задать цель одной фразой (сумма + период). Не делай вид, что план есть.`; } catch (e) {}
       } catch (e) { /* не критично — обычный ответ */ }
       // Чего не хватает/устарело → советник ДОЛЖЕН САМ спросить (блокирующе для маржи, мягко для остального)
       let askNote = "";
