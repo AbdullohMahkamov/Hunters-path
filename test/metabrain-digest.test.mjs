@@ -107,3 +107,31 @@ test("доставка НЕ молчит при сбое: owner не привя�
   assert.equal(del.ok, false);
   assert.ok(del.error, "причина сбоя доставки записана, а не проглочена");
 });
+
+// ── САМО-ОТЗЫВ ЛОЖНОЙ adset-spend-находки (артефакт валют) ──
+test("детектор ложной adset-spend-находки: срабатывает на mismatch, НЕ на легитимный расход", () => {
+  assert.equal(M.isFalseAdsetSpendMismatch({ topicKey: "adset_spend_data_mismatch", title: "Расхождение расходов по аудиториям" }), true);
+  assert.equal(M.isFalseAdsetSpendMismatch({ title: "Расходы по аудиториям не совпадают с общим" }), true);
+  assert.equal(M.isFalseAdsetSpendMismatch({ title: "Высокий расход на аудиторию X без продаж" }), false); // легитимно, не mismatch
+  assert.equal(M.isFalseAdsetSpendMismatch({ title: "27 лидов без звонка" }), false);
+});
+
+test("runDailyBrain само-отзывает ложную находку: закрывает предложение И задачу маркетологу", async () => {
+  setAnthropic(() => ({ content: [{ type: "text", text: "[]" }], stop_reason: "end_turn" }));
+  kvSetJSON("taskagent:people", { owner: { chatId: 333 } });
+  kvSetJSON("metabrain:proposals", [
+    P({ id: "false1", topicKey: "adset_spend_data_mismatch", title: "Расхождение расходов по аудиториям", at: now - 3 * DAY }),
+    P({ id: "real1", topicKey: "leads_no_call", title: "27 лидов без звонка", at: now - 5 * DAY }),
+  ]);
+  kvSetJSON("marketingtasks", [
+    { id: "mt1", title: "Проверить выгрузку расходов по аудиториям — не сходятся", status: "open" },
+    { id: "mt2", title: "Обновить креативы", status: "open" },
+  ]);
+  await M.runDailyBrain("hunter", true);
+  const props = kvGetJSON("metabrain:proposals");
+  assert.equal(props.find((p) => p.id === "false1").status, "closed", "ложное предложение снято");
+  assert.equal(props.find((p) => p.id === "real1").status, "pending", "реальное осталось");
+  const mt = kvGetJSON("marketingtasks");
+  assert.equal(mt.find((x) => x.id === "mt1").status, "done", "задача маркетологу отозвана");
+  assert.equal(mt.find((x) => x.id === "mt2").status, "open", "прочие задачи не тронуты");
+});

@@ -226,11 +226,16 @@ async function gatherForBrain(org) {
   ]);
   // МАРКЕТИНГ-срез (marketing-agent): та же дисциплина «не диагностируется» — если метрика не посчиталась, так и пишем
   const um = (u) => u ? (u.value != null ? u.value : (u.undiagnosable ? "не диагностируется: " + u.undiagnosable : null)) : null;
+  // ВАЛЮТА: total расход в сумах, а по аудиториям Meta отдаёт в валюте аккаунта (USD). Раньше в бандле
+  // оба лежали рядом без пометки → LLM читал 452(USD) и 5.5М(сум) как несходящиеся и выдавал ЛОЖНУЮ
+  // находку «расхождение в выгрузке». Приводим расход по аудиториям к сумам тем же курсом → всё в одной валюте.
+  const mkRate = (mkSnap && mkSnap.currency && mkSnap.currency.rate) || 1;
   const marketing = mkSnap ? {
     roas: um(mkSnap.unit && mkSnap.unit.roas),
     cac: um(mkSnap.unit && mkSnap.unit.cac),
+    adCurrency: (mkSnap.currency && mkSnap.currency.adCurrency) || null, // валюта cpc/cpm ниже (расходы уже приведены к сумам)
     adAccount: (mkSnap.ads && mkSnap.ads.total) ? { ctr: mkSnap.ads.total.ctr, cpc: mkSnap.ads.total.cpc, spendUZS: mkSnap.currency && mkSnap.currency.spendUZS } : null,
-    adsets: (mkSnap.ads && Array.isArray(mkSnap.ads.adsets)) ? mkSnap.ads.adsets.slice(0, 6).map((a) => ({ name: a.name, ctr: a.ctr, cpc: a.cpc, spend: a.spend })) : [],
+    adsets: (mkSnap.ads && Array.isArray(mkSnap.ads.adsets)) ? mkSnap.ads.adsets.slice(0, 6).map((a) => ({ name: a.name, ctr: a.ctr, cpc: a.cpc, spendUZS: a.spend != null ? Math.round(a.spend * mkRate) : null })) : [],
     instagram: (mkSnap.instagram && mkSnap.instagram.ok) ? { followers: mkSnap.instagram.followers_count, reach: mkSnap.instagram.reach } : null,
     dynamicsWoW: mkSnap.dynamics ? { followers: mkSnap.dynamics.followers, roas: mkSnap.dynamics.roas, cac: mkSnap.dynamics.cac, adsets: mkSnap.dynamics.adsets } : null,
   } : null;
@@ -333,6 +338,16 @@ export function formatDigest(dg, cfg) {
   return s;
 }
 
+// ЛОЖНАЯ находка «расхождение расходов по аудиториям» — была артефактом валют (сумы vs USD) в бандле,
+// исправлено. Детектор, чтобы само-отозвать её (и pending-предложение, и реальную задачу маркетологу),
+// пока живой человек не потратил на неё время.
+export function isFalseAdsetSpendMismatch(p) {
+  const t = `${(p && p.topicKey) || ""} ${(p && p.title) || ""} ${(p && p.statement) || ""} ${(p && p.proposedTask && p.proposedTask.title) || ""}`.toLowerCase();
+  const aboutAdsetSpend = /(adset|аудитор)/.test(t) && /(spend|расход|трат|выгруз)/.test(t);
+  const aboutMismatch = /(mismatch|не сход|расхожд|не совпад|разн\w*\s*валют|разошл)/.test(t);
+  return aboutAdsetSpend && aboutMismatch;
+}
+
 export async function runDailyBrain(org = ORG, force = false) {
   const cfg = await getConfig();
   if (!cfg.enabled && !force) return { ok: true, skipped: "disabled" };
@@ -401,6 +416,24 @@ export async function runDailyBrain(org = ORG, force = false) {
     await rsetJSON(K.lastrun, { at: nowMs, day: nowDay, observed: observations.length, sent: created.length, diag });
     return { ok: true, observed: observations.length, sent: created.length, ids: created.map((c) => c.id), diag };
   }
+
+  // САМО-ОТЗЫВ ложной adset-spend-находки (артефакт валют, исправлен): закрываем и предложение,
+  // и — если успела превратиться — реальную задачу маркетологу, чтобы человек не тратил время.
+  const FALSE_CLOSABLE = ["pending", "awaiting_edit", "edited", "confirmed"];
+  for (let k = 0; k < proposals.length; k++) {
+    const p = proposals[k];
+    if (p && FALSE_CLOSABLE.includes(p.status) && isFalseAdsetSpendMismatch(p)) {
+      proposals[k] = { ...p, status: "closed", closedAt: nowMs, closeReason: "ложная тревога: расхождение было в отображении валют (сумы vs USD), в выгрузке всё верно — снято" };
+    }
+  }
+  try {
+    const mtasks = await rgetJSON("marketingtasks", []);
+    let changed = false;
+    for (const mt of mtasks) {
+      if (mt && mt.status !== "done" && isFalseAdsetSpendMismatch({ title: mt.title, statement: mt.desc || mt.why || mt.text || "" })) { mt.status = "done"; mt.doneAt = nowMs; mt.doneBy = "system:false-positive"; changed = true; }
+    }
+    if (changed) await rsetJSON("marketingtasks", mtasks);
+  } catch (e) {}
 
   // СВОДКА над ВСЕМИ открытыми (включая старые pending — они НЕ теряются) + протухание неважного.
   const dg = buildDigest(proposals, nowMs, cfg);
