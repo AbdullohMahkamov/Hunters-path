@@ -2,7 +2,7 @@
 // Флоу: аудит из CRM → проблемы → текущие продажи → цель → генерация плана (/api/audit-plan).
 // Императивный: рендер в #wizTitle/#wizBody. Эндпоинты /api/dashboard, /api/sync, /api/audit-plan не менялись.
 import { state, save } from './appState.js'
-import { getRole, orgQ } from './session.js'
+import { getRole, orgQ, getSession } from './session.js'
 import { escapeHtml } from './format.js'
 import { tr } from './shellI18n.js'
 import { renderStages } from './quests.js'
@@ -29,14 +29,14 @@ let wizGoalText = ''
 async function wizRunAudit() {
   $('wizBody').innerHTML = '<div class="gen-loading">⏳ Анализирую ваш бизнес по данным CRM за последние 3-4 месяца...</div>'
   try {
-    let d = await (await fetch('/api/dashboard' + orgQ())).json()
+    let d = await (await fetch('/api/dashboard?session=' + encodeURIComponent(getSession()))).json()
     const stale = !d || !d.totals || d.totals.soldPeriod == null || !(d.problems && d.problems.length)
     if (stale) {
       $('wizBody').innerHTML = '<div class="gen-loading">⏳ Собираю свежие данные из CRM за 3-4 месяца... (10-20 сек)</div>'
       try {
         const sr = await fetch('/api/sync' + orgQ())
         const sd = await sr.json()
-        if (sd && sd.totals) { d = sd } else { d = await (await fetch('/api/dashboard' + orgQ())).json() }
+        if (sd && sd.totals) { d = sd } else { d = await (await fetch('/api/dashboard?session=' + encodeURIComponent(getSession()))).json() }
       } catch (e) { /* работаем с тем что есть */ }
     }
     wizAuditData = d

@@ -1,5 +1,5 @@
 import React, { useEffect, useRef, useState, useSyncExternalStore } from 'react'
-import { getSnapshot, subscribe, orgQ, getSession } from '../lib/session.js'
+import { getSnapshot, subscribe, getSession } from '../lib/session.js'
 import { state, save, loadCloud, ensureChats, setLang } from '../lib/appState.js'
 import { applyTheme } from '../lib/theme.js'
 import { installShellStubs } from '../lib/shellStubs.js'
@@ -48,7 +48,7 @@ export default function AppShell({ onLogout }) {
     if (dashLoadedRef.current) return
     const note = document.getElementById('dashNote')
     try {
-      const r = await fetch('/api/dashboard' + orgQ())
+      const r = await fetch('/api/dashboard?session=' + encodeURIComponent(getSession()))
       const d = await r.json()
       if (d && !d.empty && !d.error && d.totals) {
         window.__applyLiveDash = applyLiveDash

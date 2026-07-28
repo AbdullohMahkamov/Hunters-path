@@ -5,9 +5,6 @@ export default async function handler(req, res) {
   const token = process.env.UPSTASH_REDIS_REST_TOKEN;
   if (!url || !token) { res.status(500).json({ error: "Upstash env not set" }); return; }
 
-  const org = (req.query && req.query.org) || "hunter";
-  const K = (name) => org === "hunter" ? name : `${name}:${org}`;
-
   async function getKey(key){
     try{
       const r=await fetch(`${url}/get/${encodeURIComponent(key)}`,{headers:{Authorization:`Bearer ${token}`}});
@@ -17,12 +14,15 @@ export default async function handler(req, res) {
     }catch(e){ return null; }
   }
 
-  // МОП НЕ имеет доступа к общему дашборду (только свой кабинет через /api/mop)
+  // ДОСТУП: дашборд содержит коммерцию (выручка/сделки/воронка) — только по валидной сессии.
+  // org берём ИЗ СЕССИИ (не из query), иначе любой мог бы читать чужой кабинет через ?org=.
   const session = (req.query && req.query.session) || (req.body && req.body.session);
-  if (session) {
-    const sinfo = await getKey(`session:${session}`);
-    if (sinfo && sinfo.role === "mop") { res.status(403).json({ error: "Недоступно для этой роли" }); return; }
-  }
+  const sinfo = session ? await getKey(`session:${session}`) : null;
+  if (!sinfo) { res.status(401).json({ error: "Требуется авторизация" }); return; }
+  // МОП — только свой кабинет (/api/mop); саппорт — только своя панель
+  if (sinfo.role === "mop" || sinfo.role === "support") { res.status(403).json({ error: "Недоступно для этой роли" }); return; }
+  const org = sinfo.org || "hunter";
+  const K = (name) => org === "hunter" ? name : `${name}:${org}`;
 
   try {
     const dash = await getKey(K("dashboard"));

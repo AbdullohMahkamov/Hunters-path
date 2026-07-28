@@ -109,6 +109,8 @@ export default async function handler(req, res) {
     res.status(200).json(await build(true));
     return;
   }
+  // ДОСТУП: пузыри строятся из фактов по МОПам (коммерческие данные) — только по валидной сессии.
+  if (!sess) { res.status(401).json({ error: "Требуется авторизация" }); return; }
   // state — кэш для сцены (если протух — пересобрать)
   const cached = await rgetJSON("scenebubbles:hunter", null);
   if (cached && Date.now() - cached.at < CACHE_MIN * 60000) {

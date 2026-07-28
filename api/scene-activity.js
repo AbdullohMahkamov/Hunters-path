@@ -284,6 +284,8 @@ export default async function handler(req, res) {
     r.diagWindowHours = hrs;
     res.status(200).json(r); return;
   }
+  // ДОСТУП: сцена показывает активность МОПов (коммерческие данные) — только по валидной сессии.
+  if (!(await sessionRole(q.session || b.session))) { res.status(401).json({ error: "Требуется авторизация" }); return; }
   // state — кэш для сцены (5 мин). Журнал обновляется при каждой пересборке.
   const cached = await rgetJSON("sceneactivity:hunter", null);
   if (cached && Date.now() - cached.at < CACHE_MIN * 60000) { res.status(200).json({ ok: true, cached: true, items: cached.items }); return; }
