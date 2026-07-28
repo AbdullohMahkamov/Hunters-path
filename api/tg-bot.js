@@ -242,7 +242,7 @@ export default async function handler(req, res) {
       const mEsc = data.match(/^esc:(remind|close|self):(.+)$/);
       const mDisp = data.match(/^disp:(agent|rop|noted):(.+)$/); // решение владельца по оспариванию
       const mTpl = data.match(/^tplan:(run|review|decline|spend|cancel)$/);   // решение по недельному плану транскрибации
-      const mMb = data.match(/^mb:(confirm|reject|edit):(.+)$/); // решение владельца по сводному наблюдению общего мозга
+      const mMb = data.match(/^mb:(confirm|reject|edit|list)(?::(.+))?$/); // решение владельца по сводному наблюдению общего мозга (list — «Показать все»)
       const mPl = data.match(/^pl:(confirm|reject|recalc)$/);   // решение владельца по плану под цель (planner)
       const mAu = data.match(/^au:cancel:(.+)$/);               // владелец отзывает автономно поставленную задачу
       if (!mEsc && !mDisp && !mTpl && !mMb && !mPl && !mAu) { await answerCallback(kind, cq.id, ""); res.status(200).json({ ok: true, ignored: "cq no match" }); return; }

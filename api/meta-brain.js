@@ -29,8 +29,9 @@ async function rget(key) { try { const r = await fetch(`${REDIS_URL}/get/${encod
 async function rgetJSON(key, dflt) { const raw = await rget(key); if (raw == null) return dflt; try { return JSON.parse(raw); } catch (e) { return dflt; } }
 async function rsetJSON(key, v) { try { await fetch(`${REDIS_URL}/set/${encodeURIComponent(key)}`, { method: "POST", headers: { Authorization: `Bearer ${REDIS_TOKEN}` }, body: JSON.stringify(v) }); return true; } catch (e) { return false; } }
 
-const K = { proposals: "metabrain:proposals", seen: "metabrain:seen", config: "metabrain:config", lastrun: "metabrain:lastrun", msgmap: "metabrain:msgmap" };
-const DEFAULT_CONFIG = { enabled: true, maxPerDay: 3, cooldownDays: 7, silentOnZero: true, heartbeatDow: 1 }; // heartbeat: понедельник
+const K = { proposals: "metabrain:proposals", seen: "metabrain:seen", config: "metabrain:config", lastrun: "metabrain:lastrun", msgmap: "metabrain:msgmap", lastdelivery: "metabrain:lastdelivery" };
+const DEFAULT_CONFIG = { enabled: true, maxPerDay: 3, cooldownDays: 7, silentOnZero: true, heartbeatDow: 1, // heartbeat: понедельник
+  digest: true, escalateAfterDays: 3, expireAfterDays: 10 }; // сводка вместо потока; важное эскалирует после 3д, мелочь протухает после 10д
 const CAP = { proposals: 60 };
 
 function tkDay() { return new Date(Date.now() + 5 * 3600000).toISOString().slice(0, 10); }
@@ -257,6 +258,81 @@ async function gatherForBrain(org) {
 // а не по тексту: формулировка каждый день чуть другая, и текстовый отпечаток не совпадал → дубли.
 function fingerprint(o) { const k = String(o.topicKey || "").toLowerCase().trim(); return k || themeOf((o.title || "") + " " + (o.statement || "")) || String(o.title || "").toLowerCase().slice(0, 24); }
 
+// ─────────────────────────────────────────────────────────────────────────────
+// ЧАСТЬ 2б: РАЗГРУЗКА ОЧЕРЕДИ РЕШЕНИЙ — сводка вместо потока, приоритет по ВЛИЯНИЮ,
+// эскалация проигнорированного важного (громче, а не тише), протухание неважного.
+// ВСЁ детерминированно (в коде), LLM «что важнее» не решает.
+// ─────────────────────────────────────────────────────────────────────────────
+export const OPEN_STATUSES = ["pending", "awaiting_edit", "edited"];
+const LEGAL_RX = /гарант|100\s*%|\bобещ|юрид|закон|трудоустройств/i;                                  // юр. риск
+const REVENUE_RX = /звон|дозвон|недозвон|не звонил|\bлид|стату[сн]|ложн|конверси|закрыт|оплат|сделк|выручк|касс|no_call|скрипт|возражен|дожим/i; // прямая выручка
+// ВЛИЯНИЕ (детерминированно по смыслу текста): 3=юр.риск, 2=выручка, 1=прочее.
+export function impactTier(p) {
+  const t = `${p.title || ""} ${p.statement || ""} ${(p.proposedTask && p.proposedTask.title) || ""} ${(p.proposedTask && p.proposedTask.why) || ""}`;
+  if (LEGAL_RX.test(t)) return 3;
+  if (REVENUE_RX.test(t)) return 2;
+  return 1;
+}
+const CONF_W = { high: 3, med: 2, low: 1 };
+export function daysPending(p, nowMs) { return Math.max(0, Math.floor((nowMs - (p.at || nowMs)) / 86400000)); }
+// приоритет: влияние доминирует, затем уверенность, затем возраст (эскалация проигнорированного).
+export function priorityScore(p, nowMs) {
+  return impactTier(p) * 1000 + (CONF_W[p.confidence] || 1) * 100 + Math.min(daysPending(p, nowMs), 30) * 3;
+}
+// важное (выручка/юр.риск), провисевшее >= N дней → эскалируем (флаг «висит N дней»), НЕ глушим.
+export function isEscalated(p, nowMs, escalateAfterDays) { return impactTier(p) >= 2 && daysPending(p, nowMs) >= (escalateAfterDays || 3); }
+// вердикт: важное старое → escalate (никогда не протухает молча); мелочь старая → expire (с уведомлением); иначе keep.
+export function expiryVerdict(p, nowMs, cfg) {
+  const d = daysPending(p, nowMs), tier = impactTier(p);
+  const escN = (cfg && cfg.escalateAfterDays) || 3, expN = (cfg && cfg.expireAfterDays) || 10;
+  if (tier >= 2 && d >= escN) return "escalate";
+  if (tier === 1 && d >= expN) return "expire";
+  return "keep";
+}
+export function groupKeyOf(p) { return String(p.topicKey || "").toLowerCase().trim() || themeOf((p.title || "") + " " + (p.statement || "")) || String(p.title || "").toLowerCase().slice(0, 24); }
+
+// buildDigest: чистая функция над ВСЕМИ предложениями → приоритезированные группы + что протухло.
+export function buildDigest(allProposals, nowMs, cfg) {
+  const open = (allProposals || []).filter((p) => p && OPEN_STATUSES.includes(p.status));
+  const expired = [], kept = [];
+  for (const p of open) (expiryVerdict(p, nowMs, cfg) === "expire" ? expired : kept).push(p);
+  const gmap = new Map();
+  for (const p of kept) {
+    const k = groupKeyOf(p);
+    const g = gmap.get(k) || { key: k, items: [], score: -1, top: null, escalated: false, maxDays: 0 };
+    g.items.push(p);
+    const sc = priorityScore(p, nowMs);
+    if (sc > g.score) { g.score = sc; g.top = p; }
+    if (isEscalated(p, nowMs, cfg && cfg.escalateAfterDays)) g.escalated = true;
+    g.maxDays = Math.max(g.maxDays, daysPending(p, nowMs));
+    gmap.set(k, g);
+  }
+  const groups = [...gmap.values()].map((g) => ({ ...g, count: g.items.length })).sort((a, b) => b.score - a.score);
+  return { totalOpen: kept.length, groups, top: groups.slice(0, 3), expired };
+}
+
+const IMPACT_LABEL = { 3: "юр. риск", 2: "выручка", 1: "прочее" };
+export function formatDigest(dg, cfg) {
+  if (!dg || (!dg.totalOpen && !dg.expired.length)) return null;
+  let s = `🧠 <b>Решения, ждущие вас: ${dg.totalOpen}</b>\n`;
+  if (dg.top.length) {
+    s += `Самое важное — можно решить прямо здесь:\n`;
+    dg.top.forEach((g, i) => {
+      const p = g.top;
+      s += `\n<b>${i + 1}. ${p.title}</b> · ${IMPACT_LABEL[impactTier(p)]}`;
+      if (g.count > 1) s += ` · ${g.count} сигнала`;
+      if (g.escalated) s += ` · ⏳ висит ${g.maxDays} дн`;
+      if (p.proposedTask && p.proposedTask.title) s += `\n${p.contradiction ? "⚠️ пока НЕ действовать: " : "Предлагаю: "}${shortT(p.proposedTask.title, 90)}`;
+      s += `\n`;
+    });
+    const shown = dg.top.reduce((n, g) => n + g.count, 0);
+    const rest = dg.totalOpen - shown;
+    if (rest > 0) s += `\nОстальные ${rest} — кнопка «Показать все» ниже.`;
+  }
+  if (dg.expired.length) s += `\n\n♻️ Закрыл за давностью (неважные, >${(cfg && cfg.expireAfterDays) || 10} дн, не требуют решения): ${dg.expired.map((p) => shortT(p.title, 40)).join("; ")}`;
+  return s;
+}
+
 export async function runDailyBrain(org = ORG, force = false) {
   const cfg = await getConfig();
   if (!cfg.enabled && !force) return { ok: true, skipped: "disabled" };
@@ -314,18 +390,47 @@ export async function runDailyBrain(org = ORG, force = false) {
     const id = propId(o.fingerprint);
     const rec = { id, at: nowMs, day: nowDay, ...o, status: "pending" };
     proposals.push(rec); created.push(rec);
-    await sendProposalToOwner(rec);
-    await sleep(400); // пауза между предложениями в один чат владельца
+    // СРОЧНОЕ (юр. риск) — отдельным сообщением сразу; всё остальное уходит в дневную сводку.
+    if (cfg.digest !== false && impactTier(rec) === 3) { await sendProposalToOwner(rec); await sleep(400); }
   }
-  await rsetJSON(K.proposals, proposals.slice(-CAP.proposals));
-  await rsetJSON(K.lastrun, { at: nowMs, day: nowDay, observed: observations.length, sent: created.length, diag });
 
-  // тихо при нуле; РАЗ В НЕДЕЛЮ (heartbeatDow) — короткий признак жизни, даже если наблюдений нет
-  if (!created.length && tkDow() === cfg.heartbeatDow) {
+  if (cfg.digest === false) {
+    // legacy-режим (поток по одному) — на случай отката
+    for (const rec of created) { await sendProposalToOwner(rec); await sleep(400); }
+    await rsetJSON(K.proposals, proposals.slice(-CAP.proposals));
+    await rsetJSON(K.lastrun, { at: nowMs, day: nowDay, observed: observations.length, sent: created.length, diag });
+    return { ok: true, observed: observations.length, sent: created.length, ids: created.map((c) => c.id), diag };
+  }
+
+  // СВОДКА над ВСЕМИ открытыми (включая старые pending — они НЕ теряются) + протухание неважного.
+  const dg = buildDigest(proposals, nowMs, cfg);
+  for (const e of dg.expired) { const j = proposals.findIndex((x) => x.id === e.id); if (j >= 0) proposals[j] = { ...proposals[j], status: "expired", expiredAt: nowMs }; }
+  await rsetJSON(K.proposals, proposals.slice(-CAP.proposals));
+  const delivery = await sendDigest(dg, cfg);
+  await rsetJSON(K.lastrun, { at: nowMs, day: nowDay, observed: observations.length, sent: created.length, created: created.length, totalOpen: dg.totalOpen, expired: dg.expired.length, delivered: !!(delivery && delivery.ok), diag });
+
+  // ничего открытого и ничего нового → тихо; РАЗ В НЕДЕЛЮ heartbeat как раньше
+  if (!dg.totalOpen && !created.length && tkDow() === cfg.heartbeatDow) {
     const ppl = await getPeople().catch(() => ({}));
     if (ppl.owner && ppl.owner.chatId) await sendTg("owner", ppl.owner.chatId, `🧠 Общий мозг: за неделю сводных наблюдений уровня «предложить действие» не набралось. Источники сверяю ежедневно — как появится подтверждённый с двух сторон сигнал, пришлю предложение.`);
   }
-  return { ok: true, observed: observations.length, sent: created.length, ids: created.map((c) => c.id), diag };
+  return { ok: true, observed: observations.length, created: created.length, totalOpen: dg.totalOpen, expired: dg.expired.length, delivered: !!(delivery && delivery.ok), ids: created.map((c) => c.id), diag };
+}
+
+// ОТПРАВКА СВОДКИ владельцу + ФИКСАЦИЯ ФАКТА ДОСТАВКИ (чтобы сбой Telegram не был молчаливым).
+async function sendDigest(dg, cfg) {
+  const text = formatDigest(dg, cfg);
+  if (!text) return { ok: false, skipped: "nothing" };
+  const ppl = await getPeople().catch(() => ({}));
+  if (!ppl.owner || !ppl.owner.chatId) { await rsetJSON(K.lastdelivery, { at: Date.now(), ok: false, error: "owner не привязан", totalOpen: dg.totalOpen }); return { ok: false, error: "owner not bound" }; }
+  const rows = dg.top.map((g) => ([
+    { text: `✅ ${shortT(g.top.title, 18)}`, callback_data: `mb:confirm:${g.top.id}` },
+    { text: "❌", callback_data: `mb:reject:${g.top.id}` },
+  ]));
+  if (dg.totalOpen > dg.top.reduce((n, g) => n + g.count, 0)) rows.push([{ text: `📋 Показать все (${dg.totalOpen})`, callback_data: "mb:list" }]);
+  const sent = await sendTg("owner", ppl.owner.chatId, text, { reply_markup: { inline_keyboard: rows } });
+  await rsetJSON(K.lastdelivery, { at: Date.now(), ok: !!(sent && sent.ok), messageId: (sent && sent.messageId) || null, error: (sent && sent.error) || null, totalOpen: dg.totalOpen });
+  return sent;
 }
 
 const CONF_BADGE = { high: "🟢 высокая", med: "🟡 средняя", low: "🔴 низкая" };
@@ -421,6 +526,16 @@ async function setSeen(fp, days) {
 export async function handleMetaButton(act, id, host) {
   const cfg = await getConfig();
   const proposals = await rgetJSON(K.proposals, []);
+  // «Показать все» — полный список открытых, приоритезированный (без id).
+  if (act === "list") {
+    const now = Date.now();
+    const dg = buildDigest(proposals, now, cfg);
+    if (!dg.groups.length) return { ok: true, toast: "Пусто", ownerMsg: "Открытых предложений нет." };
+    let s = `🧠 <b>Все открытые решения (${dg.totalOpen}):</b>\n`;
+    dg.groups.forEach((g, i2) => { const p = g.top; s += `\n${i2 + 1}. <b>${shortT(p.title, 70)}</b> · ${IMPACT_LABEL[impactTier(p)]}${g.count > 1 ? ` · ${g.count} сигнала` : ""}${isEscalated(p, now, cfg.escalateAfterDays) ? ` · ⏳ ${g.maxDays} дн` : ""}`; });
+    s += `\n\nРешить самые важные — кнопками в дневной сводке или в разделе «Тренер».`;
+    return { ok: true, toast: `Открытых: ${dg.totalOpen}`, ownerMsg: s };
+  }
   const i = proposals.findIndex((p) => p.id === id);
   if (i < 0) return { ok: false, toast: "предложение не найдено" };
   const p = proposals[i];
