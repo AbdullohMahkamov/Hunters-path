@@ -75,6 +75,34 @@ async function redisSet(url, token, key, value) {
   return r.ok;
 }
 
+// ── ДНИ НА ЭТАПЕ (карта #3): чистая агрегация «сколько дней открытый лид висит на текущем этапе» ──
+// openLeads: [{ id, name, status, resp, created, _stageChangedAt? }] (created/_stageChangedAt — unix sec).
+// _stageChangedAt = когда лид ПОСЛЕДНИЙ раз сменил этап (= вошёл на текущий). Нет события в окне →
+// висит дольше окна → нижняя граница (min:true). Возвращает распределение по этапам + список застрявших.
+export function computeStageAge(openLeads, statusNameById, nowSec, opts) {
+  const lookbackDays = (opts && opts.lookbackDays) || 90;
+  const stuckDays = (opts && opts.stuckDays) || 5;
+  const windowStartSec = nowSec - lookbackDays * 86400;
+  const byStage = new Map();
+  const stuck = [];
+  for (const li of (openLeads || [])) {
+    let days, min = false;
+    if (li._stageChangedAt != null) days = Math.floor((nowSec - li._stageChangedAt) / 86400);
+    else if (li.created != null && li.created >= windowStartSec) days = Math.floor((nowSec - li.created) / 86400); // не менял этап с создания
+    else { days = lookbackDays; min = true; } // висит дольше окна — точную дату не знаем, это нижняя граница
+    if (days < 0) days = 0;
+    const sid = li.status;
+    const g = byStage.get(sid) || { statusId: sid, stage: (statusNameById && statusNameById[sid]) || String(sid), count: 0, _days: [] };
+    g.count++; g._days.push(days); byStage.set(sid, g);
+    if (days >= stuckDays) stuck.push({ id: li.id, name: li.name || "", mop: li.resp || null, stage: g.stage, days, min });
+  }
+  const median = (arr) => { if (!arr.length) return 0; const s = [...arr].sort((a, b) => a - b); const m = Math.floor(s.length / 2); return s.length % 2 ? s[m] : Math.round((s[m - 1] + s[m]) / 2); };
+  const stages = [...byStage.values()].map((g) => ({ statusId: g.statusId, stage: g.stage, count: g.count, medianDays: median(g._days), maxDays: g._days.length ? Math.max(...g._days) : 0, stuck: g._days.filter((x) => x >= stuckDays).length }))
+    .sort((a, b) => b.stuck - a.stuck || b.count - a.count);
+  stuck.sort((a, b) => b.days - a.days);
+  return { byStage: stages, stuck: stuck.slice(0, 50), thresholdDays: stuckDays, lookbackDays, totalOpen: (openLeads || []).length };
+}
+
 function median(arr){
   if(!arr.length) return null;
   const s=[...arr].sort((a,b)=>a-b);
@@ -963,9 +991,57 @@ export default async function handler(req, res) {
       thresholdSec: REACHED_SEC,
       definition: "лид считается дозвонившимся, если был хотя бы один разговор длиннее порога (по нотам amoCRM)",
     };
+    // ═══ ДНИ НА ЭТАПЕ (карта #3) — best-effort, В КОНЦЕ: критичные данные (звонки/ноты) уже собраны ═══
+    // Отвечает на «сколько дней лид висит на этапе» — то, что советник раньше НЕ мог (только счёт по этапам).
+    let stageTruncated = false, openPoolTruncated = false;
+    const OPEN_STATUS_IDS = Object.keys(statusNameById).map(Number).filter((id) => id && id !== SOLD_STATUS && id !== LOST_STATUS).slice(0, 30);
+    // (1) добираем ВСЕ открытые лиды (старые в средних этапах не попадают в месячную выгрузку/dozvon-пул)
+    if (pipelineId && OPEN_STATUS_IDS.length && !DEBUG_CALLS) {
+      page = 1; guard = 0;
+      const stFilter = OPEN_STATUS_IDS.map((sid, i) => `filter[statuses][${i}][pipeline_id]=${pipelineId}&filter[statuses][${i}][status_id]=${sid}`).join("&");
+      while (guard < 60) {
+        guard++;
+        if (outOfTime()) { openPoolTruncated = true; break; }
+        const r = await fetch(`${base}/leads?limit=250&page=${page}&${stFilter}`, { headers: H });
+        if (r.status === 204) break;
+        if (!r.ok) { openPoolTruncated = true; break; }
+        const d = await r.json();
+        const arr = (d._embedded && d._embedded.leads) || [];
+        for (const L of arr) { if (!leadInfo[L.id]) leadInfo[L.id] = { id: L.id, name: L.name || "", created: L.created_at, resp: L.responsible_user_id, status: L.status_id, price: L.price || 0, _openOnly: true, calls: 0, tasks: 0, tasksDone: 0, firstCall: null, reachedReal: false }; }
+        if (arr.length < 250) break; page++;
+        await new Promise(rs => setTimeout(rs, 120));
+      }
+      if (guard >= 60) openPoolTruncated = true;
+    }
+    // (2) дата входа на текущий этап: события lead_status_changed, НОВЫЕ первыми, ранняя остановка когда все покрыты
+    const STAGE_LOOKBACK_DAYS = cfg.stageLookbackDays != null ? cfg.stageLookbackDays : 90;
+    const openNeed = new Set();
+    for (const id in leadInfo) { const li = leadInfo[id]; if (li.status !== SOLD_STATUS && li.status !== LOST_STATUS) openNeed.add(String(id)); }
+    if (pipelineId && openNeed.size && !DEBUG_CALLS) {
+      const stageFrom = Math.floor(Date.now() / 1000) - STAGE_LOOKBACK_DAYS * 24 * 3600;
+      page = 1; guard = 0;
+      while (guard < 80 && openNeed.size > 0) {
+        guard++;
+        if (outOfTime()) { stageTruncated = true; break; }
+        const r = await fetch(`${base}/events?filter[type]=lead_status_changed&filter[created_at][from]=${stageFrom}&limit=250&page=${page}&order[created_at]=desc`, { headers: H });
+        if (r.status === 204) break;
+        if (!r.ok) { stageTruncated = true; break; }
+        const d = await r.json();
+        const events = (d._embedded && d._embedded.events) || [];
+        for (const e of events) { if (e.entity_type !== "lead") continue; const key = String(e.entity_id); if (!openNeed.has(key)) continue; const li = leadInfo[e.entity_id]; if (li && li._stageChangedAt == null) { li._stageChangedAt = e.created_at; openNeed.delete(key); } }
+        if (events.length < 250) break; page++;
+        await new Promise(rs => setTimeout(rs, 120));
+      }
+      if (guard >= 80 && openNeed.size > 0) stageTruncated = true;
+    }
+    const openLeadsArr = Object.values(leadInfo).filter((li) => li.status !== SOLD_STATUS && li.status !== LOST_STATUS);
+    const stageAge = computeStageAge(openLeadsArr, statusNameById, Math.floor(Date.now() / 1000), { lookbackDays: STAGE_LOOKBACK_DAYS, stuckDays: (cfg.stuckDays != null ? cfg.stuckDays : 5) });
+    stageAge.complete = !stageTruncated && !openPoolTruncated && !leadsTruncated;
+    T.stageAge = openLeadsArr.length;
+
     const result = {
       updatedAt: new Date().toISOString(), period: "Текущий месяц", mops, mopsDay,
-      suspicious2: suspicious2.slice(0, 300), telephony,
+      suspicious2: suspicious2.slice(0, 300), telephony, stageAge,
       reach, // ← дозвон по лидам за МЕСЯЦ (по всем попыткам)
       dozvon, // ← % дозвона ПО ЭТАПУ ВОРОНКИ (настраивается в панели: dozvonStages)
       mopIssues: mopIssues.slice(0, 400), // сырые факты по МОПам для MOP Agent (без суждений)

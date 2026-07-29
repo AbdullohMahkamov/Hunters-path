@@ -121,6 +121,21 @@ function liveBlock(d, fin, realGoal, workdays, tg) {
     }
   }
 
+  // --- ДНИ НА ЭТАПЕ (сколько лид висит на текущем этапе) ---
+  const sa = sp.stageAge;
+  if (sa && Array.isArray(sa.byStage) && sa.byStage.length) {
+    s += `\nДНИ НА ЭТАПЕ (по каждому открытому лиду — сколько дней он висит на текущем этапе; порог «застрял» = ${sa.thresholdDays} дн):\n`;
+    for (const st of sa.byStage.slice(0, 8)) {
+      s += `• ${st.stage}: ${st.count} лидов, медиана ${st.medianDays} дн, макс ${st.maxDays} дн${st.stuck ? `, застряло ${st.stuck}` : ""}.\n`;
+    }
+    if (Array.isArray(sa.stuck) && sa.stuck.length) {
+      const ex = sa.stuck.slice(0, 5).map((x) => `${x.name || "лид"} — ${x.stage}, ${x.days}${x.min ? "+" : ""} дн`).join("; ");
+      s += `Дольше всего висят: ${ex}.\n`;
+    }
+    if (sa.complete === false) s += `⚠️ Данные по дням на этапе НЕПОЛНЫЕ (не всё успели дочитать из CRM) — считай это нижней границей, не финальной цифрой.\n`;
+    s += `Это РЕАЛЬНАЯ дата входа на этап (из истории смены статусов amoCRM), не «последняя правка карточки».\n`;
+  }
+
   // --- ПРИЧИНЫ ПОТЕРЬ ---
   if (d.problems && d.problems.length) {
     s += `\nПОЧЕМУ ТЕРЯЕМ ЛИДЫ (топ причин за месяц):\n`;
