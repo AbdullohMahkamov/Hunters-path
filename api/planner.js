@@ -479,14 +479,15 @@ export async function closeMonth(org = ORG) {
   const label = monthLabelY(py, pm);
   const results = (await rgetJSON(`periodresults:${org}`, [])) || [];
   if (results.some((r) => r.month === monthKey)) return { ok: true, skipped: "already_closed", monthKey };
-  // замороженный снимок последнего дня (фолбэк — последний снимок этого месяца из snap:list)
-  const lastDay = lastDayOf(py, pm);
-  let snap = await rgetJSON(`snap:${lastDay}`, null);
-  if (!snap) {
-    const list = (await rgetJSON("snap:list", [])) || [];
-    const inMonth = list.filter((d) => typeof d === "string" && d.slice(0, 7) === monthKey).sort();
-    if (inMonth.length) snap = await rgetJSON(`snap:${inMonth[inMonth.length - 1]}`, null);
-  }
+  // Берём снимок месяца с МАКСИМАЛЬНОЙ выручкой: month-to-date растёт в течение месяца → пик = итог месяца.
+  // Устойчиво к двум рискам: (1) поздний sync мог перезаписать снимок последнего числа данными нового месяца
+  // (≈0); (2) снимка ровно за последнее число может не быть (sync не отработал / выходной). Продаж 31-го может
+  // не быть вовсе — не важно: MTD кумулятивна, пик держит итог месяца.
+  const list = (await rgetJSON("snap:list", [])) || [];
+  const monthDates = list.filter((d) => typeof d === "string" && d.slice(0, 7) === monthKey);
+  let snap = null;
+  for (const d of monthDates) { const sn = await rgetJSON(`snap:${d}`, null); if (sn && (snap == null || (sn.revenue || 0) > (snap.revenue || 0))) snap = sn; }
+  if (!snap) snap = await rgetJSON(`snap:${lastDayOf(py, pm)}`, null); // фолбэк, если snap:list пуст
   if (!snap) return { ok: false, reason: "no_snapshot", monthKey };
   const goalUZS = (snap.goalPeriod === label && snap.goalUZS > 0) ? snap.goalUZS : null; // цель принадлежит ИМЕННО этому месяцу
   const earned = snap.revenue || 0, sold = snap.sold || 0, leads = snap.leads || 0;

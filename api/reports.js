@@ -8,7 +8,7 @@
 import { sendTg, getPeople } from "./tg-bot.js";
 import { getGoal } from "./goal.js";
 import { getVerifiedFunnel } from "./dev-agent.js";
-import { funnelFacts, workingDays } from "./planner.js";
+import { funnelFacts, workingDays, closeMonth } from "./planner.js";
 import { resolveCpl } from "./goal-realism.js";
 import { loadSalesTasks } from "./task-agent.js"; // авторитетный список задач (план + MOP + мозг + маркетинг)
 import { priorityScore, OPEN_STATUSES } from "./meta-brain.js"; // ранжирование предложений мозга для секции решений
@@ -130,6 +130,10 @@ export async function buildTeamReport(org = ORG) {
 }
 
 async function sendReport(org, kind) {
+  // САМО-ПОДСТРАХОВКА: закрываем предыдущий месяц, если крон закрытия не отработал (идемпотентно — после первого
+  // раза no-op). Так periodresults (база проверки реалистичности) гарантированно заполнен уже к первому утреннему
+  // отчёту месяца, даже если отдельный крон month-close 1-го числа не сработал.
+  if (kind === "business") { try { await closeMonth(org); } catch (e) { /* закрытие не должно ронять отчёт */ } }
   const built = kind === "business" ? await buildBusinessReport(org) : await buildTeamReport(org);
   const ppl = await getPeople();
   if (!(ppl.owner && ppl.owner.chatId)) return { ok: true, sent: false, reason: "owner не привязан" };

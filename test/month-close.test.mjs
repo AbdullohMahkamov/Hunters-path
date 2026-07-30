@@ -67,6 +67,18 @@ test("closeMonth: нет снимка последнего дня → честн
   assert.equal(r.reason, "no_snapshot");
 });
 
+test("ПОДСТРАХОВКА: снимок 31-го перезаписан нулями (окно 00:00–05:00) → берём пик выручки месяца, не ноль", async () => {
+  freezeUTC("2026-08-01");
+  // snap 31-го затёрт данными августа (≈0), а snap 30-го держит настоящий июльский MTD
+  kvSetJSON("snap:list", ["2026-07-30", "2026-07-31"]);
+  kvSetJSON("snap:2026-07-30", { ...julySnap, date: "2026-07-30", revenue: 95000000, sold: 19 });
+  kvSetJSON("snap:2026-07-31", { date: "2026-07-31", goalUZS: 100000000, goalPeriod: "август 2026", revenue: 0, sold: 0, leads: 0, avgCheckMedian: 0, conv: 0 });
+  const r = await planner.closeMonth("hunter");
+  assert.equal(r.result.earned, 95000000, "взят пик июля, а не затёртый ноль 31-го");
+  assert.equal(r.result.sold, 19);
+  assert.equal(r.result.goalUZS, 100000000, "цель — из чистого июльского снимка (июль 2026)");
+});
+
 test("реализм: текущий месяц пустой → база avgCheck/конверсии из закрытого месяца", async () => {
   // цель на август, но продаж в августе почти нет (тонкий месяц)
   kvSetJSON("goal:hunter", { amountUZS: 150000000, currency: "UZS", period: { label: "август 2026", start: "2026-08-01", end: "2026-08-31" } });
