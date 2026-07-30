@@ -417,7 +417,55 @@ export async function sendDailyReport(org = ORG) {
   return { ok: true, sent: false };
 }
 
-const CRON_OK = new Set(["propose", "daily-report"]);
+// ── ЧАСТЬ C: КОНЕЦ МЕСЯЦА → САМ СПРОСИ ЦЕЛЬ НА СЛЕДУЮЩИЙ ──
+// Крон дёргает по дням 28-31; шлём РОВНО ОДИН раз за месяц: 30-го числа, а в феврале (нет 30-го) — в последний день.
+// Владелец отвечает целью прямо в чат → срабатывает обычный путь цель→реализм→план.
+const MONTHS_RU_FULL = ["январь", "февраль", "март", "апрель", "май", "июнь", "июль", "август", "сентябрь", "октябрь", "ноябрь", "декабрь"];
+function monthLabel(mIdx) { const m = ((mIdx % 12) + 12) % 12; return MONTHS_RU_FULL[m]; }
+function monthLabelY(y, mIdx) { const yy = y + Math.floor(mIdx / 12); return `${monthLabel(mIdx)} ${yy}`; }
+
+export async function nextMonthPrompt(org = ORG) {
+  const now = tkNow(); // Ташкент (как везде в файле: читаем UTC-поля со сдвинутой даты)
+  const day = now.getUTCDate(), y = now.getUTCFullYear(), m = now.getUTCMonth();
+  const lastDay = new Date(Date.UTC(y, m + 1, 0)).getUTCDate();
+  const isTargetDay = (day === 30) || (day === lastDay && lastDay < 30); // 30-е, либо последний день короткого месяца (февраль)
+  if (!isTargetDay) return { ok: true, skipped: "not_target_day", day };
+
+  const monthKey = `${y}-${String(m + 1).padStart(2, "0")}`;
+  const guardKey = `planner:monthprompt:${org}:${monthKey}`;
+  if (await rgetJSON(guardKey, null)) return { ok: true, skipped: "already_sent", monthKey }; // одно напоминание за месяц
+
+  const nextLabel = monthLabelY(y, m + 1);
+  // если цель на следующий месяц уже задана — не дёргаем впустую
+  const goal = await getGoal(org);
+  if (goal && goal.period && goal.period.label === nextLabel) {
+    await rsetJSON(guardKey, { skippedAt: Date.now(), monthKey, reason: "next_goal_already_set" });
+    return { ok: true, skipped: "next_goal_already_set", nextLabel };
+  }
+
+  // рекап уходящего месяца (если цель была) — чтобы вопрос шёл с контекстом «как закрыли»
+  let recap = "";
+  if (goal && goal.amountUZS) {
+    try {
+      const plan = await buildPlan(org);
+      const g = plan.facts || {};
+      const pct = g.goalUZS ? Math.round((g.earned || 0) / g.goalUZS * 100) : null;
+      recap = `Итоги ${goal.period ? goal.period.label : monthLabelY(y, m)}: цель ${num(goal.amountUZS)} сум` +
+        (g.earned != null ? `, заработано ${num(g.earned)}${pct != null ? ` (${pct}%)` : ""}` : "") +
+        (g.forecast != null && !plan.onPace ? `, прогноз на конце ${num(g.forecast)}` : "") + `.\n\n`;
+    } catch (e) { /* рекап не критичен */ }
+  }
+
+  const msg = `📅 <b>Месяц заканчивается</b>\n\n${recap}Пора задать цель на <b>${nextLabel}</b>. Напишите её одной фразой прямо в чат — <b>сумма + период</b> (напр. «выручка 1.5 млрд сум за ${monthLabel(m + 1)}»). Как зададите — сразу проверю реалистичность и построю план догона.`;
+
+  const ppl = await getPeople();
+  let sent = false;
+  if (ppl.owner && ppl.owner.chatId) { const r = await sendTg("owner", ppl.owner.chatId, msg); sent = !!(r && r.ok); }
+  await rsetJSON(guardKey, { sentAt: Date.now(), monthKey, nextLabel, sent });
+  return { ok: true, sent, monthKey, nextLabel };
+}
+
+const CRON_OK = new Set(["propose", "daily-report", "month-prompt"]);
 async function isAuthed(req) {
   const auth = req.headers && (req.headers.authorization || req.headers.Authorization);
   if (auth && CRON_SECRET && auth === `Bearer ${CRON_SECRET}`) return true;
@@ -433,6 +481,7 @@ export default async function handler(req, res) {
     if (action === "build") { res.status(200).json(await buildPlan(ORG)); return; }               // предпросмотр плана (диагностика)
     if (action === "propose") { res.status(200).json(await proposePlan(ORG, req.query && req.query.force === "1")); return; } // крон: предложить владельцу
     if (action === "daily-report") { res.status(200).json(await sendDailyReport(ORG)); return; }   // крон: утренний отчёт
+    if (action === "month-prompt") { res.status(200).json(await nextMonthPrompt(ORG)); return; }   // крон: конец месяца → спросить цель на следующий
     if (action === "report-preview") { res.status(200).json(await buildDailyReport(ORG)); return; } // предпросмотр отчёта без отправки
     if (action === "state") { res.status(200).json({ pending: await rgetJSON(K.pending, null), active: await rgetJSON(K.active, null), history: await rgetJSON(K.history, []), goal: await getGoal() }); return; }
     if (action === "button") { const r = await handlePlanButton((req.body && req.body.act) || (req.query && req.query.act)); res.status(200).json(r); return; }

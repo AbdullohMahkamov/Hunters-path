@@ -140,6 +140,10 @@
     {
       "path": "/api/planner?action=daily-report&cron=1",
       "schedule": "30 3 * * *"
+    },
+    {
+      "path": "/api/planner?action=month-prompt&cron=1",
+      "schedule": "0 4 28-31 * *"
     }
   ]
 }
