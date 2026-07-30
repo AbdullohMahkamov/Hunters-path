@@ -1,6 +1,14 @@
 // /api/sync.js — тянет сделки из воронки клиента, считает живые KPI, кладёт в кэш Upstash.
 // Мультитенант: настройки клиента берутся из конфига (org). Витрина hunter = дефолт.
 
+// КАЧЕСТВО ДАННЫХ: выигранные сделки без суммы искажают выручку и средний чек (см. sync:320 — soldSum += price).
+// Порог 10% — выше него искажение среднего чека перестаёт быть шумом (доля нулей ≈ сдвиг среднего вниз;
+// 10% превышает форекаст-шум ~10% из snap-истории). Метрика самодокладывается: считается на каждом sync.
+export function assessWonNoAmount(count, sold, thresholdPct = 10) {
+  const sharePct = sold > 0 ? Math.round((count / sold) * 1000) / 10 : 0;
+  return { count, soldThisMonth: sold, sharePct, thresholdPct, inaccurate: sharePct > thresholdPct };
+}
+
 // Дефолтный конфиг витрины (org=hunter) — ровно те значения, что были захардкожены.
 const HUNTER_CFG = {
   subdomain: "huntercademy",
@@ -210,6 +218,7 @@ export default async function handler(req, res) {
     // КОНВЕРСИЯ/ДИСЦИПЛИНА — по 5 действующим МОПам. Считаем ДВА периода: месяц и всё окно (~4 мес).
     let sold = 0, soldSum = 0, ownExcluded = 0, noContact = 0;
     let newSalesSum = 0; // выручка ТОЛЬКО новых продаж месяца (без доплат) — для среднего чека
+    const wonNoAmount = []; // выигранные сделки этого месяца БЕЗ суммы (price пуст/0) — искажают выручку/чек
     let soldToday = 0, revenueToday = 0, leadsToday = 0; // метрики за сегодня
     // === VELOCITY (скорость воронки) ===
     const saleDurations = [];      // длительности «создан → продан» в днях (для медианы/среднего)
@@ -319,6 +328,7 @@ export default async function handler(req, res) {
       if (isSold && closedThisMonth) {
         sold++; soldSum += price; newSalesSum += price; // newSalesSum — только новые продажи, без доплат (для среднего чека)
         if (price > 0) checks.push(price); // для медианного чека
+        if (!price) wonNoAmount.push({ id: L.id, name: L.name || "", mop: respName || null }); // выиграл, но сумму не заполнил
         // чек оплаты приложен? (To'lov cheki) — инфо-сигнал
         const cfvP = L.custom_fields_values || (L._embedded && L._embedded.custom_fields_values);
         if (Array.isArray(cfvP) && cfvP.some(x => x.field_id === PAID_RECEIPT_FIELD_ID && x.values && x.values[0] && x.values[0].value)) paidReceiptCount++;
@@ -583,6 +593,8 @@ export default async function handler(req, res) {
         convAudit, noContactPctAudit, leadsAudit,
         suspiciousCount: suspicious.length,
       },
+      // КАЧЕСТВО ДАННЫХ (самодокладываемая метрика): выигранные без суммы искажают выручку/чек.
+      dataQuality: { wonNoAmount: { ...assessWonNoAmount(wonNoAmount.length, sold), sample: wonNoAmount.slice(0, 25) } },
       mopsByConv, mopsBySales, problems, problemsAll,
       velocity: { median: velocityMedian, avg: velocityAvg, count: saleDurations.length, stages: stagesArr },
       adsets: adsetsArr.slice(0, 50),

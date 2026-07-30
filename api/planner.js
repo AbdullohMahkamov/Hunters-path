@@ -112,7 +112,11 @@ export async function buildPlan(org = ORG) {
   }
 
   const gapPct = goal.amountUZS > 0 ? +(gap / goal.amountUZS * 100).toFixed(1) : null;
-  const facts = { goalUZS: goal.amountUZS, currency: goal.currency, amount: goal.amount, period, earned, sold: f.sold, leads: f.leads, avgCheck: f.avgCheck, convPct: f.conv != null ? +(f.conv * 100).toFixed(1) : null, perWorkday, forecast, gap, gapPct, workdays: wdays, bottleneck: f.bottleneck, trust: f.trust, dataFresh: f.dataFresh, telephonySuspicious: f.telephonySuspicious };
+  // КАЧЕСТВО БАЗЫ: выигранные без суммы занижают выручку/чек → база под цель неточна (не выдаём как факт).
+  const _dq = await rgetJSON("dashboard", null);
+  const _wna = _dq && _dq.dataQuality && _dq.dataQuality.wonNoAmount;
+  const baseInaccurate = (_wna && _wna.inaccurate) ? { reason: "won_no_amount", count: _wna.count, sharePct: _wna.sharePct } : null;
+  const facts = { goalUZS: goal.amountUZS, currency: goal.currency, amount: goal.amount, period, earned, sold: f.sold, leads: f.leads, avgCheck: f.avgCheck, convPct: f.conv != null ? +(f.conv * 100).toFixed(1) : null, perWorkday, forecast, gap, gapPct, workdays: wdays, bottleneck: f.bottleneck, trust: f.trust, dataFresh: f.dataFresh, telephonySuspicious: f.telephonySuspicious, baseInaccurate };
 
   if (gap <= 0) {
     return { ok: true, onPace: true, facts, decomposition: null, tasks: { rop: [], marketing: [] }, human: `На текущем темпе цель достигается (прогноз ${num(forecast)} ≥ цель ${num(goal.amountUZS)} сум). План догона не требуется.` };
@@ -318,6 +322,13 @@ export async function buildDailyReport(org = ORG) {
   s += `Цель: ${num(g.goalUZS)} сум · заработано <b>${num(g.earned)} (${pct}%)</b> · период пройден на ${periodPct}%\n`;
   if (plan.onPace) s += `✅ На темпе: прогноз ${num(g.forecast)} ≥ цель.\n`;
   else s += `⚠️ Разрыв до цели: <b>${num(g.gap)} сум</b> (≈${plan.decomposition ? plan.decomposition.extraSales : "?"} продаж), осталось ${g.workdays.left} раб. дн.\n`;
+
+  // КАЧЕСТВО ДАННЫХ — самодокладываемая строка: won-без-суммы искажают выручку/чек/базу под цель.
+  try {
+    const dq = await rgetJSON("dashboard", null);
+    const wna = dq && dq.dataQuality && dq.dataQuality.wonNoAmount;
+    if (wna && wna.count > 0) s += `\n📉 <b>Качество данных:</b> ${wna.count} выигранн${wna.count === 1 ? "ая сделка" : "ых сделок"} без суммы (${wna.sharePct}% продаж) — выручка и средний чек занижены на эту величину${wna.inaccurate ? ", <b>база под цель НЕТОЧНА</b>" : ""}. Поручите РОПу заполнить суммы.\n`;
+  } catch (e) {}
 
   // ПОСТФАКТУМ: что система поставила САМА (автономно ≠ втайне)
   const autoToday = await getTodayAutonomous();
