@@ -28,6 +28,11 @@ export const BOT_TOKENS = {
   owner: process.env.TELEGRAM_OWNER_BOT_TOKEN || "",
   marketing: process.env.TELEGRAM_MARKETING_BOT_TOKEN || "",
 };
+// ОДИН «командный» бот обслуживает разные роли: различаем по chatId+роли, привязка — по КОДУ роли. Отдельный
+// бот на роль не нужен (лишний токен/вебхук/точка отказа). РОП-бот принимает и маркетолога. Владелец — отдельно
+// (он же хостит Mini App и получает решения/эскалации). Если TELEGRAM_MARKETING_BOT_TOKEN всё же задан — маркетинг
+// работает и как отдельный бот (?bot=marketing); если нет — маркетолог живёт на РОП-боте (токен берётся оттуда).
+const BOT_ROLES = { owner: ["owner"], rop: ["rop", "marketing"], marketing: ["marketing"] };
 const K = { people: "taskagent:people", codes: "taskagent:bindcode", chat: "taskagent:chat" };
 // «Altrone Digest» — отдельный бот для человекочитаемых сводок Dev/Growth/MOP агентов (НЕ Task Agent).
 const DIGEST_TOKEN = process.env.TELEGRAM_DIGEST_BOT_TOKEN || "";
@@ -58,7 +63,8 @@ async function clearReplyMarkup(botKind, chatId, messageId) {
 export const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 
 export async function sendTg(botKind, chatId, text, extra) {
-  const token = BOT_TOKENS[botKind];
+  // Маркетинг без своего бота едет на РОП-боте (общий командный бот) → берём токен РОПа.
+  const token = BOT_TOKENS[botKind] || (botKind === "marketing" ? BOT_TOKENS.rop : "");
   if (!token || !chatId) return { ok: false, error: "no token or chatId" };
   try {
     const r = await fetch(`https://api.telegram.org/bot${token}/sendMessage`, {
@@ -280,31 +286,36 @@ export default async function handler(req, res) {
     const name = [msg.from && msg.from.first_name, msg.from && msg.from.last_name].filter(Boolean).join(" ");
     const username = (msg.from && msg.from.username) || "";
 
-    // 1) ПРИВЯЗКА: /start <код>
+    // 1) ПРИВЯЗКА: /start <код>. Код определяет РОЛЬ (не вебхук): на РОП-боте так подключается и маркетолог.
     if (/^\/start\b/i.test(text)) {
       const code = text.split(/\s+/)[1] || "";
       const codes = await getCodes();
-      if (!code || code.toUpperCase() !== String(codes[kind]).toUpperCase()) {
+      const allowed = BOT_ROLES[kind] || [kind];
+      const role = code ? allowed.find((r) => code.toUpperCase() === String(codes[r]).toUpperCase()) : null;
+      if (!role) {
         await sendTg(kind, chatId, "🤖 <b>Altrone</b>\n\nЭто служебный бот системы Altrone. Чтобы подключиться, отправьте:\n<code>/start КОД</code>\n\nКод вам выдаст владелец в панели Altrone.");
         res.status(200).json({ ok: true, bind: "bad_code" }); return;
       }
       const people = await getPeople();
-      people[kind] = { chatId, name, username, boundAt: Date.now() };
+      people[role] = { chatId, name, username, boundAt: Date.now() };
       await rsetJSON(K.people, people);
-      const hello = kind === "rop"
+      const hello = role === "rop"
         ? `🤖 <b>Altrone</b> — подключено.\n\nЯ система Altrone (не человек). Буду писать вам по задачам отдела продаж: напоминать о сроках, спрашивать статус и фиксировать результат по каждой задаче.\n\nОтвечайте мне прямо здесь — я всё зафиксирую.`
-        : kind === "marketing"
+        : role === "marketing"
         ? `🤖 <b>Altrone</b> — подключено.\n\nЯ система Altrone (не человек). Буду писать вам по маркетинговым задачам: реклама, креативы, бюджеты аудиторий, Instagram/бренд — напоминать о сроках, спрашивать статус и фиксировать результат.\n\nОтвечайте мне прямо здесь — я всё зафиксирую.`
         : `🤖 <b>Altrone</b> — подключено.\n\nСюда буду присылать эскалации Task-агента: задача, дословная переписка с исполнителем и текущий статус. Решение остаётся за вами.`;
       await sendTg(kind, chatId, hello);
-      await askLang(kind, chatId); // сразу спрашиваем язык общения
-      res.status(200).json({ ok: true, bound: kind }); return;
+      await askLang(role, chatId); // сразу спрашиваем язык общения
+      res.status(200).json({ ok: true, bound: role }); return;
     }
 
-    // 2) ОБЫЧНОЕ СООБЩЕНИЕ
+    // 2) ОБЫЧНОЕ СООБЩЕНИЕ. РОЛЬ определяем по chatId (кто это), а НЕ по вебхуку — на РОП-боте так различаем
+    // РОПа и маркетолога (у каждого свой 1:1 чат с ботом).
     const people = await getPeople();
-    const bound = people[kind];
-    if (!bound || bound.chatId !== chatId) {
+    const allowed = BOT_ROLES[kind] || [kind];
+    const role = allowed.find((r) => people[r] && people[r].chatId === chatId);
+    const bound = role ? people[role] : null;
+    if (!bound) {
       await sendTg(kind, chatId, "🤖 <b>Altrone</b>\n\nВы не подключены. Отправьте <code>/start КОД</code> (код выдаёт владелец).");
       res.status(200).json({ ok: true, ignored: "not bound" }); return;
     }
@@ -313,7 +324,7 @@ export default async function handler(req, res) {
     if (!bound.lang) {
       const choice = detectLangChoice(text);
       if (choice) {
-        await setPersonLang(kind, choice);
+        await setPersonLang(role, choice);
         const ok = choice === "uz"
           ? "✅ Yaxshi, endi siz bilan <b>o'zbek tilida</b> muloqot qilaman."
           : "✅ Хорошо, дальше буду писать вам <b>по-русски</b>.";
@@ -322,12 +333,12 @@ export default async function handler(req, res) {
       }
       // не выбрал кнопкой — определяем по его тексту и не задерживаем диалог
       const auto = /[а-яё]/i.test(text) ? "ru" : "uz";
-      await setPersonLang(kind, auto);
+      await setPersonLang(role, auto);
       // и продолжаем обычную обработку сообщения ниже
       bound.lang = auto;
     }
 
-    if (kind === "rop") {
+    if (role === "rop") {
       // ответ РОПа → в общий тред; Task Agent обработает и ответит
       // reply_to_message.message_id — если РОП ответил Reply'ем на конкретный пинг (нужно для привязки к задаче)
       const replyToId = (msg.reply_to_message && msg.reply_to_message.message_id) || null;
@@ -339,7 +350,7 @@ export default async function handler(req, res) {
       res.status(200).json({ ok: true, stored: true }); return;
     }
 
-    if (kind === "marketing") {
+    if (role === "marketing") {
       // ответ Маркетолога → тот же тред; Task Agent разбирает статус/закрытие по маркетинг-задачам
       const replyToId = (msg.reply_to_message && msg.reply_to_message.message_id) || null;
       await pushChat({ role: "marketing", text: text.slice(0, 2000), name });
