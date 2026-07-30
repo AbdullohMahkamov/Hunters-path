@@ -33,6 +33,8 @@ export const auth = {
   client: (login, password) => postJSON('/api/auth', { action: 'client', login, password }).then((r) => r.json()),
   // Саппорт: логин+пароль (доступ только к /support)
   support: (login, password) => postJSON('/api/auth', { action: 'support', login, password }).then((r) => r.json()),
+  // Telegram Mini App: вход по initData (сервер валидирует подпись + allow-list по owner chatId)
+  tg: (initData) => postJSON('/api/auth', { action: 'tg', initData }).then((r) => r.json()),
   // Проверка существующей сессии
   check: (session) => postJSON('/api/auth', { action: 'check', session }).then((r) => r.json()),
   // Выход

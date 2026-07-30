@@ -25,6 +25,43 @@ async function redisSet(url, token, key, value, ttlSec) {
   }
   return r.ok;
 }
+async function redisGetJSON(url, token, key) {
+  try {
+    const r = await fetch(`${url}/get/${encodeURIComponent(key)}`, { headers: { Authorization: `Bearer ${token}` } });
+    const d = await r.json();
+    return d && d.result != null ? JSON.parse(d.result) : null;
+  } catch (e) { return null; }
+}
+
+// ── ВАЛИДАЦИЯ Telegram initData (HMAC-SHA256 по токену бота) ──
+// Доказывает: данные подписаны Telegram → это НАСТОЯЩИЙ пользователь Telegram. НЕ доказывает «это владелец» —
+// роль решает allow-list по user.id ниже. Секрет = HMAC_SHA256(bot_token, "WebAppData"); hash = HMAC(data_check_string, секрет).
+// Из строки проверки исключаем hash; на всякий случай (формат менялся: добавили поле signature) принимаем ЛЮБОЙ из двух
+// вариантов — с signature в строке и без него. Плюс проверка свежести auth_date (по умолчанию 24 часа).
+export function validateInitData(initData, botToken, maxAgeSec = 86400) {
+  if (!initData || !botToken) return { ok: false, error: "no_initdata" };
+  let params;
+  try { params = new URLSearchParams(initData); } catch (e) { return { ok: false, error: "bad_initdata" }; }
+  const hash = params.get("hash");
+  if (!hash) return { ok: false, error: "no_hash" };
+  const entries = [];
+  for (const [k, v] of params.entries()) { if (k === "hash") continue; entries.push([k, v]); } // значения уже URL-декодированы
+  const build = (excludeSignature) => entries
+    .filter(([k]) => !(excludeSignature && k === "signature"))
+    .sort((a, b) => (a[0] < b[0] ? -1 : a[0] > b[0] ? 1 : 0))
+    .map(([k, v]) => `${k}=${v}`).join("\n");
+  const secret = crypto.createHmac("sha256", "WebAppData").update(botToken).digest();
+  const calc = (dcs) => crypto.createHmac("sha256", secret).update(dcs).digest("hex");
+  const eq = (a, b) => { try { const ba = Buffer.from(a, "hex"), bb = Buffer.from(b, "hex"); return ba.length === bb.length && crypto.timingSafeEqual(ba, bb); } catch (e) { return false; } };
+  const okHash = eq(calc(build(false)), hash) || eq(calc(build(true)), hash);
+  if (!okHash) return { ok: false, error: "bad_hash" };
+  const authDate = Number(params.get("auth_date") || 0);
+  if (!authDate || (Date.now() / 1000 - authDate) > maxAgeSec) return { ok: false, error: "expired" };
+  let user = null;
+  try { user = JSON.parse(params.get("user") || "null"); } catch (e) { /* нет user */ }
+  if (!user || user.id == null) return { ok: false, error: "no_user" };
+  return { ok: true, user, authDate };
+}
 
 export default async function handler(req, res) {
   const redisUrl = process.env.UPSTASH_REDIS_REST_URL;
@@ -64,6 +101,29 @@ export default async function handler(req, res) {
       if (!demo) { res.status(200).json({ ok: false, error: "Неверный код демо-доступа" }); return; }
       const sessToken = crypto.randomBytes(24).toString("hex");
       const info = { role: "demo", org: demo.org, demoName: demo.name };
+      await redisSet(redisUrl, redisToken, `session:${sessToken}`, JSON.stringify(info), 30 * 24 * 3600);
+      res.status(200).json({ ok: true, session: sessToken, ...info });
+      return;
+    }
+
+    // Вход из Telegram Mini App по initData. Валидный initData = «настоящий юзер Telegram», НЕ «владелец».
+    // ALLOW-LIST — обязателен и ПЕРВЫМ: роль admin выдаём ТОЛЬКО если user.id совпадает с owner chatId из
+    // taskagent:people. Иначе любой, открывший приложение, получил бы доступ к выручке/целям/задачам команды.
+    if (action === "tg") {
+      const initData = String((req.body && req.body.initData) || "");
+      const botToken = process.env.TELEGRAM_OWNER_BOT_TOKEN;
+      if (!botToken) { res.status(200).json({ ok: false, error: "Mini App не настроен (нет токена бота владельца)" }); return; }
+      const v = validateInitData(initData, botToken);
+      if (!v.ok) { res.status(200).json({ ok: false, error: "Telegram-авторизация не прошла" }); return; }
+      const people = await redisGetJSON(redisUrl, redisToken, "taskagent:people");
+      const ownerId = people && people.owner && people.owner.chatId;
+      if (ownerId == null || String(v.user.id) !== String(ownerId)) {
+        // валидный Telegram-юзер, но НЕ владелец → отказ (allow-list)
+        res.status(200).json({ ok: false, error: "Доступ в приложение — только для владельца" });
+        return;
+      }
+      const sessToken = crypto.randomBytes(24).toString("hex");
+      const info = { role: "admin", org: "hunter", via: "telegram", tgUserId: v.user.id };
       await redisSet(redisUrl, redisToken, `session:${sessToken}`, JSON.stringify(info), 30 * 24 * 3600);
       res.status(200).json({ ok: true, session: sessToken, ...info });
       return;

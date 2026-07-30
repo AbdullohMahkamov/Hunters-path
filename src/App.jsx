@@ -9,6 +9,12 @@ const MopCabinet = lazy(() => import('./screens/MopCabinet.jsx'))
 const AppShell = lazy(() => import('./screens/AppShell.jsx'))
 const DevAgent = lazy(() => import('./screens/DevAgent.jsx'))
 const Support = lazy(() => import('./screens/Support.jsx'))
+const TgApp = lazy(() => import('./screens/TgApp.jsx'))
+
+// Telegram Mini App — маршрут /tg. Свой вход по initData (не пароль), поэтому обрабатываем ДО общей логики логина.
+function isTgRoute() {
+  try { return window.location.pathname.replace(/\/+$/, '') === '/tg' } catch (e) { return false }
+}
 
 // Отдельный внутренний маршрут /dev-agent (только админ). nginx на VPS отдаёт index.html (SPA-fallback).
 function isDevAgentRoute() {
@@ -25,6 +31,16 @@ export function useSession() {
 }
 
 export default function App() {
+  // Telegram Mini App: отдельный экран со своим входом по initData (не пароль). Проверяем ПЕРВЫМ, до любых хуков —
+  // маршрут постоянен на весь жизненный цикл страницы, порядок хуков стабилен для каждого монтирования.
+  if (isTgRoute()) {
+    return (
+      <Suspense fallback={null}>
+        <TgApp />
+      </Suspense>
+    )
+  }
+
   const sess = useSession()
   // phase: 'loading' | 'login' | 'mop' | 'app'
   const [phase, setPhase] = useState('loading')
