@@ -799,7 +799,8 @@ function renderAdsets(d) {
     avgCheck: isAll ? a.avgCheck : (a.avgCheckMonth != null ? a.avgCheckMonth : a.avgCheck),
   })).filter((a) => a.leads > 0 || a.revenue > 0).sort((x, y) => y.revenue - x.revenue)
   const spendMap = {}
-  if (_metaSpend && _metaSpend.adsets) for (const s of _metaSpend.adsets) spendMap[s.name] = metaSpendToUZS(s.spend) // в сумах (конвертировано)
+  const statusMap = {} // имя аудитории → статус активности из Meta (active/effectiveStatus)
+  if (_metaSpend && _metaSpend.adsets) for (const s of _metaSpend.adsets) { spendMap[s.name] = metaSpendToUZS(s.spend); if (s.active != null || s.effectiveStatus) statusMap[s.name] = { active: !!s.active, es: s.effectiveStatus } }
   const hasSpend = _metaSpend && _metaSpend.adsets && _metaSpend.adsets.length
   if (!arr.length) {
     box.innerHTML = '<div style="font-size:12px;color:var(--txt3);">' + (uz ? 'Bu davr uchun manba maʼlumoti yoʻq' : 'Нет данных об источниках за этот период') + '</div>'
@@ -889,10 +890,17 @@ function renderAdsets(d) {
         roiTag = `<span style="font-size:11px;color:var(--red);white-space:nowrap;">${uz ? '0 sotuv' : '0 продаж'}</span>`
       }
     }
+    const stt = statusMap[a.name]
+    const statusBadge = stt
+      ? `<span style="font-size:10px;font-weight:700;padding:1px 7px;border-radius:6px;white-space:nowrap;${stt.active ? 'background:var(--green-bg);color:var(--green);' : 'background:var(--card2);color:var(--txt3);'}">${stt.active ? (uz ? '● Faol' : '● Активен') : (uz ? '○ Pauza' : '○ На паузе')}</span>`
+      : ''
     return `
     <div style="padding:11px 0;border-bottom:1px solid var(--line);">
       <div style="display:flex;justify-content:space-between;gap:8px;margin-bottom:5px;align-items:center;">
-        <b style="font-size:13px;">${escapeHtml(a.name)}</b>
+        <div style="display:flex;gap:7px;align-items:center;min-width:0;">
+          <b style="font-size:13px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">${escapeHtml(a.name)}</b>
+          ${statusBadge}
+        </div>
         <div style="display:flex;gap:10px;align-items:center;">
           ${roiTag}
           <span style="font-size:13px;font-weight:700;color:var(--green);white-space:nowrap;">${fmtSum(a.revenue)}</span>

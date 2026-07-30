@@ -130,6 +130,10 @@
       "schedule": "0 */4 * * *"
     },
     {
+      "path": "/api/meta-ads?action=refresh",
+      "schedule": "0 5 * * *"
+    },
+    {
       "path": "/api/planner?action=propose&cron=1",
       "schedule": "0 3 * * *"
     },

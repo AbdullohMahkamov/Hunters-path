@@ -59,13 +59,13 @@ export default async function handler(req, res) {
     const base = `https://graph.facebook.com/${GRAPH_VERSION}/${adAccount}/insights`;
     const params = new URLSearchParams({
       level: "adset",
-      fields: "adset_name,spend,impressions,clicks",
+      fields: "adset_name,adset_id,spend,impressions,clicks",
       time_range: timeRange,
       limit: "500",
       access_token: metaToken,
     });
 
-    const spendByAdset = {};
+    const spendById = {};
     let url = `${base}?${params.toString()}`;
     let guard = 0, currency = "";
     while (url && guard < 20) {
@@ -77,10 +77,11 @@ export default async function handler(req, res) {
         return;
       }
       for (const row of (d.data || [])) {
+        const id = row.adset_id ? String(row.adset_id) : (row.adset_name || "").trim();
         const name = (row.adset_name || "").trim();
-        if (!name) continue;
+        if (!id) continue;
         const spend = parseFloat(row.spend || "0") || 0; // Meta отдаёт строкой!
-        const e = spendByAdset[name] || (spendByAdset[name] = { spend: 0, impressions: 0, clicks: 0 });
+        const e = spendById[id] || (spendById[id] = { id, name, spend: 0, impressions: 0, clicks: 0 });
         e.spend += spend;
         e.impressions += parseInt(row.impressions || "0", 10) || 0;
         e.clicks += parseInt(row.clicks || "0", 10) || 0;
@@ -88,9 +89,27 @@ export default async function handler(req, res) {
       url = (d.paging && d.paging.next) || null;
     }
 
-    const adsetsSpend = Object.entries(spendByAdset).map(([name, e]) => ({
-      name, spend: Math.round(e.spend), impressions: e.impressions, clicks: e.clicks,
-    }));
+    // СТАТУС АДСЕТА (таргета): активен или на паузе. effective_status учитывает паузу на уровне
+    // адсета/кампании/аккаунта. Тянем отдельным запросом (insights статуса не отдаёт).
+    const statusById = {};
+    try {
+      let aurl = `https://graph.facebook.com/${GRAPH_VERSION}/${adAccount}/adsets?fields=id,name,effective_status&limit=500&access_token=${metaToken}`;
+      let ag = 0;
+      while (aurl && ag < 20) {
+        ag++;
+        const ar = await fetch(aurl);
+        const ad = await ar.json();
+        if (ad.error) break;
+        for (const a of (ad.data || [])) if (a.id) statusById[String(a.id)] = a.effective_status || null;
+        aurl = (ad.paging && ad.paging.next) || null;
+      }
+    } catch (e) { /* статус не критичен — просто не покажем */ }
+
+    const adsetsSpend = Object.values(spendById).map((e) => {
+      const es = statusById[e.id] || null;
+      return { name: e.name, spend: Math.round(e.spend), impressions: e.impressions, clicks: e.clicks,
+        effectiveStatus: es, active: es === "ACTIVE" }; // active=true только при ACTIVE; пауза/архив → false
+    });
 
     // ВАЛЮТА рекламного аккаунта — критично: spend Meta может быть в USD, а выручка в CRM — в UZS.
     // Без явной валюты ROAS = revenue(UZS)/spend(USD) молча неверен. Забираем currency прямо из Graph.
