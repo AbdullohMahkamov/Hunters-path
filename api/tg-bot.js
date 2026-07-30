@@ -271,9 +271,10 @@ export default async function handler(req, res) {
       const mTpl = data.match(/^tplan:(run|review|decline|spend|cancel)$/);   // решение по недельному плану транскрибации
       const mMb = data.match(/^mb:(confirm|reject|edit|list)(?::(.+))?$/); // решение владельца по сводному наблюдению общего мозга (list — «Показать все»)
       const mPl = data.match(/^pl:(confirm|reject|recalc)$/);   // решение владельца по плану под цель (planner)
+      const mOd = data.match(/^od:(lower|dismiss)$/);           // решение владельца по недостижимой части цели
       const mAu = data.match(/^au:cancel:(.+)$/);               // владелец отзывает автономно поставленную задачу
-      if (!mEsc && !mDisp && !mTpl && !mMb && !mPl && !mAu) { await answerCallback(kind, cq.id, ""); res.status(200).json({ ok: true, ignored: "cq no match" }); return; }
-      const act = mAu ? "cancel" : (mPl ? mPl[1] : (mMb ? mMb[1] : (mTpl ? mTpl[1] : (mDisp ? mDisp[1] : mEsc[1]))));
+      if (!mEsc && !mDisp && !mTpl && !mMb && !mPl && !mOd && !mAu) { await answerCallback(kind, cq.id, ""); res.status(200).json({ ok: true, ignored: "cq no match" }); return; }
+      const act = mAu ? "cancel" : (mOd ? mOd[1] : (mPl ? mPl[1] : (mMb ? mMb[1] : (mTpl ? mTpl[1] : (mDisp ? mDisp[1] : mEsc[1])))));
       try {
         let r;
         if (mAu) {
@@ -289,13 +290,14 @@ export default async function handler(req, res) {
           const pm = await import("./planner.js"); r = await pm.handlePlanButton(mPl[1]);
           if (r && r.triggerTick) { try { const host = req.headers && req.headers.host; if (host) await fetch(`https://${host}/api/task-agent?action=tick&cron=1`, { method: "POST", headers: { "content-type": "application/json", Authorization: `Bearer ${process.env.CRON_SECRET}` }, body: "{}" }); } catch (e) {} }
         }
+        else if (mOd) { const pm = await import("./planner.js"); r = await pm.handleOwnerDecision(mOd[1]); }
         else if (mMb) { const bm = await import("./meta-brain.js"); r = await bm.handleMetaButton(mMb[1], mMb[2], req.headers && req.headers.host); }
         else if (mTpl) { const dm = await import("./deepsales.js"); r = await dm.handlePlanButton(mTpl[1]); }
         else { const mod = await import("./task-agent.js"); r = mDisp ? await mod.handleDisputeResolve(mDisp[1], mDisp[2]) : await mod.handleOwnerButton(mEsc[1], mEsc[2]); }
         await answerCallback(kind, cq.id, (r && r.toast) || "Готово");
         if (r && r.ownerMsg && cqChatId) await sendTg(kind, cqChatId, r.ownerMsg);
         // убираем кнопки после РЕШЕНИЯ; на «пересмотр»/«поправить»/«пересчитать» — нет (ждём/шлём новое)
-        if (cq.message && (mDisp || (mMb && ["confirm", "reject"].includes(act)) || (mPl && ["confirm", "reject"].includes(act)) || ["close", "run", "decline", "spend", "cancel"].includes(act))) await clearReplyMarkup(kind, cqChatId, cq.message.message_id);
+        if (cq.message && (mDisp || mOd || (mMb && ["confirm", "reject"].includes(act)) || (mPl && ["confirm", "reject"].includes(act)) || ["close", "run", "decline", "spend", "cancel"].includes(act))) await clearReplyMarkup(kind, cqChatId, cq.message.message_id);
       } catch (e) { await answerCallback(kind, cq.id, "Ошибка обработки"); }
       res.status(200).json({ ok: true, cq: act }); return;
     }

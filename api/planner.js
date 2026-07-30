@@ -9,7 +9,7 @@
 // ГРАНИЦЫ: числа считаем сами (не LLM); если данных не хватает (forecast недиагностируется) — НЕ строим план
 // вслепую, честно показываем «план не построен: чего не хватает». sendTg только owner (до подтверждения).
 
-import { getGoal } from "./goal.js";
+import { getGoal, setGoal } from "./goal.js";
 import { getVerifiedFunnel } from "./dev-agent.js";
 import { sendTg, getPeople } from "./tg-bot.js";
 import { addMarketingTask } from "./task-agent.js";
@@ -343,6 +343,41 @@ export async function handlePlanButton(act) {
     try { const g = await getGoal(); if (g) { g.planBuiltFor = pending.periodKey; await rsetJSON(`goal:${ORG}`, g); } } catch (e) {}
     // триггерим тик, чтобы задачи начали разноситься сразу
     return { toast: "Готово — раздаю задачи", ownerMsg: `✅ План принят. Поставил РОПу ${created.rop.length} задач(и) и маркетологу ${created.marketing.length}. Веду их: напоминаю, проверяю статус, эскалирую срывы.`, triggerTick: true };
+  }
+  return { toast: "?" };
+}
+
+// ── РЕШЕНИЕ ВЛАДЕЛЬЦА по НЕДОСТИЖИМОЙ части цели (ownerDecision). Не задача людям: расширить команду/бюджет —
+// это реальный мир, система не исполняет. Единственное, что она МОЖЕТ сделать по кнопке — снизить цель до
+// достижимой (setGoal → пересборка плана). «Оставить» — владелец держит амбициозную цель, решение за ним. ──
+export async function getOwnerDecision(org = ORG) {
+  const active = await rgetJSON(K.active, null);
+  const pending = await rgetJSON(K.pending, null);
+  if (active && active.ownerDecisionOnly && !active.odDismissed && active.facts && active.facts.ownerDecision) return { od: active.facts.ownerDecision, scope: "full" };
+  if (pending && pending.plan && pending.plan.facts && pending.plan.facts.ownerDecision && !pending.odDismissed) return { od: pending.plan.facts.ownerDecision, scope: "partial" };
+  return null;
+}
+
+export async function handleOwnerDecision(act, org = ORG) {
+  const cur = await getOwnerDecision(org);
+  if (!cur) return { toast: "решение неактуально" }; // уже снято/цель изменилась → повтор из другого канала = no-op
+  const od = cur.od;
+  if (act === "dismiss") {
+    const active = await rgetJSON(K.active, null); if (active && active.ownerDecisionOnly) { active.odDismissed = true; await rsetJSON(K.active, active); }
+    const pending = await rgetJSON(K.pending, null); if (pending && pending.plan) { pending.odDismissed = true; await rsetJSON(K.pending, pending); }
+    return { toast: "Оставил как есть", ownerMsg: `Ок, цель оставляю. Разрыв сверх возможностей команды (${num(od.unreachableUZS)} сум) остаётся вашим решением — расширить команду или бюджет.` };
+  }
+  if (act === "lower") {
+    const g = await getGoal(org);
+    if (!g || !od.feasibleGoalUZS) return { toast: "цель не найдена" };
+    const newUZS = Math.round(od.feasibleGoalUZS);
+    const adj = { ...g, amountUZS: newUZS, amount: g.currency === "USD" ? Math.round(newUZS / (g.rate || 1)) : newUZS };
+    delete adj.planBuiltFor;
+    await setGoal(adj, org);
+    await rsetJSON(K.pending, null);                                   // старый план под прежнюю цель снимаем
+    await rsetJSON(K.active, { periodKey: g.period ? g.period.label : "", at: Date.now(), lowered: true });
+    const pr = await proposePlan(org, true, {}).catch(() => null);     // пересобрать план под достижимую цель
+    return { toast: "Цель снижена", triggerTick: false, ownerMsg: `✅ Цель снижена до ${num(newUZS)} сум — теперь в пределах команды. Пересобрал план под неё.` };
   }
   return { toast: "?" };
 }

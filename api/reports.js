@@ -8,7 +8,7 @@
 import { sendTg, getPeople } from "./tg-bot.js";
 import { getGoal } from "./goal.js";
 import { getVerifiedFunnel } from "./dev-agent.js";
-import { funnelFacts, workingDays, closeMonth } from "./planner.js";
+import { funnelFacts, workingDays, closeMonth, getOwnerDecision } from "./planner.js";
 import { resolveCpl } from "./goal-realism.js";
 import { loadSalesTasks } from "./task-agent.js"; // авторитетный список задач (план + MOP + мозг + маркетинг)
 import { priorityScore, OPEN_STATUSES } from "./meta-brain.js"; // ранжирование предложений мозга для секции решений
@@ -134,6 +134,14 @@ export async function buildTeamReport(org = ORG) {
     const g = pend.plan.facts || {};
     decisions.push(`⏳ План под цель «${pend.periodKey || ""}» ждёт подтверждения${g.gap != null ? ` (разрыв ${num(g.gap)} сум)` : ""}.`);
     kbRows.push([{ text: "✅ Подтвердить план", callback_data: "pl:confirm" }, { text: "❌ Отклонить", callback_data: "pl:reject" }]);
+  }
+  // ownerDecision: часть/вся цель ВНЕ устойчивых возможностей команды. Не задача людям — РЕШЕНИЕ владельца
+  // (расширить команду/бюджет — это реальный мир; система может лишь снизить цель до достижимой). Строкой + кнопкой.
+  const odRec = await getOwnerDecision(org).catch(() => null);
+  if (odRec) {
+    const od = odRec.od, feas = od.feasibleGoalUZS, unreach = od.unreachableUZS, k = od.addManagers;
+    decisions.push(`⚠️ ${odRec.scope === "full" ? "Цель целиком" : "Часть цели"} вне возможностей команды: ${num(unreach)} сум не закрыть текущими силами${k ? `, нужно +${k} менеджер(ов)` : ""}. Это ваше решение — команда/бюджет или снизить цель до ${num(feas)} сум.`);
+    kbRows.push([{ text: `📉 Снизить цель до ${num(feas)}`, callback_data: "od:lower" }, { text: "Оставить", callback_data: "od:dismiss" }]);
   }
   // Предложения общего мозга (наблюдения) — не задачами людям, а РЕШЕНИЯМИ владельцу. Топ-3 по важности,
   // кнопки подтвердить/отклонить прямо тут (то же правило, что у DeepSales: пока очереди Mini App нет — строкой).
