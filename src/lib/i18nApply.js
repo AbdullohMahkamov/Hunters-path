@@ -36,7 +36,6 @@ export function applyStaticI18n() {
   setSecLabel('secProb', tr('secProb'), 'problems')
   setSecLabel('secDisc', tr('secDisc'), 'early')
   setTxt('dtab-overview', tr('dtOverview'))
-  setTxt('dtab-trends', tr('dtTrends'))
   setTxt('dtab-finance', tr('dtFinance'))
   setTxt('dtab-marketing', tr('dtMarketing'))
   setTxt('dtab-sales', tr('dtSales'))

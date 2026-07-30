@@ -16,14 +16,14 @@ export function installShellStubs() {
 
   // dashTab — реальное переключение под-вкладок дашборда (+ загрузка данных, как в монолите)
   window.dashTab = function (tab) {
+    if (!['overview', 'finance', 'marketing', 'sales'].includes(tab)) tab = 'overview' // удалённая/неизвестная вкладка → Обзор
     state.dashTab = tab; save()
-    ;['overview', 'trends', 'finance', 'marketing', 'sales'].forEach((t) => {
+    ;['overview', 'finance', 'marketing', 'sales'].forEach((t) => {
       const btn = document.getElementById('dtab-' + t)
       const grp = document.getElementById('dg-' + t)
       if (btn) btn.classList.toggle('on', t === tab)
       if (grp) grp.style.display = (t === tab) ? 'block' : 'none'
     })
-    if (tab === 'trends' && typeof window.loadTrends === 'function') window.loadTrends()
     if (tab === 'finance' && typeof window.loadFinance === 'function') window.loadFinance()
     if (tab === 'sales') { loadActivity(); if (typeof window.loadCallAnalysis === 'function') window.loadCallAnalysis() } // активность + разборы звонков
   }

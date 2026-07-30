@@ -1,7 +1,6 @@
     <!-- под-вкладки дашборда -->
     <div class="dtabs">
       <button class="dtab on" id="dtab-overview" onclick="dashTab('overview')">Обзор</button>
-      <button class="dtab" id="dtab-trends" onclick="dashTab('trends')">Динамика</button>
       <button class="dtab" id="dtab-marketing" onclick="dashTab('marketing')">Маркетинг</button>
       <button class="dtab" id="dtab-sales" onclick="dashTab('sales')">Продажи</button>
       <span style="width:1px;background:var(--line2);margin:6px 4px;"></span>
@@ -51,15 +50,6 @@
         <div class="dsect" id="ovSalesSumLbl">Сумма продаж (текущий месяц)</div>
         <div id="overviewSalesSum"><div style="font-size:12px;color:var(--txt3);padding:10px;">Загрузка...</div></div>
       </div>
-    </div>
-
-    <!-- РАЗДЕЛ: ДИНАМИКА (тренды во времени) -->
-    <div class="dgroup" id="dg-trends" style="display:none;">
-      <div style="display:flex;gap:6px;margin-bottom:14px;">
-        <button class="perbtn on" id="tr-per-month" onclick="setDashPeriod('month')">Текущий месяц</button>
-        <button class="perbtn" id="tr-per-all" onclick="setDashPeriod('all')">Всё время</button>
-      </div>
-      <div id="trendsBox"><div style="font-size:12px;color:var(--txt3);padding:14px;">Загрузка динамики...</div></div>
     </div>
 
     <!-- РАЗДЕЛ: ФИНАНСЫ (из Google Sheets) -->
