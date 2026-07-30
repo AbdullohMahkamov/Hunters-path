@@ -242,6 +242,7 @@ export default async function handler(req, res) {
     const SUSPICIOUS_THRESHOLD = 1000000; // продажа с бюджетом пустым или < 1М — подозрительная
     const suspicious = []; // список подозрительных (с типом и категорией)
     const wrongNumByMopDay = {}; // "mop|day" -> count (для «массово неверный номер»)
+    const capMonths = {};        // mop -> { "YYYY-MM": сколько лидов зашло } — история ЗАГРУЗКИ для проверки капасити цели
     const DAY = 24 * 3600;
 
     for (const L of all) {
@@ -257,6 +258,13 @@ export default async function handler(req, res) {
       const inAudit = (L.created_at || 0) >= lookbackStart; // окно аудита
       const mop = ACTIVE_MOPS[L.responsible_user_id]; // null если не из пятёрки
       const respName = ACTIVE_MOPS[L.responsible_user_id] || String(L.responsible_user_id || "");
+
+      // КАПАСИТИ: сколько лидов зашло на МОПа помесячно (вся история, что есть в базе).
+      // Основа проверки реалистичности цели «столько людей физически не обработать». Звонки/день НЕ берём — истории нет.
+      if (mop && L.created_at) {
+        const mk = new Date((L.created_at + 5 * 3600) * 1000).toISOString().slice(0, 7); // YYYY-MM по Ташкенту
+        (capMonths[mop] || (capMonths[mop] = {}))[mk] = (capMonths[mop][mk] || 0) + 1;
+      }
 
       // === СЕГОДНЯ: лиды обработанные (созданные сегодня), продажи и касса за сегодня ===
       if ((L.created_at || 0) >= dayStart) leadsToday++;
@@ -550,6 +558,25 @@ export default async function handler(req, res) {
     const mopsByConv = [...mops].sort((a, b) => b.conv - a.conv);
     const mopsBySales = [...mops].sort((a, b) => b.sold - a.sold);
 
+    // === КАПАСИТИ КОМАНДЫ (лиды/МОП/месяц) — для проверки реалистичности цели ===
+    // Медиана = устойчивый темп (на неё считаем достижимую цель); максимум = потолок при напряжении (пик, не норма).
+    // Глубина истории у каждого МОПа своя (новые — мало месяцев); помечаем thin, чтобы вердикт не выдавал одно число по команде.
+    const capMonthNow = new Date((Math.floor(Date.now() / 1000) + 5 * 3600) * 1000).toISOString().slice(0, 7);
+    const CAP_THIN_MONTHS = 3; // < 3 завершённых месяцев → капасити оценочна
+    const teamCapacity = { generatedAt: new Date().toISOString(), thinMonths: CAP_THIN_MONTHS, monthNow: capMonthNow, byMop: {} };
+    for (const [mopName, months] of Object.entries(capMonths)) {
+      // берём только ЗАВЕРШЁННЫЕ месяцы (текущий неполный занизил бы max/median)
+      const complete = Object.entries(months).filter(([mk]) => mk < capMonthNow).map(([, c]) => c);
+      const monthsN = complete.length;
+      teamCapacity.byMop[mopName] = {
+        max: monthsN ? Math.max(...complete) : null,
+        median: medianOf(complete),
+        monthsN,
+        thin: monthsN < CAP_THIN_MONTHS,
+        currentPartial: months[capMonthNow] || 0,
+      };
+    }
+
     // Топ-5 проблем ЗА МЕСЯЦ
     const problems = Object.entries(lossCount)
       .map(([name, count]) => ({ name, count }))
@@ -595,6 +622,7 @@ export default async function handler(req, res) {
       },
       // КАЧЕСТВО ДАННЫХ (самодокладываемая метрика): выигранные без суммы искажают выручку/чек.
       dataQuality: { wonNoAmount: { ...assessWonNoAmount(wonNoAmount.length, sold), sample: wonNoAmount.slice(0, 25) } },
+      teamCapacity, // пропускная способность команды (лиды/МОП/месяц) — вход проверки реалистичности цели
       mopsByConv, mopsBySales, problems, problemsAll,
       velocity: { median: velocityMedian, avg: velocityAvg, count: saleDurations.length, stages: stagesArr },
       adsets: adsetsArr.slice(0, 50),

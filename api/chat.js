@@ -12,6 +12,7 @@ import { getBalancesSummary } from "./gamification.js";
 import { getCallAnalysisBundle } from "./deepsales.js";
 import { parseGoalText, setGoal, getGoal } from "./goal.js";
 import { proposePlan } from "./planner.js";
+import { assessRealism } from "./goal-realism.js";
 import { parseMargin, parseCpl, parseSchedule, setMargin, setCpl, setSchedule, missingSettings } from "./biz-settings.js";
 import { buildDiagnosticBundle, formatDiagnostic } from "./diagnostic.js";
 import { setAutonomyEnabled, getAutonomy } from "./autonomy.js";
@@ -623,10 +624,22 @@ export default async function handler(req, res) {
           if (parsed.ok) {
             await setGoal(parsed);
             goalNote += `\n\nВЛАДЕЛЕЦ ЗАДАЛ ЦЕЛЬ: ${parsed.amount.toLocaleString("ru-RU")} ${parsed.currency}${parsed.currency === "USD" ? ` (~${parsed.amountUZS.toLocaleString("ru-RU")} сум)` : " сум"} за «${parsed.period.label}». Сохранена. КРАТКО подтверди сумму и период.`;
+            // ПРОВЕРКА РЕАЛИСТИЧНОСТИ — ПЕРЕД планом. Сначала «реально ли», потом «вот план». Детерминированно (goal-realism.js).
+            let planCaveat = "";
+            try {
+              const realism = await assessRealism("hunter");
+              if (realism && realism.computable && realism.human) {
+                goalNote += `\n\nПРОВЕРКА РЕАЛИСТИЧНОСТИ ЦЕЛИ (это ответ «реально ли» — покажи его ПЕРВЫМ, ДО плана, человеческим языком, цифры бери ТОЛЬКО отсюда):\n${realism.human}\n`;
+                if (!realism.feasible) {
+                  const feasStr = realism.feasibleGoal ? `${Math.round(realism.feasibleGoal).toLocaleString("ru-RU")} сум` : null;
+                  planCaveat = `\nВАЖНО ПРО ПЛАН НИЖЕ: цель упирается в ограничение (${realism.binding}) — план построен ПОД ЗАЯВЛЕННУЮ цель (владелец вправе её оставить), но ЧЕСТНО пометь, что текущими силами её не закрыть${feasStr ? `, а устойчивая цель — ≤ ${feasStr}` : ""}. Если владелец хочет скорректировать — пусть напишет новую цель одной фразой${feasStr ? ` (напр. «цель ${feasStr} за ${parsed.period.label}»)` : ""}, тогда проверка и план пересчитаются.`;
+                }
+              }
+            } catch (e) { /* реализм не критичен — план всё равно построим */ }
             // ПЛАН СТРОИМ И ПОКАЗЫВАЕМ ПРЯМО В ЧАТЕ (не в Telegram): цифры + кнопки подтверждения здесь же.
             try {
               const pr = await proposePlan("hunter", true, { channel: "chat" });
-              if (pr.proposed) goalNote += `\n\nПЛАН ДОГОНА ПОСТРОЕН — покажи владельцу ПРЯМО В ЧАТЕ. Цифры бери ТОЛЬКО отсюда (НЕ выдумывай):\n${pr.preview}\nПредстань эти цифры человеческим языком (разрыв, рычаги «больше лидов»/«конверсия», задачи РОПу/маркетологу) и ОБЯЗАТЕЛЬНО дай три кнопки-действия в конце: [[ACT]]{"type":"plan_confirm","label":"✅ Подтвердить и раздать задачи"}[[/ACT]], [[ACT]]{"type":"plan_recalc","label":"🔄 Пересчитать"}[[/ACT]], [[ACT]]{"type":"plan_reject","label":"❌ Отклонить"}[[/ACT]]. Подтверждение = задачи СРАЗУ уходят РОПу и маркетологу, дальше их ведёт система.`;
+              if (pr.proposed) goalNote += `\n\nПЛАН ДОГОНА ПОСТРОЕН — покажи владельцу ПРЯМО В ЧАТЕ ПОСЛЕ вердикта о реалистичности. Цифры бери ТОЛЬКО отсюда (НЕ выдумывай):\n${pr.preview}${planCaveat}\nПредстань эти цифры человеческим языком (разрыв, рычаги «больше лидов»/«конверсия», задачи РОПу/маркетологу) и ОБЯЗАТЕЛЬНО дай три кнопки-действия в конце: [[ACT]]{"type":"plan_confirm","label":"✅ Подтвердить и раздать задачи"}[[/ACT]], [[ACT]]{"type":"plan_recalc","label":"🔄 Пересчитать"}[[/ACT]], [[ACT]]{"type":"plan_reject","label":"❌ Отклонить"}[[/ACT]]. Подтверждение = задачи СРАЗУ уходят РОПу и маркетологу, дальше их ведёт система.`;
               else if (pr.onPace) goalNote += `\n\nПлан догона НЕ нужен: на текущем темпе цель достигается. Скажи это владельцу коротко.`;
               else if (pr.belowThreshold) goalNote += `\n\nРазрыв до цели в пределах нормы (<5%) — темп закроет сам, задачи не нужны.`;
               else if (pr.autoDispatched && !pr.gated) goalNote += `\n\nВсе задачи под цель рутинные — уже раздал автоматически (${pr.autoDispatched}). Скажи владельцу; напомни про «Отозвать».`;

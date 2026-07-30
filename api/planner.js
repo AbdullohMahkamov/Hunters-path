@@ -33,7 +33,7 @@ const num = (n) => (n == null ? "н/д" : Number(Math.round(n)).toLocaleString("
 const tkNow = () => new Date(Date.now() + 5 * 3600000);
 
 // ── РАБОЧИЕ ДНИ периода (та же логика, что дашборд: считаем по будням из настроек, воскресенье по умолч. выходной)
-async function workingDays(period) {
+export async function workingDays(period) {
   const cfg = (await rgetJSON("settings:hunter", {})) || {}; // рабочий график живёт в settings:<org>, не в metricscfg
   const wd = Array.isArray(cfg.workdays) && cfg.workdays.length ? cfg.workdays : [1, 2, 3, 4, 5, 6]; // Пн-Сб
   const today = tkNow().toISOString().slice(0, 10);
@@ -48,7 +48,7 @@ async function workingDays(period) {
 }
 
 // ── ФАКТЫ из verified-воронки (без LLM) ──
-function funnelFacts(funnel) {
+export function funnelFacts(funnel) {
   if (!funnel) return null;
   const deal = (funnel.stages || []).find((s) => /Сделка выиграна/.test(s.stage));
   const leadsStage = (funnel.stages || []).find((s) => /Лиды/.test(s.stage));
@@ -121,9 +121,14 @@ export async function buildPlan(org = ORG) {
   if (gap <= 0) {
     return { ok: true, onPace: true, facts, decomposition: null, tasks: { rop: [], marketing: [] }, human: `На текущем темпе цель достигается (прогноз ${num(forecast)} ≥ цель ${num(goal.amountUZS)} сум). План догона не требуется.` };
   }
-  // НИЖНИЙ ПОРОГ: разрыв < 5% цели — в пределах шума прогноза (±10%), темп закроет сам. Задачу НЕ создаём вообще.
-  if (gapPct != null && gapPct < ROUTINE.gapPctMin) {
-    return { ok: true, onPace: true, belowThreshold: true, facts, decomposition: null, tasks: { rop: [], marketing: [] }, human: `Разрыв ${gapPct}% (${num(gap)} сум) — в пределах нормальных колебаний (<${ROUTINE.gapPctMin}%). Текущий темп закрывает его сам, дёргать людей не нужно.` };
+  // НИЖНИЙ ПОРОГ, ЧУВСТВИТЕЛЬНЫЙ К ОСТАТКУ ВРЕМЕНИ: «шумовая» полоса, которую темп закроет сам, СУЖАЕТСЯ к концу
+  // периода. В начале месяца 5% разрыва — норма (дней много). За день до конца те же 5% темп уже не вытянет —
+  // «закроет сам» звучало бы ложно. Порог = gapPctMin × доля оставшегося времени, но не ниже 1% (чтобы не срабатывать на пыли округления).
+  const timeFrac = wdays.total ? wdays.left / wdays.total : 1;
+  const gapPctMinEff = Math.max(1, +(ROUTINE.gapPctMin * timeFrac).toFixed(2));
+  if (gapPct != null && gapPct < gapPctMinEff) {
+    const nearEnd = timeFrac <= 0.34;
+    return { ok: true, onPace: true, belowThreshold: true, facts, decomposition: null, tasks: { rop: [], marketing: [] }, human: `Разрыв ${gapPct}% (${num(gap)} сум) — в пределах нормальных колебаний (<${gapPctMinEff}%${nearEnd ? ", порог ужат под конец периода" : ""}). Текущий темп закрывает его сам, дёргать людей не нужно.` };
   }
 
   const dec = decomposeGap(gap, f);
