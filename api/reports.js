@@ -94,6 +94,17 @@ export async function buildTeamReport(org = ORG) {
   }
   if (obsInWork > 0) s += `Задач из наблюдений системы (МОПы/мозг) в работе: <b>${obsInWork}</b>\n`;
 
+  // ЗДОРОВЬЕ ДОСТАВКИ: не молчим о собственной неисправности. Если задачи есть, а получатель НЕ привязан к
+  // боту (нет chatId) — они физически не уходят. Говорим об этом ГРОМКО, а не создаём задачи в пустоту.
+  const ppl = await getPeople().catch(() => ({}));
+  const isMkt = (t) => t.recipient === "marketing" || t.source === "marketing";
+  const openRop = tasks.some((t) => !t.done && !isMkt(t));
+  const openMkt = tasks.some((t) => !t.done && isMkt(t));
+  const warn = [];
+  if (openRop && !(ppl.rop && ppl.rop.chatId)) warn.push("РОП не привязан к боту — задачи отдела продаж НЕ доставляются");
+  if (openMkt && !(ppl.marketing && ppl.marketing.chatId)) warn.push("маркетолог не привязан к боту — маркетинг-задачи НЕ доставляются");
+  if (warn.length) s += `\n⚠️ <b>Доставка не работает:</b> ${warn.join("; ")}. Привяжите бота (код — в панели, раздел ботов), иначе созданные задачи висят недоставленными.\n`;
+
   // ── РЕШЕНИЯ, которые ждут владельца (остаются в Telegram, пока очереди Mini App нет) ──
   const decisions = [];
   const kbRows = [];

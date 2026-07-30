@@ -77,6 +77,23 @@ test("отчёт команды: предложения мозга — топ-3 
   assert.match(cbs, /mb:reject:p1/, "кнопка отклонить предложение");
 });
 
+test("отчёт команды: получатель НЕ привязан → громкая строка о недоставке (не молчим)", async () => {
+  kvSetJSON("appdata:hunter", { customPlan: { sales: [] }, done: {} });
+  kvSetJSON("marketingtasks", [{ id: "mk1", title: "Поднять бюджет в TASHKENT", status: "open" }]); // маркетинг-задача есть
+  kvSetJSON("taskagent:people", { owner: { chatId: 1 } }); // маркетолог НЕ привязан
+  const r = await reports.buildTeamReport("hunter");
+  assert.match(r.text, /Доставка не работает/);
+  assert.match(r.text, /маркетолог не привязан/);
+});
+
+test("отчёт команды: получатель привязан → строки о недоставке нет", async () => {
+  kvSetJSON("appdata:hunter", { customPlan: { sales: [] }, done: {} });
+  kvSetJSON("marketingtasks", [{ id: "mk1", title: "Поднять бюджет", status: "open" }]);
+  kvSetJSON("taskagent:people", { owner: { chatId: 1 }, marketing: { chatId: 5 } }); // привязан
+  const r = await reports.buildTeamReport("hunter");
+  assert.doesNotMatch(r.text, /Доставка не работает/);
+});
+
 test("отчёт команды: нет решений → секции «ждёт решения» нет", async () => {
   kvSetJSON("appdata:hunter", { customPlan: { sales: [] }, done: {} });
   kvSetJSON("marketingtasks", []);
