@@ -5,7 +5,6 @@
 // По мере переноса каждая заглушка заменяется реальной реализацией.
 
 import { setDashPeriodReal, setDiscPeriodReal } from './dashRender.js'
-import { loadActivity, setActPeriod } from './activityRender.js'
 import { state, save } from './appState.js'
 
 let installed = false
@@ -25,14 +24,12 @@ export function installShellStubs() {
       if (grp) grp.style.display = (t === tab) ? 'block' : 'none'
     })
     if (tab === 'finance' && typeof window.loadFinance === 'function') window.loadFinance()
-    if (tab === 'sales') { loadActivity(); if (typeof window.loadCallAnalysis === 'function') window.loadCallAnalysis() } // активность + разборы звонков
+    if (tab === 'sales' && typeof window.loadCallAnalysis === 'function') window.loadCallAnalysis() // разборы звонков
   }
 
-  // setDashPeriod / setDiscPeriod / setActPeriod / loadActivity — реальные (перерисовка по данным)
+  // setDashPeriod / setDiscPeriod — реальные (перерисовка по данным)
   window.setDashPeriod = setDashPeriodReal
   window.setDiscPeriod = setDiscPeriodReal
-  window.setActPeriod = setActPeriod
-  window.loadActivity = loadActivity
 
   // Заглушки загрузки данных / модалок — реальные реализации в следующих этапах.
   // (syncAll/openSuspModal/…/editForecastGoal ставит initDashModals; квесты — initQuests и т.д.)

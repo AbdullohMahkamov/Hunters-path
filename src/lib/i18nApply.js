@@ -31,7 +31,6 @@ export function applyStaticI18n() {
   setT2('tdLeadsLbl', uzTd ? 'Yangi ishlangan lidlar' : 'Новые обработанные лиды')
   setT2('tdSoldLbl', uzTd ? 'Bugungi sotuvlar' : 'Сегодняшние продажи')
   setT2('tdRevLbl', uzTd ? 'Bugungi tushum' : 'Сегодняшняя выручка')
-  setSecLabel('secTop', tr('secTop'))
   setSecLabel('secMop', tr('secMop'), 'reach')
   setSecLabel('secProb', tr('secProb'), 'problems')
   setSecLabel('secDisc', tr('secDisc'), 'early')
@@ -66,7 +65,6 @@ export function applyStaticI18n() {
   setById('disc-per-today', tr('pTodayShort'))
   const setSec2 = (id, v, hintKey) => { const e = document.getElementById(id); if (!e) return; const svg = e.querySelector('svg'); const hint = hintKey ? ` <span class="hint" onclick="showHint('${hintKey}',event)">?</span>` : ''; e.innerHTML = (svg ? svg.outerHTML : '') + ' ' + v + hint }
   setSec2('secAdsets', tr('secAdsets'))
-  setSec2('secActivity', tr('secActivity'))
   setSec2('secPlanFact', tr('secPlanFact'))
   setSec2('secVelocity', tr('secVelocity'))
   setSec2('secSusp', tr('secSusp'))
