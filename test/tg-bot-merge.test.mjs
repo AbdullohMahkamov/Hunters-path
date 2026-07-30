@@ -55,3 +55,24 @@ test("неизвестный код → не привязывает, проси�
   assert.equal(res._j.bind, "bad_code");
   assert.equal(kvGetJSON("taskagent:people"), null);
 });
+
+test("reissue-codes: перевыпускает коды, не трогая привязки", async () => {
+  kvSetJSON("session:S", { role: "admin" });
+  kvSetJSON("taskagent:people", { owner: { chatId: 1 }, marketing: { chatId: 1 } }); // привязки на месте
+  const res = mockRes();
+  await handler({ method: "GET", query: { action: "reissue-codes", session: "S" }, headers: {}, body: {} }, res);
+  assert.equal(res._j.ok, true);
+  assert.ok(res._j.codes.rop && res._j.codes.marketing && res._j.codes.owner, "новые коды выданы");
+  assert.notEqual(res._j.codes.rop, "ROPCODE", "код сменился");
+  assert.deepEqual(kvGetJSON("taskagent:people").marketing, { chatId: 1 }, "привязки не тронуты");
+});
+
+test("combine-role: помечает и снимает осознанное совмещение", async () => {
+  kvSetJSON("session:S", { role: "admin" });
+  const r1 = mockRes();
+  await handler({ method: "POST", query: {}, headers: {}, body: { action: "combine-role", role: "marketing", with: "owner", session: "S" } }, r1);
+  assert.deepEqual(kvGetJSON("taskagent:rolecombine"), { marketing: "owner" });
+  const r2 = mockRes();
+  await handler({ method: "POST", query: {}, headers: {}, body: { action: "combine-role", role: "marketing", session: "S" } }, r2); // без with → снять
+  assert.deepEqual(kvGetJSON("taskagent:rolecombine"), {});
+});

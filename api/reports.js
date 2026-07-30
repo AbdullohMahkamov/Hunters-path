@@ -77,7 +77,13 @@ export async function buildTeamReport(org = ORG) {
   const today = today0();
   // Тот же авторитетный список, что ведёт Task Agent: план + находки MOP + подтверждённый мозг + маркетинг.
   const tasks = await loadSalesTasks().catch(() => []);
-  const whoOf = (t) => (t.recipient === "marketing" || t.source === "marketing") ? "Маркетолог" : "РОП";
+  // Кто на каких аккаунтах + ОСОЗНАННОЕ совмещение ролей (taskagent:rolecombine, напр. {marketing:"owner"}).
+  const ppl = await getPeople().catch(() => ({}));
+  const combine = (await rgetJSON("taskagent:rolecombine", {})) || {};
+  const roleOf = (t) => (t.recipient === "marketing" || t.source === "marketing") ? "marketing" : "rop";
+  // Ярлык получателя. Если роль осознанно совмещена с владельцем — помечаем «(вы)», чтобы ваши же просрочки
+  // не читались как проблема дисциплины подчинённых.
+  const whoOf = (t) => { const r = roleOf(t); const lbl = r === "marketing" ? "Маркетолог" : "РОП"; return combine[r] === "owner" ? `${lbl} (вы)` : lbl; };
 
   const assigned = tasks.length;
   const doneN = tasks.filter((t) => t.done).length;
@@ -96,14 +102,21 @@ export async function buildTeamReport(org = ORG) {
 
   // ЗДОРОВЬЕ ДОСТАВКИ: не молчим о собственной неисправности. Если задачи есть, а получатель НЕ привязан к
   // боту (нет chatId) — они физически не уходят. Говорим об этом ГРОМКО, а не создаём задачи в пустоту.
-  const ppl = await getPeople().catch(() => ({}));
-  const isMkt = (t) => t.recipient === "marketing" || t.source === "marketing";
-  const openRop = tasks.some((t) => !t.done && !isMkt(t));
-  const openMkt = tasks.some((t) => !t.done && isMkt(t));
+  const openRop = tasks.some((t) => !t.done && roleOf(t) === "rop");
+  const openMkt = tasks.some((t) => !t.done && roleOf(t) === "marketing");
   const warn = [];
   if (openRop && !(ppl.rop && ppl.rop.chatId)) warn.push("РОП не привязан к боту — задачи отдела продаж НЕ доставляются");
   if (openMkt && !(ppl.marketing && ppl.marketing.chatId)) warn.push("маркетолог не привязан к боту — маркетинг-задачи НЕ доставляются");
-  if (warn.length) s += `\n⚠️ <b>Доставка не работает:</b> ${warn.join("; ")}. Привяжите бота (код — в панели, раздел ботов), иначе созданные задачи висят недоставленными.\n`;
+  // КОЛЛИЗИЯ АККАУНТОВ: две роли на одном chatId ДОПУСТИМЫ только если совмещение помечено осознанно
+  // (rolecombine). Непомеченное совпадение — подозрительно (случайность, которую иначе никто не заметит).
+  const byChat = {};
+  for (const r of ["owner", "rop", "marketing"]) { const c = ppl[r] && ppl[r].chatId; if (c != null) (byChat[c] = byChat[c] || []).push(r); }
+  for (const roles of Object.values(byChat)) {
+    if (roles.length < 2) continue;
+    const sanctioned = roles.some((base) => roles.every((r) => r === base || combine[r] === base));
+    if (!sanctioned) warn.push(`роли «${roles.join(" + ")}» на одном аккаунте, но совмещение НЕ помечено — проверьте, не случайность ли (иначе пометьте как осознанное)`);
+  }
+  if (warn.length) s += `\n⚠️ <b>Проверьте доставку:</b> ${warn.join("; ")}.\n`;
 
   // ── РЕШЕНИЯ, которые ждут владельца (остаются в Telegram, пока очереди Mini App нет) ──
   const decisions = [];

@@ -82,7 +82,7 @@ test("отчёт команды: получатель НЕ привязан → 
   kvSetJSON("marketingtasks", [{ id: "mk1", title: "Поднять бюджет в TASHKENT", status: "open" }]); // маркетинг-задача есть
   kvSetJSON("taskagent:people", { owner: { chatId: 1 } }); // маркетолог НЕ привязан
   const r = await reports.buildTeamReport("hunter");
-  assert.match(r.text, /Доставка не работает/);
+  assert.match(r.text, /Проверьте доставку/);
   assert.match(r.text, /маркетолог не привязан/);
 });
 
@@ -91,7 +91,25 @@ test("отчёт команды: получатель привязан → ст�
   kvSetJSON("marketingtasks", [{ id: "mk1", title: "Поднять бюджет", status: "open" }]);
   kvSetJSON("taskagent:people", { owner: { chatId: 1 }, marketing: { chatId: 5 } }); // привязан
   const r = await reports.buildTeamReport("hunter");
-  assert.doesNotMatch(r.text, /Доставка не работает/);
+  assert.doesNotMatch(r.text, /Проверьте доставку/);
+});
+
+test("совмещение ролей ПОМЕЧЕНО (marketing=owner) → предупреждения нет, а в «тормозит» просрочка помечена «(вы)»", async () => {
+  kvSetJSON("appdata:hunter", { customPlan: { sales: [] }, done: {} });
+  kvSetJSON("marketingtasks", [{ id: "mk1", title: "Поднять бюджет", status: "open", deadline: tkDate(2) }]); // маркетинг-задача просрочена
+  kvSetJSON("taskagent:people", { owner: { chatId: 1 }, marketing: { chatId: 1 } }); // один аккаунт
+  kvSetJSON("taskagent:rolecombine", { marketing: "owner" });                          // осознанно
+  const r = await reports.buildTeamReport("hunter");
+  assert.doesNotMatch(r.text, /Проверьте доставку/, "осознанное совмещение не предупреждаем");
+  assert.match(r.text, /Маркетолог \(вы\)/, "своя просрочка помечена как ваша, не проблема дисциплины");
+});
+
+test("совмещение ролей НЕ помечено → подозрительная коллизия в отчёт", async () => {
+  kvSetJSON("appdata:hunter", { customPlan: { sales: [] }, done: {} });
+  kvSetJSON("marketingtasks", []);
+  kvSetJSON("taskagent:people", { rop: { chatId: 7 }, marketing: { chatId: 7 } }); // один аккаунт, без пометки
+  const r = await reports.buildTeamReport("hunter");
+  assert.match(r.text, /совмещение НЕ помечено/);
 });
 
 test("отчёт команды: нет решений → секции «ждёт решения» нет", async () => {

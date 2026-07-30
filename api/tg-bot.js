@@ -226,6 +226,27 @@ export default async function handler(req, res) {
       return;
     }
 
+    // ПЕРЕВЫПУСК КОДОВ ПРИВЯЗКИ (если утекли). Существующие привязки НЕ ломаются — код нужен только для НОВОЙ
+    // привязки, а привязанные хранятся по chatId в people. Старые коды после этого недействительны.
+    if (action === "reissue-codes") {
+      const gen = () => Math.random().toString(36).slice(2, 8).toUpperCase();
+      const codes = { rop: gen(), owner: gen(), marketing: gen() };
+      await rsetJSON(K.codes, codes);
+      res.status(200).json({ ok: true, codes });
+      return;
+    }
+    // ОСОЗНАННОЕ СОВМЕЩЕНИЕ РОЛЕЙ: пометить, что роль X — тот же человек, что роль Y (напр. marketing=owner).
+    // Тогда коллизия chatId не считается подозрительной и в отчёт не попадает. {role, with} — пометить; без with — снять.
+    if (action === "combine-role") {
+      const role = b.role || q.role, wth = b.with || q.with || null;
+      if (!role) { res.status(400).json({ error: "нужен role" }); return; }
+      const map = (await rgetJSON("taskagent:rolecombine", {})) || {};
+      if (wth) map[role] = wth; else delete map[role];
+      await rsetJSON("taskagent:rolecombine", map);
+      res.status(200).json({ ok: true, combine: map });
+      return;
+    }
+
     res.status(400).json({ error: "unknown action" });
     return;
   }
