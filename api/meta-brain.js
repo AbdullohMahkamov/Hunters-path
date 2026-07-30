@@ -443,15 +443,11 @@ export async function runDailyBrain(org = ORG, force = false) {
   const dg = buildDigest(proposals, nowMs, cfg);
   for (const e of dg.expired) { const j = proposals.findIndex((x) => x.id === e.id); if (j >= 0) proposals[j] = { ...proposals[j], status: "expired", expiredAt: nowMs }; }
   await rsetJSON(K.proposals, proposals.slice(-CAP.proposals));
-  const delivery = await sendDigest(dg, cfg);
-  await rsetJSON(K.lastrun, { at: nowMs, day: nowDay, observed: observations.length, sent: created.length, created: created.length, totalOpen: dg.totalOpen, expired: dg.expired.length, delivered: !!(delivery && delivery.ok), diag });
-
-  // ничего открытого и ничего нового → тихо; РАЗ В НЕДЕЛЮ heartbeat как раньше
-  if (!dg.totalOpen && !created.length && tkDow() === cfg.heartbeatDow) {
-    const ppl = await getPeople().catch(() => ({}));
-    if (ppl.owner && ppl.owner.chatId) await sendTg("owner", ppl.owner.chatId, `🧠 Общий мозг: за неделю сводных наблюдений уровня «предложить действие» не набралось. Источники сверяю ежедневно — как появится подтверждённый с двух сторон сигнал, пришлю предложение.`);
-  }
-  return { ok: true, observed: observations.length, created: created.length, totalOpen: dg.totalOpen, expired: dg.expired.length, delivered: !!(delivery && delivery.ok), ids: created.map((c) => c.id), diag };
+  // СВОДКА ВЛАДЕЛЬЦУ БОЛЬШЕ НЕ ШЛЁТСЯ (убрали слой «система рассказывает о наблюдениях»). Предложения работают
+  // ВНУТРИ: накапливаются здесь, советник видит их в чате (pendingBlock), а результат — новые задачи — в отчёте
+  // по команде. Дайджест по-прежнему СЧИТАЕМ (нужен для протухания/статистики), просто не отправляем.
+  await rsetJSON(K.lastrun, { at: nowMs, day: nowDay, observed: observations.length, sent: created.length, created: created.length, totalOpen: dg.totalOpen, expired: dg.expired.length, delivered: false, diag });
+  return { ok: true, observed: observations.length, created: created.length, totalOpen: dg.totalOpen, expired: dg.expired.length, delivered: false, ids: created.map((c) => c.id), diag };
 }
 
 // ОТПРАВКА СВОДКИ владельцу + ФИКСАЦИЯ ФАКТА ДОСТАВКИ (чтобы сбой Telegram не был молчаливым).

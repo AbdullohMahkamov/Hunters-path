@@ -219,13 +219,9 @@ export async function proposePlan(org = ORG, force = false, opts = {}) {
   const periodKey = goal.period ? goal.period.label : "";
   // уже подтверждён план под этот период → ничего не делаем
   if (!force && active && active.periodKey === periodKey) return { ok: true, skipped: "already_active", periodKey };
-  // есть неподтверждённое предложение под этот период → напомним по таймауту, но не плодим
+  // есть неподтверждённое предложение под этот период → НЕ шлём отдельное напоминание: оно теперь строкой в
+  // утреннем отчёте по команде («⏳ план ждёт подтверждения» + кнопки), каждый день, пока не решено.
   if (!force && pending && pending.periodKey === periodKey) {
-    const ageH = (Date.now() - (pending.at || 0)) / 3600000;
-    if (ageH >= REMIND_AFTER_H && !pending.reminded) {
-      const ppl = await getPeople(); if (ppl.owner && ppl.owner.chatId) { await sendTg("owner", ppl.owner.chatId, `⏰ Напоминание: план под цель «${periodKey}» ждёт вашего решения (подтвердить / отклонить / пересчитать).`); pending.reminded = true; await rsetJSON(K.pending, pending); }
-      return { ok: true, reminded: true, periodKey };
-    }
     return { ok: true, skipped: "pending_waiting", periodKey };
   }
   const plan = await buildPlan(org, opts);

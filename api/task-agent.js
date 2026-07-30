@@ -18,7 +18,7 @@ import { sendTg, getPeople, pushChat, getChat, sleep } from "./tg-bot.js";
 // MOP Agent не строит свой канал — его находки вливаются в ЭТОТ же список задач РОПа
 // и дальше едут по уже работающей машине: пинг → диалог → порог 13:00 → эскалация владельцу.
 import { getOpenMopFindings, getFreshAutoClosed, closeMopFinding, getMopLastRun, runMopAgent } from "./mop-agent.js";
-import { getConfirmedMetaTasks, closeMetaProposal } from "./meta-brain.js"; // ОБЩИЙ МОЗГ: 3-й источник задач (подтверждённые владельцем сводные наблюдения)
+import { getConfirmedMetaTasks, closeMetaProposal, impactTier } from "./meta-brain.js"; // ОБЩИЙ МОЗГ: 3-й источник задач + классификатор влияния (для порога эскалации)
 import { runNightly } from "./dev-agent.js"; // для РЕАЛЬНОГО перезапуска анализа по вердикту владельца в споре
 
 const REDIS_URL = process.env.UPSTASH_REDIS_REST_URL;
@@ -29,6 +29,17 @@ const MODEL_LIGHT = "claude-haiku-4-5-20251001"; // routine: формирова�
 const ORG = "hunter"; // тест-фаза: один клиент. Архитектурно расширяемо (параметр org).
 
 const K = { status: "taskagent:status", escalations: "taskagent:escalations", config: "taskagent:config" };
+
+// ПОРОГ отдельного пуша эскалации владельцу (иначе флуд). Высокий и намеренно строгий:
+//  • важность = ДЕНЬГИ: impactTier>=2 — ТОТ ЖЕ классификатор, что у очереди предложений (REVENUE_RX уже ловит
+//    «лиды без звонка / зависшие сделки / искажающие статусы / конверсия / оплата» — прямая потеря денег из
+//    ЛЮБОГО источника, не только разрыв к цели);
+//  • устойчивое игнорирование + дедлайн сорван ≥2 дней (hoursOverdue>=48) — первый пропуск не будит.
+// Всё, что порог не прошло, всё равно записано (taskagent:escalations) и видно в утреннем ОТЧЁТЕ ПО КОМАНДЕ.
+export function escalationPushGate(t, status = "") {
+  const money = impactTier({ title: t.title, statement: status, proposedTask: { title: t.title, why: t.why } }) >= 2;
+  return money && ((t.hoursOverdue || 0) >= 48);
+}
 const DEFAULT_CONFIG = {
   escalationHour: 13,      // жёсткий порог эскалации (Ташкент, UTC+5)
   pingFromHour: 9,         // раньше этого часа РОПу не пишем
@@ -93,7 +104,7 @@ const hoursOverdue = (deadline) => { const dl = daysLeft(deadline); return dl !=
 // 1) План Altrone (appdata.customPlan.sales) — задачи ОП, РОП закрывает их в интерфейсе.
 // 2) Находки MOP Agent (mopagent:findings) — задачи по отделу / по конкретному МОПу.
 // Оба идут РОПу ОДНИМ потоком через один бот и один тред, различаясь пометкой 🏢 / 👤.
-async function loadSalesTasks() {
+export async function loadSalesTasks() {
   const out = [];
   // ── источник 1: план ──
   const app = await rgetJSON(`appdata:${ORG}`, null);
@@ -812,8 +823,14 @@ export async function runTick(force) {
       const list = await rgetJSON(K.escalations, []);
       list.push(esc);
       await rsetJSON(K.escalations, list.slice(-200));
-      // владельцу в Telegram — ТОЛЬКО факты + дословная переписка
-      if (people.owner && people.owner.chatId) {
+      // ПОРОГ отдельного пуша владельцу (иначе флуд). Записываем ВСЕГДА (esc выше) — оно попадёт в утренний
+      // отчёт по команде («просрочено N, тормозит X»). НО будим владельца отдельным сообщением ТОЛЬКО когда:
+      //  1) задача про деньги (impactTier>=2 — тот же классификатор, что у очереди предложений: лиды без
+      //     звонка, зависшие сделки, искажающие статусы уже попадают сюда через REVENUE_RX);
+      //  2) устойчивое игнорирование + дедлайн сорван ≥2 дней (hoursOverdue>=48). Первый пропуск не будит.
+      const pushOwner = escalationPushGate(t, status);
+      // владельцу в Telegram — ТОЛЬКО факты + дословная переписка (только по высокому порогу)
+      if (pushOwner && people.owner && people.owner.chatId) {
         const rWho = rcpt === "marketing" ? "Маркетолог" : "РОП";
         const rWhoDat = rcpt === "marketing" ? "Маркетологу" : "РОПу";
         const convTxt = conv.length

@@ -392,14 +392,10 @@ export async function runMarketingDaily(org = ORG, force = false) {
   const newHist = [...(Array.isArray(history) ? history.filter((h) => h.day !== day) : []), historyPoint(snap)].slice(-30);
   await rsetJSON(K.history, newHist);
 
-  // дайджест владельцу — раз в сутки (адресат ТОЛЬКО owner)
-  let text = buildDigest(snap);
-  // напоминание об открытых маркетинг-задачах (ведёт Task Agent) — чтобы ничего не терялось
-  const openMk = (await rgetJSON("marketingtasks", [])).filter((t) => !t.status || t.status === "open");
-  if (openMk.length) text += `\n\n📋 <b>Открытых маркетинг-задач: ${openMk.length}</b>\n` + openMk.slice(0, 5).map((t) => `• ${t.title}`).join("\n");
-  let sent = false;
-  const ppl = await getPeople().catch(() => null);
-  if (ppl && ppl.owner && ppl.owner.chatId) { await sendTg("owner", ppl.owner.chatId, text); sent = true; }
+  // ДАЙДЖЕСТ ВЛАДЕЛЬЦУ БОЛЬШЕ НЕ ШЛЁТСЯ (нарратив убран). Цифры маркетинга — расход и цена лида — попадают в
+  // утренний БИЗНЕС-отчёт (reports.js) из этого же снапшота. Здесь только СЧИТАЕМ и сохраняем снапшот.
+  const text = buildDigest(snap); // оставляем для превью в админ-хендлере (?action=peek), не отправляем
+  const sent = false;
 
   await rsetJSON(K.lastrun, { at: new Date().toISOString(), day, sent, adsAvailable: ads.available, igOk: !!(ig && ig.ok), cac: unit.cac.value != null ? unit.cac.value : null, roas: unit.roas.value != null ? unit.roas.value : null });
   return { ok: true, day, sent, adsAvailable: ads.available, igOk: !!(ig && ig.ok), cac: unit.cac, roas: unit.roas, digestPreview: text };

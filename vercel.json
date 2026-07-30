@@ -48,6 +48,9 @@
     "api/planner.js": {
       "maxDuration": 120
     },
+    "api/reports.js": {
+      "maxDuration": 60
+    },
     "api/goal.js": {
       "maxDuration": 30
     }
@@ -94,10 +97,6 @@
       "schedule": "10 4-9 * * *"
     },
     {
-      "path": "/api/digest?action=cron-sweep",
-      "schedule": "40 * * * *"
-    },
-    {
       "path": "/api/deepsales?action=plan-digest",
       "schedule": "0 5 * * 1"
     },
@@ -108,14 +107,6 @@
     {
       "path": "/api/deepsales?action=result-sweep&cron=1",
       "schedule": "25 * * * *"
-    },
-    {
-      "path": "/api/deepsales?action=progress-report&kind=monday&cron=1",
-      "schedule": "15 5 * * 1"
-    },
-    {
-      "path": "/api/deepsales?action=progress-report&kind=thursday&cron=1",
-      "schedule": "15 5 * * 4"
     },
     {
       "path": "/api/meta-brain?action=daily&cron=1",
@@ -138,8 +129,12 @@
       "schedule": "0 3 * * *"
     },
     {
-      "path": "/api/planner?action=daily-report&cron=1",
+      "path": "/api/reports?action=business&cron=1",
       "schedule": "30 3 * * *"
+    },
+    {
+      "path": "/api/reports?action=team&cron=1",
+      "schedule": "40 3 * * *"
     },
     {
       "path": "/api/planner?action=month-prompt&cron=1",

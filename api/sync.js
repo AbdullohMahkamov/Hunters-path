@@ -661,6 +661,11 @@ export default async function handler(req, res) {
       if (!dates.includes(today)) dates.push(today);
       dates = dates.slice(-90); // храним максимум 90 дней
       await redisSet(redisUrl, redisToken, K("snap:list"), JSON.stringify(dates));
+      // === ДНЕВНОЙ СРЕЗ ЗА СЕГОДНЯ (по Ташкенту) — для утреннего бизнес-отчёта «за вчера» ===
+      // Ключ по ташкентской дате; перезаписываем растущими значениями дня. К концу дня держит итог дня;
+      // после полуночи ключ сменится, а вчерашний останется замороженным на последнем значении (~23:00).
+      const tkToday = new Date(Date.now() + 5 * 3600000).toISOString().slice(0, 10);
+      await redisSet(redisUrl, redisToken, K(`bizday:${tkToday}`), JSON.stringify({ date: tkToday, sold: result.totals.soldToday, revenue: result.totals.revenueToday, leads: result.totals.leadsToday, at: Date.now() }));
     } catch (e) { /* снимок не критичен, не роняем sync */ }
 
     res.status(200).json({ ok: true, ...result });

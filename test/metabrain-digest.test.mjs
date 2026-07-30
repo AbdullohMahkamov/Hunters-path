@@ -82,8 +82,9 @@ test("13 старых pending попадают в сводку (ни одно н
   assert.equal(dg.top.length, 3, "топ-3 для сводки");
 });
 
-// ── ДОСТАВКА ФИКСИРУЕТСЯ (через runDailyBrain) ──
-test("доставка сводки фиксируется: lastdelivery.ok=true + сообщение владельцу", async () => {
+// ── СВОДКА ВЛАДЕЛЬЦУ БОЛЬШЕ НЕ ШЛЁТСЯ (убран слой «система рассказывает о наблюдениях») ──
+// Предложения работают ВНУТРИ: накапливаются, советник видит их в чате, результат — задачи в отчёте по команде.
+test("meta-brain НЕ шлёт сводку владельцу; предложения остаются внутри", async () => {
   setAnthropic(() => ({ content: [{ type: "text", text: "[]" }], stop_reason: "end_turn" })); // новых наблюдений нет
   kvSetJSON("taskagent:people", { owner: { chatId: 333, lang: "ru" } });
   kvSetJSON("metabrain:proposals", [
@@ -92,21 +93,21 @@ test("доставка сводки фиксируется: lastdelivery.ok=true
   ]);
   const r = await M.runDailyBrain("hunter", true);
   assert.equal(r.ok, true);
+  assert.equal(r.delivered, false, "флаг доставки владельцу — false (не шлём)");
   const ownerMsgs = tgCalls.filter((c) => c.url.includes("/botOWNTOK/sendMessage") && c.body && c.body.chat_id === 333);
-  assert.ok(ownerMsgs.length >= 1, "сводка ушла владельцу");
-  const del = kvGetJSON("metabrain:lastdelivery");
-  assert.equal(del.ok, true);
-  assert.ok(del.messageId, "messageId сохранён");
+  assert.equal(ownerMsgs.length, 0, "владельцу ничего не ушло");
+  const props = kvGetJSON("metabrain:proposals");
+  assert.ok(props && props.length >= 2, "предложения не потеряны — работают как вход для задач");
 });
 
-test("доставка НЕ молчит при сбое: owner не привязан → lastdelivery.ok=false", async () => {
+test("meta-brain: без привязанного owner не падает и всё равно ничего не шлёт", async () => {
   setAnthropic(() => ({ content: [{ type: "text", text: "[]" }], stop_reason: "end_turn" }));
   kvSetJSON("taskagent:people", {}); // owner НЕ привязан
   kvSetJSON("metabrain:proposals", [P({ id: "a", topicKey: "leads_no_call", title: "27 лидов без звонка", at: now - 5 * DAY })]);
-  await M.runDailyBrain("hunter", true);
-  const del = kvGetJSON("metabrain:lastdelivery");
-  assert.equal(del.ok, false);
-  assert.ok(del.error, "причина сбоя доставки записана, а не проглочена");
+  const r = await M.runDailyBrain("hunter", true);
+  assert.equal(r.ok, true);
+  assert.equal(r.delivered, false);
+  assert.equal(tgCalls.filter((c) => c.url.includes("/botOWNTOK/sendMessage")).length, 0);
 });
 
 // ── САМО-ОТЗЫВ ЛОЖНОЙ adset-spend-находки (артефакт валют) ──

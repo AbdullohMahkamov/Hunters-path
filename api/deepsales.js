@@ -461,15 +461,12 @@ async function buildPlanDigest(org) {
 
 // Решение владельца по недельному плану (кнопки owner-бота tplan:run|review|decline).
 async function sendPlanProposal(org) {
+  // Готовим недельный план разбора (pending), но ОТДЕЛЬНОЕ сообщение владельцу НЕ шлём. Решение «потратить на
+  // разбор» теперь всплывает строкой в утреннем ОТЧЁТЕ ПО КОМАНДЕ с кнопкой (reports.js) — каждый день, пока не
+  // решено. Так канал DeepSales не умирает без Mini App-очереди, но и не флудит отдельными сообщениями.
   const plan = await getWeeklyTranscriptionPlan(org);
   await rsetJSON(`transcriptplan:pending:${org}`, { at: Date.now(), plan: plan.plan, totals: plan.totals, confirmed: false, declined: false });
-  const people = await getPeople();
-  if (!(people.owner && people.owner.chatId)) return;
-  const kb = { reply_markup: { inline_keyboard: [
-    [{ text: "✅ Запустить", callback_data: "tplan:run" }, { text: "🔄 Пересмотр", callback_data: "tplan:review" }],
-    [{ text: "✖️ Отказ", callback_data: "tplan:decline" }],
-  ] } };
-  await sendTg("owner", people.owner.chatId, await buildPlanDigest(org), kb);
+  return { ok: true, pendingCreated: true };
 }
 // self-call к своим же action'ам (audit-pick/analyze) — по CRON_SECRET, чтобы изолировать тяжёлые шаги по одному вызову.
 const SELF_BASE = "https://hunters-path.vercel.app/api/deepsales";
@@ -503,11 +500,10 @@ export async function execDaily(org) {
   }
   if (!target) {
     const weekDone = plan.every((r) => !(r.calls > 0) || (pend.spend.byMop[r.mop] || 0) >= r.calls);
-    if (weekDone && !pend.spend.weekDoneNotified) {
-      pend.spend.weekDoneNotified = true; await rsetJSON(key, pend);
-      try { const ppl = await getPeople(); const tot = Object.values(pend.spend.byMop).reduce((s, n) => s + n, 0);
-        if (ppl.owner && ppl.owner.chatId) await sendTg("owner", ppl.owner.chatId, `✅ Недельный план разбора звонков выполнен полностью: <b>${tot}</b> звонков за неделю. Результаты — в «Анализ звонков» и метриках.`); } catch (e) {}
-    } else { await rsetJSON(key, pend); }
+    // Итог недели владельцу отдельным сообщением НЕ шлём (убрали нарратив DeepSales) — результаты в «Анализ
+    // звонков» и метриках. Флаг ставим, чтобы крон не крутил проверку повторно.
+    if (weekDone && !pend.spend.weekDoneNotified) { pend.spend.weekDoneNotified = true; await rsetJSON(key, pend); }
+    else { await rsetJSON(key, pend); }
     return { done: true, today, note: weekDone ? "неделя выполнена" : "дневная норма на сегодня выбрана" };
   }
   const budgetMin = Math.max(6, Math.round(need * perMin));
@@ -630,12 +626,12 @@ export default async function handler(req, res) {
     res.status(200).json({ ok: !!(r && r.ok), sent: !!(r && r.ok), preview: msg, error: (r && r.error) || null });
     return;
   }
-  if (action === "progress-report") { // Пн+Чт: отчёт «от/до» (к baseline и к прошлому отчёту) → Digest
+  if (action === "progress-report") { // ВЫВЕДЕН: прогресс DeepSales владельцу отдельно НЕ шлётся (нарратив убран).
+    // Обновляем снимок (для «vs прошлый» в самом разделе), но НИЧЕГО не отправляем.
     const kind = b.kind || (req.query && req.query.kind) || ((new Date(Date.now() + 5 * 3600000)).getUTCDay() === 4 ? "thursday" : "monday");
-    const { text, snapshot } = await buildProgressReport(org, kind);
-    const r = await sendDigest(text);
-    if (r && r.ok) await rsetJSON(LASTREPORT_KEY(org), { at: Date.now(), snapshot }); // снимок для «vs прошлый отчёт» в следующем
-    res.status(200).json({ ok: !!(r && r.ok), sent: !!(r && r.ok), kind, preview: text, error: (r && r.error) || null });
+    const { snapshot } = await buildProgressReport(org, kind);
+    await rsetJSON(LASTREPORT_KEY(org), { at: Date.now(), snapshot });
+    res.status(200).json({ ok: true, retired: true, sent: false, kind, note: "прогресс DeepSales больше не рассылается — см. раздел «Анализ звонков»" });
     return;
   }
   if (action === "plan-config") {

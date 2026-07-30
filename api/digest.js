@@ -145,7 +145,12 @@ function capSent(sent) {
   return sent;
 }
 
-async function digestSweep(opts = {}) {
+// ВЫВЕДЕН ИЗ ЭКСПЛУАТАЦИИ (2 отчёта вместо слоя «система рассказывает о наблюдениях»). Digest-бот больше
+// НЕ шлёт находки владельцу: они работают внутри как вход для задач, владелец видит результат в отчёте по
+// команде, а разбор — в чате советника. Функцию оставляем как no-op, чтобы залётный вызов ничего не отправил.
+async function digestSweep() { return { ok: true, retired: true, note: "Digest-бот выведен из эксплуатации: находки → задачи, не сообщения" }; }
+// eslint-disable-next-line no-unused-vars
+async function _digestSweepLegacy(opts = {}) {
   const cfg = await rgetJSON(DIGEST_KEY, null);
   if (!cfg || !cfg.chatId) return { ok: false, skipped: "не привязан" };
   if (!DIGEST_TOKEN || !AKEY) return { ok: false, skipped: "нет токена/ключа" };
@@ -179,7 +184,16 @@ async function seedBaseline() {
   return { seeded: n, total: all.length };
 }
 
-export { digestSweep, sendDigest };
+// Сохранить готовый seed для кнопки «Разобрать в советнике» под отчётом (не находка агента — свой текст).
+export async function saveRawHandoff(token, seed, title) {
+  const m = await rgetJSON(HANDOFF_KEY, {});
+  m[token] = { kind: "report", seed: String(seed || ""), title: String(title || "Отчёт").slice(0, 40), at: Date.now() };
+  const ks = Object.keys(m);
+  if (ks.length > HANDOFF_CAP) { ks.sort((a, b) => m[a].at - m[b].at); for (const k of ks.slice(0, ks.length - HANDOFF_CAP)) delete m[k]; }
+  await rsetJSON(HANDOFF_KEY, m);
+}
+
+export { digestSweep, sendDigest, genToken, handoffKb };
 
 export default async function handler(req, res) {
   res.setHeader("Cache-Control", "no-store");
