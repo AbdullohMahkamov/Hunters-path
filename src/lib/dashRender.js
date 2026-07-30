@@ -698,7 +698,7 @@ async function loadMarketingAgent() {
   try {
     const r = await fetch('/api/marketing-agent?action=ui&session=' + encodeURIComponent(getSession()))
     const d = await r.json()
-    if (d && d.ok) { _marketingData = d; const blk = document.getElementById('marketingAgentBlock'); if (blk) blk.style.display = ''; renderMarketingAgent(d) }
+    if (d && d.ok) { _marketingData = d; const blk = document.getElementById('marketingAgentPanel'); if (blk) blk.style.display = ''; renderMarketingAgent(d) }
   } catch (e) { /* ignore — панель просто не покажется */ }
 }
 function mUndiag(x) { return (x && x.undiagnosable) ? x.undiagnosable : null }
@@ -711,28 +711,16 @@ function renderMarketingAgent(m) {
     <div style="font-size:10.5px;color:var(--txt2);">${label}</div>
     <div style="font-size:18px;font-weight:800;color:${color || 'var(--txt)'};line-height:1.2;">${value}</div>
     ${sub ? `<div style="font-size:10.5px;color:var(--txt3);margin-top:2px;">${sub}</div>` : ''}</div>`
-  // реальная трата на рекламу по Meta (raw + приведение к UZS)
-  let spendVal = '—', spendSub = ''
-  if (ads.available && cy.spendRaw != null) {
-    if (cy.adCurrency === 'USD' && cy.spendUZS != null) { spendVal = num(cy.spendUZS) + ' сум'; spendSub = '$' + num(cy.spendRaw) + ' · курс ' + cy.rate }
-    else if (cy.adCurrency === 'UZS') { spendVal = num(cy.spendRaw) + ' сум' }
-    else { spendVal = num(cy.spendRaw) + ' ' + (cy.adCurrency || '?'); spendSub = 'в сум не привёл — нет курса' }
-  } else if (!ads.available) { spendSub = ads.reason || 'нет кэша Meta' }
-  const roasVal = roas.value != null ? roas.value + '×' : '—'
-  const roasColor = roas.value == null ? 'var(--txt3)' : (roas.value >= 1 ? 'var(--green)' : 'var(--red)')
+  // Расход и ROAS НЕ дублируем — они уже в сводной карточке аудиторий выше. Здесь только то, чего там нет.
   const cacVal = cac.value != null ? num(cac.value) + ' сум' : '—'
   const cards = [
-    card('Реклама по Meta (реально)', spendVal, spendSub, 'var(--accent)'),
-    card('ROAS', roasVal, roas.value != null ? 'продажи месяца ÷ реклама' : (mUndiag(roas) ? 'не диагностируется' : ''), roasColor),
     card('CAC (за клиента)', cacVal, cac.value != null ? cac.customers + ' сделок' : (mUndiag(cac) ? 'не диагностируется' : ''), 'var(--txt)'),
     card('CTR / CPC / CPM', (t.ctr != null ? t.ctr + '%' : '—'), (t.cpc != null ? 'CPC ' + num(t.cpc) + ' · ' : '') + (t.cpm != null ? 'CPM ' + num(t.cpm) : ''), 'var(--txt)'),
   ]
   if (ig.ok) cards.push(card('Instagram', num(ig.followers_count) + ' подпис.', ig.reach != null ? 'reach ' + num(ig.reach) : 'reach н/д', 'var(--txt)'))
-  // ВЫВОДЫ — детерминированные, из тех же чисел
+  // ВЫВОДЫ — детерминированные. Окупаемость/ROAS уже в сводной карточке выше; здесь — то, чего там нет.
   const concl = []
-  if (mUndiag(roas)) concl.push('⚠️ ROAS не диагностируется: ' + roas.undiagnosable)
-  else if (roas.value != null) { if (roas.value >= 3) concl.push('✅ Реклама окупается: ROAS ' + roas.value + '× — на 1 сум рекламы ' + roas.value + ' сум выручки.'); else if (roas.value < 1) concl.push('🔴 Реклама в минус: ROAS ' + roas.value + '× (<1).'); else concl.push('🟡 Реклама на грани: ROAS ' + roas.value + '×.') }
-  if (mUndiag(cac) && !mUndiag(roas)) concl.push('⚠️ CAC не диагностируется: ' + cac.undiagnosable)
+  if (mUndiag(cac)) concl.push('⚠️ CAC не диагностируется: ' + cac.undiagnosable)
   if (m.period && !m.period.aligned) concl.push('⚠️ Периоды adspend/продаж разошлись: ' + m.period.reason)
   if (cy && !cy.aligned && cy.reason) concl.push('⚠️ Валюта: ' + cy.reason)
   if (!ig.ok) concl.push('ℹ️ Instagram выключен: ' + (ig.error || 'нет данных') + ' — нужны права токена instagram_basic + instagram_manage_insights и META_IG_USER_ID.')
@@ -747,6 +735,7 @@ function renderMarketingAgent(m) {
       </div>`).join('')
     : `<div style="font-size:11px;color:var(--txt3);">Маркетинг-задач нет. Советник создаёт их кнопкой «Поставить задачу маркетологу».</div>`
   box.innerHTML = `
+    <div style="font-size:12.5px;font-weight:700;margin-bottom:8px;">Юнит-экономика и качество трафика</div>
     <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(150px,1fr));gap:8px;">${cards.join('')}</div>
     <div style="margin-top:10px;font-size:10.5px;color:var(--txt3);">Окно: текущий месяц${m.period && m.period.target ? (' (' + m.period.target + ')') : ''} · валюта аккаунта: ${cy.adCurrency || 'н/д'}${ads.updatedAt ? (' · Meta обновлён ' + new Date(ads.updatedAt).toLocaleDateString('ru-RU')) : ''}</div>
     <div style="margin-top:8px;padding-top:8px;border-top:1px solid var(--line);">
