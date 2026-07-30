@@ -14,6 +14,7 @@ import { getVerifiedFunnel } from "./dev-agent.js";
 import { sendTg, getPeople } from "./tg-bot.js";
 import { addMarketingTask } from "./task-agent.js";
 import { ROUTINE, getAutonomy, classifyTaskRisk, reassessBeforeDispatch, isWhitelisted, touchWhitelist, autonomousCountToday, recordAutonomous, getTodayAutonomous } from "./autonomy.js";
+import { assessRealism } from "./goal-realism.js"; // проверка реалистичности: split задач + гейт автономии
 
 const REDIS_URL = process.env.UPSTASH_REDIS_REST_URL;
 const REDIS_TOKEN = process.env.UPSTASH_REDIS_REST_TOKEN;
@@ -86,7 +87,7 @@ export function decomposeGap(gapUZS, f) {
 }
 
 // ── СБОРКА ПЛАНА (детерминированно) + формулировка задач (LLM из готовых чисел) ──
-export async function buildPlan(org = ORG) {
+export async function buildPlan(org = ORG, opts = {}) {
   const goal = await getGoal(org);
   if (!goal || !goal.amountUZS) return { ok: false, reason: "no_goal", human: "Цель не задана — задайте цель, чтобы построить план." };
   const funnel = await getVerifiedFunnel(org).catch(() => null);
@@ -131,7 +132,28 @@ export async function buildPlan(org = ORG) {
     return { ok: true, onPace: true, belowThreshold: true, facts, decomposition: null, tasks: { rop: [], marketing: [] }, human: `Разрыв ${gapPct}% (${num(gap)} сум) — в пределах нормальных колебаний (<${gapPctMinEff}%${nearEnd ? ", порог ужат под конец периода" : ""}). Текущий темп закрывает его сам, дёргать людей не нужно.` };
   }
 
-  const dec = decomposeGap(gap, f);
+  // ── РЕАЛИЗМ: не перекладываем НЕВЫПОЛНИМУЮ часть цели на исполнителей (принцип «б»). ──
+  // Если цель ЖЁСТКО упирается в людей (binding "team" — нужно больше исторического потолка), задачи строим
+  // под ДОСТИЖИМУЮ часть (feasibleGoal по устойчивому темпу), а разрыв сверх неё — это РЕШЕНИЕ ВЛАДЕЛЬЦА
+  // (+K менеджеров / бюджет), а не задача исполнителю. team_strain/capacity_unknown НЕ режем (цель достижима
+  // либо не проверена) — там задачи под полную цель, но автономия всё равно гейтится (см. proposePlan).
+  const realism = opts.realism || await assessRealism(org).catch(() => null);
+  const realismBrief = realism && realism.computable ? { binding: realism.binding, feasible: realism.feasible, feasibleGoal: realism.feasibleGoal, addManagers: realism.addManagers } : null;
+  let targetGap = gap;
+  if (realism && realism.binding === "team" && realism.feasibleGoal != null && realism.feasibleGoal < goal.amountUZS) {
+    const effectiveGoalUZS = Math.round(realism.feasibleGoal);
+    targetGap = Math.max(0, Math.round(effectiveGoalUZS - forecast));
+    facts.ownerDecision = { unreachableUZS: Math.round(goal.amountUZS - effectiveGoalUZS), feasibleGoalUZS: effectiveGoalUZS, addManagers: realism.addManagers || null };
+    facts.effectiveGoalUZS = effectiveGoalUZS;
+    facts.targetGap = targetGap;
+    // весь разрыв за пределами возможностей команды → исполнителям задач НЕТ, это только решение владельца
+    if (targetGap <= 0) {
+      return { ok: true, onPace: false, allOwnerDecision: true, facts, realism: realismBrief, decomposition: null, tasks: { rop: [], marketing: [] },
+        human: `Команда уже работает на максимуме устойчивого темпа. Разрыв ${num(gap)} сум до цели закрыть силами текущей команды нельзя — это решение владельца: ${realism.addManagers ? `+${realism.addManagers} менеджер(ов)` : "расширение команды"} либо снижение цели до ~${num(effectiveGoalUZS)} сум.` };
+    }
+  }
+
+  const dec = decomposeGap(targetGap, f);
 
   // LLM формулирует ЗАДАЧИ ИЗ ГОТОВЫХ ЧИСЕЛ (не считает). Опора — реальное узкое место воронки.
   let tasks = { rop: [], marketing: [] };
@@ -143,7 +165,8 @@ export async function buildPlan(org = ORG) {
 Верни СТРОГО JSON без markdown:
 {"rop":[{"title":"...","why":"...","step":"...","deadlineDays":7}],"marketing":[{"title":"...","why":"...","step":"...","deadlineDays":7}]}
 Язык — русский, простыми словами для владельца. Если рычаг маркетинга не дан в данных — marketing оставь пустым.`;
-    const userMsg = `ЦЕЛЬ: ${num(goal.amountUZS)} сум за ${period.label}. Заработано ${num(earned)}, прогноз на конце ${num(forecast)} → РАЗРЫВ ${num(gap)} сум.
+    const userMsg = `ЦЕЛЬ: ${num(goal.amountUZS)} сум за ${period.label}. Заработано ${num(earned)}, прогноз на конце ${num(forecast)}.
+${facts.ownerDecision ? `ВНИМАНИЕ: часть цели выше возможностей команды. Задачи ставь ТОЛЬКО под ДОСТИЖИМУЮ часть — разрыв ${num(targetGap)} сум (до ~${num(facts.effectiveGoalUZS)} сум). Остаток ${num(facts.ownerDecision.unreachableUZS)} сум — решение владельца (+менеджеры/бюджет), НЕ ставь под него задачи людям.` : `РАЗРЫВ ${num(targetGap)} сум.`}
 Средний чек ${num(f.avgCheck)} сум → нужно ещё ~${dec.extraSales} продаж.
 Рычаг «больше лидов»: ${dec.leadsLever ? `+${dec.leadsLever.extraLeads} лидов даёт +${dec.leadsLever.extraSales} продаж при текущей конверсии` : "не применим (нет данных конверсии)"}.
 Рычаг «выше конверсия»: ${dec.convLever ? `поднять конверсию с ${dec.convLever.currentConvPct}% до ${dec.convLever.neededConvPct}% при текущем потоке лидов` : "не применим"}.
@@ -160,7 +183,7 @@ export async function buildPlan(org = ORG) {
   // ДЕТЕРМИНИРОВАННЫЙ topicKey (НЕ из LLM-текста): РОП-задачи закрывают узкое место (in-process), маркетинг = лиды
   for (const t of (tasks.rop || [])) { t.topicKey = "rop_conversion"; t.recipient = "rop"; }
   for (const t of (tasks.marketing || [])) { t.topicKey = "mkt_leads"; t.recipient = "marketing"; }
-  return { ok: true, onPace: false, facts, decomposition: dec, tasks, human: null };
+  return { ok: true, onPace: false, facts, decomposition: dec, tasks, realism: realismBrief, human: null };
 }
 
 function fmtPlanForOwner(plan) {
@@ -172,6 +195,11 @@ function fmtPlanForOwner(plan) {
   if (plan.onPace) { s += `\n✅ ${plan.human}`; return s; }
   s += `Разрыв до цели: <b>${num(f.gap)} сум</b> ≈ ${plan.decomposition.extraSales} доп. продаж.\n`;
   s += `Осталось рабочих дней: ${f.workdays.left}.\n`;
+  // РЕАЛИЗМ (принцип «б»): если часть цели выше возможностей команды — задачи только под достижимую часть,
+  // а невыполнимый остаток честно помечен как РЕШЕНИЕ ВЛАДЕЛЬЦА, а не спущен исполнителям задачей.
+  if (f.ownerDecision) {
+    s += `\n⚠️ <b>Часть цели выше устойчивых возможностей команды.</b> Задачи ниже — под достижимую часть (~${num(f.effectiveGoalUZS)} сум). Разрыв сверх неё (<b>${num(f.ownerDecision.unreachableUZS)} сум</b>) силами текущей команды не закрыть — это ваше решение: ${f.ownerDecision.addManagers ? `+${f.ownerDecision.addManagers} менеджер(ов)` : "расширение команды"} или скорректировать цель.\n`;
+  }
   if (plan.decomposition.leadsLever) s += `• Маркетинг: +${plan.decomposition.leadsLever.extraLeads} лидов → +${plan.decomposition.leadsLever.extraSales} продаж.\n`;
   if (plan.decomposition.convLever && plan.decomposition.convLever.neededConvPct != null) s += `• Продажи: конверсия ${plan.decomposition.convLever.currentConvPct}% → ${plan.decomposition.convLever.neededConvPct}%.\n`;
   if (f.bottleneck) s += `• Узкое место: ${f.bottleneck.stage} (${f.bottleneck.pct}%).\n`;
@@ -200,8 +228,14 @@ export async function proposePlan(org = ORG, force = false, opts = {}) {
     }
     return { ok: true, skipped: "pending_waiting", periodKey };
   }
-  const plan = await buildPlan(org);
+  const plan = await buildPlan(org, opts);
   const ppl = await getPeople();
+  // ВЕСЬ РАЗРЫВ за пределами команды → нет задач исполнителям, только решение владельца. Не автодиспатчим, не плодим pending.
+  if (plan.allOwnerDecision) {
+    if (opts.channel !== "chat" && ppl.owner && ppl.owner.chatId) await sendTg("owner", ppl.owner.chatId, `🎯 <b>Цель «${periodKey}»</b>\n\n${plan.human}`);
+    await rsetJSON(K.active, { periodKey, at: Date.now(), ownerDecisionOnly: true, facts: plan.facts });
+    return { ok: true, ownerDecisionOnly: true, periodKey, human: plan.human, preview: plan.human };
+  }
   if (!plan.ok) {
     // не строим вслепую — честно сообщаем владельцу, чего не хватает (из чата — вернём в чат, не в Telegram)
     if (opts.channel !== "chat" && ppl.owner && ppl.owner.chatId) await sendTg("owner", ppl.owner.chatId, `🎯 <b>План под цель · ${periodKey}</b>\n\n${plan.human || "План не построен."}`);
@@ -217,6 +251,9 @@ export async function proposePlan(org = ORG, force = false, opts = {}) {
   // ── КЛАССИФИКАЦИЯ рутина vs стратегия (на числах) → авто-раздача рутинных, гейт остальных ──
   const facts = plan.facts;
   const auto = await getAutonomy();
+  // НЕРЕАЛИСТИЧНОСТЬ = ВСЕГДА ГЕЙТ ВЛАДЕЛЬЦА, независимо от классификатора рутинности. Если цель не признана
+  // выполнимой (team / team_strain / capacity_unknown → feasible=false), автономия НЕ раздаёт задачи сама.
+  const forceGate = !!(plan.realism && plan.realism.feasible === false);
   const baseCtx = { autonomyEnabled: auto.enabled, gapPct: facts.gapPct, gapAbs: facts.gap, funnelTrust: facts.trust, dataFresh: facts.dataFresh, telephonySuspicious: facts.telephonySuspicious, maxPerDay: auto.maxPerDay, maxPerRopChat: auto.maxPerRopChat };
   const allTasks = [...(plan.tasks.rop || []).map((t) => ({ ...t, recipient: "rop" })), ...(plan.tasks.marketing || []).map((t) => ({ ...t, recipient: "marketing" }))];
   const gatedTasks = { rop: [], marketing: [] };
@@ -226,7 +263,7 @@ export async function proposePlan(org = ORG, force = false, opts = {}) {
     // ПОВТОРНАЯ проверка ЖИВОГО флага + лимитов ПРЯМО ПЕРЕД отправкой (закрывает гонку kill switch ↔ раздача)
     const d = await reassessBeforeDispatch(t, { ...baseCtx, whitelisted: wl });
     if (d.decision === "skip") continue; // разрыв в пределах шума — задача не нужна вовсе
-    if (d.decision === "auto") {
+    if (d.decision === "auto" && !forceGate) {
       const id = await createRopPlanTask(t, periodKey);
       await touchWhitelist(t.topicKey, facts.gap);
       await recordAutonomous({ taskId: id, title: t.title, recipient: "rop", topicKey: t.topicKey, gap: facts.gap, reason: d.reason });
