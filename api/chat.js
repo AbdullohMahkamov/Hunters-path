@@ -11,6 +11,7 @@ import { getOpenMopFindings, getFreshAutoClosed, getMopLastRun, getMopConfig } f
 import { getBalancesSummary } from "./gamification.js";
 import { getCallAnalysisBundle } from "./deepsales.js";
 import { parseGoalText, setGoal, getGoal } from "./goal.js";
+import { proposePlan } from "./planner.js";
 import { parseMargin, parseCpl, parseSchedule, setMargin, setCpl, setSchedule, missingSettings } from "./biz-settings.js";
 import { buildDiagnosticBundle, formatDiagnostic } from "./diagnostic.js";
 import { setAutonomyEnabled, getAutonomy } from "./autonomy.js";
@@ -261,6 +262,27 @@ async function logJargonLeak(org, question, hits) {
     arr.push({ at: Date.now(), org: org || "hunter", q: String(question || "").slice(0, 200), hits });
     await fetch(`${url}/set/${encodeURIComponent(key)}`, { method: "POST", headers: { Authorization: `Bearer ${token}` }, body: JSON.stringify(arr.slice(-200)) });
   } catch (e) {}
+}
+
+// pt2: КОНТЕКСТ «ОЖИДАЮТ РЕШЕНИЯ / АКТИВНЫЕ ЗАДАЧИ» — чтобы советник мог подтверждать план,
+// принимать предложения мозга и отзывать задачи ПРЯМО ИЗ ЧАТА (кнопки plan_*/mb_*/retract_task).
+async function pendingBlock(org) {
+  const url = process.env.UPSTASH_REDIS_REST_URL, token = process.env.UPSTASH_REDIS_REST_TOKEN;
+  if (!url || !token) return "";
+  const rj = async (k) => { try { const r = await fetch(`${url}/get/${encodeURIComponent(k)}`, { headers: { Authorization: `Bearer ${token}` } }); const d = await r.json(); return d && d.result != null ? JSON.parse(d.result) : null; } catch (e) { return null; } };
+  try {
+    const [pend, props, app, mtasks] = await Promise.all([rj("planner:pending:hunter"), rj("metabrain:proposals"), rj("appdata:hunter"), rj("marketingtasks")]);
+    let s = "";
+    if (pend && pend.plan) s += `\n\n=== ОЖИДАЮТ РЕШЕНИЯ: ПЛАН ПОД ЦЕЛЬ (${pend.periodKey}) ===\nПлан догона построен и ЖДЁТ подтверждения владельца. Если разговор про план/цель или владелец просит подтвердить/пересчитать — дай кнопки plan_confirm / plan_recalc / plan_reject. Подтверждение = задачи сразу РОПу и маркетологу.\n`;
+    const openProps = Array.isArray(props) ? props.filter((p) => p && ["pending", "awaiting_edit", "edited"].includes(p.status)) : [];
+    if (openProps.length) s += `\nОЖИДАЮТ РЕШЕНИЯ: ПРЕДЛОЖЕНИЯ ОБЩЕГО МОЗГА (${openProps.length}): ${openProps.slice(0, 6).map((p) => `«${String(p.title || "").slice(0, 50)}» (id:${p.id})`).join("; ")}. Подтвердить/отклонить — mb_confirm/mb_reject с id.\n`;
+    const rop = (app && app.customPlan && app.customPlan.sales) || [];
+    const done = (app && app.done) || {};
+    const openRop = rop.filter((t) => !done[t.id]);
+    const openMkt = Array.isArray(mtasks) ? mtasks.filter((t) => t.status !== "done") : [];
+    if (openRop.length || openMkt.length) s += `\nАКТИВНЫЕ ЗАДАЧИ (для отзыва retract_task по id): ${openRop.slice(0, 8).map((t) => `РОП «${String(t.t || "").slice(0, 40)}» (id:${t.id})`).join("; ")}${openMkt.length ? "; " + openMkt.slice(0, 6).map((t) => `Маркетолог «${String(t.title || "").slice(0, 40)}» (id:${t.id})`).join("; ") : ""}. Отозвать неактуальную — retract_task с id.\n`;
+    return s;
+  } catch (e) { return ""; }
 }
 // Тривиальное сообщение (приветствие/благодарность/подтверждение) целиком — без бизнес-сути.
 // Такие идут на Haiku и БЕЗ тяжёлого контекста (agentsBlock+live). Консервативно: только сплошной ack ≤40 симв.
@@ -563,6 +585,9 @@ export default async function handler(req, res) {
 - Поручить Менеджеру по аналитике проверить/пересчитать данные: {"type":"analyst","label":"Поручить аналитику проверить","text":"что именно проверить/пересчитать"}
 - Закрыть гипотезу Агента роста как ложную: {"type":"close_hyp","label":"Закрыть гипотезу как ложную","hypId":"id гипотезы (если он есть в контексте)"}
 - Прогнать агента ЗАНОВО прямо сейчас (ТОЛЬКО если владелец ЯВНО просит «проверь / пересчитай / прогони сейчас / заново» — НЕ по своей инициативе): {"type":"run_agent","label":"Проверить МОПов сейчас","agent":"mop"}. Значения agent: mop = Супервайзер по МОПам, growth = Агент роста, dev = Менеджер по аналитике, task = Тренер (задачи РОПа). ВАЖНО про скорость: обычные вопросы ты отвечаешь по УЖЕ накопленным данным — это МГНОВЕННО, прогон не нужен. Новый прогон ДОЛГИЙ (до минуты) — предлагай кнопку run_agent ТОЛЬКО на явную просьбу «сейчас/заново».
+- Подтвердить / пересчитать / отклонить ПЛАН под цель (ТОЛЬКО когда план ждёт решения — это дано тебе в контексте «ОЖИДАЮТ РЕШЕНИЯ»): {"type":"plan_confirm","label":"✅ Подтвердить и раздать задачи"} / {"type":"plan_recalc","label":"🔄 Пересчитать"} / {"type":"plan_reject","label":"❌ Отклонить"}. Подтверждение = задачи СРАЗУ уходят РОПу и маркетологу.
+- Подтвердить / отклонить ПРЕДЛОЖЕНИЕ общего мозга (нужен id из контекста): {"type":"mb_confirm","label":"✅ Принять предложение","id":"id"} / {"type":"mb_reject","label":"❌ Отклонить","id":"id"}.
+- Отозвать неактуальную ЗАДАЧУ (нужен id из контекста «АКТИВНЫЕ ЗАДАЧИ»): {"type":"retract_task","label":"Отозвать задачу","id":"id задачи"}. Исполнителю уйдёт нейтральное «отменена руководителем».
 Правила: label — короткий (что сделает кнопка). Давай 1-3 кнопки, ТОЛЬКО реально уместные к этому ответу. Кнопка — это твоя рекомендация к исполнению; решение и клик остаются за владельцем. Если данные не проверены / под гейтом — первой кнопкой давай «Поручить аналитику проверить», а НЕ действие по команде на непроверенных данных. Если конкретных действий нет — маркеры НЕ добавляй.`;
 
     let progressNote = "";
@@ -597,9 +622,16 @@ export default async function handler(req, res) {
           const parsed = await parseGoalText(lastMsg);
           if (parsed.ok) {
             await setGoal(parsed);
-            goalNote += `\n\nВЛАДЕЛЕЦ ЗАДАЛ ЦЕЛЬ: ${parsed.amount.toLocaleString("ru-RU")} ${parsed.currency}${parsed.currency === "USD" ? ` (~${parsed.amountUZS.toLocaleString("ru-RU")} сум)` : " сум"} за «${parsed.period.label}». Сохранена как управляемая цель. КРАТКО подтверди сумму и период и скажи, что считаешь план догона — он придёт отдельным сообщением в Telegram с кнопкой подтверждения. Цифры плана здесь НЕ выдумывай.`;
-            const host = req.headers && req.headers.host;
-            if (host) fetch(`https://${host}/api/planner?action=propose&force=1&cron=1`, { method: "POST", headers: { "content-type": "application/json", Authorization: `Bearer ${process.env.CRON_SECRET}` }, body: "{}" }).catch(() => {});
+            goalNote += `\n\nВЛАДЕЛЕЦ ЗАДАЛ ЦЕЛЬ: ${parsed.amount.toLocaleString("ru-RU")} ${parsed.currency}${parsed.currency === "USD" ? ` (~${parsed.amountUZS.toLocaleString("ru-RU")} сум)` : " сум"} за «${parsed.period.label}». Сохранена. КРАТКО подтверди сумму и период.`;
+            // ПЛАН СТРОИМ И ПОКАЗЫВАЕМ ПРЯМО В ЧАТЕ (не в Telegram): цифры + кнопки подтверждения здесь же.
+            try {
+              const pr = await proposePlan("hunter", true, { channel: "chat" });
+              if (pr.proposed) goalNote += `\n\nПЛАН ДОГОНА ПОСТРОЕН — покажи владельцу ПРЯМО В ЧАТЕ. Цифры бери ТОЛЬКО отсюда (НЕ выдумывай):\n${pr.preview}\nПредстань эти цифры человеческим языком (разрыв, рычаги «больше лидов»/«конверсия», задачи РОПу/маркетологу) и ОБЯЗАТЕЛЬНО дай три кнопки-действия в конце: [[ACT]]{"type":"plan_confirm","label":"✅ Подтвердить и раздать задачи"}[[/ACT]], [[ACT]]{"type":"plan_recalc","label":"🔄 Пересчитать"}[[/ACT]], [[ACT]]{"type":"plan_reject","label":"❌ Отклонить"}[[/ACT]]. Подтверждение = задачи СРАЗУ уходят РОПу и маркетологу, дальше их ведёт система.`;
+              else if (pr.onPace) goalNote += `\n\nПлан догона НЕ нужен: на текущем темпе цель достигается. Скажи это владельцу коротко.`;
+              else if (pr.belowThreshold) goalNote += `\n\nРазрыв до цели в пределах нормы (<5%) — темп закроет сам, задачи не нужны.`;
+              else if (pr.autoDispatched && !pr.gated) goalNote += `\n\nВсе задачи под цель рутинные — уже раздал автоматически (${pr.autoDispatched}). Скажи владельцу; напомни про «Отозвать».`;
+              else if (pr.ok === false && pr.human) goalNote += `\n\nПлан пока не построить: ${pr.human} Скажи это владельцу.`;
+            } catch (e) { /* план не критичен для ответа */ }
           } else {
             // НИКОГДА не молчим: владелец пытался задать цель — объясни, что не понято и как переформулировать.
             goalNote += `\n\nВЛАДЕЛЕЦ ПЫТАЛСЯ ЗАДАТЬ ЦЕЛЬ, но извлечь не удалось (${parsed.error || "не распознал сумму/период"}). ОБЯЗАТЕЛЬНО скажи ему это простым языком и попроси переформулировать ОДНОЙ фразой: СУММА + ПЕРИОД — напр. «выручка 1.2 млрд сум за август» или «$100 000 в этом месяце». НЕ отвечай так, будто ничего не было.`;
@@ -636,6 +668,7 @@ export default async function handler(req, res) {
       sys += ACTIONS_BLOCK; // кнопки-действия — на ЛЮБОЙ содержательный ответ (в т.ч. «Поставить задачу маркетологу» на контент/рекламу)
       if (intent.live) sys += LIVE_INTRO + live + trustBlock(speed);
       sys += mktBlock; // маркетинг-срез ВСЕГДА — чтобы советник не отвечал «нет данных» на контент/бренд/Instagram
+      sys += await pendingBlock(org); // pt2: ожидающие решения (план/предложения) + активные задачи для отзыва
       if (intent.agents) sys += agBlk;
       if (intent.calls) sys += caBlk;
       maxTok = 2500;

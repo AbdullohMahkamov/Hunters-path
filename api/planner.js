@@ -178,7 +178,7 @@ function fmtPlanForOwner(plan) {
 }
 
 // ── ПРЕДЛОЖИТЬ ПЛАН ВЛАДЕЛЬЦУ (крон/ручной). Если план уже строился под этот период — не спамим. ──
-export async function proposePlan(org = ORG, force = false) {
+export async function proposePlan(org = ORG, force = false, opts = {}) {
   const goal = await getGoal(org);
   if (!goal || !goal.amountUZS) return { ok: false, reason: "no_goal" };
   const pending = await rgetJSON(K.pending, null);
@@ -198,14 +198,14 @@ export async function proposePlan(org = ORG, force = false) {
   const plan = await buildPlan(org);
   const ppl = await getPeople();
   if (!plan.ok) {
-    // не строим вслепую — честно сообщаем владельцу, чего не хватает
-    if (ppl.owner && ppl.owner.chatId) await sendTg("owner", ppl.owner.chatId, `🎯 <b>План под цель · ${periodKey}</b>\n\n${plan.human || "План не построен."}`);
-    return { ok: false, reason: plan.reason, notified: true };
+    // не строим вслепую — честно сообщаем владельцу, чего не хватает (из чата — вернём в чат, не в Telegram)
+    if (opts.channel !== "chat" && ppl.owner && ppl.owner.chatId) await sendTg("owner", ppl.owner.chatId, `🎯 <b>План под цель · ${periodKey}</b>\n\n${plan.human || "План не построен."}`);
+    return { ok: false, reason: plan.reason, notified: opts.channel !== "chat", human: plan.human };
   }
   if (plan.onPace) {
-    if (ppl.owner && ppl.owner.chatId) await sendTg("owner", ppl.owner.chatId, fmtPlanForOwner(plan));
+    if (opts.channel !== "chat" && ppl.owner && ppl.owner.chatId) await sendTg("owner", ppl.owner.chatId, fmtPlanForOwner(plan));
     await rsetJSON(K.active, { periodKey, onPace: true, at: Date.now() });
-    return { ok: true, onPace: true };
+    return { ok: true, onPace: true, human: plan.human };
   }
   if (pending && pending.periodKey && pending.periodKey !== periodKey) await archivePlan(pending, "expired_unconfirmed");
 
@@ -243,7 +243,9 @@ export async function proposePlan(org = ORG, force = false) {
   const rec = { periodKey, at: Date.now(), plan: gatedPlan, reminded: false, autoDispatched: dispatched.length };
   await rsetJSON(K.pending, rec);
   let sent = false;
-  if (ppl.owner && ppl.owner.chatId) {
+  // Из ЧАТА план показывается прямо в чате (советник + кнопки) — в Telegram НЕ дублируем сразу.
+  // Если владелец не подтвердит и уйдёт — крон-напоминание (см. начало функции) пришлёт в Telegram как фолбэк.
+  if (opts.channel !== "chat" && ppl.owner && ppl.owner.chatId) {
     const kb = { reply_markup: { inline_keyboard: [
       [{ text: "✅ Подтвердить и раздать", callback_data: "pl:confirm" }],
       [{ text: "🔄 Пересчитать", callback_data: "pl:recalc" }, { text: "❌ Отклонить", callback_data: "pl:reject" }],
@@ -252,7 +254,7 @@ export async function proposePlan(org = ORG, force = false) {
     const r = await sendTg("owner", ppl.owner.chatId, fmtPlanForOwner(gatedPlan) + extra, kb);
     sent = !!(r && r.ok);
   }
-  return { ok: true, proposed: true, sent, autoDispatched: dispatched.length, gated: gatedTasks.rop.length + gatedTasks.marketing.length, periodKey, preview: fmtPlanForOwner(gatedPlan) };
+  return { ok: true, proposed: true, channel: opts.channel || "telegram", sent, autoDispatched: dispatched.length, gated: gatedTasks.rop.length + gatedTasks.marketing.length, periodKey, preview: fmtPlanForOwner(gatedPlan) };
 }
 
 // создание РОП-задачи плана (используется и авто-раздачей, и подтверждением) → id

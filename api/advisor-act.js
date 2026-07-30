@@ -12,6 +12,8 @@ import { runChat as devRunChat, runNightly } from "./dev-agent.js";
 import { runTick, addMarketingTask } from "./task-agent.js";
 import { runGrowth } from "./growth-agent.js";
 import { runMopAgent } from "./mop-agent.js";
+import { handlePlanButton } from "./planner.js";       // pt2: подтверждение/пересчёт/отклонение плана ИЗ ЧАТА
+import { handleMetaButton } from "./meta-brain.js";     // pt2: подтверждение/отклонение предложений мозга ИЗ ЧАТА
 
 const REDIS_URL = process.env.UPSTASH_REDIS_REST_URL;
 const REDIS_TOKEN = process.env.UPSTASH_REDIS_REST_TOKEN;
@@ -68,6 +70,30 @@ async function closeHypothesis({ hypId, result, note }) {
   return { ok: true };
 }
 
+// retract_task → отзыв задачи ИЗ ЧАТА: РОП-задача (appdata.customPlan.sales) или маркетинг (marketingtasks).
+// Уведомляет исполнителя НЕЙТРАЛЬНО (отменена руководителем, без выдуманных причин). Идемпотентно.
+async function retractTask(id) {
+  const app = (await rgetJSON(`appdata:${ORG}`, {})) || {};
+  const sales = (app.customPlan && app.customPlan.sales) || [];
+  const rt = sales.find((x) => x.id === id);
+  if (rt) {
+    app.customPlan.sales = sales.filter((x) => x.id !== id);
+    if (app.done) delete app.done[id];
+    await rsetJSON(`appdata:${ORG}`, app);
+    try { const ppl = await getPeople(); if (ppl.rop && ppl.rop.chatId) await sendTg("rop", ppl.rop.chatId, `📌 Задача «${rt.t}» отменена руководителем — по ней ничего делать не нужно. Спасибо!`); } catch (e) {}
+    return { ok: true, title: rt.t, recipient: "rop" };
+  }
+  const mtasks = await rgetJSON("marketingtasks", []);
+  const mt = mtasks.find((x) => x.id === id);
+  if (mt && mt.status !== "done") {
+    mt.status = "done"; mt.doneAt = Date.now(); mt.doneBy = "owner:retract";
+    await rsetJSON("marketingtasks", mtasks);
+    try { const ppl = await getPeople(); if (ppl.marketing && ppl.marketing.chatId) await sendTg("marketing", ppl.marketing.chatId, `📌 Задача «${mt.title}» отменена руководителем — по ней ничего делать не нужно. Спасибо!`); } catch (e) {}
+    return { ok: true, title: mt.title, recipient: "marketing" };
+  }
+  return { ok: false, error: "задача не найдена (возможно, уже закрыта)" };
+}
+
 export default async function handler(req, res) {
   res.setHeader("Cache-Control", "no-store");
   if (!REDIS_URL || !REDIS_TOKEN) { res.status(500).json({ error: "no redis" }); return; }
@@ -120,6 +146,29 @@ export default async function handler(req, res) {
       if (!hypId) { res.status(400).json({ error: "нужен hypId" }); return; }
       const r = await closeHypothesis({ hypId, result: b.result, note: b.note });
       res.status(r.ok ? 200 : 404).json({ ok: r.ok, type, error: r.error || null });
+      return;
+    }
+    // ── pt2: РЕШЕНИЯ И ЗАДАЧИ ИЗ ЧАТА. Идут в ТЕ ЖЕ обработчики, что кнопки Telegram → межканальная
+    // идемпотентность на уровне состояния: подтвердил в чате → pending снят → повтор из Telegram = no-op. ──
+    if (type === "plan_confirm" || type === "plan_reject" || type === "plan_recalc") {
+      const map = { plan_confirm: "confirm", plan_reject: "reject", plan_recalc: "recalc" };
+      const r = await handlePlanButton(map[type]);
+      if (r && r.triggerTick) { try { await runTick(true); } catch (e) {} } // подтвердил → задачи СРАЗУ РОПу/маркетологу
+      res.status(200).json({ ok: r && r.toast !== "план не найден", type, ...r });
+      return;
+    }
+    if (type === "mb_confirm" || type === "mb_reject") {
+      const id = String(b.id || "").trim();
+      if (!id) { res.status(400).json({ error: "нужен id предложения" }); return; }
+      const r = await handleMetaButton(type === "mb_confirm" ? "confirm" : "reject", id, req.headers && req.headers.host);
+      res.status(200).json({ ok: r.ok !== false, type, ...r });
+      return;
+    }
+    if (type === "retract_task") {
+      const id = String(b.id || b.taskId || "").trim();
+      if (!id) { res.status(400).json({ error: "нужен id задачи" }); return; }
+      const r = await retractTask(id);
+      res.status(r.ok ? 200 : 404).json({ ok: r.ok, type, ...r });
       return;
     }
     // run_agent → НЕМЕДЛЕННЫЙ ручной прогон агента заново (у всех четырёх есть). Только на явную просьбу владельца.
