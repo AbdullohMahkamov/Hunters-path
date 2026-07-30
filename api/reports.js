@@ -11,6 +11,7 @@ import { getVerifiedFunnel } from "./dev-agent.js";
 import { funnelFacts, workingDays } from "./planner.js";
 import { resolveCpl } from "./goal-realism.js";
 import { loadSalesTasks } from "./task-agent.js"; // авторитетный список задач (план + MOP + мозг + маркетинг)
+import { priorityScore, OPEN_STATUSES } from "./meta-brain.js"; // ранжирование предложений мозга для секции решений
 import { genToken, handoffKb, saveRawHandoff } from "./digest.js";
 
 const REDIS_URL = process.env.UPSTASH_REDIS_REST_URL;
@@ -23,6 +24,7 @@ async function rgetJSON(key, dflt) { const raw = await rget(key); if (raw == nul
 async function getSession(session) { if (!session) return null; try { const raw = await rget(`session:${session}`); return raw ? JSON.parse(raw) : null; } catch (e) { return null; } }
 
 const num = (n) => (n == null ? "н/д" : Number(Math.round(n)).toLocaleString("ru-RU"));
+const short = (s, n) => { s = String(s || ""); return s.length > n ? s.slice(0, n) + "…" : s; };
 const tkDate = (offsetDays = 0) => new Date(Date.now() + 5 * 3600000 - offsetDays * 86400000).toISOString().slice(0, 10);
 const today0 = () => tkDate(0);
 
@@ -108,6 +110,18 @@ export async function buildTeamReport(org = ORG) {
     const g = pend.plan.facts || {};
     decisions.push(`⏳ План под цель «${pend.periodKey || ""}» ждёт подтверждения${g.gap != null ? ` (разрыв ${num(g.gap)} сум)` : ""}.`);
     kbRows.push([{ text: "✅ Подтвердить план", callback_data: "pl:confirm" }, { text: "❌ Отклонить", callback_data: "pl:reject" }]);
+  }
+  // Предложения общего мозга (наблюдения) — не задачами людям, а РЕШЕНИЯМИ владельцу. Топ-3 по важности,
+  // кнопки подтвердить/отклонить прямо тут (то же правило, что у DeepSales: пока очереди Mini App нет — строкой).
+  const props = ((await rgetJSON("metabrain:proposals", [])) || []).filter((p) => p && OPEN_STATUSES.includes(p.status));
+  if (props.length) {
+    const nowMs = Date.now();
+    props.sort((a, b) => priorityScore(b, nowMs) - priorityScore(a, nowMs));
+    for (const p of props.slice(0, 3)) {
+      decisions.push(`🧠 ${String(p.title || "Предложение системы").slice(0, 70)}`);
+      kbRows.push([{ text: `✅ ${short(p.title, 16)}`, callback_data: `mb:confirm:${p.id}` }, { text: "❌", callback_data: `mb:reject:${p.id}` }]);
+    }
+    if (props.length > 3) decisions.push(`…и ещё ${props.length - 3} — разобрать в советнике.`);
   }
   if (decisions.length) s += `\n<b>Ждёт вашего решения:</b>\n${decisions.join("\n")}\n`;
 

@@ -635,8 +635,14 @@ export default async function handler(req, res) {
     // Ключ по дате (YYYY-MM-DD). Перезапись за тот же день — норм (последнее значение дня).
     try {
       const today = new Date().toISOString().slice(0, 10);
+      // Замораживаем ЦЕЛЬ месяца в снимок — чтобы закрытие месяца (planner.closeMonth) знало цель того периода,
+      // даже если к 1-му числу цель уже переставили на следующий месяц.
+      let snapGoalUZS = null, snapGoalPeriod = null;
+      try { const gr = await fetch(`${redisUrl}/get/${encodeURIComponent(`goal:${org}`)}`, { headers: { Authorization: `Bearer ${redisToken}` } }); const gd = await gr.json(); if (gd && gd.result) { const g = JSON.parse(gd.result); snapGoalUZS = g.amountUZS || null; snapGoalPeriod = (g.period && g.period.label) || null; } } catch (e) { /* цель не критична для снимка */ }
       const snap = {
         date: today,
+        goalUZS: snapGoalUZS,
+        goalPeriod: snapGoalPeriod,
         sold: result.totals.sold,
         revenue: result.totals.revenue,
         soldPeriod: result.totals.soldPeriod,

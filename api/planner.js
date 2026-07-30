@@ -461,7 +461,74 @@ export async function nextMonthPrompt(org = ORG) {
   return { ok: true, sent, monthKey, nextLabel };
 }
 
-const CRON_OK = new Set(["propose", "daily-report", "month-prompt"]);
+// ── ЧАСТЬ D: ЗАКРЫТИЕ МЕСЯЦА ──
+// Фиксируем ИТОГ завершённого месяца в ПОСТОЯННОЕ хранилище periodresults:<org> (не кэш). Источник — ЗАМОРОЖЕННЫЙ
+// снимок последнего дня месяца (snap:<lastDay> хранит month-to-date → на последний день это итог месяца + цель того
+// периода). Итог — база для проверки реалистичности (avgCheck/конверсия закрытого месяца), когда текущий месяц ещё
+// пустой (начало периода). Плюс отчёт «месяц закрыт» владельцу 1-го числа. Идемпотентно по ключу месяца.
+function monthKeyOf(y, mIdx) { const m = ((mIdx % 12) + 12) % 12; const yy = y + Math.floor(mIdx / 12); return `${yy}-${String(m + 1).padStart(2, "0")}`; }
+function lastDayOf(y, mIdx) { return new Date(Date.UTC(y, mIdx + 1, 0)).toISOString().slice(0, 10); }
+
+export async function getPeriodResults(org = ORG) { return (await rgetJSON(`periodresults:${org}`, [])) || []; }
+
+export async function closeMonth(org = ORG) {
+  const now = tkNow();
+  const y = now.getUTCFullYear(), m = now.getUTCMonth();
+  const py = m === 0 ? y - 1 : y, pm = m === 0 ? 11 : m - 1; // ПРЕДЫДУЩИЙ месяц — его закрываем 1-го числа
+  const monthKey = monthKeyOf(py, pm);
+  const label = monthLabelY(py, pm);
+  const results = (await rgetJSON(`periodresults:${org}`, [])) || [];
+  if (results.some((r) => r.month === monthKey)) return { ok: true, skipped: "already_closed", monthKey };
+  // замороженный снимок последнего дня (фолбэк — последний снимок этого месяца из snap:list)
+  const lastDay = lastDayOf(py, pm);
+  let snap = await rgetJSON(`snap:${lastDay}`, null);
+  if (!snap) {
+    const list = (await rgetJSON("snap:list", [])) || [];
+    const inMonth = list.filter((d) => typeof d === "string" && d.slice(0, 7) === monthKey).sort();
+    if (inMonth.length) snap = await rgetJSON(`snap:${inMonth[inMonth.length - 1]}`, null);
+  }
+  if (!snap) return { ok: false, reason: "no_snapshot", monthKey };
+  const goalUZS = (snap.goalPeriod === label && snap.goalUZS > 0) ? snap.goalUZS : null; // цель принадлежит ИМЕННО этому месяцу
+  const earned = snap.revenue || 0, sold = snap.sold || 0, leads = snap.leads || 0;
+  const rec = {
+    month: monthKey, label, goalUZS, earned, sold, leads,
+    avgCheckMedian: snap.avgCheckMedian != null ? snap.avgCheckMedian : (snap.avgCheck || null),
+    convPct: snap.conv != null ? snap.conv : null,
+    pct: goalUZS ? Math.round(earned / goalUZS * 100) : null,
+    onTarget: goalUZS ? earned >= goalUZS : null,
+    closedAt: Date.now(),
+  };
+  results.push(rec);
+  await rsetJSON(`periodresults:${org}`, results.slice(-36)); // до 3 лет истории, постоянно
+  return { ok: true, closed: true, result: rec };
+}
+
+export async function sendMonthClose(org = ORG) {
+  const c = await closeMonth(org);
+  if (!c.ok || c.skipped) return c; // нет снимка / уже закрыт — не дублируем
+  const rec = c.result;
+  const all = await getPeriodResults(org);
+  const prev = all.length >= 2 ? all[all.length - 2] : null; // предыдущий закрытый месяц для «что сработало/нет»
+  let s = `📅 <b>Месяц закрыт · ${rec.label}</b>\n\n`;
+  if (rec.goalUZS) s += `Цель: ${num(rec.goalUZS)} сум · закрыто <b>${num(rec.earned)} (${rec.pct}%)</b> — ${rec.onTarget ? "✅ цель взята" : "⚠️ недобор"}\n`;
+  else s += `Заработано: <b>${num(rec.earned)} сум</b> (цель на месяц не задавалась)\n`;
+  s += `Продаж: ${num(rec.sold)} · лидов: ${num(rec.leads)} · средний чек: ${num(rec.avgCheckMedian)} сум · конверсия: ${rec.convPct != null ? rec.convPct + "%" : "н/д"}\n`;
+  if (prev) {
+    const up = [], down = [];
+    const cmp = (lbl, cur, old, unit = "") => { if (cur == null || old == null) return; if (cur > old) up.push(`${lbl} ↑`); else if (cur < old) down.push(`${lbl} ↓`); };
+    cmp("выручка", rec.earned, prev.earned); cmp("продажи", rec.sold, prev.sold); cmp("конверсия", rec.convPct, prev.convPct, "%"); cmp("чек", rec.avgCheckMedian, prev.avgCheckMedian);
+    if (up.length) s += `\n✅ Сработало (к ${prev.label}): ${up.join(", ")}`;
+    if (down.length) s += `\n⚠️ Просело (к ${prev.label}): ${down.join(", ")}`;
+  }
+  try { const dq = await rgetJSON("dashboard", null); const wna = dq && dq.dataQuality && dq.dataQuality.wonNoAmount; if (wna && wna.count > 0) s += `\n📎 Часть сделок закрыта без суммы (${wna.count}, ${wna.sharePct}%) — чек и выручка занижены на эту величину.`; } catch (e) {}
+  s += `\n\n<i>Итог сохранён в историю — на нём проверка реалистичности считает достижимую цель следующего месяца.</i>`;
+  const ppl = await getPeople();
+  let sent = false;
+  if (ppl.owner && ppl.owner.chatId) { const r = await sendTg("owner", ppl.owner.chatId, s); sent = !!(r && r.ok); }
+  return { ok: true, closed: true, sent, monthKey: rec.month };
+}
+
+const CRON_OK = new Set(["propose", "daily-report", "month-prompt", "month-close"]);
 async function isAuthed(req) {
   const auth = req.headers && (req.headers.authorization || req.headers.Authorization);
   if (auth && CRON_SECRET && auth === `Bearer ${CRON_SECRET}`) return true;
@@ -478,6 +545,8 @@ export default async function handler(req, res) {
     if (action === "propose") { res.status(200).json(await proposePlan(ORG, req.query && req.query.force === "1")); return; } // крон: предложить владельцу
     if (action === "daily-report") { res.status(200).json(await sendDailyReport(ORG)); return; }   // крон: утренний отчёт
     if (action === "month-prompt") { res.status(200).json(await nextMonthPrompt(ORG)); return; }   // крон: конец месяца → спросить цель на следующий
+    if (action === "month-close") { res.status(200).json(await sendMonthClose(ORG)); return; }     // крон 1-го: зафиксировать итог месяца + отчёт
+    if (action === "period-results") { res.status(200).json({ ok: true, results: await getPeriodResults(ORG) }); return; } // диагностика/предпросмотр истории
     if (action === "report-preview") { res.status(200).json(await buildDailyReport(ORG)); return; } // предпросмотр отчёта без отправки
     if (action === "state") { res.status(200).json({ pending: await rgetJSON(K.pending, null), active: await rgetJSON(K.active, null), history: await rgetJSON(K.history, []), goal: await getGoal() }); return; }
     if (action === "button") { const r = await handlePlanButton((req.body && req.body.act) || (req.query && req.query.act)); res.status(200).json(r); return; }

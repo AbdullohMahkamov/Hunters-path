@@ -18,7 +18,9 @@
 
 import { getGoal } from "./goal.js";
 import { getVerifiedFunnel } from "./dev-agent.js";
-import { funnelFacts, workingDays } from "./planner.js";
+import { funnelFacts, workingDays, getPeriodResults } from "./planner.js";
+
+const THIN_MONTH_SOLD = 10; // < столько продаж в текущем месяце → он «пустой», база берётся из закрытого месяца
 
 const REDIS_URL = process.env.UPSTASH_REDIS_REST_URL;
 const REDIS_TOKEN = process.env.UPSTASH_REDIS_REST_TOKEN;
@@ -50,7 +52,7 @@ export function assessGoalRealism(inp) {
   const {
     goalUZS, earned = 0, avgCheck, conv, cpl = null, cplSource = null,
     teamCapacityByMop = {}, mopsActiveCount, workdays = null,
-    baseInaccurate = null, thinMonths = 3,
+    baseInaccurate = null, thinMonths = 3, baselineLabel = null,
   } = inp;
 
   const remaining = Math.max(0, (goalUZS || 0) - (earned || 0));
@@ -114,6 +116,7 @@ export function assessGoalRealism(inp) {
     team, thinMops, mopsActiveCount: N, feasibleGoal, addManagers,
     convPct: +(conv * 100).toFixed(1),
     avgCheckInaccurate: baseInaccurate || null,
+    baselineLabel: baselineLabel || null,
   };
   out.human = buildVerdict(out);
   return out;
@@ -152,6 +155,8 @@ function buildVerdict(o) {
   if (o.thinMops && o.thinMops.length) s += `\n⚠️ По ${o.thinMops.join(", ")} мало истории — их капасити оценочна, цифры по команде приблизительные.`;
   // искажение среднего чека
   if (o.avgCheckInaccurate) s += `\n📎 Расчёт опирается на средний чек, а он сейчас неточен: ${o.avgCheckInaccurate.count} сделок закрыты без суммы (${o.avgCheckInaccurate.sharePct}%). Цифры ориентировочные — точнее станет, когда суммы проставят.`;
+  // база из закрытого месяца (текущий ещё пустой)
+  if (o.baselineLabel) s += `\n📈 Средний чек и конверсия взяты из закрытого месяца (${o.baselineLabel}) — текущий период ещё пустой. Пересчитаю по факту, когда пойдут продажи.`;
   return s;
 }
 function cap(x) { return x ? x.charAt(0).toUpperCase() + x.slice(1) : x; }
@@ -171,8 +176,21 @@ export async function assessRealism(org = ORG) {
   const wna = dash && dash.dataQuality && dash.dataQuality.wonNoAmount;
   const baseInaccurate = (wna && wna.inaccurate) ? { count: wna.count, sharePct: wna.sharePct } : null;
   const { cpl, cplSource } = await resolveCpl(dash);
+
+  // БАЗА avgCheck/конверсии: если текущий месяц ещё пустой (начало периода) — берём ИТОГ ПОСЛЕДНЕГО ЗАКРЫТОГО
+  // месяца (planner.getPeriodResults). Иначе достижимая цель считалась бы на тонких/нулевых данных августа.
+  let avgCheck = f.avgCheck, conv = f.conv, baselineLabel = null;
+  if ((f.sold || 0) < THIN_MONTH_SOLD) {
+    const results = await getPeriodResults(org).catch(() => []);
+    const last = (results && results.length) ? results[results.length - 1] : null;
+    if (last && (last.avgCheckMedian || last.convPct != null)) {
+      if (last.avgCheckMedian) avgCheck = last.avgCheckMedian;
+      if (last.convPct != null) conv = last.convPct / 100;
+      baselineLabel = last.label;
+    }
+  }
   return assessGoalRealism({
-    goalUZS: goal.amountUZS, earned: f.revenue || 0, avgCheck: f.avgCheck, conv: f.conv,
-    cpl, cplSource, teamCapacityByMop, mopsActiveCount, workdays, baseInaccurate, thinMonths,
+    goalUZS: goal.amountUZS, earned: f.revenue || 0, avgCheck, conv,
+    cpl, cplSource, teamCapacityByMop, mopsActiveCount, workdays, baseInaccurate, thinMonths, baselineLabel,
   });
 }
