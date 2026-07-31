@@ -37,7 +37,9 @@ function applyInsets(wa) {
 export function initTgChrome(wa) {
   if (!wa) return
   try { wa.ready() } catch (e) { /* noop */ }        // 5.0 — базовое, есть везде
-  try { wa.expand() } catch (e) { /* noop */ }        // 5.0
+  try { wa.expand() } catch (e) { /* noop */ }        // 5.0 — на всю доступную высоту
+  // Полноэкранный режим (8.0+) — иммерсивно на мобильных; на старых клиентах просто не вызываем (деградация).
+  if (supports(wa, '8.0') && wa.requestFullscreen && !wa.isFullscreen) { try { wa.requestFullscreen() } catch (e) { /* noop */ } }
   if (supports(wa, '6.1')) { // цвет шапки/фона — приложение всегда светлое (theme-light)
     try { wa.setHeaderColor('#ffffff') } catch (e) { /* noop */ }
     try { wa.setBackgroundColor('#ffffff') } catch (e) { /* noop */ }

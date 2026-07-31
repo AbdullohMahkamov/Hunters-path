@@ -123,7 +123,10 @@ export default async function handler(req, res) {
         return;
       }
       const sessToken = crypto.randomBytes(24).toString("hex");
-      const info = { role: "admin", org: "hunter", via: "telegram", tgUserId: v.user.id };
+      // Язык советника = язык ВЛАДЕЛЬЦА (его выбор при привязке бота), а НЕ язык клиента Telegram. Отдаём клиенту,
+      // чтобы Mini App форсил его в state.lang и советник отвечал на нём (в вебе так же — по настройке, не по браузеру).
+      const ownerLang = (people.owner && people.owner.lang === "uz") ? "uz" : "ru";
+      const info = { role: "admin", org: "hunter", via: "telegram", tgUserId: v.user.id, lang: ownerLang };
       await redisSet(redisUrl, redisToken, `session:${sessToken}`, JSON.stringify(info), 30 * 24 * 3600);
       res.status(200).json({ ok: true, session: sessToken, ...info });
       return;

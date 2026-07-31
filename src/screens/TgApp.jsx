@@ -6,7 +6,7 @@ import React, { useEffect, useRef, useState } from 'react'
 import { setSession, setRoleOrg, getSession } from '../lib/session.js'
 import { auth } from '../lib/api.js'
 import { applyTheme } from '../lib/theme.js'
-import { loadCloud, ensureChats, state, save } from '../lib/appState.js'
+import { loadCloud, ensureChats, state, save, setLang } from '../lib/appState.js'
 import { initChat, renderChat, scrollChatBottom, sendMsg } from '../lib/chat.js'
 import { loadTgSdk, initTgChrome, tgBackButton } from '../lib/tgwebapp.js'
 import chatMainInnerHtml from './viewsHtml/chatMainInner.html?raw'
@@ -23,8 +23,19 @@ const CSS = `
 .tgcontent > .pane{position:absolute;inset:0;display:none}
 .tgcontent > .pane.on{display:block}
 .tgroot .chat-topbar{display:none}
+/* Гасим десктоп-shell раскладку чата (body.shell #chatView position:fixed left:256px top:0), которая иначе
+   накрывает вкладки и сдвигает чат. В Mini App своя flex-раскладка. */
+.tgroot #chatView{position:static!important;left:auto!important;right:auto!important;top:auto!important;bottom:auto!important;height:100%!important;display:flex;flex-direction:column;flex:1;min-height:0}
 .tgroot .chat-layout{height:100%}
 .tgroot .chat-main{width:100%;height:100%;padding-bottom:var(--tg-safe-bottom,0px)}
+.tgburger{flex:0 0 auto;width:40px;border-radius:10px;border:1px solid var(--line2,#ddd);background:var(--card,#fafafa);color:var(--txt2,#555);cursor:pointer;font-size:17px;line-height:1}
+.tgdrawer-ov{position:fixed;inset:0;z-index:60;background:rgba(0,0,0,.4);display:flex}
+.tgdrawer{width:84%;max-width:320px;height:100%;background:var(--bg,#fff);display:flex;flex-direction:column;padding:calc(var(--tg-safe-top,0px) + 10px) 0 calc(var(--tg-safe-bottom,0px) + 10px);box-shadow:2px 0 18px rgba(0,0,0,.25)}
+.tgdrawer h5{margin:0;padding:10px 16px 4px;font-size:12px;color:var(--txt3,#888);text-transform:uppercase;letter-spacing:.04em}
+.tgdrawer-new{margin:6px 14px 8px;padding:11px;border-radius:10px;border:1px solid var(--accent,#17694e);background:transparent;color:var(--accent,#17694e);font-weight:600;font-size:14px;cursor:pointer}
+.tgdrawer-list{flex:1;overflow:auto}
+.tgchat-item{display:block;width:100%;text-align:left;padding:12px 16px;border:0;border-bottom:1px solid var(--line,#f1f1f1);background:transparent;font:inherit;font-size:14px;color:var(--txt,#222);cursor:pointer;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.tgchat-item.on{background:var(--accent-bg,#eaf5ef);font-weight:600}
 .tgdec{height:100%;overflow:auto;padding:14px;padding-bottom:calc(var(--tg-safe-bottom,0px) + 24px);box-sizing:border-box}
 .tgcard{border:1px solid var(--line2,#e3e3e3);border-radius:14px;padding:14px;margin-bottom:12px;background:var(--card,#fff)}
 .tgcard h4{margin:0 0 6px;font-size:15px}
@@ -99,6 +110,8 @@ export default function TgApp() {
   const [err, setErr] = useState('')
   const [tab, setTab] = useState('chat')
   const [decCount, setDecCount] = useState(0)
+  const [menuOpen, setMenuOpen] = useState(false)
+  const [, force] = useState(0)
   const waRef = useRef(null)
   const bootedRef = useRef(false)
 
@@ -106,6 +119,9 @@ export default function TgApp() {
     let cancelled = false
     ;(async () => {
       applyTheme()
+      // index.html держит <body class="shell"> для десктоп-веба; в Mini App эта раскладка (position:fixed
+      // #chatView, сайдбар 256px) ломает вёрстку — снимаем, у нас своя flex-раскладка.
+      document.body.classList.remove('shell', 'sec-open', 'chat-open')
       const wa = await loadTgSdk()
       waRef.current = wa
       initTgChrome(wa)
@@ -123,6 +139,9 @@ export default function TgApp() {
       try { await loadCloud() } catch (e) { /* настройки не критичны для чата */ }
       if (cancelled) return
       ensureChats()
+      // ЯЗЫК СОВЕТНИКА = язык ВЛАДЕЛЬЦА (из taskagent:people.owner.lang, пришёл в d.lang), а НЕ язык клиента
+      // Telegram и не то, что подтянулось из облака. Ставим ПОСЛЕ loadCloud (он переустанавливает state).
+      if (d.lang === 'uz' || d.lang === 'ru') setLang(d.lang)
       initChat()
       bootedRef.current = true
       setPhase('ready')
@@ -158,6 +177,17 @@ export default function TgApp() {
     setTab(t)
     if (t === 'chat') setTimeout(() => { renderChat(); scrollChatBottom() }, 30)
   }
+  // ИСТОРИЯ ЧАТОВ — та же, что в вебе (state.chats, грузится loadCloud'ом). Не второй механизм — тот же.
+  function openChat(id) {
+    ensureChats(); state.activeChatId = id; save(); force((n) => n + 1)
+    setMenuOpen(false); setTab('chat'); setTimeout(() => { renderChat(); scrollChatBottom() }, 30)
+  }
+  function newChat() {
+    ensureChats()
+    const c = { id: 'c' + Date.now(), title: 'Новый чат', messages: [], pinned: false, projectId: '' }
+    state.chats.unshift(c); state.activeChatId = c.id; save(); force((n) => n + 1)
+    setMenuOpen(false); setTab('chat'); setTimeout(() => { renderChat(); scrollChatBottom() }, 30)
+  }
 
   if (phase === 'loading') return <div className="tgroot"><div className="tgstate">Загрузка…</div></div>
   if (phase === 'denied') {
@@ -177,11 +207,25 @@ export default function TgApp() {
     <div className="tgroot">
       <style>{CSS}</style>
       <div className="tgbar">
+        <button className="tgburger" onClick={() => setMenuOpen(true)} aria-label="Чаты" title="Чаты">☰</button>
         <button className={'tgtab' + (tab === 'chat' ? ' on' : '')} onClick={() => go('chat')}>Советник</button>
         <button className={'tgtab' + (tab === 'decisions' ? ' on' : '')} onClick={() => go('decisions')}>
           Решения{decCount > 0 && <span className="b">{decCount}</span>}
         </button>
       </div>
+      {menuOpen && (
+        <div className="tgdrawer-ov" onClick={() => setMenuOpen(false)}>
+          <div className="tgdrawer" onClick={(e) => e.stopPropagation()}>
+            <button className="tgdrawer-new" onClick={newChat}>+ Новый чат</button>
+            <h5>Недавние чаты</h5>
+            <div className="tgdrawer-list">
+              {(Array.isArray(state.chats) ? state.chats : []).map((c) => (
+                <button key={c.id} className={'tgchat-item' + (c.id === state.activeChatId ? ' on' : '')} onClick={() => openChat(c.id)}>{c.title || 'Чат'}</button>
+              ))}
+            </div>
+          </div>
+        </div>
+      )}
       <div className="tgcontent">
         {/* ЧАТ — переиспользуем скелет и chat.js целиком (тот же поток, что в вебе) */}
         <div className={'pane' + (tab === 'chat' ? ' on' : '')}>
