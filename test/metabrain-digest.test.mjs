@@ -13,8 +13,9 @@ beforeEach(() => resetMocks());
 
 // ── ПРИОРИТЕТ (границы) ──
 test("impactTier: юр.риск > выручка > прочее (детерминированно по смыслу)", () => {
-  assert.equal(M.impactTier(P({ title: "Штраф от налоговой за неоформленный договор" })), 3);         // genuine liability
-  assert.equal(M.impactTier(P({ title: "Обещания 100% гарантии трудоустройства" })), 2);              // точность продаж, НЕ юр.риск
+  assert.equal(M.impactTier(P({ title: "Штраф от налоговой, грозит суд" })), 3);                       // genuine liability
+  assert.equal(M.impactTier(P({ title: "Обещания 100% гарантии трудоустройства — запрещено правилами" })), 3); // обещание, которого компания не даёт = юр.риск (поправка владельца)
+  assert.equal(M.impactTier(P({ title: "Сделки теряются: менеджеры называют цену или договор раньше диагностики" })), 2); // «договор» НЕ юр.риск (tier2 по «сделк», не 3)
   assert.equal(M.impactTier(P({ title: "27 новых лидов без единой попытки звонка" })), 2);
   assert.equal(M.impactTier(P({ title: "103 лида с ложным статусом «не дозвонились»" })), 2);
   assert.equal(M.impactTier(P({ title: "Оформить единый шаблон приветствия" })), 1);
@@ -132,7 +133,8 @@ test("runDailyBrain само-отзывает ложную находку: за�
   await M.runDailyBrain("hunter", true);
   const props = kvGetJSON("metabrain:proposals");
   assert.equal(props.find((p) => p.id === "false1").status, "closed", "ложное предложение снято");
-  assert.equal(props.find((p) => p.id === "real1").status, "pending", "реальное осталось");
+  // real1 (операционка ОП) теперь АВТО-подтверждается и уходит РОПу — главное, что ложный отзыв её НЕ тронул.
+  assert.equal(props.find((p) => p.id === "real1").status, "confirmed", "реальная операционка авто-раздана РОПу, не снята ложно");
   const mt = kvGetJSON("marketingtasks");
   assert.equal(mt.find((x) => x.id === "mt1").status, "done", "задача маркетологу отозвана");
   assert.equal(mt.find((x) => x.id === "mt2").status, "open", "прочие задачи не тронуты");
