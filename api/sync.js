@@ -699,11 +699,12 @@ export default async function handler(req, res) {
       monthlyFunnel, // помесячная воронка лид→продажа (когортная, надёжно без нот) — база «возврата к своей конверсии»
       soldPriceHist, // распределение цен продаж (млн) — реальная доля офлайн(4)/онлайн(3.5), чек как рычаг
       soldPayments: soldPay, // база+доплаты по проданным: скидка vs рассрочка + сколько выручки ещё не получено
-      formatFunnel: { // формат по реальному полю O'quv turi: конверсия по форматам + coverage (стоит ли поле у непроданных)
-        leadsByFormat, soldByFormat,
-        convOnlinePct: leadsByFormat.online ? +(soldByFormat.online / leadsByFormat.online * 100).toFixed(2) : null,
-        convOfflinePct: leadsByFormat.offline ? +(soldByFormat.offline / leadsByFormat.offline * 100).toFixed(2) : null,
-        coveragePct: (leadsByFormat.online + leadsByFormat.offline + leadsByFormat.none) ? +((leadsByFormat.online + leadsByFormat.offline) / (leadsByFormat.online + leadsByFormat.offline + leadsByFormat.none) * 100).toFixed(1) : 0,
+      formatFunnel: { // ФОРМАТ (O'quv turi) — это ВЫБОР ПОКУПАТЕЛЯ в момент оплаты по потребности, НЕ свойство лида.
+        // Поэтому «конверсия по форматам» НЕ считается (у лида формата нет). Достоверна только СТРУКТУРА ПРОДАЖ.
+        soldByFormat, // онлайн/офлайн среди проданных — реальная доля офлайна (точнее, чем по цене)
+        offlineSharePct: (soldByFormat.online + soldByFormat.offline) ? +(soldByFormat.offline / (soldByFormat.online + soldByFormat.offline) * 100).toFixed(1) : null,
+        leadCoveragePct: (leadsByFormat.online + leadsByFormat.offline + leadsByFormat.none) ? +((leadsByFormat.online + leadsByFormat.offline) / (leadsByFormat.online + leadsByFormat.offline + leadsByFormat.none) * 100).toFixed(1) : 0, // ~2% — поле ставят при продаже
+        note: "формат определяется при продаже по потребности клиента; конверсия по форматам неприменима",
       },
       mopsByConv, mopsBySales, problems, problemsAll,
       velocity: { median: velocityMedian, avg: velocityAvg, count: saleDurations.length, stages: stagesArr },
