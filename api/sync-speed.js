@@ -500,15 +500,27 @@ export default async function handler(req, res) {
       const li = leadInfo[id];
       return li && li.calls > 0; // были звонки — есть смысл проверять дозвон
     });
-    // ПРИОРИТЕТ проверки нот: лиды с активностью СЕГОДНЯ (звонили сегодня ИЛИ созданы сегодня).
-    // Важно: старый лид, которого обзванивают сегодня, тоже нужен для метрики «За сегодня» —
-    // иначе он окажется за лимитом, его ноты не прочитаются и дозвон за сегодня не засчитается
-    // (симптом: «звонили 40, дозвон 8» — звонили из событий не капается, а reached из нот — да).
+    // ── НАКОПИТЕЛЬНЫЙ ЗАМЕР ДОЗВОНА ЗА МЕСЯЦ ──
+    // Ноты за полный месяц НЕ дочитываются за один проход (сотни лидов остаются за бюджетом времени),
+    // из-за чего месячный дозвон занижался (непрочитанные считались недозвоном). Поэтому КОПИМ между
+    // прогонами: какие лиды дочитаны (read) и у кого был разговор ≥порога (reached, с их МОПом). Ключ по
+    // месяцу — авто-сброс 1-го числа. За несколько крон-запусков покрытие дорастает до полного.
+    const monthKey2 = new Date((Math.floor(Date.now() / 1000) + TZ_OFFSET2) * 1000).toISOString().slice(0, 7);
+    const accKey = K(`speedreach:${monthKey2}`);
+    const rgetJSON2 = async (key, dflt) => { try { const r = await fetch(`${redisUrl}/get/${encodeURIComponent(key)}`, { headers: { Authorization: `Bearer ${redisToken}` } }); const d = await r.json(); const raw = d && d.result != null ? d.result : null; return raw == null ? dflt : JSON.parse(raw); } catch (e) { return dflt; } };
+    const reachAcc = (await rgetJSON2(accKey, null)) || { reached: {}, read: {}, at: 0 };
+    if (!reachAcc.reached) reachAcc.reached = {};
+    if (!reachAcc.read) reachAcc.read = {};
+    // ПРИОРИТЕТ проверки нот: (1) активные СЕГОДНЯ (для метрики «за сегодня» — иначе старый лид, которого
+    // обзванивают сегодня, окажется за лимитом и дозвон за сегодня не засчитается), затем (2) ещё НЕ прочитанные
+    // в этом месяце (добираем покрытие), затем прочитанные (перечитываем на случай новых звонков).
     const isTodayActive = (li) => (li.created || 0) >= dayStart2 || (li._callTs || []).some(ts => ts >= dayStart2);
     leadIdsToCheck.sort((a, b) => {
       const ta = isTodayActive(leadInfo[a]) ? 0 : 1;
       const tb = isTodayActive(leadInfo[b]) ? 0 : 1;
-      return ta - tb;
+      if (ta !== tb) return ta - tb;
+      const ra = reachAcc.read[a] ? 1 : 0, rb = reachAcc.read[b] ? 1 : 0; // непрочитанные — вперёд
+      return ra - rb;
     });
     // ПОТОЛОК лидов для чтения нот. Раньше был 600 и служил защитой от таймаута — но ноты теперь
     // читаются пулом (26с на 600 лидов вместо ~240с), и от таймаута защищает БЮДЖЕТ ВРЕМЕНИ, а не
@@ -584,6 +596,7 @@ export default async function handler(req, res) {
         if (r) notesFailStatus[r.status] = (notesFailStatus[r.status] || 0) + 1;
         return;
       }
+      if (leadInfo[lid]) leadInfo[lid]._notesRead = true; // ноты успешно прочитаны (для накопительного покрытия за месяц)
       if (r.status === 204) return;
       const d = await r.json();
       const notes = (d._embedded && d._embedded.notes) || [];
@@ -620,6 +633,21 @@ export default async function handler(req, res) {
     };
     await Promise.all(Array.from({ length: Math.min(NOTES_CONCURRENCY, toCheck.length) }, worker));
     const notesMs = Date.now() - notesT0;
+
+    // НАКОПЛЕНИЕ: прочитанные и дозвонившиеся лиды этого месяца (с их МОПом). Гейтим по _notesRead (реально
+    // прочитано), поэтому непрочитанный хвост при обрыве бюджета в накопитель НЕ попадёт. Удалённые — вычищаем.
+    try {
+      for (const lid of toCheck) {
+        const li = leadInfo[lid]; if (!li) continue;
+        if (li._gone) { delete reachAcc.reached[lid]; delete reachAcc.read[lid]; continue; }
+        if (li._notesRead) {
+          reachAcc.read[lid] = 1;
+          if (li.reachedReal) reachAcc.reached[lid] = ACTIVE_MOPS[li.resp] || "other";
+        }
+      }
+      reachAcc.at = Math.floor(Date.now() / 1000);
+      await fetch(`${redisUrl}/set/${encodeURIComponent(accKey)}?EX=3456000`, { method: "POST", headers: { Authorization: `Bearer ${redisToken}` }, body: JSON.stringify(reachAcc) }); // TTL 40 сут — переживает месяц
+    } catch (e) { /* накопитель не критичен для прогона */ }
 
 
     // === DEBUG-ВЫВОД: сверяем каждое событие звонка за сегодня с фактической нотой (длительностью) ===
@@ -991,6 +1019,23 @@ export default async function handler(req, res) {
       thresholdSec: REACHED_SEC,
       definition: "лид считается дозвонившимся, если был хотя бы один разговор длиннее порога (по нотам amoCRM)",
     };
+    // ── НАКОПИТЕЛЬНЫЙ месячный дозвон: reached копится по прогонам → полнее, чем reach за один проход ──
+    const reachedByMopAcc = {};
+    for (const mopName of Object.values(reachAcc.reached)) reachedByMopAcc[mopName] = (reachedByMopAcc[mopName] || 0) + 1;
+    const accReachedTotal = Object.keys(reachAcc.reached).length;
+    const accReadTotal = Object.keys(reachAcc.read).length;
+    const reachMonthAccum = {
+      month: monthKey2,
+      leads: leadsTotal,
+      reachedLeads: accReachedTotal,
+      reachedPct: leadsTotal ? Math.round(accReachedTotal / leadsTotal * 100) : null,
+      readLeads: accReadTotal,                              // дочитано лидов (покрытие копится по прогонам)
+      withCalls: leadIdsToCheck.length,                     // лидов со звонками в месяце (потолок покрытия нот)
+      coveragePct: leadIdsToCheck.length ? Math.min(100, Math.round(accReadTotal / leadIdsToCheck.length * 100)) : 100,
+      byMop: mops.map((m) => ({ name: m.name, leads: m.leads, reached: reachedByMopAcc[m.name] || 0, dozvonPct: m.leads ? Math.round((reachedByMopAcc[m.name] || 0) / m.leads * 100) : null })),
+      thresholdSec: REACHED_SEC,
+      note: "дозвон/закрытие копятся между прогонами (ноты не дочитываются за один проход); растут к полноте за несколько крон-запусков — coveragePct показывает готовность",
+    };
     // ═══ ДНИ НА ЭТАПЕ (карта #3) — best-effort, В КОНЦЕ: критичные данные (звонки/ноты) уже собраны ═══
     // Отвечает на «сколько дней лид висит на этапе» — то, что советник раньше НЕ мог (только счёт по этапам).
     let stageTruncated = false, openPoolTruncated = false;
@@ -1041,6 +1086,7 @@ export default async function handler(req, res) {
 
     const result = {
       updatedAt: new Date().toISOString(), period: "Текущий месяц", mops, mopsDay,
+      reachMonthAccum, // накопительный месячный дозвон по лидам/МОПам (растёт к полноте между прогонами)
       suspicious2: suspicious2.slice(0, 300), telephony, stageAge,
       reach, // ← дозвон по лидам за МЕСЯЦ (по всем попыткам)
       dozvon, // ← % дозвона ПО ЭТАПУ ВОРОНКИ (настраивается в панели: dozvonStages)
