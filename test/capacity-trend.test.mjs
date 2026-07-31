@@ -94,3 +94,21 @@ test("deriveLeverTasks: нет вердикта/decomp → пусто", () => {
   assert.equal(deriveLeverTasks(null).length, 0);
   assert.equal(deriveLeverTasks({ computable: true }).length, 0);
 });
+
+test("deriveLeverTasks: маркетинг-задача КОНКРЕТНА (лиды+бюджет из levers), не вопрос", () => {
+  const v = { computable: true, decomp: { reserveStep: "closing", closingPct: 3.8, bestClosingPct: 7.9, worstDozvonMop: { name: "K", pct: 45 }, bestDozvonPct: 69 },
+    levers: { budgetGain: 12000000, leadsToPeak: 97, budgetToPeak: 405000, cpl: 4176 } };
+  const t = deriveLeverTasks(v);
+  const mkt = t.find((x) => x.recipient === "marketing");
+  assert.ok(mkt, "есть маркетинг-задача");
+  assert.equal(mkt.leads, 97);
+  assert.equal(mkt.budgetUZS, 405000);
+  assert.match(mkt.title, /97 лидов/);
+  assert.match(mkt.title, /405\D?000/); // бюджет в заголовке
+});
+
+test("deriveLeverTasks: нет запаса лидов до пика (leadsToPeak=0) → маркетинг-задачи НЕТ", () => {
+  const v = { computable: true, decomp: { reserveStep: "closing", closingPct: 3.8, bestClosingPct: 7.9 },
+    levers: { budgetGain: 5000000, leadsToPeak: 0, budgetToPeak: 0, cpl: 4176 } };
+  assert.equal(deriveLeverTasks(v).some((x) => x.recipient === "marketing"), false);
+});
