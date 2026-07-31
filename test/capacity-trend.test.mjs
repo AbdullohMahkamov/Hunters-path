@@ -69,3 +69,28 @@ test("funnelReserve: нет базы → null", () => {
   assert.equal(funnelReserve(0, 0.5, 0.6, 0.08), null);
   assert.equal(funnelReserve(0.026, 0, 0.6, 0.08), null);
 });
+
+// ── РЫЧАГИ → ЗАДАЧИ ОДНИМ ПАКЕТОМ ──
+import { deriveLeverTasks } from "../api/goal-realism.js";
+
+test("deriveLeverTasks: закрытие-резерв → задача РОПу; отстающий по дозвону → точечная; деньги НЕ задачи", () => {
+  const v = { computable: true, decomp: { reserveStep: "closing", closingPct: 3.81, bestClosingPct: 7.92,
+    worstDozvonMop: { name: "Komiljon", pct: 45 }, bestDozvonPct: 69 } };
+  const t = deriveLeverTasks(v);
+  assert.equal(t.length, 2);
+  assert.match(t[0].title, /закрыти/i);
+  assert.equal(t[0].recipient, "rop");
+  assert.match(t[1].title, /Komiljon/);
+  assert.equal(t[1].scope, "pointwise");
+});
+
+test("deriveLeverTasks: дозвон отстающего в норме (разрыв <10пп) → только задача закрытия", () => {
+  const v = { computable: true, decomp: { reserveStep: "closing", closingPct: 4, bestClosingPct: 8,
+    worstDozvonMop: { name: "X", pct: 62 }, bestDozvonPct: 69 } };
+  assert.equal(deriveLeverTasks(v).length, 1);
+});
+
+test("deriveLeverTasks: нет вердикта/decomp → пусто", () => {
+  assert.equal(deriveLeverTasks(null).length, 0);
+  assert.equal(deriveLeverTasks({ computable: true }).length, 0);
+});

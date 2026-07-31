@@ -15,6 +15,7 @@ import { runMopAgent } from "./mop-agent.js";
 import { handlePlanButton, handleOwnerDecision } from "./planner.js"; // pt2: подтверждение плана + решение по недостижимой части цели ИЗ ЧАТА
 import { handlePlanButton as handleDeepSalesButton } from "./deepsales.js"; // DeepSales: подтверждение траты на разбор ИЗ ЧАТА/Mini App
 import { handleMetaButton } from "./meta-brain.js";     // pt2: подтверждение/отклонение предложений мозга ИЗ ЧАТА
+import { assessRealism, deriveLeverTasks } from "./goal-realism.js"; // одна кнопка «поставить задачи по рычагам»
 
 const REDIS_URL = process.env.UPSTASH_REDIS_REST_URL;
 const REDIS_TOKEN = process.env.UPSTASH_REDIS_REST_TOKEN;
@@ -123,6 +124,18 @@ export default async function handler(req, res) {
       if (!title) { res.status(400).json({ error: "нужен title" }); return; }
       const r = await createRopTask({ title, why: b.why, deadline: b.deadline, steps: b.steps });
       res.status(200).json({ ok: true, type, taskId: r.id, note: "задача добавлена в план — Task Agent начнёт вести её (пинг/эскалация)" });
+      return;
+    }
+    if (type === "set_levers") {
+      // ОДНА КНОПКА → операционные задачи РОПу по рычагам из вердикта (закрытие, дозвон отстающего).
+      // Пересчитываем вердикт по СОХРАНЁННОЙ цели (не доверяем присланному), деньги/наём НЕ раздаём — это решения владельца.
+      const v = await assessRealism("hunter");
+      const lts = deriveLeverTasks(v);
+      const created = [];
+      for (const lt of lts) { const r = await createRopTask({ title: lt.title, why: lt.why }); created.push({ id: r.id, title: lt.title }); }
+      if (created.length) { try { await runTick(true); } catch (e) {} } // сразу пингуем РОПа
+      res.status(200).json({ ok: true, type, created, count: created.length,
+        note: created.length ? `Поставлено РОПу задач: ${created.length} — Task Agent начнёт вести (пинг/эскалация). Деньги/наём остаются решением владельца в очереди «Решения».` : "операционных рычагов для задач сейчас нет (замер дозвона/закрытия неполон или резерв не выделен)" });
       return;
     }
     if (type === "marketing_task") {

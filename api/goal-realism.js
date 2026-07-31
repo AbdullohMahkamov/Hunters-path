@@ -237,6 +237,29 @@ export function funnelReserve(convNow, dozvonNow, bestDozvon, bestClosing) {
   };
 }
 
+// ── РЫЧАГИ → ЗАДАЧИ ОДНИМ ПАКЕТОМ (чистое, тестируемо) ──
+// Из вердикта выводим ОПЕРАЦИОННЫЕ задачи РОПу (закрытие, дозвон отстающего) — их одна кнопка и раздаёт.
+// Деньги/наём (реклама, +менеджеры, снижение цели) — НЕ задачи исполнителям, а решения владельца (очередь «Решения»).
+export function deriveLeverTasks(v) {
+  if (!v || !v.computable) return [];
+  const tasks = [], d = v.decomp;
+  if (d && d.reserveStep === "closing" && d.bestClosingPct > d.closingPct) {
+    tasks.push({
+      title: `Поднять закрытие сделок к лучшему в команде (~${d.bestClosingPct}%)`,
+      why: `Команда закрывает ${d.closingPct}% разговоров, лучший — ${d.bestClosingPct}%. Разобрать разговоры слабых менеджеров против лучшего, подтянуть скрипт закрытия. Главный рычаг: без найма и без новых лидов.`,
+      recipient: "rop", scope: "department",
+    });
+  }
+  if (d && d.worstDozvonMop && d.worstDozvonMop.pct < d.bestDozvonPct - 10) {
+    tasks.push({
+      title: `Подтянуть дозвон: ${d.worstDozvonMop.name} (${d.worstDozvonMop.pct}% против ${d.bestDozvonPct}%)`,
+      why: `Дозвон ${d.worstDozvonMop.name} — ${d.worstDozvonMop.pct}% против ${d.bestDozvonPct}% у лучших. Разобрать причины (скорость первого звонка, число попыток), скорректировать.`,
+      recipient: "rop", scope: "pointwise", mop: d.worstDozvonMop.name,
+    });
+  }
+  return tasks;
+}
+
 // ── АСИНХРОННАЯ ОБЁРТКА: собирает входы (цель, воронка, капасити, CPL) и зовёт ядро ──
 // opts (все необязательны, для READ-ONLY превью гипотетической цели — ничего не мутируем):
 //   goalUZS/period — оценить цель, ОТЛИЧНУЮ от сохранённой (напр. август, пока стоит июльская);
