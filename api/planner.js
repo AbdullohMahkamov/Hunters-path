@@ -487,11 +487,13 @@ export async function nextMonthPrompt(org = ORG) {
     } catch (e) { /* рекап не критичен */ }
   }
 
-  const msg = `📅 <b>Месяц заканчивается</b>\n\n${recap}Пора задать цель на <b>${nextLabel}</b>. Напишите её одной фразой прямо в чат — <b>сумма + период</b> (напр. «выручка 1.5 млрд сум за ${monthLabel(m + 1)}»). Как зададите — сразу проверю реалистичность и построю план догона.`;
+  const msg = `📅 <b>Месяц заканчивается</b>\n\n${recap}Пора задать цель на <b>${nextLabel}</b>. Нажмите кнопку ниже — откроется приложение, там в чате напишите цель одной фразой (<b>сумма + период</b>, напр. «выручка 1.5 млрд сум за ${monthLabel(m + 1)}»). Сразу увидите вердикт реалистичности и план — и подтвердите, не выходя.`;
+  // Кнопка ОТКРЫВАЕТ Mini App прямо здесь: весь путь (цель→вердикт→план→подтвердить) в одном месте, без переключений.
+  const kb = { reply_markup: { inline_keyboard: [[{ text: "📝 Открыть и задать цель", web_app: { url: "https://test.hunterai.uz/tg" } }]] } };
 
   const ppl = await getPeople();
   let sent = false;
-  if (ppl.owner && ppl.owner.chatId) { const r = await sendTg("owner", ppl.owner.chatId, msg); sent = !!(r && r.ok); }
+  if (ppl.owner && ppl.owner.chatId) { const r = await sendTg("owner", ppl.owner.chatId, msg, kb); sent = !!(r && r.ok); }
   await rsetJSON(guardKey, { sentAt: Date.now(), monthKey, nextLabel, sent });
   return { ok: true, sent, monthKey, nextLabel };
 }

@@ -13,6 +13,7 @@ import { runTick, addMarketingTask } from "./task-agent.js";
 import { runGrowth } from "./growth-agent.js";
 import { runMopAgent } from "./mop-agent.js";
 import { handlePlanButton, handleOwnerDecision } from "./planner.js"; // pt2: подтверждение плана + решение по недостижимой части цели ИЗ ЧАТА
+import { handlePlanButton as handleDeepSalesButton } from "./deepsales.js"; // DeepSales: подтверждение траты на разбор ИЗ ЧАТА/Mini App
 import { handleMetaButton } from "./meta-brain.js";     // pt2: подтверждение/отклонение предложений мозга ИЗ ЧАТА
 
 const REDIS_URL = process.env.UPSTASH_REDIS_REST_URL;
@@ -161,6 +162,12 @@ export default async function handler(req, res) {
       // решение владельца по недостижимой части цели: снизить цель до достижимой ИЛИ оставить как есть
       const r = await handleOwnerDecision(type === "od_lower" ? "lower" : "dismiss");
       res.status(200).json({ ok: r && r.toast !== "решение неактуально", type, ...r });
+      return;
+    }
+    if (type === "ds_run") {
+      // DeepSales: подтвердить план разбора → дальше финальный денежный гейт «Потратить» (двойное подтверждение денег)
+      const r = await handleDeepSalesButton("run");
+      res.status(200).json({ ok: !!(r && r.ok), type, ...r });
       return;
     }
     if (type === "mb_confirm" || type === "mb_reject") {

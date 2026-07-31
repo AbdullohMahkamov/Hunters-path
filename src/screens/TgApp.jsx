@@ -6,8 +6,8 @@ import React, { useEffect, useRef, useState } from 'react'
 import { setSession, setRoleOrg, getSession } from '../lib/session.js'
 import { auth } from '../lib/api.js'
 import { applyTheme } from '../lib/theme.js'
-import { loadCloud, ensureChats } from '../lib/appState.js'
-import { initChat, renderChat, scrollChatBottom } from '../lib/chat.js'
+import { loadCloud, ensureChats, state, save } from '../lib/appState.js'
+import { initChat, renderChat, scrollChatBottom, sendMsg } from '../lib/chat.js'
 import { loadTgSdk, initTgChrome, tgBackButton } from '../lib/tgwebapp.js'
 import chatMainInnerHtml from './viewsHtml/chatMainInner.html?raw'
 
@@ -51,24 +51,17 @@ function ActBtn({ label, warn, onRun }) {
   return <button className={'tgbtn' + (warn ? ' warn' : '') + (st === 'busy' ? ' busy' : '')} onClick={click}>{txt}</button>
 }
 
-function DecisionQueue({ onCount }) {
-  const [data, setData] = useState(null)
-  const [loading, setLoading] = useState(true)
+const KIND_ICON = { plan: '🎯', meta: '🧠', meta_more: '🧠', deepsales: '🎧', ownerdecision: '⚠️', goal: '📝' }
+
+function DecisionQueue({ onCount, onGoChat }) {
+  const [items, setItems] = useState(null)
 
   async function load() {
-    const s = getSession()
-    const [pl, mb] = await Promise.all([
-      fetch('/api/planner?action=state&session=' + encodeURIComponent(s)).then((r) => r.json()).catch(() => null),
-      fetch('/api/meta-brain?action=state&session=' + encodeURIComponent(s)).then((r) => r.json()).catch(() => null),
-    ])
-    const pending = pl && pl.pending ? pl.pending : null
-    const goal = pl && pl.goal ? pl.goal : null
-    // предложения мозга: форма ответа может отличаться — берём массив защитно, показываем только ожидающие
-    const rawP = mb && (mb.proposals || (mb.state && mb.state.proposals) || mb.pending)
-    const proposals = Array.isArray(rawP) ? rawP.filter((p) => !p.status || p.status === 'pending') : []
-    const d = { pending, goal, proposals }
-    setData(d); setLoading(false)
-    if (onCount) onCount((pending ? 1 : 0) + proposals.length)
+    // ЕДИНЫЙ источник — тот же, что кормит отчёт по команде. Все типы: план, meta-brain, DeepSales, ownerDecision, цель.
+    const r = await fetch('/api/reports?action=decisions&session=' + encodeURIComponent(getSession())).then((x) => x.json()).catch(() => null)
+    const list = (r && r.ok && Array.isArray(r.items)) ? r.items : []
+    setItems(list)
+    if (onCount) onCount(list.filter((it) => it.kind !== 'meta_more').length)
   }
   useEffect(() => { load(); const iv = setInterval(load, 45000); return () => clearInterval(iv) }, []) // eslint-disable-line
 
@@ -79,35 +72,22 @@ function DecisionQueue({ onCount }) {
     return !!(d && d.ok)
   }
 
-  if (loading) return <div className="tgstate">Загрузка…</div>
-  const { pending, proposals } = data
-  const empty = !pending && (!proposals || proposals.length === 0)
-  if (empty) return <div className="tgstate"><div className="big">Всё под контролем</div>Сейчас ничего не ждёт решения. Свободные вопросы — в чате советника.</div>
+  if (items == null) return <div className="tgstate">Загрузка…</div>
+  if (!items.length) return <div className="tgstate"><div className="big">Всё под контролем</div>Сейчас ничего не ждёт решения. Свободные вопросы — в чате советника.</div>
 
-  const f = pending && pending.plan && pending.plan.facts
-  const od = f && f.ownerDecision
   return (
     <div className="tgdec">
-      {pending && (
-        <div className="tgcard">
-          <h4>🎯 План под цель «{pending.periodKey || ''}»</h4>
-          {f && <div className="muted">Разрыв до цели: <b>{num(f.gap)} сум</b>{f.gapPct != null ? ` (${f.gapPct}%)` : ''}. Осталось раб. дней: {f.workdays ? f.workdays.left : '—'}.</div>}
-          {od && <div className="muted" style={{ marginTop: 6, color: '#b45309' }}>Задачи — под достижимую часть (~{num(od.feasibleGoalUZS)} сум). Разрыв сверх (<b>{num(od.unreachableUZS)} сум</b>) — ваше решение{od.addManagers ? `: +${od.addManagers} менеджер(ов)` : ''}, не задача людям.</div>}
-          <div className="tgacts">
-            <ActBtn label="✅ Подтвердить и раздать" onRun={() => act({ type: 'plan_confirm' })} />
-            <ActBtn label="🔄 Пересчитать" onRun={() => act({ type: 'plan_recalc' })} />
-            <ActBtn label="❌ Отклонить" warn onRun={() => act({ type: 'plan_reject' })} />
-          </div>
-        </div>
-      )}
-      {(proposals || []).map((p) => (
-        <div className="tgcard" key={p.id}>
-          <h4>🧠 {p.title || 'Предложение'}</h4>
-          {(p.why || p.summary || (p.proposedTask && p.proposedTask.title)) && <div className="muted">{p.why || p.summary || p.proposedTask.title}</div>}
-          <div className="tgacts">
-            <ActBtn label="✅ Принять" onRun={() => act({ type: 'mb_confirm', id: p.id })} />
-            <ActBtn label="❌ Отклонить" warn onRun={() => act({ type: 'mb_reject', id: p.id })} />
-          </div>
+      {items.map((it, i) => (
+        <div className="tgcard" key={it.kind + (it.id || i)}>
+          <h4>{KIND_ICON[it.kind] || '•'} {it.title}</h4>
+          {it.detail && <div className="muted" style={it.kind === 'ownerdecision' ? { color: '#b45309' } : null}>{it.detail}</div>}
+          {it.actions && it.actions.length > 0 && (
+            <div className="tgacts">
+              {it.actions.map((a, j) => a.type === '__goto_chat'
+                ? <button key={j} className="tgbtn" onClick={() => onGoChat && onGoChat()}>{a.label}</button>
+                : <ActBtn key={j} label={a.label} warn={a.warn} onRun={() => act(a.id ? { type: a.type, id: a.id } : { type: a.type })} />)}
+            </div>
+          )}
         </div>
       ))}
     </div>
@@ -147,6 +127,20 @@ export default function TgApp() {
       bootedRef.current = true
       setPhase('ready')
       setTimeout(() => { renderChat(); scrollChatBottom() }, 60)
+      // HANDOFF из отчёта: ?advisor=token (web_app URL) ИЛИ start_param (прямая ссылка Mini App) → засеять
+      // НОВЫЙ чат контекстом находки/отчёта (тот же механизм, что в вебе через /api/digest?action=handoff).
+      try {
+        const q = new URLSearchParams(location.search)
+        const token = q.get('advisor') || q.get('hf') || (wa && wa.initDataUnsafe && wa.initDataUnsafe.start_param) || ''
+        if (token) {
+          const dd = await fetch('/api/digest?action=handoff&token=' + encodeURIComponent(token) + '&session=' + encodeURIComponent(getSession())).then((r) => r.json()).catch(() => null)
+          if (!cancelled && dd && dd.ok && dd.seed) {
+            const c = { id: 'c' + Date.now(), title: dd.title || 'Разбор', messages: [], pinned: false, projectId: '' }
+            state.chats.unshift(c); state.activeChatId = c.id; save()
+            setTimeout(() => { renderChat(); sendMsg(dd.seed) }, 160)
+          }
+        }
+      } catch (e) { /* handoff не критичен — просто откроется чистый чат */ }
     })()
     return () => { cancelled = true }
   }, [])
@@ -199,7 +193,7 @@ export default function TgApp() {
         </div>
         {/* ОЧЕРЕДЬ РЕШЕНИЙ — смонтирована всегда (опрос + бейдж на вкладке), показывается когда активна */}
         <div className={'pane' + (tab === 'decisions' ? ' on' : '')}>
-          {phase === 'ready' && <DecisionQueue onCount={setDecCount} />}
+          {phase === 'ready' && <DecisionQueue onCount={setDecCount} onGoChat={() => go('chat')} />}
         </div>
       </div>
     </div>

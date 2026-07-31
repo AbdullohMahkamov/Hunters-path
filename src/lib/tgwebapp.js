@@ -19,6 +19,9 @@ export function loadTgSdk() {
 }
 
 const px = (n) => (Number(n) || 0) + 'px'
+// FEATURE-DETECT по версии Bot API: старые клиенты не имеют новых методов. Проверяем явно (не полагаемся только
+// на try/catch), чтобы не дёргать неподдержанное и не сорить ошибками. Нет метода/версии → просто не вызываем.
+const supports = (wa, v) => { try { return !!(wa && wa.isVersionAtLeast && wa.isVersionAtLeast(v)) } catch (e) { return false } }
 
 // Безопасные зоны + СТАБИЛЬНАЯ высота вьюпорта → CSS-переменные. Стабильную (не «прыгающую») высоту берём,
 // чтобы поле ввода не скакало при жестах/клавиатуре (главная боль Mini App на iOS).
@@ -33,21 +36,25 @@ function applyInsets(wa) {
 
 export function initTgChrome(wa) {
   if (!wa) return
-  try { wa.ready() } catch (e) { /* noop */ }
-  try { wa.expand() } catch (e) { /* noop */ }
-  try { wa.setHeaderColor && wa.setHeaderColor('#ffffff') } catch (e) { /* noop */ } // приложение всегда светлое (theme-light)
-  try { wa.setBackgroundColor && wa.setBackgroundColor('#ffffff') } catch (e) { /* noop */ }
-  try { wa.disableVerticalSwipes && wa.disableVerticalSwipes() } catch (e) { /* noop */ } // меньше случайных закрытий при скролле чата
+  try { wa.ready() } catch (e) { /* noop */ }        // 5.0 — базовое, есть везде
+  try { wa.expand() } catch (e) { /* noop */ }        // 5.0
+  if (supports(wa, '6.1')) { // цвет шапки/фона — приложение всегда светлое (theme-light)
+    try { wa.setHeaderColor('#ffffff') } catch (e) { /* noop */ }
+    try { wa.setBackgroundColor('#ffffff') } catch (e) { /* noop */ }
+  }
+  if (supports(wa, '7.7')) { try { wa.disableVerticalSwipes() } catch (e) { /* noop */ } } // меньше случайных закрытий при скролле
   applyInsets(wa)
   const reapply = () => applyInsets(wa)
-  try { wa.onEvent('viewportChanged', reapply) } catch (e) { /* noop */ }
-  try { wa.onEvent('safeAreaChanged', reapply) } catch (e) { /* noop */ }
-  try { wa.onEvent('contentSafeAreaChanged', reapply) } catch (e) { /* noop */ }
+  try { wa.onEvent('viewportChanged', reapply) } catch (e) { /* noop */ } // 6.0
+  if (supports(wa, '8.0')) { // safe-area события — только новые клиенты; на старых insets = 0 (уже дефолт в applyInsets)
+    try { wa.onEvent('safeAreaChanged', reapply) } catch (e) { /* noop */ }
+    try { wa.onEvent('contentSafeAreaChanged', reapply) } catch (e) { /* noop */ }
+  }
 }
 
-// Аппаратная кнопка «Назад» в шапке Telegram (нативнее, чем своя). show=false → скрыть.
+// Аппаратная кнопка «Назад» в шапке Telegram (6.1+). На старых клиентах её нет — своя вкладочная навигация остаётся.
 export function tgBackButton(wa, show, onClick) {
-  if (!wa || !wa.BackButton) return
+  if (!wa || !wa.BackButton || !supports(wa, '6.1')) return
   try {
     if (show) { wa.BackButton.onClick(onClick); wa.BackButton.show() }
     else { wa.BackButton.hide(); if (wa.BackButton.offClick) wa.BackButton.offClick(onClick) }

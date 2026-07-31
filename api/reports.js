@@ -12,7 +12,7 @@ import { funnelFacts, workingDays, closeMonth, getOwnerDecision } from "./planne
 import { resolveCpl } from "./goal-realism.js";
 import { loadSalesTasks } from "./task-agent.js"; // авторитетный список задач (план + MOP + мозг + маркетинг)
 import { priorityScore, OPEN_STATUSES } from "./meta-brain.js"; // ранжирование предложений мозга для секции решений
-import { genToken, handoffKb, saveRawHandoff } from "./digest.js";
+import { genToken, saveRawHandoff } from "./digest.js";
 
 const REDIS_URL = process.env.UPSTASH_REDIS_REST_URL;
 const REDIS_TOKEN = process.env.UPSTASH_REDIS_REST_TOKEN;
@@ -25,6 +25,7 @@ async function getSession(session) { if (!session) return null; try { const raw 
 
 const num = (n) => (n == null ? "н/д" : Number(Math.round(n)).toLocaleString("ru-RU"));
 const short = (s, n) => { s = String(s || ""); return s.length > n ? s.slice(0, n) + "…" : s; };
+const MINIAPP_URL = "https://test.hunterai.uz/tg"; // Mini App владельца (кнопка «Разобрать» открывает его)
 const tkDate = (offsetDays = 0) => new Date(Date.now() + 5 * 3600000 - offsetDays * 86400000).toISOString().slice(0, 10);
 const today0 = () => tkDate(0);
 
@@ -78,6 +79,62 @@ export async function buildBusinessReport(org = ORG) {
   return { text: s, seed, title: `Бизнес ${yKey}` };
 }
 
+// ── ЕДИНЫЙ ИСТОЧНИК «ЧТО ЖДЁТ РЕШЕНИЯ ВЛАДЕЛЬЦА» ──
+// Один список — и для отчёта по команде (Telegram: line + callback-кнопки), и для очереди решений в Mini App
+// (структура + типы advisor-act). Так каналы не разъезжаются. Типы: план, meta-brain, DeepSales, ownerDecision, цель.
+export async function getDecisions(org = ORG) {
+  const items = [];
+  // 1) DeepSales — трата на разбор звонков (без подтверждения звонки не разбираются)
+  const ds = await rgetJSON(`transcriptplan:pending:${org}`, null);
+  if (ds && !ds.declined && !ds.spend) {
+    const usd = Math.round((ds.totals ? ds.totals.plannedMinutes : 0) * 0.056);
+    items.push({ kind: "deepsales", title: `Разбор звонков (~$${usd})`, detail: "Трата на разбор звонков — без неё звонки не разбираются.",
+      line: `⏳ Трата на разбор звонков (~$${usd}) — <b>без неё звонки не разбираются</b>.`,
+      tgButtons: [[{ text: `🎧 Разобрать звонки (~$${usd})`, callback_data: "tplan:run" }]],
+      actions: [{ type: "ds_run", label: `🎧 Разобрать (~$${usd})` }] });
+  }
+  // 2) План под цель ждёт подтверждения
+  const pend = await rgetJSON(`planner:pending:${org}`, null);
+  if (pend && pend.plan) {
+    const g = pend.plan.facts || {};
+    items.push({ kind: "plan", title: `План под цель «${pend.periodKey || ""}»`, detail: `Разрыв ${num(g.gap)} сум${g.gapPct != null ? ` (${g.gapPct}%)` : ""}. Осталось раб. дней: ${g.workdays ? g.workdays.left : "—"}.`,
+      line: `⏳ План под цель «${pend.periodKey || ""}» ждёт подтверждения${g.gap != null ? ` (разрыв ${num(g.gap)} сум)` : ""}.`,
+      tgButtons: [[{ text: "✅ Подтвердить план", callback_data: "pl:confirm" }, { text: "❌ Отклонить", callback_data: "pl:reject" }]],
+      actions: [{ type: "plan_confirm", label: "✅ Подтвердить и раздать" }, { type: "plan_recalc", label: "🔄 Пересчитать" }, { type: "plan_reject", label: "❌ Отклонить", warn: true }] });
+  }
+  // 3) ownerDecision — недостижимая часть цели (решение владельца, не задача людям)
+  const odRec = await getOwnerDecision(org).catch(() => null);
+  if (odRec) {
+    const od = odRec.od, feas = od.feasibleGoalUZS, unreach = od.unreachableUZS, k = od.addManagers;
+    items.push({ kind: "ownerdecision", title: `${odRec.scope === "full" ? "Цель целиком" : "Часть цели"} вне возможностей команды`, detail: `${num(unreach)} сум не закрыть текущими силами${k ? `, +${k} менеджер(ов)` : ""}. Команда/бюджет или снизить цель до ${num(feas)} сум.`,
+      line: `⚠️ ${odRec.scope === "full" ? "Цель целиком" : "Часть цели"} вне возможностей команды: ${num(unreach)} сум не закрыть текущими силами${k ? `, нужно +${k} менеджер(ов)` : ""}. Это ваше решение — команда/бюджет или снизить цель до ${num(feas)} сум.`,
+      tgButtons: [[{ text: `📉 Снизить цель до ${num(feas)}`, callback_data: "od:lower" }, { text: "Оставить", callback_data: "od:dismiss" }]],
+      actions: [{ type: "od_lower", label: `📉 Снизить до ${num(feas)}` }, { type: "od_dismiss", label: "Оставить" }] });
+  }
+  // 4) Предложения общего мозга — топ-3 по важности
+  const props = ((await rgetJSON("metabrain:proposals", [])) || []).filter((p) => p && OPEN_STATUSES.includes(p.status));
+  if (props.length) {
+    const nowMs = Date.now();
+    props.sort((a, b) => priorityScore(b, nowMs) - priorityScore(a, nowMs));
+    for (const p of props.slice(0, 3)) {
+      items.push({ kind: "meta", id: p.id, title: String(p.title || "Предложение системы").slice(0, 70), detail: p.why || p.summary || (p.proposedTask && p.proposedTask.title) || "",
+        line: `🧠 ${String(p.title || "Предложение системы").slice(0, 70)}`,
+        tgButtons: [[{ text: `✅ ${short(p.title, 16)}`, callback_data: `mb:confirm:${p.id}` }, { text: "❌", callback_data: `mb:reject:${p.id}` }]],
+        actions: [{ type: "mb_confirm", id: p.id, label: "✅ Принять" }, { type: "mb_reject", id: p.id, label: "❌ Отклонить", warn: true }] });
+    }
+    if (props.length > 3) items.push({ kind: "meta_more", title: `…и ещё ${props.length - 3}`, detail: "Разобрать в советнике.", line: `…и ещё ${props.length - 3} — разобрать в советнике.`, tgButtons: [], actions: [] });
+  }
+  // 5) ЗАПРОС ЦЕЛИ (self-heal): нет цели на текущий месяц или она устарела. В отчёте это ведёт бизнес-отчёт →
+  //    line/tgButtons пустые (только для Mini App-очереди, где кнопка ведёт в чат).
+  const goal = await getGoal(org);
+  const stale = goal && goal.period && goal.period.label && goal.period.label !== curMonthLabel();
+  if (!goal || !goal.amountUZS || stale) {
+    items.push({ kind: "goal", title: `Задать цель на ${curMonthLabel()}`, detail: stale ? `Предыдущая «${goal.period.label}» закрыта. Напишите новую цель в чате советника.` : "Цель на месяц не задана. Напишите её в чате советника.",
+      line: "", tgButtons: [], actions: [{ type: "__goto_chat", label: "📝 Задать цель в чате" }] });
+  }
+  return items;
+}
+
 // ── ОТЧЁТ 2: КОМАНДА ──
 const OBS_SOURCES = new Set(["mop-agent", "metabrain"]); // задачи, рождённые слоем наблюдений
 
@@ -126,43 +183,10 @@ export async function buildTeamReport(org = ORG) {
   }
   if (warn.length) s += `\n⚠️ <b>Проверьте доставку:</b> ${warn.join("; ")}.\n`;
 
-  // ── РЕШЕНИЯ, которые ждут владельца (остаются в Telegram, пока очереди Mini App нет) ──
-  const decisions = [];
-  const kbRows = [];
-  // DeepSales: план разбора звонков предложен, но трата не подтверждена → без неё звонки не разбираются
-  const ds = await rgetJSON(`transcriptplan:pending:${org}`, null);
-  if (ds && !ds.declined && !(ds.spend)) {
-    const usd = Math.round((ds.totals ? ds.totals.plannedMinutes : 0) * 0.056);
-    decisions.push(`⏳ Трата на разбор звонков (~$${usd}) — <b>без неё звонки не разбираются</b>.`);
-    kbRows.push([{ text: `🎧 Разобрать звонки (~$${usd})`, callback_data: "tplan:run" }]);
-  }
-  // Планировщик: план под цель ждёт подтверждения
-  const pend = await rgetJSON(`planner:pending:${org}`, null);
-  if (pend && pend.plan) {
-    const g = pend.plan.facts || {};
-    decisions.push(`⏳ План под цель «${pend.periodKey || ""}» ждёт подтверждения${g.gap != null ? ` (разрыв ${num(g.gap)} сум)` : ""}.`);
-    kbRows.push([{ text: "✅ Подтвердить план", callback_data: "pl:confirm" }, { text: "❌ Отклонить", callback_data: "pl:reject" }]);
-  }
-  // ownerDecision: часть/вся цель ВНЕ устойчивых возможностей команды. Не задача людям — РЕШЕНИЕ владельца
-  // (расширить команду/бюджет — это реальный мир; система может лишь снизить цель до достижимой). Строкой + кнопкой.
-  const odRec = await getOwnerDecision(org).catch(() => null);
-  if (odRec) {
-    const od = odRec.od, feas = od.feasibleGoalUZS, unreach = od.unreachableUZS, k = od.addManagers;
-    decisions.push(`⚠️ ${odRec.scope === "full" ? "Цель целиком" : "Часть цели"} вне возможностей команды: ${num(unreach)} сум не закрыть текущими силами${k ? `, нужно +${k} менеджер(ов)` : ""}. Это ваше решение — команда/бюджет или снизить цель до ${num(feas)} сум.`);
-    kbRows.push([{ text: `📉 Снизить цель до ${num(feas)}`, callback_data: "od:lower" }, { text: "Оставить", callback_data: "od:dismiss" }]);
-  }
-  // Предложения общего мозга (наблюдения) — не задачами людям, а РЕШЕНИЯМИ владельцу. Топ-3 по важности,
-  // кнопки подтвердить/отклонить прямо тут (то же правило, что у DeepSales: пока очереди Mini App нет — строкой).
-  const props = ((await rgetJSON("metabrain:proposals", [])) || []).filter((p) => p && OPEN_STATUSES.includes(p.status));
-  if (props.length) {
-    const nowMs = Date.now();
-    props.sort((a, b) => priorityScore(b, nowMs) - priorityScore(a, nowMs));
-    for (const p of props.slice(0, 3)) {
-      decisions.push(`🧠 ${String(p.title || "Предложение системы").slice(0, 70)}`);
-      kbRows.push([{ text: `✅ ${short(p.title, 16)}`, callback_data: `mb:confirm:${p.id}` }, { text: "❌", callback_data: `mb:reject:${p.id}` }]);
-    }
-    if (props.length > 3) decisions.push(`…и ещё ${props.length - 3} — разобрать в советнике.`);
-  }
+  // ── РЕШЕНИЯ, которые ждут владельца — ЕДИНЫЙ источник getDecisions (тот же, что у Mini App-очереди) ──
+  const items = await getDecisions(org);
+  const decisions = [], kbRows = [];
+  for (const it of items) { if (it.line) decisions.push(it.line); for (const row of (it.tgButtons || [])) kbRows.push(row); }
   if (decisions.length) s += `\n<b>Ждёт вашего решения:</b>\n${decisions.join("\n")}\n`;
 
   const seed = `Разбери отчёт по команде и подскажи, что делать в первую очередь и кому поставить задачу. Задач ${assigned}, сделано ${doneN}, просрочено ${overdue.length}${overdue.length ? ` (${overdue.slice(0, 3).map((t) => t.title).join("; ")})` : ""}. Из наблюдений в работе: ${obsInWork}.${decisions.length ? ` Ждут решения: ${decisions.join(" ")}` : ""}`;
@@ -179,8 +203,9 @@ async function sendReport(org, kind) {
   if (!(ppl.owner && ppl.owner.chatId)) return { ok: true, sent: false, reason: "owner не привязан" };
   const token = genToken();
   await saveRawHandoff(token, built.seed, built.title);
-  // клавиатура: строки-решения (если есть) + кнопка «Разобрать в советнике»
-  const rows = [...(built.decisionButtons || []), ...handoffKb(token).reply_markup.inline_keyboard];
+  // клавиатура: строки-решения (callback, работают прямо в Telegram) + кнопка, ОТКРЫВАЮЩАЯ Mini App с контекстом
+  // отчёта (web_app → /tg?advisor=token; токен hf+base36 уже в алфавите [A-Za-z0-9_-]).
+  const rows = [...(built.decisionButtons || []), [{ text: "🧠 Разобрать в советнике", web_app: { url: `${MINIAPP_URL}?advisor=${token}` } }]];
   const r = await sendTg("owner", ppl.owner.chatId, built.text, { reply_markup: { inline_keyboard: rows } });
   return { ok: !!(r && r.ok), sent: !!(r && r.ok), kind };
 }
@@ -204,6 +229,10 @@ export default async function handler(req, res) {
     if (action === "team") { res.status(200).json(await sendReport(ORG, "team")); return; }
     if (action === "business-preview") { res.status(200).json(await buildBusinessReport(ORG)); return; }
     if (action === "team-preview") { res.status(200).json(await buildTeamReport(ORG)); return; }
+    if (action === "decisions") { // очередь решений для Mini App — только структура (без Telegram-строк/кнопок)
+      const items = (await getDecisions(ORG)).map(({ kind, id, title, detail, actions }) => ({ kind, id, title, detail, actions }));
+      res.status(200).json({ ok: true, items }); return;
+    }
     res.status(400).json({ error: "unknown action" });
   } catch (e) { res.status(500).json({ error: String(e && e.message || e) }); }
 }
