@@ -243,6 +243,7 @@ export default async function handler(req, res) {
     const suspicious = []; // список подозрительных (с типом и категорией)
     const wrongNumByMopDay = {}; // "mop|day" -> count (для «массово неверный номер»)
     const capMonths = {};        // mop -> { "YYYY-MM": сколько лидов зашло } — история ЗАГРУЗКИ для проверки капасити цели
+    const soldCohort = {};       // mop -> { "YYYY-MM": сколько из лидов ЭТОГО месяца уже продано } — когортная конверсия лид→продажа
     const DAY = 24 * 3600;
 
     for (const L of all) {
@@ -261,9 +262,12 @@ export default async function handler(req, res) {
 
       // КАПАСИТИ: сколько лидов зашло на МОПа помесячно (вся история, что есть в базе).
       // Основа проверки реалистичности цели «столько людей физически не обработать». Звонки/день НЕ берём — истории нет.
+      // ПЛЮС КОГОРТНАЯ КОНВЕРСИЯ: из лидов, СОЗДАННЫХ в месяце M, сколько уже ПРОДАНО (независимо от даты продажи).
+      // Надёжно (без нот). Зрелые месяцы (старше ~1-2) достоверны; свежие ещё дозревают (продажи отстают от лидов).
       if (mop && L.created_at) {
         const mk = new Date((L.created_at + 5 * 3600) * 1000).toISOString().slice(0, 7); // YYYY-MM по Ташкенту
         (capMonths[mop] || (capMonths[mop] = {}))[mk] = (capMonths[mop][mk] || 0) + 1;
+        if (isSold) (soldCohort[mop] || (soldCohort[mop] = {}))[mk] = (soldCohort[mop][mk] || 0) + 1;
       }
 
       // === СЕГОДНЯ: лиды обработанные (созданные сегодня), продажи и касса за сегодня ===
@@ -575,8 +579,20 @@ export default async function handler(req, res) {
         thin: monthsN < CAP_THIN_MONTHS,
         currentPartial: months[capMonthNow] || 0,
         months, // СЫРАЯ помесячная история загрузки {YYYY-MM: лидов} — для аудита расчёта устойчивой цели (доп. поле, расчёт не меняет)
+        soldMonths: soldCohort[mopName] || {}, // {YYYY-MM: продано из лидов этого месяца} — когортная конверсия по МОПу
       };
     }
+    // ПОМЕСЯЧНАЯ ВОРОНКА лид→продажа (когортная): лиды по created_at, продажи — те из них, что уже проданы.
+    // Надёжно, без нот. monthsAgo — зрелость месяца (0=текущий, 1=прошлый…); свежие ещё дозревают.
+    const mf = {};
+    for (const months of Object.values(capMonths)) for (const [mk, n] of Object.entries(months)) (mf[mk] || (mf[mk] = { leads: 0, sold: 0 })).leads += n;
+    for (const months of Object.values(soldCohort)) for (const [mk, n] of Object.entries(months)) (mf[mk] || (mf[mk] = { leads: 0, sold: 0 })).sold += n;
+    const _mfNow = new Date((Math.floor(Date.now() / 1000) + 5 * 3600) * 1000);
+    const _mfNowIdx = _mfNow.getUTCFullYear() * 12 + _mfNow.getUTCMonth();
+    const monthlyFunnel = Object.entries(mf).sort((a, b) => (a[0] < b[0] ? -1 : 1)).map(([mk, v]) => {
+      const [yy, mm] = mk.split("-").map(Number);
+      return { month: mk, leads: v.leads, sold: v.sold, convPct: v.leads ? +(v.sold / v.leads * 100).toFixed(2) : null, monthsAgo: _mfNowIdx - (yy * 12 + (mm - 1)) };
+    });
 
     // Топ-5 проблем ЗА МЕСЯЦ
     const problems = Object.entries(lossCount)
@@ -624,6 +640,7 @@ export default async function handler(req, res) {
       // КАЧЕСТВО ДАННЫХ (самодокладываемая метрика): выигранные без суммы искажают выручку/чек.
       dataQuality: { wonNoAmount: { ...assessWonNoAmount(wonNoAmount.length, sold), sample: wonNoAmount.slice(0, 25) } },
       teamCapacity, // пропускная способность команды (лиды/МОП/месяц) — вход проверки реалистичности цели
+      monthlyFunnel, // помесячная воронка лид→продажа (когортная, надёжно без нот) — база «возврата к своей конверсии»
       mopsByConv, mopsBySales, problems, problemsAll,
       velocity: { median: velocityMedian, avg: velocityAvg, count: saleDurations.length, stages: stagesArr },
       adsets: adsetsArr.slice(0, 50),

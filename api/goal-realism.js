@@ -307,6 +307,7 @@ export async function capacityDump(org = ORG) {
     funnelJuly: f ? { sold: f.sold, revenue: f.revenue, leads: f.leads, avgCheck: f.avgCheck, convPct: f.conv != null ? +(f.conv * 100).toFixed(2) : null } : null,
     cpl, cplSource,
     lastClosedPeriod: (results && results.length) ? results[results.length - 1] : null,
+    monthlyFunnel: (dash && dash.monthlyFunnel) || null, // помесячная конверсия лид→продажа (когортная)
   };
 }
 
