@@ -245,6 +245,8 @@ export default async function handler(req, res) {
     const capMonths = {};        // mop -> { "YYYY-MM": сколько лидов зашло } — история ЗАГРУЗКИ для проверки капасити цели
     const soldCohort = {};       // mop -> { "YYYY-MM": сколько из лидов ЭТОГО месяца уже продано } — когортная конверсия лид→продажа
     const soldPeriodMonths = {}; // "YYYY-MM"(по ДАТЕ ПРОДАЖИ) -> сколько продано в этом месяце — для period-конверсии (как считает дашборд)
+    const soldPriceHist = {};    // цена(млн, 1 знак) -> сколько продаж по ней — реальное распределение офлайн/онлайн
+    const soldFmtByMonth = {};   // "YYYY-MM" -> {online, offline, other} по цене — доля офлайна помесячно
     const DAY = 24 * 3600;
 
     for (const L of all) {
@@ -274,6 +276,12 @@ export default async function handler(req, res) {
       if (mop && isSold && saleTs) {
         const smk = new Date((saleTs + 5 * 3600) * 1000).toISOString().slice(0, 7);
         soldPeriodMonths[smk] = (soldPeriodMonths[smk] || 0) + 1;
+        // ФОРМАТ по цене: офлайн ≈4 млн, онлайн ≈3.5 млн (порог 3.75 млн). Histogram + помесячно офлайн/онлайн.
+        const p = L.price || 0;
+        const pM = Math.round(p / 1e5) / 10; // млн, 1 знак — реальное распределение цен продаж
+        soldPriceHist[pM] = (soldPriceHist[pM] || 0) + 1;
+        const fmt = p >= 3.75e6 ? "offline" : (p >= 3.0e6 ? "online" : "other");
+        (soldFmtByMonth[smk] || (soldFmtByMonth[smk] = { online: 0, offline: 0, other: 0 }))[fmt]++;
       }
 
       // === СЕГОДНЯ: лиды обработанные (созданные сегодня), продажи и касса за сегодня ===
@@ -598,10 +606,14 @@ export default async function handler(req, res) {
     const monthlyFunnel = Object.entries(mf).sort((a, b) => (a[0] < b[0] ? -1 : 1)).map(([mk, v]) => {
       const [yy, mm] = mk.split("-").map(Number);
       const soldPeriod = soldPeriodMonths[mk] || 0;
+      const fmt = soldFmtByMonth[mk] || { online: 0, offline: 0, other: 0 };
+      const fmtDenom = fmt.online + fmt.offline;
       return {
         month: mk, leads: v.leads,
         soldCohort: v.sold, convCohortPct: v.leads ? +(v.sold / v.leads * 100).toFixed(2) : null,     // из лидов месяца — сколько уже продано
         soldPeriod, convPeriodPct: v.leads ? +(soldPeriod / v.leads * 100).toFixed(2) : null,          // продаж в месяце (по дате продажи) / лидов месяца
+        offline: fmt.offline, online: fmt.online, otherPrice: fmt.other,                               // формат по цене (≥3.75млн = офлайн)
+        offlineSharePct: fmtDenom ? +(fmt.offline / fmtDenom * 100).toFixed(1) : null,
         monthsAgo: _mfNowIdx - (yy * 12 + (mm - 1)),
       };
     });
@@ -653,6 +665,7 @@ export default async function handler(req, res) {
       dataQuality: { wonNoAmount: { ...assessWonNoAmount(wonNoAmount.length, sold), sample: wonNoAmount.slice(0, 25) } },
       teamCapacity, // пропускная способность команды (лиды/МОП/месяц) — вход проверки реалистичности цели
       monthlyFunnel, // помесячная воронка лид→продажа (когортная, надёжно без нот) — база «возврата к своей конверсии»
+      soldPriceHist, // распределение цен продаж (млн) — реальная доля офлайн(4)/онлайн(3.5), чек как рычаг
       mopsByConv, mopsBySales, problems, problemsAll,
       velocity: { median: velocityMedian, avg: velocityAvg, count: saleDurations.length, stages: stagesArr },
       adsets: adsetsArr.slice(0, 50),
