@@ -272,9 +272,13 @@ export const OPEN_STATUSES = ["pending", "awaiting_edit", "edited"];
 // ЮР. РИСК (tier 3) — только ГЕНУИННАЯ юридическая/регуляторная угроза. «Гарантия трудоустройства»
 // в Hunter Academy сюда НЕ входит: работа реально гарантируется (при условии), это вопрос ТОЧНОСТИ
 // формулировки (tier 2), а не liability (см. [[call-analysis-deepsales]] — было ложное срабатывание DeepSales).
-const LEGAL_RX = /штраф|\bсуд\b|суде[бн]|налог|\bзакон\b|договор|персональн\w+\s+данн|регулятор|жалоб/i;
-// ВЫРУЧКА/КАЧЕСТВО (tier 2) — прямые деньги + точность продаж (включая формулировку гарантии).
-const REVENUE_RX = /звон|дозвон|недозвон|не звонил|\bлид|стату[сн]|ложн|конверси|закрыт|оплат|сделк|выручк|касс|no_call|скрипт|возражен|дожим|гарант|обещ|трудоустройств/i;
+// ЮР.РИСК (tier 3) — реальная liability: претензии/штрафы/суд/налоги/перс.данные/регулятор/жалобы + ОБЕЩАНИЯ,
+// КОТОРЫХ КОМПАНИЯ НЕ ДАЁТ (гарантированное трудоустройство/результат, «запрещено правилами»). НЕ по слову
+// «договор» — оно живёт в обычной технике продаж («называют договор до диагностики» = коучинг, не liability).
+const LEGAL_RX = /штраф|\bсуд\b|суде[бн]|налог|\bзакон\b|персональн\w+\s+данн|регулятор|жалоб|трудоустройств|гарантированн|100\s*%\s*гарант|гаранти\w*\s+результат|запрещ\w+\s+правил/i;
+// ВЫРУЧКА/ОПЕРАЦИОНКА ОП (tier 2) — деньги + точность продаж. «гарант/обещ/трудоустройств» УБРАНЫ отсюда: обещания,
+// которых компания не даёт, — это юр.риск (LEGAL_RX выше), а не операционка.
+const REVENUE_RX = /звон|дозвон|недозвон|не звонил|\bлид|стату[сн]|ложн|конверси|закрыт|оплат|сделк|выручк|касс|no_call|скрипт|возражен|дожим/i;
 // ВЛИЯНИЕ (детерминированно по смыслу текста): 3=юр.риск, 2=выручка, 1=прочее.
 export function impactTier(p) {
   const t = `${p.title || ""} ${p.statement || ""} ${(p.proposedTask && p.proposedTask.title) || ""} ${(p.proposedTask && p.proposedTask.why) || ""}`;
@@ -298,12 +302,13 @@ export function priorityScore(p, nowMs) {
 export function classifyProposal(p) {
   const tier = impactTier(p);
   const recipient = (p.proposedTask && p.proposedTask.recipient) === "marketing" ? "marketing" : "rop";
-  if (tier >= 3) return { to: "owner", reason: "юридический риск" };
+  if (tier >= 3) return { to: "owner", reason: "юр.риск / претензии / запрещённые обещания" };
   if (recipient !== "rop") return { to: "owner", reason: "маркетинг — деньги/канал" };
-  if (p.confidence === "low") return { to: "owner", reason: "ненадёжные данные (suspicious/неполное окно)" };
   if (p.contradiction) return { to: "owner", reason: "противоречие — пока не действовать" };
   if (tier < 2) return { to: "owner", reason: "не операционка ОП — по умолчанию к владельцу" };
-  return { to: "rop", reason: "операционка отдела продаж" };
+  // Операционка ОП → РОПу. confidence "low" здесь ≈ ОДИН источник (independentSignals:1), а НЕ дырявые данные —
+  // это слабое основание держать у владельца. При low задача формулируется как «проверить/разобрать» (не вслепую).
+  return { to: "rop", reason: "операционка отдела продаж", verify: p.confidence === "low" };
 }
 // важное (выручка/юр.риск), провисевшее >= N дней → эскалируем (флаг «висит N дней»), НЕ глушим.
 export function isEscalated(p, nowMs, escalateAfterDays) { return impactTier(p) >= 2 && daysPending(p, nowMs) >= (escalateAfterDays || 3); }
@@ -460,11 +465,13 @@ export async function runDailyBrain(org = ORG, force = false) {
   const dg = buildDigest(proposals, nowMs, cfg);
   for (const e of dg.expired) { const j = proposals.findIndex((x) => x.id === e.id); if (j >= 0) proposals[j] = { ...proposals[j], status: "expired", expiredAt: nowMs }; }
   await rsetJSON(K.proposals, proposals.slice(-CAP.proposals));
+  // АВТО-РАЗДАЧА: операционку ОП сразу ставим РОПу (classifyProposal), владелец не согласует коучинг/дисциплину.
+  // Дорогое/условное/юр.риск остаётся pending → в очереди решений владельца. Владелец видит счётчик в отчёте.
+  const auto = await autoDispatchProposals(org).catch(() => ({ ropCount: 0, ownerCount: 0 }));
   // СВОДКА ВЛАДЕЛЬЦУ БОЛЬШЕ НЕ ШЛЁТСЯ (убрали слой «система рассказывает о наблюдениях»). Предложения работают
-  // ВНУТРИ: накапливаются здесь, советник видит их в чате (pendingBlock), а результат — новые задачи — в отчёте
-  // по команде. Дайджест по-прежнему СЧИТАЕМ (нужен для протухания/статистики), просто не отправляем.
-  await rsetJSON(K.lastrun, { at: nowMs, day: nowDay, observed: observations.length, sent: created.length, created: created.length, totalOpen: dg.totalOpen, expired: dg.expired.length, delivered: false, diag });
-  return { ok: true, observed: observations.length, created: created.length, totalOpen: dg.totalOpen, expired: dg.expired.length, delivered: false, ids: created.map((c) => c.id), diag };
+  // ВНУТРИ: накапливаются здесь, советник видит их в чате (pendingBlock), а результат — новые задачи — в отчёте.
+  await rsetJSON(K.lastrun, { at: nowMs, day: nowDay, observed: observations.length, sent: created.length, created: created.length, totalOpen: dg.totalOpen, expired: dg.expired.length, delivered: false, autoRop: auto.ropCount, autoOwner: auto.ownerCount, diag });
+  return { ok: true, observed: observations.length, created: created.length, totalOpen: dg.totalOpen, autoRop: auto.ropCount, autoOwner: auto.ownerCount, expired: dg.expired.length, delivered: false, ids: created.map((c) => c.id), diag };
 }
 
 // ОТПРАВКА СВОДКИ владельцу + ФИКСАЦИЯ ФАКТА ДОСТАВКИ (чтобы сбой Telegram не был молчаливым).
@@ -543,8 +550,11 @@ export async function getConfirmedMetaTasks() {
     const t = p.finalTask || p.proposedTask || {};
     const dl = t.deadlineDays ? new Date(Date.now() + t.deadlineDays * 86400000 + 5 * 3600000).toISOString().slice(0, 10) : "";
     const recipient = t.recipient === "marketing" ? "marketing" : "rop";
+    // АВТО-РАЗДАЧА при низкой уверенности (один источник) → формулируем как «проверить/разобрать», НЕ «сделай вслепую».
+    const baseTitle = t.title || p.title || "";
+    const title = (p.auto && p.confidence === "low" && !/^\s*(провер|разобра)/i.test(baseTitle)) ? `Проверить/разобрать: ${baseTitle}` : baseTitle;
     return {
-      id: `mb_${p.id}`, title: t.title || p.title, fact: t.why || p.statement || "", action: t.why || "",
+      id: `mb_${p.id}`, title, fact: t.why || p.statement || "", action: t.why || "",
       // маркетинг-задача → scope "marketing" (не показываем сейлз-пометки 🏢/👤), получатель — Маркетолог
       deadline: dl, scope: recipient === "marketing" ? "marketing" : (t.scope === "department" ? "department" : "pointwise"),
       mop: recipient === "marketing" ? null : (t.mop || null), recipient,
@@ -677,7 +687,7 @@ export async function applyMetaEdit(id, text, host) {
 // ─────────────────────────────────────────────────────────────────────────────
 // HTTP-хендлер (крон + админ)
 // ─────────────────────────────────────────────────────────────────────────────
-const CRON_OK = new Set(["daily", "classify-preview"]); // classify-preview — READ-ONLY (dryRun), для показа разбивки до включения
+const CRON_OK = new Set(["daily", "classify-preview", "auto-dispatch"]); // classify-preview READ-ONLY; auto-dispatch — раздача операционки РОПу (идёт и в runDailyBrain)
 async function isAuthed(req) {
   const auth = req.headers && (req.headers.authorization || req.headers.Authorization);
   if (auth && CRON_SECRET && auth === `Bearer ${CRON_SECRET}`) return true;
@@ -696,7 +706,7 @@ export default async function handler(req, res) {
     if (action === "daily") { res.status(200).json(await runDailyBrain(ORG, req.query && req.query.force === "1")); return; }
     if (action === "state") { res.status(200).json({ proposals: await rgetJSON(K.proposals, []), lastrun: await rgetJSON(K.lastrun, null), config: await getConfig() }); return; }
     if (action === "classify-preview") { res.status(200).json(await autoDispatchProposals(ORG, { dryRun: true })); return; } // READ-ONLY разбивка РОП/владелец
-    if (action === "auto-dispatch") { if (!(await isAuthed(req))) { res.status(403).json({ error: "admin only" }); return; } res.status(200).json(await autoDispatchProposals(ORG)); return; } // ЖИВОЙ прогон (admin) — раздать РОПу
+    if (action === "auto-dispatch") { res.status(200).json(await autoDispatchProposals(ORG)); return; } // ЖИВОЙ: раздать операционку РОПу (admin или cron)
     if (action === "synth") { // диагностика СИНТЕЗА: сырой ответ + stop_reason/usage + статус парсинга (без отправки)
       const bundle = await gatherForBrain(ORG);
       const rr = await fetch("https://api.anthropic.com/v1/messages", {

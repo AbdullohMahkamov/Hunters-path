@@ -23,8 +23,18 @@ test("адресат маркетинг (деньги/канал) → владе
   assert.equal(classifyProposal(P({ title: "Поднять бюджет на аудиторию с высокой конверсией", proposedTask: { recipient: "marketing" } })).to, "owner");
 });
 
-test("ненадёжные данные (confidence low = suspicious/неполное окно) → владельцу", () => {
-  assert.equal(classifyProposal(P({ title: "27 лидов без звонка", confidence: "low" })).to, "owner");
+test("low-confidence операционка (один источник, не дырявые данные) → РОПу как «проверить/разобрать»", () => {
+  const c = classifyProposal(P({ title: "27 лидов без звонка", confidence: "low" }));
+  assert.equal(c.to, "rop");        // поправка 1: low ≠ владельцу
+  assert.equal(c.verify, true);     // но формулировка «проверить/разобрать»
+});
+
+test("поправка 2: «договор» в технике продаж — НЕ юр.риск (tier2 по «сделк»), уходит РОПу", () => {
+  assert.equal(classifyProposal(P({ title: "Менеджеры называют цену или договор раньше диагностики, сделки теряются" })).to, "rop");
+});
+
+test("поправка 2: гарантированное трудоустройство (обещание, которого компания не даёт) → юр.риск → владельцу", () => {
+  assert.equal(classifyProposal(P({ title: "Менеджеры обещают 100% гарантию трудоустройства — запрещено правилами компании" })).to, "owner");
 });
 
 test("«пока не действовать» (contradiction) → владельцу", () => {
