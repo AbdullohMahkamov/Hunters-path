@@ -38,6 +38,10 @@ function parsePeriod(text) {
   if (/следующ[а-яё]*\s+месяц|keyingi oy/.test(t)) return monthPeriod(n.getUTCFullYear(), n.getUTCMonth() + 1);
   if (/(этот|текущ[а-яё]*)\s+месяц|shu oy|bu oy/.test(t)) return currentMonthPeriod();
   for (let i = 0; i < 12; i++) if (t.includes(MONTHS_RU[i])) { const y = (i < n.getUTCMonth() ? n.getUTCFullYear() + 1 : n.getUTCFullYear()); return monthPeriod(y, i); }
+  // ДЕФОЛТ: обычно текущий месяц. НО в ПОСЛЕДНИЙ день месяца он уже закрывается — цель без явного периода
+  // логичнее на СЛЕДУЮЩИЙ (иначе «250 млн» 31-го числа = цель на месяц, который кончается сегодня → капасити 0).
+  const lastDay = new Date(Date.UTC(n.getUTCFullYear(), n.getUTCMonth() + 1, 0)).getUTCDate();
+  if (n.getUTCDate() === lastDay) return monthPeriod(n.getUTCFullYear(), n.getUTCMonth() + 1);
   return currentMonthPeriod();
 }
 

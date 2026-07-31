@@ -294,7 +294,10 @@ export async function assessRealism(org = ORG, opts = {}) {
       baselineLabel = last.label; baselineClosed = true;
     }
   }
-  const earned = opts.earnedUZS != null ? opts.earnedUZS : (f.revenue || 0);
+  // ЗАРАБОТАНО = выручка В ПЕРИОДЕ ЦЕЛИ. Если цель на БУДУЩИЙ месяц (напр. август, а сейчас июль) — период ещё
+  // не начался, earned=0. Иначе июльская касса ошибочно засчиталась бы в августовскую цель (баг: «недостижимо»).
+  const goalIsCurrentMonth = goal.period && goal.period.label === curLabel;
+  const earned = opts.earnedUZS != null ? opts.earnedUZS : (goalIsCurrentMonth ? (f.revenue || 0) : 0);
   // РЫЧАГ КОНВЕРСИИ: свой лучший лид→продажа из истории (объём ≥500 лидов, не текущий незрелый месяц).
   let convBest = null, convBestLabel = null;
   for (const m of ((dash && dash.monthlyFunnel) || [])) {
