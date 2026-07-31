@@ -574,6 +574,7 @@ export default async function handler(req, res) {
         monthsN,
         thin: monthsN < CAP_THIN_MONTHS,
         currentPartial: months[capMonthNow] || 0,
+        months, // СЫРАЯ помесячная история загрузки {YYYY-MM: лидов} — для аудита расчёта устойчивой цели (доп. поле, расчёт не меняет)
       };
     }
 

@@ -227,7 +227,32 @@ export async function previewRealism(text, org = ORG) {
   return { ok: true, parsed: { amountUZS: parsed.amountUZS, currency: parsed.currency, amount: parsed.amount, period: parsed.period, metric: parsed.metric }, verdict };
 }
 
-const CRON_OK = new Set(["preview"]); // preview — READ-ONLY, ничего не мутирует
+// READ-ONLY ДАМП входов расчёта устойчивой цели — ничего не считает по-новому, показывает то, что УЖЕ хранится
+// (teamCapacity по каждому МОПу) + факты воронки/CPL, которые подставляются в формулу. Для аудита «откуда 102».
+export async function capacityDump(org = ORG) {
+  const dash = await rgetJSON("dashboard", null);
+  const tc = (dash && dash.teamCapacity) || null;
+  const byMop = (tc && tc.byMop) || {};
+  const entries = Object.entries(byMop);
+  const withHistory = entries.filter(([, c]) => c && c.monthsN > 0 && c.median != null);
+  const sumMedian = withHistory.reduce((a, [, c]) => a + (c.median || 0), 0);
+  const sumMax = withHistory.reduce((a, [, c]) => a + (c.max || 0), 0);
+  const funnel = await getVerifiedFunnel(org).catch(() => null);
+  const f = funnelFacts(funnel);
+  const { cpl, cplSource } = await resolveCpl(dash);
+  const results = await getPeriodResults(org).catch(() => []);
+  return {
+    monthNow: tc && tc.monthNow, thinMonths: tc && tc.thinMonths, generatedAt: tc && tc.generatedAt,
+    perMop: entries.map(([name, c]) => ({ name, median: c.median, max: c.max, monthsN: c.monthsN, thin: c.thin, currentPartial: c.currentPartial, months: c.months || null })),
+    inWithHistory: withHistory.map(([n]) => n),
+    sumMedianMonth: Math.round(sumMedian), sumMaxMonth: Math.round(sumMax), mopsActiveCount: entries.length,
+    funnelJuly: f ? { sold: f.sold, revenue: f.revenue, leads: f.leads, avgCheck: f.avgCheck, convPct: f.conv != null ? +(f.conv * 100).toFixed(2) : null } : null,
+    cpl, cplSource,
+    lastClosedPeriod: (results && results.length) ? results[results.length - 1] : null,
+  };
+}
+
+const CRON_OK = new Set(["preview", "capacity-dump"]); // оба READ-ONLY, ничего не мутируют
 export default async function handler(req, res) {
   res.setHeader("Cache-Control", "no-store");
   if (!REDIS_URL || !REDIS_TOKEN) { res.status(500).json({ error: "no redis" }); return; }
@@ -238,6 +263,7 @@ export default async function handler(req, res) {
   if (!authed) { res.status(403).json({ error: "forbidden" }); return; }
   try {
     if (action === "preview") { res.status(200).json(await previewRealism(b.text || q.text || "", ORG)); return; }
+    if (action === "capacity-dump") { res.status(200).json(await capacityDump(ORG)); return; }
     res.status(400).json({ error: "unknown action" });
   } catch (e) { res.status(500).json({ error: String(e && e.message || e) }); }
 }
