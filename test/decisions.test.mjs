@@ -11,7 +11,7 @@ test("getDecisions: план, meta-brain, DeepSales, ownerDecision, цель —
   kvSetJSON("transcriptplan:pending:hunter", { totals: { plannedMinutes: 100 }, declined: false });                 // DeepSales
   kvSetJSON("planner:pending:hunter", { periodKey: "август 2026", plan: { facts: { gap: 30000000, gapPct: 5 } } }); // план
   kvSetJSON("planner:active:hunter", { ownerDecisionOnly: true, facts: { ownerDecision: { unreachableUZS: 140000000, feasibleGoalUZS: 60000000, addManagers: 2 } } }); // OD
-  kvSetJSON("metabrain:proposals", [{ id: "p1", status: "pending", title: "27 лидов без звонка", confidence: "high", at: Date.now() - 5 * 86400000 }]); // meta
+  kvSetJSON("metabrain:proposals", [{ id: "p1", status: "pending", title: "В воронке нельзя отличить «выиграли» от «оплату»", confidence: "high", at: Date.now() - 5 * 86400000 }]); // meta → owner-категория (config CRM); операционка ушла бы РОПу и в очередь НЕ попала
   // цель не задана → goal item
 
   const items = await reports.getDecisions("hunter");

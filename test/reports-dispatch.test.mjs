@@ -58,20 +58,22 @@ test("отчёт команды: счётчики задач, кто тормо�
   assert.match(cbs, /pl:confirm/, "кнопка подтверждения плана");
 });
 
-test("отчёт команды: предложения мозга — топ-3 по важности + счётчик, кнопками решения владельцу", async () => {
+test("отчёт команды: в очередь решений идут ТОЛЬКО предложения категории «владелец» (операционка ОП — нет), топ-3 + счётчик", async () => {
   kvSetJSON("appdata:hunter", { customPlan: { sales: [] }, done: {} });
   kvSetJSON("marketingtasks", []);
   const now = Date.now();
-  // 4 предложения: важное денежное старое должно попасть в топ; мелкое — нет; всего >3 → «и ещё N»
+  // Owner-категория: config-CRM (tier2) + маркетинг (деньги/канал) + мелочь tier1. Операционка ОП (p_rop) в очередь НЕ должна попасть.
   kvSetJSON("metabrain:proposals", [
-    { id: "p1", status: "pending", title: "27 лидов без единой попытки звонка", confidence: "high", at: now - 10 * 86400000 },
-    { id: "p2", status: "pending", title: "Ложные статусы искажают воронку", confidence: "high", at: now - 8 * 86400000 },
-    { id: "p3", status: "pending", title: "Зависшие сделки не двигаются", confidence: "med", at: now - 6 * 86400000 },
-    { id: "p4", status: "pending", title: "Оформить доску объявлений в офисе", confidence: "low", at: now - 1 * 86400000 },
+    { id: "p1", status: "pending", title: "В воронке нельзя отличить «выиграли» от «оплату получили»", confidence: "high", at: now - 10 * 86400000 }, // config → owner (tier2)
+    { id: "p2", status: "pending", title: "Поднять бюджет на конверсионную аудиторию", confidence: "high", at: now - 8 * 86400000, proposedTask: { recipient: "marketing" } }, // маркетинг → owner
+    { id: "p3", status: "pending", title: "Перераспределить бюджет между кампаниями", confidence: "med", at: now - 6 * 86400000, proposedTask: { recipient: "marketing" } }, // маркетинг → owner (tier1)
+    { id: "p4", status: "pending", title: "Оформить доску объявлений в офисе", confidence: "low", at: now - 1 * 86400000 }, // tier1 → owner
+    { id: "p_rop", status: "pending", title: "27 лидов без единой попытки звонка", confidence: "high", at: now - 12 * 86400000 }, // операционка ОП → РОПу, НЕ в очередь
   ]);
   const r = await reports.buildTeamReport("hunter");
-  assert.match(r.text, /27 лидов без единой попытки/, "важное денежное предложение показано");
-  assert.match(r.text, /и ещё 1/, "4 предложения → топ-3 + счётчик 1");
+  assert.match(r.text, /нельзя отличить/, "config-предложение (владелец) показано");
+  assert.doesNotMatch(r.text, /27 лидов без единой попытки/, "операционка ОП в очередь владельца НЕ попадает");
+  assert.match(r.text, /и ещё 1/, "4 owner-предложения → топ-3 + счётчик 1");
   const cbs = JSON.stringify(r.decisionButtons);
   assert.match(cbs, /mb:confirm:p1/, "кнопка подтвердить предложение");
   assert.match(cbs, /mb:reject:p1/, "кнопка отклонить предложение");

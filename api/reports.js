@@ -11,7 +11,7 @@ import { getVerifiedFunnel } from "./dev-agent.js";
 import { funnelFacts, workingDays, closeMonth, getOwnerDecision } from "./planner.js";
 import { resolveCpl } from "./goal-realism.js";
 import { loadSalesTasks } from "./task-agent.js"; // авторитетный список задач (план + MOP + мозг + маркетинг)
-import { priorityScore, OPEN_STATUSES, getAutoDispatchedToday } from "./meta-brain.js"; // ранжирование предложений + счётчик авто-раздач РОПу
+import { priorityScore, OPEN_STATUSES, getAutoDispatchedToday, getComplianceNotifiedToday, classifyProposal } from "./meta-brain.js"; // ранжирование + авто-раздачи РОПу + инфо-строки compliance + маршрутизация
 import { genToken, saveRawHandoff } from "./digest.js";
 
 const REDIS_URL = process.env.UPSTASH_REDIS_REST_URL;
@@ -111,8 +111,9 @@ export async function getDecisions(org = ORG) {
       tgButtons: [[{ text: `📉 Снизить цель до ${num(feas)}`, callback_data: "od:lower" }, { text: "Оставить", callback_data: "od:dismiss" }]],
       actions: [{ type: "od_lower", label: `📉 Снизить до ${num(feas)}` }, { type: "od_dismiss", label: "Оставить" }] });
   }
-  // 4) Предложения общего мозга — топ-3 по важности
-  const props = ((await rgetJSON("metabrain:proposals", [])) || []).filter((p) => p && OPEN_STATUSES.includes(p.status));
+  // 4) Предложения общего мозга — ТОЛЬКО те, что реально требуют решения ВЛАДЕЛЬЦА (топ-3 по важности).
+  //    Операционка (авто РОПу) и «не действовать» (contradiction→none) в очередь не попадают — очередь только для действий владельца.
+  const props = ((await rgetJSON("metabrain:proposals", [])) || []).filter((p) => p && OPEN_STATUSES.includes(p.status) && classifyProposal(p).to === "owner");
   if (props.length) {
     const nowMs = Date.now();
     props.sort((a, b) => priorityScore(b, nowMs) - priorityScore(a, nowMs));
@@ -167,6 +168,12 @@ export async function buildTeamReport(org = ORG) {
   // АВТОНОМНО ≠ ВТАЙНЕ: операционные предложения мозга система ставит РОПу сама — говорим об этом строкой.
   const autoRop = await getAutoDispatchedToday(org).catch(() => []);
   if (autoRop.length) s += `🤖 Система сама поставила РОПу <b>${autoRop.length}</b> задач(и) из наблюдений (операционка ОП). Не согласны — снимайте в задачах.\n`;
+  // COMPLIANCE-НАХОДКИ: разбирает РОП, но владельцу — знать (запрещённые обещания). Строка-инфо, БЕЗ кнопки согласования.
+  const notified = await getComplianceNotifiedToday(org).catch(() => []);
+  if (notified.length) {
+    const top = notified.slice(0, 3).map((n) => `• ${String(n.title).slice(0, 70)}`).join("\n");
+    s += `ℹ️ Замечено (РОП разбирается, ваше согласование не требуется):\n${top}\n`;
+  }
 
   // ЗДОРОВЬЕ ДОСТАВКИ: не молчим о собственной неисправности. Если задачи есть, а получатель НЕ привязан к
   // боту (нет chatId) — они физически не уходят. Говорим об этом ГРОМКО, а не создаём задачи в пустоту.

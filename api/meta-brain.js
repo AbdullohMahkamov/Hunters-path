@@ -275,14 +275,21 @@ export const OPEN_STATUSES = ["pending", "awaiting_edit", "edited"];
 // ЮР.РИСК (tier 3) — реальная liability: претензии/штрафы/суд/налоги/перс.данные/регулятор/жалобы + ОБЕЩАНИЯ,
 // КОТОРЫХ КОМПАНИЯ НЕ ДАЁТ (гарантированное трудоустройство/результат, «запрещено правилами»). НЕ по слову
 // «договор» — оно живёт в обычной технике продаж («называют договор до диагностики» = коучинг, не liability).
-const LEGAL_RX = /штраф|\bсуд\b|суде[бн]|налог|\bзакон\b|персональн\w+\s+данн|регулятор|жалоб|трудоустройств|гарантированн|100\s*%\s*гарант|гаранти\w*\s+результат|запрещ\w+\s+правил/i;
-// ВЫРУЧКА/ОПЕРАЦИОНКА ОП (tier 2) — деньги + точность продаж. «гарант/обещ/трудоустройств» УБРАНЫ отсюда: обещания,
-// которых компания не даёт, — это юр.риск (LEGAL_RX выше), а не операционка.
+// РЕАЛЬНЫЙ ЮР.РИСК → РЕШЕНИЕ владельца (претензии/штрафы/суд/налоги/перс.данные/регулятор/жалобы).
+const HARD_LEGAL_RX = /штраф|\bсуд\b|суде[бн]|налог|\bзакон\b|персональн\w+\s+данн|регулятор|жалоб/i;
+// ЗАПРЕЩЁННОЕ ОБЕЩАНИЕ (гарантия трудоустройства/результата, «запрещено правилами») → это разбор конкретного
+// менеджера (работа РОПа) С compliance-оттенком → категория "rop_notify": задача РОПу + ИНФО владельцу (без кнопки).
+const COMPLIANCE_RX = /трудоустройств|гарантированн|100\s*%\s*гарант|гаранти\w*\s+результат|запрещ\w+\s+правил/i;
+// НАСТРОЙКА CRM / ИЗМЕРЕНИЙ (нельзя отличить/увидеть, нет поля/статуса, конфигурация) → меняет УСЛОВИЯ измерения
+// бизнеса, а не работа с клиентами → решение владельца, НЕ операционка РОПа.
+const CONFIG_RX = /нельзя\s+(отличить|увидеть|понять|разделить|различить)|в систем\w+\s+нельзя|нет\s+(поля|статуса)\s+оплат|настро\w*[\s\wа-яё]*?(amocrm|\bcrm\b|воронк|статус)|отдельн\w+\s+статус|конфигурац/i;
+// ОПЕРАЦИОНКА ОП (tier 2) — деньги + точность продаж (звонки/лиды/статусы/конверсия/закрытие).
 const REVENUE_RX = /звон|дозвон|недозвон|не звонил|\bлид|стату[сн]|ложн|конверси|закрыт|оплат|сделк|выручк|касс|no_call|скрипт|возражен|дожим/i;
-// ВЛИЯНИЕ (детерминированно по смыслу текста): 3=юр.риск, 2=выручка, 1=прочее.
+function ptext(p) { return `${p.title || ""} ${p.statement || ""} ${(p.proposedTask && p.proposedTask.title) || ""} ${(p.proposedTask && p.proposedTask.why) || ""}`; }
+// ВЛИЯНИЕ (детерминированно): 3=юр.риск/compliance, 2=выручка, 1=прочее. (Compliance тоже высокое влияние.)
 export function impactTier(p) {
-  const t = `${p.title || ""} ${p.statement || ""} ${(p.proposedTask && p.proposedTask.title) || ""} ${(p.proposedTask && p.proposedTask.why) || ""}`;
-  if (LEGAL_RX.test(t)) return 3;
+  const t = ptext(p);
+  if (HARD_LEGAL_RX.test(t) || COMPLIANCE_RX.test(t)) return 3;
   if (REVENUE_RX.test(t)) return 2;
   return 1;
 }
@@ -299,15 +306,19 @@ export function priorityScore(p, nowMs) {
 //  → ВЛАДЕЛЬЦУ (дорого/меняет условия): юр.риск (tier 3); не-РОП адресат (маркетинг = деньги/канал); ненадёжные
 //    данные (confidence "low" — по TRUST-ГЕЙТу это «единственная опора suspicious/неполное окно»); «пока не
 //    действовать» (contradiction); либо неясно (tier 1) → по умолчанию к владельцу, консервативно.
+// Категории: "rop" (операционка → авто РОПу) | "rop_notify" (РОП разбирает + инфо владельцу) |
+// "owner" (решение владельца) | "none" (наблюдение «не действовать» — вообще НЕ в очередь, живёт как контекст в чате).
 export function classifyProposal(p) {
-  const tier = impactTier(p);
+  const t = ptext(p);
   const recipient = (p.proposedTask && p.proposedTask.recipient) === "marketing" ? "marketing" : "rop";
-  if (tier >= 3) return { to: "owner", reason: "юр.риск / претензии / запрещённые обещания" };
+  if (p.contradiction) return { to: "none", reason: "наблюдение «не действовать» — не решение, из очереди убрано" };
+  if (HARD_LEGAL_RX.test(t)) return { to: "owner", reason: "реальный юр.риск / претензии — решение владельца" };
+  if (CONFIG_RX.test(t)) return { to: "owner", reason: "настройка CRM / измерений — меняет условия, решение владельца" };
   if (recipient !== "rop") return { to: "owner", reason: "маркетинг — деньги/канал" };
-  if (p.contradiction) return { to: "owner", reason: "противоречие — пока не действовать" };
-  if (tier < 2) return { to: "owner", reason: "не операционка ОП — по умолчанию к владельцу" };
-  // Операционка ОП → РОПу. confidence "low" здесь ≈ ОДИН источник (independentSignals:1), а НЕ дырявые данные —
-  // это слабое основание держать у владельца. При low задача формулируется как «проверить/разобрать» (не вслепую).
+  if (COMPLIANCE_RX.test(t)) return { to: "rop_notify", reason: "разбор менеджера + информировать владельца (запрещённое обещание)" };
+  if (impactTier(p) < 2) return { to: "owner", reason: "не операционка ОП — по умолчанию к владельцу" };
+  // Операционка ОП → РОПу. confidence "low" ≈ ОДИН источник (independentSignals:1), НЕ дырявые данные → слабое
+  // основание держать у владельца. При low задача формулируется как «проверить/разобрать» (не вслепую).
   return { to: "rop", reason: "операционка отдела продаж", verify: p.confidence === "low" };
 }
 // важное (выручка/юр.риск), провисевшее >= N дней → эскалируем (флаг «висит N дней»), НЕ глушим.
@@ -567,34 +578,45 @@ export async function getConfirmedMetaTasks() {
 // АВТО-РАЗДАЧА предложений: операционку ОП (classifyProposal → "rop") подтверждаем САМИ (status "confirmed",
 // auto:true) → дальше getConfirmedMetaTasks отдаёт их task-agent'у как задачи РОПу. Дорогие/условные (→ "owner")
 // остаются pending и всплывают в очереди решений владельца. dryRun=true — только разбивка, без изменений.
+// Идемпотентно + РЕКОНСИЛ: обрабатываем pending И ранее авто-подтверждённые (auto:true). Операционку/compliance
+// (rop, rop_notify) подтверждаем (→ задача РОПу); если что-то авто-раздали РАНЬШЕ, а по новым правилам оно →
+// владельцу/none — откатываем в pending (не держим у РОПа лишнее). rop_notify пишем в notify-лог (инфо владельцу).
 export async function autoDispatchProposals(org = ORG, opts = {}) {
   const dryRun = !!opts.dryRun;
   const proposals = (await rgetJSON(K.proposals, [])) || [];
-  const pending = proposals.filter((p) => p && OPEN_STATUSES.includes(p.status));
-  const rop = [], owner = [];
-  for (const p of pending) {
+  const rop = [], owner = [], none = [], notify = [];
+  const isActive = (p) => OPEN_STATUSES.includes(p.status) || (p.status === "confirmed" && p.auto);
+  for (const p of proposals) {
+    if (!p || !isActive(p)) continue;
     const c = classifyProposal(p);
-    const row = { id: p.id, title: p.title, tier: impactTier(p), recipient: (p.proposedTask && p.proposedTask.recipient) || "rop", confidence: p.confidence || null, reason: c.reason };
-    (c.to === "rop" ? rop : owner).push(row);
+    const row = { id: p.id, title: p.title, tier: impactTier(p), recipient: (p.proposedTask && p.proposedTask.recipient) || "rop", confidence: p.confidence || null, reason: c.reason, to: c.to };
+    if (c.to === "rop" || c.to === "rop_notify") { rop.push(row); if (c.to === "rop_notify") notify.push({ id: p.id, title: p.title }); }
+    else if (c.to === "owner") owner.push(row);
+    else none.push(row);
   }
-  if (!dryRun && rop.length) {
-    const ropIds = new Set(rop.map((r) => r.id));
+  if (!dryRun) {
     const nowMs = Date.now();
-    for (let i = 0; i < proposals.length; i++) if (ropIds.has(proposals[i].id) && OPEN_STATUSES.includes(proposals[i].status)) proposals[i] = { ...proposals[i], status: "confirmed", auto: true, confirmedAt: nowMs };
-    await rsetJSON(K.proposals, proposals);
+    const dispatchIds = new Set(rop.map((r) => r.id));
+    const notifyIds = new Set(notify.map((n) => n.id));
+    let changed = false;
+    for (let i = 0; i < proposals.length; i++) {
+      const p = proposals[i];
+      if (!p || !isActive(p)) continue;
+      if (dispatchIds.has(p.id) && OPEN_STATUSES.includes(p.status)) { proposals[i] = { ...p, status: "confirmed", auto: true, notify: notifyIds.has(p.id), confirmedAt: nowMs }; changed = true; }
+      else if (!dispatchIds.has(p.id) && p.status === "confirmed" && p.auto) { proposals[i] = { ...p, status: "pending", auto: false }; changed = true; } // реконсил: раньше авто, теперь → владельцу/none
+    }
+    if (changed) await rsetJSON(K.proposals, proposals);
     const day = tkDay();
-    const key = `metabrain:autodispatch:${org}:${day}`;
-    const log = (await rgetJSON(key, [])) || [];
-    for (const r of rop) log.push({ id: r.id, title: r.title, at: nowMs });
-    await rsetJSON(key, log.slice(-100));
+    const append = async (key, items) => { const log = (await rgetJSON(key, [])) || []; for (const it of items) if (!log.some((x) => x.id === it.id)) log.push({ id: it.id, title: it.title, at: nowMs }); await rsetJSON(key, log.slice(-100)); };
+    if (rop.length) await append(`metabrain:autodispatch:${org}:${day}`, rop);
+    if (notify.length) await append(`metabrain:notify:${org}:${day}`, notify);
   }
-  return { ropCount: rop.length, ownerCount: owner.length, rop, owner };
+  return { ropCount: rop.length, ownerCount: owner.length, noneCount: none.length, rop, owner, none, notify };
 }
 
-// Сколько задач система сама поставила РОПу из наблюдений СЕГОДНЯ (для строки в отчёте по команде: автономно ≠ втайне).
-export async function getAutoDispatchedToday(org = ORG) {
-  return (await rgetJSON(`metabrain:autodispatch:${org}:${tkDay()}`, [])) || [];
-}
+// Для строк в отчёте по команде (автономно ≠ втайне): сколько система поставила РОПу сегодня + что «замечено» (compliance).
+export async function getAutoDispatchedToday(org = ORG) { return (await rgetJSON(`metabrain:autodispatch:${org}:${tkDay()}`, [])) || []; }
+export async function getComplianceNotifiedToday(org = ORG) { return (await rgetJSON(`metabrain:notify:${org}:${tkDay()}`, [])) || []; }
 
 // Закрытие подтверждённой задачи (аналог closeMopFinding) — вызывается task-agent при dispute/выполнении.
 export async function closeMetaProposal(taskId, reason) {
