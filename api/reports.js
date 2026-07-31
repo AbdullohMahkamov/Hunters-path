@@ -11,7 +11,7 @@ import { getVerifiedFunnel } from "./dev-agent.js";
 import { funnelFacts, workingDays, closeMonth, getOwnerDecision } from "./planner.js";
 import { resolveCpl } from "./goal-realism.js";
 import { loadSalesTasks } from "./task-agent.js"; // авторитетный список задач (план + MOP + мозг + маркетинг)
-import { priorityScore, OPEN_STATUSES } from "./meta-brain.js"; // ранжирование предложений мозга для секции решений
+import { priorityScore, OPEN_STATUSES, getAutoDispatchedToday } from "./meta-brain.js"; // ранжирование предложений + счётчик авто-раздач РОПу
 import { genToken, saveRawHandoff } from "./digest.js";
 
 const REDIS_URL = process.env.UPSTASH_REDIS_REST_URL;
@@ -164,6 +164,9 @@ export async function buildTeamReport(org = ORG) {
     s += `Просрочек нет.\n`;
   }
   if (obsInWork > 0) s += `Задач из наблюдений системы (МОПы/мозг) в работе: <b>${obsInWork}</b>\n`;
+  // АВТОНОМНО ≠ ВТАЙНЕ: операционные предложения мозга система ставит РОПу сама — говорим об этом строкой.
+  const autoRop = await getAutoDispatchedToday(org).catch(() => []);
+  if (autoRop.length) s += `🤖 Система сама поставила РОПу <b>${autoRop.length}</b> задач(и) из наблюдений (операционка ОП). Не согласны — снимайте в задачах.\n`;
 
   // ЗДОРОВЬЕ ДОСТАВКИ: не молчим о собственной неисправности. Если задачи есть, а получатель НЕ привязан к
   // боту (нет chatId) — они физически не уходят. Говорим об этом ГРОМКО, а не создаём задачи в пустоту.
