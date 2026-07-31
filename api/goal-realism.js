@@ -16,9 +16,11 @@
 // ВЕРДИКТ не «реально/нереально», а: связывающее ограничение + условия достижимости (+K менеджеров ИЛИ
 // цель ≤ Y выполнима текущими силами). Числа считаем сами; в чат уходит готовый человеческий текст (human).
 
-import { getGoal } from "./goal.js";
+import { getGoal, parseGoalText } from "./goal.js";
 import { getVerifiedFunnel } from "./dev-agent.js";
 import { funnelFacts, workingDays, getPeriodResults } from "./planner.js";
+
+const CRON_SECRET = process.env.CRON_SECRET;
 
 const THIN_MONTH_SOLD = 10; // < столько продаж в текущем месяце → он «пустой», база берётся из закрытого месяца
 
@@ -165,8 +167,15 @@ function buildVerdict(o) {
 function cap(x) { return x ? x.charAt(0).toUpperCase() + x.slice(1) : x; }
 
 // ── АСИНХРОННАЯ ОБЁРТКА: собирает входы (цель, воронка, капасити, CPL) и зовёт ядро ──
-export async function assessRealism(org = ORG) {
-  const goal = await getGoal(org);
+// opts (все необязательны, для READ-ONLY превью гипотетической цели — ничего не мутируем):
+//   goalUZS/period — оценить цель, ОТЛИЧНУЮ от сохранённой (напр. август, пока стоит июльская);
+//   earnedUZS      — переопределить «уже заработано» (для превью свежего месяца ставим 0, т.к. живая
+//                    воронка сегодня показывает выручку ТЕКУЩЕГО месяца, а не оцениваемого будущего).
+export async function assessRealism(org = ORG, opts = {}) {
+  const stored = await getGoal(org);
+  const goal = (opts.goalUZS != null)
+    ? { amountUZS: opts.goalUZS, period: opts.period || (stored && stored.period) || null }
+    : stored;
   if (!goal || !goal.amountUZS) return { computable: false, reason: "no_goal", feasible: null };
   const funnel = await getVerifiedFunnel(org).catch(() => null);
   const f = funnelFacts(funnel);
@@ -198,8 +207,34 @@ export async function assessRealism(org = ORG) {
       baselineLabel = last.label; baselineClosed = true;
     }
   }
+  const earned = opts.earnedUZS != null ? opts.earnedUZS : (f.revenue || 0);
   return assessGoalRealism({
-    goalUZS: goal.amountUZS, earned: f.revenue || 0, avgCheck, conv,
+    goalUZS: goal.amountUZS, earned, avgCheck, conv,
     cpl, cplSource, teamCapacityByMop, mopsActiveCount, workdays, baseInaccurate, thinMonths, baselineLabel, baselineClosed,
   });
+}
+
+// ── READ-ONLY ПРЕВЬЮ ВЕРДИКТА для гипотетической цели (ничего не сохраняет). Использует ТУ ЖЕ разборку цели
+// (parseGoalText) и ту же оценку, что сработают в живом пути завтра → превью и живой прогон совпадут. ──
+export async function previewRealism(text, org = ORG) {
+  const parsed = await parseGoalText(text || "");
+  if (!parsed || !parsed.ok || !(parsed.amountUZS > 0)) return { ok: false, error: (parsed && parsed.error) || "не распознал сумму/период цели" };
+  // Свежий месяц: earned=0 (оцениваемый период ещё не начался; живая воронка сегодня — про текущий месяц).
+  const verdict = await assessRealism(org, { goalUZS: parsed.amountUZS, period: parsed.period, earnedUZS: 0 });
+  return { ok: true, parsed: { amountUZS: parsed.amountUZS, currency: parsed.currency, amount: parsed.amount, period: parsed.period, metric: parsed.metric }, verdict };
+}
+
+const CRON_OK = new Set(["preview"]); // preview — READ-ONLY, ничего не мутирует
+export default async function handler(req, res) {
+  res.setHeader("Cache-Control", "no-store");
+  if (!REDIS_URL || !REDIS_TOKEN) { res.status(500).json({ error: "no redis" }); return; }
+  const q = req.query || {}, b = req.body || {};
+  const action = q.action || b.action || "";
+  const auth = req.headers && (req.headers.authorization || req.headers.Authorization);
+  const authed = (auth && CRON_SECRET && auth === `Bearer ${CRON_SECRET}`) || (q.cron === "1" && CRON_OK.has(action));
+  if (!authed) { res.status(403).json({ error: "forbidden" }); return; }
+  try {
+    if (action === "preview") { res.status(200).json(await previewRealism(b.text || q.text || "", ORG)); return; }
+    res.status(400).json({ error: "unknown action" });
+  } catch (e) { res.status(500).json({ error: String(e && e.message || e) }); }
 }
