@@ -15,6 +15,7 @@ import { sendTg, getPeople } from "./tg-bot.js";
 import { addMarketingTask } from "./task-agent.js";
 import { ROUTINE, getAutonomy, classifyTaskRisk, reassessBeforeDispatch, isWhitelisted, touchWhitelist, autonomousCountToday, recordAutonomous, getTodayAutonomous } from "./autonomy.js";
 import { assessRealism } from "./goal-realism.js"; // проверка реалистичности: split задач + гейт автономии
+import { genToken, saveRawHandoff } from "./digest.js"; // handoff-seed: кнопка открывает НОВЫЙ чат советника в контексте цели
 
 const REDIS_URL = process.env.UPSTASH_REDIS_REST_URL;
 const REDIS_TOKEN = process.env.UPSTASH_REDIS_REST_TOKEN;
@@ -489,8 +490,12 @@ export async function nextMonthPrompt(org = ORG, force = false) {
   }
 
   const msg = `📅 <b>Месяц заканчивается</b>\n\n${recap}Пора задать цель на <b>${nextLabel}</b>. Нажмите кнопку ниже — откроется приложение, там в чате напишите цель одной фразой (<b>сумма + период</b>, напр. «выручка 1.5 млрд сум за ${monthLabel(m + 1)}»). Сразу увидите вердикт реалистичности и план — и подтвердите, не выходя.`;
-  // Кнопка ОТКРЫВАЕТ Mini App прямо здесь: весь путь (цель→вердикт→план→подтвердить) в одном месте, без переключений.
-  const kb = { reply_markup: { inline_keyboard: [[{ text: "📝 Открыть и задать цель", web_app: { url: "https://test.hunterai.uz/tg" } }]] } };
+  // Кнопка открывает Mini App и СРАЗУ засевает НОВЫЙ чат советника контекстом постановки цели (?advisor=token,
+  // тот же handoff-механизм, что у отчётов). Seed БЕЗ распознаваемой суммы — иначе chat.js принял бы её за цель.
+  const token = genToken();
+  const seed = `Открыл приложение, чтобы поставить цель на ${nextLabel}. Поприветствуй кратко и попроси меня написать цель одной фразой — сумму и период. Как только напишу сумму — сразу дай вердикт реалистичности и план догона с кнопками подтверждения.`;
+  try { await saveRawHandoff(token, seed, `Цель на ${nextLabel}`); } catch (e) { /* seed не критичен — откроется чистый чат */ }
+  const kb = { reply_markup: { inline_keyboard: [[{ text: "📝 Открыть и задать цель", web_app: { url: `https://test.hunterai.uz/tg?advisor=${token}` } }]] } };
 
   const ppl = await getPeople();
   let sent = false, bound = !!(ppl.owner && ppl.owner.chatId);
