@@ -132,10 +132,11 @@ function buildVerdict(o) {
   let s = "";
 
   if (o.binding === "team") {
+    const addPart = o.addManagers > 0 ? `+${o.addManagers} ${plMgr(o.addManagers)}, либо ` : ""; // без людей-числа не пишем «+null»
     s = `❗ Упирается в КОМАНДУ, не в бюджет. Чтобы закрыть цель, ${needLine}. `
       + `Команда за всю историю максимум тянула ~${fmt(t.sumMaxMonth)} лидов/мес (устойчиво ~${fmt(t.sumMedianMonth)}). `
       + `Даже на пределе столько не обработать — рекламный бюджет тут не поможет. `
-      + `Достижимо: +${o.addManagers} ${o.addManagers === 1 ? "менеджер" : "менеджера"}, либо цель ≤ ${fmt(o.feasibleGoal)} сум выполнима текущими силами на устойчивом темпе.`;
+      + `Достижимо: ${addPart}цель ≤ ${fmt(o.feasibleGoal)} сум выполнима текущими силами на устойчивом темпе.`;
   } else if (o.binding === "team_strain") {
     s = `⚠️ Цель НА ПРЕДЕЛЕ команды. ${cap(needLine)} — это выше устойчивого темпа (~${fmt(t.sumMedianMonth)} лидов/мес), но в рамках исторического потолка (~${fmt(t.sumMaxMonth)}). `
       + `Достижимо, но держать весь месяц на пике тяжело. Устойчивая цель без перегруза ≤ ${fmt(o.feasibleGoal)} сум. `
@@ -165,6 +166,8 @@ function buildVerdict(o) {
   return s;
 }
 function cap(x) { return x ? x.charAt(0).toUpperCase() + x.slice(1) : x; }
+// Русское склонение «менеджер» по числу: 1→менеджер, 2-4→менеджера, 5-20/0→менеджеров.
+function plMgr(n) { const a = Math.abs(n) % 100, b = a % 10; if (a > 10 && a < 20) return "менеджеров"; if (b > 1 && b < 5) return "менеджера"; if (b === 1) return "менеджер"; return "менеджеров"; }
 
 // ── АСИНХРОННАЯ ОБЁРТКА: собирает входы (цель, воронка, капасити, CPL) и зовёт ядро ──
 // opts (все необязательны, для READ-ONLY превью гипотетической цели — ничего не мутируем):

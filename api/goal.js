@@ -34,8 +34,9 @@ function currentMonthPeriod() { const n = tkNow(); return monthPeriod(n.getUTCFu
 function parsePeriod(text) {
   const t = String(text || "").toLowerCase();
   const n = tkNow();
-  if (/следующ\w* месяц|keyingi oy/.test(t)) return monthPeriod(n.getUTCFullYear(), n.getUTCMonth() + 1);
-  if (/этот месяц|текущ\w* месяц|shu oy|bu oy/.test(t)) return currentMonthPeriod();
+  // ВАЖНО: \w в JS-regex НЕ матчит кириллицу → «следующем/текущем месяце» проваливались в дефолт. Матчим [а-яё].
+  if (/следующ[а-яё]*\s+месяц|keyingi oy/.test(t)) return monthPeriod(n.getUTCFullYear(), n.getUTCMonth() + 1);
+  if (/(этот|текущ[а-яё]*)\s+месяц|shu oy|bu oy/.test(t)) return currentMonthPeriod();
   for (let i = 0; i < 12; i++) if (t.includes(MONTHS_RU[i])) { const y = (i < n.getUTCMonth() ? n.getUTCFullYear() + 1 : n.getUTCFullYear()); return monthPeriod(y, i); }
   return currentMonthPeriod();
 }
