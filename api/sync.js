@@ -144,6 +144,17 @@ export default async function handler(req, res) {
   };
   // реальная дата продажи: Sotuv sanasi → иначе closed_at
   const realSaleTs = (L) => readDate(L, SALE_DATE_FIELD) || L.closed_at || 0;
+  // ФОРМАТ обучения из поля «O'quv turi» (Online/Offline или ON/OFF) — читаем ПО ИМЕНИ поля (field_id не хардкодим).
+  const FORMAT_NAME_RX = /qu[v']?\s*turi|о'?quv|уч[её]б.*(тип|формат)|формат.*обуч/i;
+  const formatOf = (L) => {
+    const cfv = cfvOf(L); if (!Array.isArray(cfv)) return null;
+    const f = cfv.find((x) => x && x.field_name && FORMAT_NAME_RX.test(x.field_name));
+    const v = f && f.values && f.values[0] && f.values[0].value != null ? String(f.values[0].value).trim().toLowerCase() : null;
+    if (!v) return null;
+    if (v === "off" || v.includes("offline") || v.includes("офлайн") || v.includes("оффлайн")) return "offline";
+    if (v === "on" || v.includes("online") || v.includes("онлайн")) return "online";
+    return null;
+  };
   // список доплат сделки: [{sum, ts}] — только заполненные
   const doplatasOf = (L) => {
     const out = [];
@@ -249,6 +260,9 @@ export default async function handler(req, res) {
     const soldFmtByMonth = {};   // "YYYY-MM" -> {online, offline, other} по цене — доля офлайна помесячно
     // РАЗБОР ПЛАТЕЖЕЙ: скидка vs рассрочка. база=L.price(первый платёж), доплаты (полученные/будущие) → подписанная сумма.
     const soldPay = { n: 0, base: 0, dopSum: 0, dopReceived: 0, dopFuture: 0, withDop: 0, lowBase: 0, lowBaseWithDop: 0, lowBaseBaseSum: 0, lowBaseSignedSum: 0, signedHist: {} };
+    // ФОРМАТ по реальному полю «O'quv turi»: конверсия по форматам (нужен формат и у НЕпроданных лидов — проверим coverage).
+    const leadsByFormat = { online: 0, offline: 0, none: 0 };
+    const soldByFormat = { online: 0, offline: 0, none: 0 };
     const DAY = 24 * 3600;
 
     for (const L of all) {
@@ -274,6 +288,8 @@ export default async function handler(req, res) {
         (capMonths[mop] || (capMonths[mop] = {}))[mk] = (capMonths[mop][mk] || 0) + 1;
         if (isSold) (soldCohort[mop] || (soldCohort[mop] = {}))[mk] = (soldCohort[mop][mk] || 0) + 1;
       }
+      // ФОРМАТ (O'quv turi) по каждому лиду: coverage покажет, стоит ли поле у НЕпроданных → можно ли конверсию по форматам
+      { const fk = formatOf(L) || "none"; leadsByFormat[fk]++; if (isSold) soldByFormat[fk]++; }
       // PERIOD-конверсия: продажа относится к месяцу ПО ДАТЕ ПРОДАЖИ (как её видит дашборд/владелец помесячно)
       if (mop && isSold && saleTs) {
         const smk = new Date((saleTs + 5 * 3600) * 1000).toISOString().slice(0, 7);
@@ -683,6 +699,12 @@ export default async function handler(req, res) {
       monthlyFunnel, // помесячная воронка лид→продажа (когортная, надёжно без нот) — база «возврата к своей конверсии»
       soldPriceHist, // распределение цен продаж (млн) — реальная доля офлайн(4)/онлайн(3.5), чек как рычаг
       soldPayments: soldPay, // база+доплаты по проданным: скидка vs рассрочка + сколько выручки ещё не получено
+      formatFunnel: { // формат по реальному полю O'quv turi: конверсия по форматам + coverage (стоит ли поле у непроданных)
+        leadsByFormat, soldByFormat,
+        convOnlinePct: leadsByFormat.online ? +(soldByFormat.online / leadsByFormat.online * 100).toFixed(2) : null,
+        convOfflinePct: leadsByFormat.offline ? +(soldByFormat.offline / leadsByFormat.offline * 100).toFixed(2) : null,
+        coveragePct: (leadsByFormat.online + leadsByFormat.offline + leadsByFormat.none) ? +((leadsByFormat.online + leadsByFormat.offline) / (leadsByFormat.online + leadsByFormat.offline + leadsByFormat.none) * 100).toFixed(1) : 0,
+      },
       mopsByConv, mopsBySales, problems, problemsAll,
       velocity: { median: velocityMedian, avg: velocityAvg, count: saleDurations.length, stages: stagesArr },
       adsets: adsetsArr.slice(0, 50),

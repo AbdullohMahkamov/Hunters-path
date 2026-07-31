@@ -344,6 +344,7 @@ export async function capacityDump(org = ORG) {
     monthlyFunnel: (dash && dash.monthlyFunnel) || null, // помесячная конверсия лид→продажа (когортная)
     soldPriceHist: (dash && dash.soldPriceHist) || null, // распределение цен продаж (офлайн/онлайн)
     soldPayments: (dash && dash.soldPayments) || null,   // скидка vs рассрочка + невыбранная выручка
+    formatFunnel: (dash && dash.formatFunnel) || null,   // конверсия по форматам (O'quv turi) + coverage
   };
 }
 
