@@ -169,6 +169,33 @@ function cap(x) { return x ? x.charAt(0).toUpperCase() + x.slice(1) : x; }
 // Русское склонение «менеджер» по числу: 1→менеджер, 2-4→менеджера, 5-20/0→менеджеров.
 function plMgr(n) { const a = Math.abs(n) % 100, b = a % 10; if (a > 10 && a < 20) return "менеджеров"; if (b > 1 && b < 5) return "менеджера"; if (b === 1) return "менеджер"; return "менеджеров"; }
 
+const medArr = (a) => { if (!a || !a.length) return null; const s = [...a].sort((x, y) => x - y); const m = Math.floor(s.length / 2); return s.length % 2 ? s[m] : Math.round((s[m - 1] + s[m]) / 2); };
+
+// ── КАПАСИТИ ПО ПОСЛЕДНИМ 3 МЕСЯЦАМ С УЧЁТОМ ТЕНДЕНЦИИ (роста/спада) ──
+// Медиана ВСЕЙ истории слепа к росту: разгонные месяцы вечно тянут её вниз, и команда, которая набрала темп,
+// выглядит слабее, чем есть (напр. Abdulla-Legenda: месяцы [16, 425, 421] → медиана всей истории 228, хотя
+// реальный текущий темп ~421). Поэтому при постановке цели берём ОКНО последних 3 завершённых месяцев и смотрим
+// направление: устойчиво растёт → берём последний месяц (текущий уровень), устойчиво падает → тоже последний
+// (ниже, честно), разнонаправленно → медиану окна (устойчивая середина, гасит одиночный спайк/провал).
+//   includeCurrent — включить текущий месяц в окно, если сегодня ПОСЛЕДНИЙ день месяца (он уже прожит, как и в
+//   базе чек/конверсии) — чтобы оценка не «прыгала» на стыке 31-е→1-е.
+export function recentCapacity(months, monthNow, includeCurrent = false) {
+  const entries = Object.entries(months || {}).sort((a, b) => (a[0] < b[0] ? -1 : 1));
+  const usable = entries.filter(([mk]) => mk < monthNow || (includeCurrent && mk === monthNow));
+  const vals = usable.slice(-3).map(([, v]) => v);
+  const n = vals.length;
+  if (!n) return { base: null, max: null, monthsN: 0, trend: "none", window: [] };
+  const med = medArr(vals), mx = Math.max(...vals);
+  let trend = "flat", base = med;
+  if (n >= 2) {
+    const up = vals.every((v, i) => i === 0 || v >= vals[i - 1]) && vals[n - 1] > vals[0];   // монотонный рост
+    const down = vals.every((v, i) => i === 0 || v <= vals[i - 1]) && vals[n - 1] < vals[0]; // монотонный спад
+    if (up) { trend = "up"; base = vals[n - 1]; }
+    else if (down) { trend = "down"; base = vals[n - 1]; }
+  }
+  return { base, max: mx, monthsN: n, trend, window: vals, latest: vals[n - 1], median: med };
+}
+
 // ── АСИНХРОННАЯ ОБЁРТКА: собирает входы (цель, воронка, капасити, CPL) и зовёт ядро ──
 // opts (все необязательны, для READ-ONLY превью гипотетической цели — ничего не мутируем):
 //   goalUZS/period — оценить цель, ОТЛИЧНУЮ от сохранённой (напр. август, пока стоит июльская);
@@ -185,7 +212,23 @@ export async function assessRealism(org = ORG, opts = {}) {
   if (!f) return { computable: false, reason: "no_funnel", feasible: null };
   const workdays = goal.period ? await workingDays(goal.period) : null;
   const dash = await rgetJSON("dashboard", null);
-  const teamCapacityByMop = (dash && dash.teamCapacity && dash.teamCapacity.byMop) || {};
+  const rawByMop = (dash && dash.teamCapacity && dash.teamCapacity.byMop) || {};
+  const monthNow = (dash && dash.teamCapacity && dash.teamCapacity.monthNow) || (new Date(Date.now() + 5 * 3600000).toISOString().slice(0, 7));
+  // текущий месяц включаем в окно капасити, если сегодня ПОСЛЕДНИЙ день месяца (он уже прожит ~полностью)
+  const nowD = new Date(Date.now() + 5 * 3600000);
+  const isLastDayOfMonth = new Date(Date.UTC(nowD.getUTCFullYear(), nowD.getUTCMonth(), nowD.getUTCDate() + 1)).getUTCMonth() !== nowD.getUTCMonth();
+  // ТЕНДЕНЦИЯ: капасити каждого МОПа берём по последним 3 месяцам с учётом направления (не медиана всей истории).
+  // Фолбэк на старую медиану/макс, если помесячного грида ещё нет (до первого sync с полем months).
+  const teamCapacityByMop = {}, trends = {};
+  for (const [name, c] of Object.entries(rawByMop)) {
+    if (c && c.months) {
+      const r = recentCapacity(c.months, monthNow, isLastDayOfMonth);
+      teamCapacityByMop[name] = { median: r.base, max: r.max, monthsN: r.monthsN };
+      trends[name] = { trend: r.trend, window: r.window };
+    } else if (c) {
+      teamCapacityByMop[name] = { median: c.median, max: c.max, monthsN: c.monthsN };
+    }
+  }
   const thinMonths = (dash && dash.teamCapacity && dash.teamCapacity.thinMonths) || 3;
   const mopsActiveCount = (dash && Array.isArray(dash.mopsByConv)) ? dash.mopsByConv.length : Object.keys(teamCapacityByMop).length;
   const wna = dash && dash.dataQuality && dash.dataQuality.wonNoAmount;
@@ -211,10 +254,25 @@ export async function assessRealism(org = ORG, opts = {}) {
     }
   }
   const earned = opts.earnedUZS != null ? opts.earnedUZS : (f.revenue || 0);
-  return assessGoalRealism({
+  const out = assessGoalRealism({
     goalUZS: goal.amountUZS, earned, avgCheck, conv,
     cpl, cplSource, teamCapacityByMop, mopsActiveCount, workdays, baseInaccurate, thinMonths, baselineLabel, baselineClosed,
   });
+  // ТЕНДЕНЦИЯ последних 3 месяцев — в вердикт и в данные (капасити взята по текущему темпу, не по медиане всей истории).
+  const growing = Object.entries(trends).filter(([, t]) => t.trend === "up").map(([n]) => n);
+  const declining = Object.entries(trends).filter(([, t]) => t.trend === "down").map(([n]) => n);
+  out.trends = trends;
+  if (out.computable && out.human) {
+    if (growing.length || declining.length) {
+      const parts = [];
+      if (growing.length) parts.push(`растут — ${growing.join(", ")}`);
+      if (declining.length) parts.push(`снижаются — ${declining.join(", ")}`);
+      out.human += `\n📊 Тенденция за 3 мес: ${parts.join("; ")}. Капасити взята по ТЕКУЩЕМУ темпу (у растущих — последний месяц, а не заниженная медиана всей истории).`;
+    } else {
+      out.human += `\n📊 Тенденция за 3 мес: тренда нет — капасити по медиане последних 3 месяцев.`;
+    }
+  }
+  return out;
 }
 
 // ── READ-ONLY ПРЕВЬЮ ВЕРДИКТА для гипотетической цели (ничего не сохраняет). Использует ТУ ЖЕ разборку цели
