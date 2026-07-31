@@ -218,6 +218,25 @@ export function recentCapacity(months, monthNow, includeCurrent = false) {
   return { base, max: mx, monthsN: n, trend, window: vals, latest: vals[n - 1], median: med };
 }
 
+// ── РАЗЛОЖЕНИЕ КОНВЕРСИИ на ДОЗВОН × ЗАКРЫТИЕ (чистое, тестируемо) ──
+// conv(лид→продажа) = dozvon(лид→разговор) × closing(разговор→продажа). Показывает, ГДЕ резерв: поднять дозвон
+// до лучшего в команде или закрытие до лучшего. reserveStep — где рычаг больше (там и работать в первую очередь).
+export function funnelReserve(convNow, dozvonNow, bestDozvon, bestClosing) {
+  if (!(convNow > 0) || !(dozvonNow > 0)) return null;
+  const closingNow = convNow / dozvonNow;
+  const bd = bestDozvon && bestDozvon > dozvonNow ? Math.min(bestDozvon, 1) : dozvonNow;
+  const bc = bestClosing && bestClosing > closingNow ? bestClosing : closingNow;
+  const convViaDozvon = bd * closingNow;   // если бы все дозванивались как лучший
+  const convViaClosing = dozvonNow * bc;   // если бы все закрывали как лучший
+  const dozvonGain = convViaDozvon - convNow, closingGain = convViaClosing - convNow;
+  return {
+    dozvonPct: +(dozvonNow * 100).toFixed(1), closingPct: +(closingNow * 100).toFixed(2),
+    bestDozvonPct: +(bd * 100).toFixed(1), bestClosingPct: +(bc * 100).toFixed(2),
+    convViaDozvon, convViaClosing,
+    reserveStep: closingGain >= dozvonGain ? "closing" : "dozvon", // где резерв больше
+  };
+}
+
 // ── АСИНХРОННАЯ ОБЁРТКА: собирает входы (цель, воронка, капасити, CPL) и зовёт ядро ──
 // opts (все необязательны, для READ-ONLY превью гипотетической цели — ничего не мутируем):
 //   goalUZS/period — оценить цель, ОТЛИЧНУЮ от сохранённой (напр. август, пока стоит июльская);
@@ -306,6 +325,40 @@ export async function assessRealism(org = ORG, opts = {}) {
       out.human += `\n📊 Тенденция за 3 мес: тренда нет — капасити по медиане последних 3 месяцев.`;
     }
   }
+  // ── РАЗЛОЖЕНИЕ КОНВЕРСИИ: лид→РАЗГОВОР→продажа (дозвон × закрытие) + где резерв + гейт полноты замера ──
+  // Данные из накопительного замера дозвона (reachMonthAccum в ключе speed). Если coverage низкий — честно
+  // помечаем «предварительно» и НЕ выдаём число за факт (правило полноты данных).
+  try {
+    if (out.computable && out.human && f.conv > 0) {
+      const speed = await rgetJSON("speed", null);
+      const rma = speed && speed.reachMonthAccum;
+      if (rma && rma.reachedLeads > 0 && rma.leads > 0) {
+        const dozvonNow = rma.reachedLeads / rma.leads;
+        const salesByMop = {};
+        for (const m of ((dash && dash.mopsByConv) || [])) if (m && m.name) salesByMop[m.name] = m.sold || 0;
+        // лучший в команде на каждом шаге (порог значимости, чтобы не брать шум малого объёма)
+        let bestDozvon = dozvonNow, bestClosing = 0, worstDozvon = null;
+        for (const b of (rma.byMop || [])) {
+          if (b.leads >= 100 && b.dozvonPct != null) {
+            if (b.dozvonPct / 100 > bestDozvon) bestDozvon = b.dozvonPct / 100;
+            if (worstDozvon == null || b.dozvonPct < worstDozvon.pct) worstDozvon = { name: b.name, pct: b.dozvonPct };
+          }
+          const sold = salesByMop[b.name] || 0;
+          if (b.reached >= 25 && sold > 0) { const cl = sold / b.reached; if (cl > bestClosing) bestClosing = cl; }
+        }
+        const dec = funnelReserve(f.conv, dozvonNow, bestDozvon, bestClosing);
+        if (dec) {
+          out.decomp = { ...dec, coveragePct: rma.coveragePct, provisional: rma.coveragePct < 75, worstDozvonMop: worstDozvon };
+          const prov = rma.coveragePct < 75 ? ` ⚠️ замер дозвона ещё дозаполняется (coverage ${rma.coveragePct}%) — цифры предварительные` : "";
+          const stepWord = dec.reserveStep === "closing" ? "ЗАКРЫТИИ (разговор→продажа)" : "ДОЗВОНЕ (лид→разговор)";
+          out.human += `\n🔬 Разложение конверсии ${(f.conv * 100).toFixed(1)}% = дозвон ${dec.dozvonPct}% × закрытие ${dec.closingPct}%.`
+            + ` Лучшие в команде: дозвон ${dec.bestDozvonPct}%, закрытие ${dec.bestClosingPct}%. Резерв — в основном в ${stepWord}.`
+            + (worstDozvon && worstDozvon.pct < dec.bestDozvonPct - 10 ? ` По дозвону отстаёт ${worstDozvon.name} (${worstDozvon.pct}%) — точечная задача РОПу.` : ``)
+            + prov;
+        }
+      }
+    }
+  } catch (e) { /* разложение не критично для вердикта */ }
   return out;
 }
 

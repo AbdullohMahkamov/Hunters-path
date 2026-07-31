@@ -48,3 +48,24 @@ test("меньше данных / пусто", () => {
   assert.equal(one.base, 300);
   assert.equal(one.trend, "flat");
 });
+
+// ── РАЗЛОЖЕНИЕ КОНВЕРСИИ на дозвон × закрытие: где резерв ──
+import { funnelReserve } from "../api/goal-realism.js";
+
+test("funnelReserve: conv = дозвон × закрытие; резерв там, где рычаг больше", () => {
+  // conv 2.6% = дозвон 58% × закрытие 4.48%. Лучший дозвон 60% (мало), лучшее закрытие 8% (много) → резерв в закрытии
+  const r = funnelReserve(0.026, 0.58, 0.60, 0.08);
+  assert.equal(r.dozvonPct, 58);
+  assert.equal(r.closingPct, 4.48);
+  assert.equal(r.reserveStep, "closing", "закрытие 4.5→8% даёт больше, чем дозвон 58→60%");
+});
+
+test("funnelReserve: если дозвон низкий, а закрытие уже на потолке — резерв в дозвоне", () => {
+  const r = funnelReserve(0.026, 0.40, 0.65, 0.065); // дозвон 40% при лучшем 65%, закрытие уже = лучшему
+  assert.equal(r.reserveStep, "dozvon");
+});
+
+test("funnelReserve: нет базы → null", () => {
+  assert.equal(funnelReserve(0, 0.5, 0.6, 0.08), null);
+  assert.equal(funnelReserve(0.026, 0, 0.6, 0.08), null);
+});
