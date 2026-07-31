@@ -132,10 +132,14 @@ export default async function handler(req, res) {
       const v = await assessRealism("hunter");
       const lts = deriveLeverTasks(v);
       const created = [];
-      for (const lt of lts) { const r = await createRopTask({ title: lt.title, why: lt.why }); created.push({ id: r.id, title: lt.title }); }
-      if (created.length) { try { await runTick(true); } catch (e) {} } // сразу пингуем РОПа
+      for (const lt of lts) {
+        if (lt.recipient === "marketing") { const r = await addMarketingTask({ title: lt.title, why: lt.why, source: "advisor" }); created.push({ id: r.id, title: lt.title, to: "marketing" }); }
+        else { const r = await createRopTask({ title: lt.title, why: lt.why }); created.push({ id: r.id, title: lt.title, to: "rop" }); }
+      }
+      if (created.length) { try { await runTick(true); } catch (e) {} } // сразу пингуем РОПа/маркетолога
+      const nRop = created.filter((c) => c.to === "rop").length, nMkt = created.filter((c) => c.to === "marketing").length;
       res.status(200).json({ ok: true, type, created, count: created.length,
-        note: created.length ? `Поставлено РОПу задач: ${created.length} — Task Agent начнёт вести (пинг/эскалация). Деньги/наём остаются решением владельца в очереди «Решения».` : "операционных рычагов для задач сейчас нет (замер дозвона/закрытия неполон или резерв не выделен)" });
+        note: created.length ? `Поставлено задач: РОПу ${nRop}${nMkt ? `, маркетологу ${nMkt}` : ""} — Task Agent начнёт вести (пинг/эскалация). Деньги/наём остаются решением владельца в очереди «Решения».` : "операционных рычагов для задач сейчас нет (замер дозвона/закрытия неполон или резерв не выделен)" });
       return;
     }
     if (type === "marketing_task") {
