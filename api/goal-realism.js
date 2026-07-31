@@ -309,6 +309,7 @@ export async function capacityDump(org = ORG) {
     lastClosedPeriod: (results && results.length) ? results[results.length - 1] : null,
     monthlyFunnel: (dash && dash.monthlyFunnel) || null, // помесячная конверсия лид→продажа (когортная)
     soldPriceHist: (dash && dash.soldPriceHist) || null, // распределение цен продаж (офлайн/онлайн)
+    soldPayments: (dash && dash.soldPayments) || null,   // скидка vs рассрочка + невыбранная выручка
   };
 }
 

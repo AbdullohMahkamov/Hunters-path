@@ -247,6 +247,8 @@ export default async function handler(req, res) {
     const soldPeriodMonths = {}; // "YYYY-MM"(по ДАТЕ ПРОДАЖИ) -> сколько продано в этом месяце — для period-конверсии (как считает дашборд)
     const soldPriceHist = {};    // цена(млн, 1 знак) -> сколько продаж по ней — реальное распределение офлайн/онлайн
     const soldFmtByMonth = {};   // "YYYY-MM" -> {online, offline, other} по цене — доля офлайна помесячно
+    // РАЗБОР ПЛАТЕЖЕЙ: скидка vs рассрочка. база=L.price(первый платёж), доплаты (полученные/будущие) → подписанная сумма.
+    const soldPay = { n: 0, base: 0, dopSum: 0, dopReceived: 0, dopFuture: 0, withDop: 0, lowBase: 0, lowBaseWithDop: 0, lowBaseBaseSum: 0, lowBaseSignedSum: 0, signedHist: {} };
     const DAY = 24 * 3600;
 
     for (const L of all) {
@@ -282,6 +284,20 @@ export default async function handler(req, res) {
         soldPriceHist[pM] = (soldPriceHist[pM] || 0) + 1;
         const fmt = p >= 3.75e6 ? "offline" : (p >= 3.0e6 ? "online" : "other");
         (soldFmtByMonth[smk] || (soldFmtByMonth[smk] = { online: 0, offline: 0, other: 0 }))[fmt]++;
+      }
+      // ПЛАТЕЖИ по КАЖДОЙ проданной (не только с mop): скидка (нет доплат, total<прайс) vs рассрочка (доплаты добирают до прайса)
+      if (isSold) {
+        const base = L.price || 0;
+        const dops = doplatasOf(L); // [{sum, ts}]
+        const nowTs2 = Math.floor(Date.now() / 1000);
+        let dSum = 0, dRec = 0, dFut = 0;
+        for (const dp of dops) { dSum += dp.sum; if (dp.ts && dp.ts <= nowTs2) dRec += dp.sum; else dFut += dp.sum; }
+        const signed = base + dSum;
+        soldPay.n++; soldPay.base += base; soldPay.dopSum += dSum; soldPay.dopReceived += dRec; soldPay.dopFuture += dFut;
+        if (dops.length) soldPay.withDop++;
+        if (base < 3e6) { soldPay.lowBase++; soldPay.lowBaseBaseSum += base; soldPay.lowBaseSignedSum += signed; if (dops.length) soldPay.lowBaseWithDop++; }
+        const sM = Math.round(signed / 1e5) / 10;
+        soldPay.signedHist[sM] = (soldPay.signedHist[sM] || 0) + 1;
       }
 
       // === СЕГОДНЯ: лиды обработанные (созданные сегодня), продажи и касса за сегодня ===
@@ -666,6 +682,7 @@ export default async function handler(req, res) {
       teamCapacity, // пропускная способность команды (лиды/МОП/месяц) — вход проверки реалистичности цели
       monthlyFunnel, // помесячная воронка лид→продажа (когортная, надёжно без нот) — база «возврата к своей конверсии»
       soldPriceHist, // распределение цен продаж (млн) — реальная доля офлайн(4)/онлайн(3.5), чек как рычаг
+      soldPayments: soldPay, // база+доплаты по проданным: скидка vs рассрочка + сколько выручки ещё не получено
       mopsByConv, mopsBySales, problems, problemsAll,
       velocity: { median: velocityMedian, avg: velocityAvg, count: saleDurations.length, stages: stagesArr },
       adsets: adsetsArr.slice(0, 50),
