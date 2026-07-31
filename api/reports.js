@@ -28,10 +28,16 @@ const short = (s, n) => { s = String(s || ""); return s.length > n ? s.slice(0, 
 const tkDate = (offsetDays = 0) => new Date(Date.now() + 5 * 3600000 - offsetDays * 86400000).toISOString().slice(0, 10);
 const today0 = () => tkDate(0);
 
+const RU_MONTHS = ["январь", "февраль", "март", "апрель", "май", "июнь", "июль", "август", "сентябрь", "октябрь", "ноябрь", "декабрь"];
+const curMonthLabel = () => { const n = new Date(Date.now() + 5 * 3600000); return `${RU_MONTHS[n.getUTCMonth()]} ${n.getUTCFullYear()}`; };
+
 // ── Прогресс к цели (детерминированно, БЕЗ LLM — не дёргаем генерацию задач planner) ──
 async function goalProgress(org) {
   const goal = await getGoal(org);
   if (!goal || !goal.amountUZS) return { hasGoal: false };
+  // СТАРАЯ ЦЕЛЬ на стыке месяцев: если период цели ≠ текущий месяц (напр. 1-го числа цель ещё июльская, а идёт
+  // август), НЕ показываем бредовый прогресс (июльская цель против пустого августа). Честно: «цель не задана».
+  if (goal.period && goal.period.label && goal.period.label !== curMonthLabel()) return { hasGoal: false, stale: true, staleLabel: goal.period.label };
   const funnel = await getVerifiedFunnel(org).catch(() => null);
   const f = funnelFacts(funnel);
   const wdays = goal.period ? await workingDays(goal.period) : null;
@@ -62,6 +68,8 @@ export async function buildBusinessReport(org = ORG) {
   if (gp.hasGoal) {
     const paceStr = gp.onPace === true ? "✅ успеваем" : gp.onPace === false ? `⚠️ отстаём (прогноз ${num(gp.forecast)}, разрыв ${num(gp.gap)} сум)` : "темп не диагностируется";
     s += `\nЦель ${gp.goal.period ? gp.goal.period.label : ""}: закрыто <b>${num(gp.earned)} из ${num(gp.goal.amountUZS)}</b> (${gp.pct}%) · осталось ${num(gp.remaining)} сум · ${paceStr}`;
+  } else if (gp.stale) {
+    s += `\n⚠️ Цель на <b>${curMonthLabel()}</b> ещё не задана (предыдущая «${gp.staleLabel}» закрыта). Задайте цель на месяц фразой в чат — до этого прогресс не считаю.`;
   } else {
     s += `\n⚠️ Цель на период не задана — прогресс не считается. Задайте цель фразой в чат (сумма + период).`;
   }

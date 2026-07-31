@@ -458,9 +458,9 @@ function monthLabelY(y, mIdx) { const yy = y + Math.floor(mIdx / 12); return `${
 export async function nextMonthPrompt(org = ORG) {
   const now = tkNow(); // Ташкент (как везде в файле: читаем UTC-поля со сдвинутой даты)
   const day = now.getUTCDate(), y = now.getUTCFullYear(), m = now.getUTCMonth();
-  const lastDay = new Date(Date.UTC(y, m + 1, 0)).getUTCDate();
-  const isTargetDay = (day === 30) || (day === lastDay && lastDay < 30); // 30-е, либо последний день короткого месяца (февраль)
-  if (!isTargetDay) return { ok: true, skipped: "not_target_day", day };
+  const lastDay = new Date(Date.UTC(y, m + 1, 0)).getUTCDate(); // ВЫЧИСЛЯЕМ: 28/29/30/31 по месяцу
+  if (day !== lastDay) return { ok: true, skipped: "not_last_day", day, lastDay }; // крон ходит ежедневно (28-31), шлём только в последний день
+
 
   const monthKey = `${y}-${String(m + 1).padStart(2, "0")}`;
   const guardKey = `planner:monthprompt:${org}:${monthKey}`;
@@ -540,10 +540,15 @@ export async function closeMonth(org = ORG) {
 }
 
 export async function sendMonthClose(org = ORG) {
+  // Закрытие ИДЕМПОТЕНТНО. Отчёт «месяц закрыт» отвязан от самого закрытия: месяц мог закрыть раньше утренний
+  // бизнес-отчёт (self-heal) — тогда c.skipped, но ОТЧЁТ ещё не отправлялся. Дубль отсекаем по флагу rec.reported,
+  // а НЕ по факту закрытия. Иначе ранний self-heal «съедал» бы отчёт 1-го числа.
   const c = await closeMonth(org);
-  if (!c.ok || c.skipped) return c; // нет снимка / уже закрыт — не дублируем
-  const rec = c.result;
+  if (!c.ok && !c.skipped) return c; // нет снимка — закрыть нечем
   const all = await getPeriodResults(org);
+  const rec = c.result || all[all.length - 1]; // запись месяца независимо от того, кто закрыл
+  if (!rec) return { ok: true, sent: false, reason: "no_result" };
+  if (rec.reported) return { ok: true, skipped: "already_reported", monthKey: rec.month };
   const prev = all.length >= 2 ? all[all.length - 2] : null; // предыдущий закрытый месяц для «что сработало/нет»
   let s = `📅 <b>Месяц закрыт · ${rec.label}</b>\n\n`;
   if (rec.goalUZS) s += `Цель: ${num(rec.goalUZS)} сум · закрыто <b>${num(rec.earned)} (${rec.pct}%)</b> — ${rec.onTarget ? "✅ цель взята" : "⚠️ недобор"}\n`;
@@ -561,6 +566,9 @@ export async function sendMonthClose(org = ORG) {
   const ppl = await getPeople();
   let sent = false;
   if (ppl.owner && ppl.owner.chatId) { const r = await sendTg("owner", ppl.owner.chatId, s); sent = !!(r && r.ok); }
+  // помечаем именно ОТЧЁТ как отправленный (в самой записи periodresults) — чтобы не продублировать
+  rec.reported = true;
+  await rsetJSON(`periodresults:${org}`, all);
   return { ok: true, closed: true, sent, monthKey: rec.month };
 }
 

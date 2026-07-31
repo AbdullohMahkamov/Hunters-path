@@ -52,7 +52,7 @@ export function assessGoalRealism(inp) {
   const {
     goalUZS, earned = 0, avgCheck, conv, cpl = null, cplSource = null,
     teamCapacityByMop = {}, mopsActiveCount, workdays = null,
-    baseInaccurate = null, thinMonths = 3, baselineLabel = null,
+    baseInaccurate = null, thinMonths = 3, baselineLabel = null, baselineClosed = false,
   } = inp;
 
   const remaining = Math.max(0, (goalUZS || 0) - (earned || 0));
@@ -117,6 +117,7 @@ export function assessGoalRealism(inp) {
     convPct: +(conv * 100).toFixed(1),
     avgCheckInaccurate: baseInaccurate || null,
     baselineLabel: baselineLabel || null,
+    baselineClosed: !!baselineClosed,
   };
   out.human = buildVerdict(out);
   return out;
@@ -155,8 +156,10 @@ function buildVerdict(o) {
   if (o.thinMops && o.thinMops.length) s += `\n⚠️ По ${o.thinMops.join(", ")} мало истории — их капасити оценочна, цифры по команде приблизительные.`;
   // искажение среднего чека
   if (o.avgCheckInaccurate) s += `\n📎 Расчёт опирается на средний чек, а он сейчас неточен: ${o.avgCheckInaccurate.count} сделок закрыты без суммы (${o.avgCheckInaccurate.sharePct}%). Цифры ориентировочные — точнее станет, когда суммы проставят.`;
-  // база из закрытого месяца (текущий ещё пустой)
-  if (o.baselineLabel) s += `\n📈 Средний чек и конверсия взяты из закрытого месяца (${o.baselineLabel}) — текущий период ещё пустой. Пересчитаю по факту, когда пойдут продажи.`;
+  // ЧЕСТНО про базу расчёта (чек и конверсия): текущий месяц (почти прожит) или последний закрытый (текущий пуст)
+  if (o.baselineLabel) s += o.baselineClosed
+    ? `\n📈 Средний чек и конверсия — из закрытого месяца (${o.baselineLabel}): текущий период ещё пустой. Пересчитаю по факту, когда пойдут продажи.`
+    : `\n📈 Средний чек и конверсия — по текущему месяцу (${o.baselineLabel}).`;
   return s;
 }
 function cap(x) { return x ? x.charAt(0).toUpperCase() + x.slice(1) : x; }
@@ -177,20 +180,26 @@ export async function assessRealism(org = ORG) {
   const baseInaccurate = (wna && wna.inaccurate) ? { count: wna.count, sharePct: wna.sharePct } : null;
   const { cpl, cplSource } = await resolveCpl(dash);
 
-  // БАЗА avgCheck/конверсии: если текущий месяц ещё пустой (начало периода) — берём ИТОГ ПОСЛЕДНЕГО ЗАКРЫТОГО
-  // месяца (planner.getPeriodResults). Иначе достижимая цель считалась бы на тонких/нулевых данных августа.
-  let avgCheck = f.avgCheck, conv = f.conv, baselineLabel = null;
+  // БАЗА avgCheck/конверсии — и вердикт ЧЕСТНО пишет, на какой посчитан:
+  //  • если ТЕКУЩИЙ месяц уже наполнен (≥ порога продаж) — берём его (в конце месяца он прожит на ~99%, это
+  //    полнее любого прошлого). Метка — текущий календарный месяц (это НЕ обязательно период цели: цель на
+  //    август, а база — июль, если считаем 31 июля).
+  //  • если текущий пустой (начало периода) — берём ИТОГ ПОСЛЕДНЕГО ЗАКРЫТОГО месяца (periodresults).
+  const RU_MONTHS = ["январь", "февраль", "март", "апрель", "май", "июнь", "июль", "август", "сентябрь", "октябрь", "ноябрь", "декабрь"];
+  const nowTk = new Date(Date.now() + 5 * 3600000);
+  const curLabel = `${RU_MONTHS[nowTk.getUTCMonth()]} ${nowTk.getUTCFullYear()}`;
+  let avgCheck = f.avgCheck, conv = f.conv, baselineLabel = curLabel, baselineClosed = false;
   if ((f.sold || 0) < THIN_MONTH_SOLD) {
     const results = await getPeriodResults(org).catch(() => []);
     const last = (results && results.length) ? results[results.length - 1] : null;
     if (last && (last.avgCheckMedian || last.convPct != null)) {
       if (last.avgCheckMedian) avgCheck = last.avgCheckMedian;
       if (last.convPct != null) conv = last.convPct / 100;
-      baselineLabel = last.label;
+      baselineLabel = last.label; baselineClosed = true;
     }
   }
   return assessGoalRealism({
     goalUZS: goal.amountUZS, earned: f.revenue || 0, avgCheck, conv,
-    cpl, cplSource, teamCapacityByMop, mopsActiveCount, workdays, baseInaccurate, thinMonths, baselineLabel,
+    cpl, cplSource, teamCapacityByMop, mopsActiveCount, workdays, baseInaccurate, thinMonths, baselineLabel, baselineClosed,
   });
 }

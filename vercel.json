@@ -138,7 +138,7 @@
     },
     {
       "path": "/api/planner?action=month-prompt&cron=1",
-      "schedule": "0 4 28-31 * *"
+      "schedule": "0 5 28-31 * *"
     },
     {
       "path": "/api/planner?action=month-close&cron=1",

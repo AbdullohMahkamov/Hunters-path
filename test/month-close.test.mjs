@@ -79,6 +79,19 @@ test("ПОДСТРАХОВКА: снимок 31-го перезаписан ну
   assert.equal(r.result.goalUZS, 100000000, "цель — из чистого июльского снимка (июль 2026)");
 });
 
+test("отчёт месяца отвязан от закрытия: ранний self-heal (утренний отчёт закрыл) не съедает отчёт 1-го числа", async () => {
+  freezeUTC("2026-08-01");
+  kvSetJSON("snap:2026-07-31", julySnap);
+  kvSetJSON("taskagent:people", { owner: { chatId: 999 } });
+  await planner.closeMonth("hunter"); // как будто утренний бизнес-отчёт уже закрыл июль (self-heal)
+  const r = await planner.sendMonthClose("hunter");
+  assert.equal(r.sent, true, "отчёт всё равно ушёл, хотя месяц уже был закрыт");
+  assert.equal(tgSendCount("OWNTOK"), 1);
+  const r2 = await planner.sendMonthClose("hunter");
+  assert.equal(r2.skipped, "already_reported", "повтор отчёта не дублирует");
+  assert.equal(tgSendCount("OWNTOK"), 1);
+});
+
 test("реализм: текущий месяц пустой → база avgCheck/конверсии из закрытого месяца", async () => {
   // цель на август, но продаж в августе почти нет (тонкий месяц)
   kvSetJSON("goal:hunter", { amountUZS: 150000000, currency: "UZS", period: { label: "август 2026", start: "2026-08-01", end: "2026-08-31" } });
@@ -95,5 +108,22 @@ test("реализм: текущий месяц пустой → база avgChe
 
   const r = await realism.assessRealism("hunter");
   assert.equal(r.baselineLabel, "июль 2026", "база взята из закрытого месяца");
+  assert.equal(r.baselineClosed, true);
   assert.match(r.human, /закрытого месяца \(июль 2026\)/, "вердикт честно помечает базу");
+});
+
+test("реализм: текущий месяц наполнен (≥порога продаж) → база = ТЕКУЩИЙ, вердикт это пишет", async () => {
+  kvSetJSON("goal:hunter", { amountUZS: 150000000, currency: "UZS", period: { label: "текущий", start: "2026-01-01", end: "2026-12-31" } });
+  kvSetJSON("dashboard", {
+    updatedAt: new Date().toISOString(),
+    totals: { leads: 200, sold: 20, revenue: 100000000, avgCheck: 5000000, avgCheckMedian: 5000000, newSalesRevenue: 100000000 }, // 20 продаж → не тонкий
+    mopsByConv: [{ name: "A" }, { name: "B" }, { name: "C" }],
+    teamCapacity: { thinMonths: 3, byMop: { A: { median: 40, max: 60, monthsN: 6 }, B: { median: 40, max: 60, monthsN: 6 }, C: { median: 40, max: 60, monthsN: 6 } } },
+    velocity: { stages: [] },
+  });
+  kvSetJSON("speed", { mops: [{ reached: 60 }, { reached: 60 }, { reached: 60 }] });
+  kvSetJSON("periodresults:hunter", [{ month: "2026-07", label: "июль 2026", avgCheckMedian: 5000000, convPct: 10 }]); // есть закрытый, но НЕ берём — текущий полон
+  const r = await realism.assessRealism("hunter");
+  assert.equal(r.baselineClosed, false, "берём текущий месяц, не закрытый");
+  assert.match(r.human, /по текущему месяцу/, "вердикт честно пишет базу");
 });

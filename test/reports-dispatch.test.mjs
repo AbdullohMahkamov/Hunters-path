@@ -140,3 +140,12 @@ test("бизнес-отчёт: числа за вчера + цена лида + 
   assert.match(r.text, /закрыто.*60\s?000\s?000.*из.*100\s?000\s?000/s);
   assert.match(r.text, /\(60%\)/);
 });
+
+test("бизнес-отчёт на стыке месяцев: цель ПРОШЛОГО периода → «цель не задана», без бредового прогресса", async () => {
+  kvSetJSON("dashboard", { updatedAt: new Date().toISOString(), totals: { leads: 200, sold: 20, revenue: 60000000, avgCheckMedian: 5000000 }, mopsByConv: [{ name: "A" }], velocity: { stages: [] } });
+  kvSetJSON(`bizday:${tkDate(1)}`, { sold: 3, revenue: 15000000, leads: 12 });
+  kvSetJSON("goal:hunter", { amountUZS: 100000000, currency: "UZS", period: { label: "январь 2020", start: "2020-01-01", end: "2020-01-31" } }); // заведомо не текущий месяц
+  const r = await reports.buildBusinessReport("hunter");
+  assert.match(r.text, /ещё не задана/, "старая цель не выдаётся за текущую");
+  assert.doesNotMatch(r.text, /закрыто.*из/, "нет строки прогресса против устаревшей цели");
+});
