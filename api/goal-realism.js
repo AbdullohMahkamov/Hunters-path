@@ -55,6 +55,8 @@ export function assessGoalRealism(inp) {
     goalUZS, earned = 0, avgCheck, conv, cpl = null, cplSource = null,
     teamCapacityByMop = {}, mopsActiveCount, workdays = null,
     baseInaccurate = null, thinMonths = 3, baselineLabel = null, baselineClosed = false,
+    convBest = null, convBestLabel = null,       // СВОЙ лучший лид→продажа (из истории) — рычаг конверсии
+    checkCeiling = null, checkCeilNote = null,    // потолок чека (сдвиг в офлайн) — рычаг чека, капнутый
   } = inp;
 
   const remaining = Math.max(0, (goalUZS || 0) - (earned || 0));
@@ -91,31 +93,49 @@ export function assessGoalRealism(inp) {
     team = { mopsWithHistory: withHistory.length, sumMedianMonth: Math.round(sumMedian), sumMaxMonth: Math.round(sumMax), capMedianPeriod: Math.round(capMedianPeriod), capMaxPeriod: Math.round(capMaxPeriod), feasibleRevMedian, feasibleRevMax };
   }
 
-  // ── ВЫБОР СВЯЗЫВАЮЩЕГО ОГРАНИЧЕНИЯ (приоритет: нет истории → упор в людей → напряжение → деньги) ──
-  // Без истории капасити НЕ заявляем «выполнимо» на одном бюджете — сначала честно «капасити не проверить».
-  let binding, feasibleGoal = null, addManagers = null;
+  // ── ТРИ МНОЖИТЕЛЯ: выручка = ЛИДЫ × КОНВЕРСИЯ × ЧЕК. Рычаги в порядке дешевизны и обратимости:
+  //    сначала КОНВЕРСИЯ (вернуть свой лучший лид→продажа), потом ЧЕК (сдвиг в офлайн, капнут +14%),
+  //    и только если и этого мало — ЛИДЫ через НАЙМ (последний рычаг). Раньше конверсия и чек стояли
+  //    КОНСТАНТОЙ, поэтому вердикт всегда упирался в людей — это и была ошибка.
+  const cBest = (convBest && convBest > conv) ? convBest : conv;              // свой лучший (≥ текущего)
+  const chkCeil = (checkCeiling && checkCeiling > avgCheck) ? checkCeiling : avgCheck; // потолок чека
+  let binding, feasibleGoal = null, addManagers = null, levers = null;
   if (!team) {
     binding = "capacity_unknown";           // по команде нет истории → пропускную способность не проверить
-  } else if (leadsNeeded > team.capMaxPeriod) {
-    binding = "team";                       // даже на историческом пике не обработать → бюджет не поможет
-    feasibleGoal = team.feasibleRevMedian;
-    // сколько людей ДОБАВИТЬ, чтобы цель бралась на УСТОЙЧИВОМ темпе (по медиане, не по пику): масштабируем команду
-    addManagers = team.capMedianPeriod > 0 ? Math.max(1, Math.ceil(N * (leadsNeeded / team.capMedianPeriod - 1))) : null;
-  } else if (leadsNeeded > team.capMedianPeriod) {
-    binding = "team_strain";                // выше устойчивого темпа, но в пределах пика → достижимо на пределе
-    feasibleGoal = team.feasibleRevMedian;
-  } else if (budgetLower != null) {
-    binding = "budget";                     // команда тянет → вопрос в деньгах
   } else {
-    binding = "budget_unknown";             // команда тянет, но цену лида назвать нечем
+    const capMed = team.capMedianPeriod, capMax = team.capMaxPeriod;          // устойчивая / пиковая пропускная (лиды/период)
+    const revNow    = (earned || 0) + Math.floor(capMed * conv)  * avgCheck;  // как есть
+    const revConv   = (earned || 0) + Math.floor(capMed * cBest) * avgCheck;  // вернуть лучшую конверсию
+    const revChk    = (earned || 0) + Math.floor(capMed * cBest) * chkCeil;   // + потолок чека
+    const revBudget = (earned || 0) + Math.floor(capMax * cBest) * chkCeil;   // + БОЛЬШЕ ЛИДОВ до пика (реклама, БЕЗ найма)
+    // лиды/бюджет под цель ПОСЛЕ выжатых конверсии+чека
+    const salesForGoal = Math.ceil(remaining / chkCeil);
+    const leadsForGoal = Math.ceil(salesForGoal / cBest);
+    const budgetForGoal = cpl > 0 ? Math.round(leadsForGoal * cpl / frac) : null; // в пересчёте на месяц
+    levers = {
+      convNowPct: +(conv * 100).toFixed(2), convBestPct: +(cBest * 100).toFixed(2), convBestLabel,
+      checkNow: Math.round(avgCheck), checkCeil: Math.round(chkCeil), checkCeilNote,
+      revNow, revConv, revChk, revBudget,
+      convGain: revConv - revNow, checkGain: revChk - revConv, budgetGain: revBudget - revChk,
+      leadsForGoal, budgetForGoal,
+    };
+    feasibleGoal = revBudget;               // максимум БЕЗ найма = лучшая конверсия + потолок чека + лиды до пика
+    if (goalUZS <= revNow) binding = "reachable_now";        // берётся текущими показателями
+    else if (goalUZS <= revConv) binding = "conversion";     // хватит вернуть свою лучшую конверсию
+    else if (goalUZS <= revChk) binding = "check";           // конверсия + сдвиг чека (офлайн)
+    else if (goalUZS <= revBudget) binding = "budget";       // + больше лидов до пика команды (реклама), найма НЕТ
+    else {                                                    // НАЙМ — ПОСЛЕДНИЙ рычаг: даже пик×лучшая конв×чек мало
+      binding = "team";
+      addManagers = capMed > 0 ? Math.max(1, Math.ceil(N * (leadsForGoal / capMed - 1))) : null;
+    }
   }
 
   const out = {
     computable: true, binding,
-    feasible: binding === "budget" || binding === "budget_unknown",
+    feasible: ["reachable_now", "conversion", "check", "budget"].includes(binding), // достижимо БЕЗ найма (budget = реклама, не люди)
     remaining, salesNeeded, leadsNeeded, leadsNeededMonthly, perMopMonthly,
     frac: +frac.toFixed(3), cpl, cplSource, budgetLower,
-    team, thinMops, mopsActiveCount: N, feasibleGoal, addManagers,
+    team, thinMops, mopsActiveCount: N, feasibleGoal, addManagers, levers,
     convPct: +(conv * 100).toFixed(1),
     avgCheckInaccurate: baseInaccurate || null,
     baselineLabel: baselineLabel || null,
@@ -126,35 +146,37 @@ export function assessGoalRealism(inp) {
 }
 
 // ── ЧЕЛОВЕЧЕСКИЙ ВЕРДИКТ (детерминированный текст, готовый для чата) ──
+// ПОРЯДОК РЫЧАГОВ: конверсия → чек → найм. Найм называется ТОЛЬКО когда конверсии и чека не хватает.
 function buildVerdict(o) {
-  const t = o.team;
-  const needLine = `нужно ~${fmt(o.leadsNeededMonthly)} лидов/мес${o.mopsActiveCount ? ` (≈${fmt(o.perMopMonthly)} на менеджера)` : ""}`;
+  const t = o.team, L = o.levers;
+  const convLine = L ? `вернуть вашу лучшую конверсию ${L.convBestPct}%${L.convBestLabel ? ` (${L.convBestLabel})` : ""} — сейчас ${L.convNowPct}%` : "";
+  const checkLine = L && L.checkCeil > L.checkNow ? `поднять чек ${fmt(L.checkNow)}→${fmt(L.checkCeil)}${L.checkCeilNote ? ` (${L.checkCeilNote})` : ""}` : "";
   let s = "";
 
-  if (o.binding === "team") {
-    const addPart = o.addManagers > 0 ? `+${o.addManagers} ${plMgr(o.addManagers)}, либо ` : ""; // без людей-числа не пишем «+null»
-    s = `❗ Упирается в КОМАНДУ, не в бюджет. Чтобы закрыть цель, ${needLine}. `
-      + `Команда за всю историю максимум тянула ~${fmt(t.sumMaxMonth)} лидов/мес (устойчиво ~${fmt(t.sumMedianMonth)}). `
-      + `Даже на пределе столько не обработать — рекламный бюджет тут не поможет. `
-      + `Достижимо: ${addPart}цель ≤ ${fmt(o.feasibleGoal)} сум выполнима текущими силами на устойчивом темпе.`;
-  } else if (o.binding === "team_strain") {
-    s = `⚠️ Цель НА ПРЕДЕЛЕ команды. ${cap(needLine)} — это выше устойчивого темпа (~${fmt(t.sumMedianMonth)} лидов/мес), но в рамках исторического потолка (~${fmt(t.sumMaxMonth)}). `
-      + `Достижимо, но держать весь месяц на пике тяжело. Устойчивая цель без перегруза ≤ ${fmt(o.feasibleGoal)} сум. `
-      + (o.budgetLower != null ? `Рекламный бюджет под неё: ~${fmt(o.budgetLower)} сум (${o.cplSource}).` : `Цену лида назвать нечем — задайте ориентир, посчитаю бюджет.`);
+  if (o.binding === "reachable_now") {
+    s = `✅ Цель берётся текущими показателями (конверсия ${L.convNowPct}%, чек ${fmt(L.checkNow)}) на устойчивом темпе команды. Ни найма, ни изменения конверсии/чека не требуется.`;
+  } else if (o.binding === "conversion") {
+    s = `✅ Без найма и без изменения чека. Достаточно ${convLine}. На текущем трафике это закрывает цель. Найм НЕ нужен — рычаг в качестве работы с лидами (закрытие/дозвон), а не в числе людей.`;
+  } else if (o.binding === "check") {
+    s = `✅ Без найма. Нужны ДВА своих рычага: ${convLine}; и ${checkLine}. Вместе закрывают цель на текущем трафике. Число людей увеличивать не требуется.`;
   } else if (o.binding === "budget") {
-    s = `✅ Команда физически потянет: ${needLine}${t ? `, это в пределах обычного темпа (~${fmt(t.sumMedianMonth)} лидов/мес)` : ""}. `
-      + `Вопрос в деньгах: чтобы столько лидов набрать, нужно ~${fmt(o.budgetLower)} сум рекламного бюджета (${o.cplSource}). `
-      + `Это НИЖНЯЯ граница — при росте объёма цена лида обычно растёт, фактически выйдет дороже. Есть такой бюджет?`;
-  } else if (o.binding === "budget_unknown") {
-    s = `✅ Команда потянет${t ? ` (~${fmt(t.sumMedianMonth)} лидов/мес устойчиво)` : ""}: ${needLine}. `
-      + `Стоимость назвать не могу — нет данных о цене лида (ни факта по рекламе, ни ориентира). Задайте ориентир цены лида — посчитаю бюджет.`;
+    const budgLine = L.budgetForGoal != null ? ` (~${fmt(L.budgetForGoal)} сум рекламы/мес, ${o.cplSource || "нижняя граница"})` : "";
+    s = `Без найма, но нужен РОСТ ТРАФИКА. Сначала свои рычаги: ${convLine}${checkLine ? `, и ${checkLine}` : ""}. Этого на текущем трафике не хватает, но команда способна обработать больше лидов (до пика ~${fmt(t.sumMaxMonth)}/мес) — добрать их РЕКЛАМОЙ${budgLine}, а не людьми. Найм не нужен.`;
+  } else if (o.binding === "team") {
+    const addPart = o.addManagers > 0 ? `нанять +${o.addManagers} ${plMgr(o.addManagers)}` : `нарастить трафик`;
+    s = `❗ Даже выжав СВОИ рычаги — ${convLine}${checkLine ? `, и ${checkLine}` : ""} — на текущем трафике выходит ~${fmt(o.feasibleGoal)} сум. Остаток до цели уже требует БОЛЬШЕ ЛИДОВ: ${addPart}. `
+      + `Это ПОСЛЕДНИЙ рычаг: сначала конверсия и чек (дешевле, быстрее, обратимо), найм — если и их не хватает. Устойчивая цель без найма ≤ ${fmt(o.feasibleGoal)} сум.`;
   } else if (o.binding === "capacity_unknown") {
-    s = `${cap(needLine)}. По команде пока нет истории загрузки — пропускную способность проверить не могу, поэтому «упрётся ли в людей» не скажу. `
-      + (o.budgetLower != null ? `По деньгам: ~${fmt(o.budgetLower)} сум рекламного бюджета (${o.cplSource}, нижняя граница).` : `Цену лида назвать тоже нечем — задайте ориентир.`);
+    s = `По команде пока нет истории загрузки — пропускную способность проверить не могу, поэтому «упрётся ли в людей» не скажу. `
+      + (o.budgetLower != null ? `По деньгам: ~${fmt(o.budgetLower)} сум рекламного бюджета (${o.cplSource}, нижняя граница).` : `Цену лида назвать нечем — задайте ориентир.`);
   }
 
-  // рычаг конверсии — всегда как альтернатива
-  s += `\nРычаг конверсии: сейчас ${o.convPct}% (лид→сделка). Поднять её — и лидов, и бюджета нужно меньше при той же цели.`;
+  // разложение рычагов в деньгах — когда есть
+  if (L && ["team", "budget", "check", "conversion"].includes(o.binding)) {
+    s += `\n💡 Рычаги в деньгах (порядок: сначала свои, найм — последним): конверсия ${L.convNowPct}→${L.convBestPct}% даёт +${fmt(L.convGain)}`
+      + (L.checkGain > 0 ? `; чек до потолка ещё +${fmt(L.checkGain)} (ограничен форматом, ~+14%)` : ``)
+      + (L.budgetGain > 0 ? `; лиды до пика команды ещё +${fmt(L.budgetGain)} (реклама, без найма)` : ``) + `.`;
+  }
   // приблизительность по новым МОПам
   if (o.thinMops && o.thinMops.length) s += `\n⚠️ По ${o.thinMops.join(", ")} мало истории — их капасити оценочна, цифры по команде приблизительные.`;
   // искажение среднего чека
@@ -254,9 +276,21 @@ export async function assessRealism(org = ORG, opts = {}) {
     }
   }
   const earned = opts.earnedUZS != null ? opts.earnedUZS : (f.revenue || 0);
+  // РЫЧАГ КОНВЕРСИИ: свой лучший лид→продажа из истории (объём ≥500 лидов, не текущий незрелый месяц).
+  let convBest = null, convBestLabel = null;
+  for (const m of ((dash && dash.monthlyFunnel) || [])) {
+    if (m.leads >= 500 && m.monthsAgo >= 1 && m.convPeriodPct != null) {
+      const c = m.convPeriodPct / 100;
+      if (convBest == null || c > convBest) { convBest = c; convBestLabel = `ваш ${m.month}`; }
+    }
+  }
+  // РЫЧАГ ЧЕКА: потолок = офлайн-прайс (сдвиг формата), капнут ~+14% над онлайном. Продукт: 1 курс, 2 формата.
+  const fmtPrices = (dash && dash.formatPrices) || { online: 3.5e6, offline: 4.0e6 };
+  const checkCeiling = fmtPrices.offline || null;
   const out = assessGoalRealism({
     goalUZS: goal.amountUZS, earned, avgCheck, conv,
     cpl, cplSource, teamCapacityByMop, mopsActiveCount, workdays, baseInaccurate, thinMonths, baselineLabel, baselineClosed,
+    convBest, convBestLabel, checkCeiling, checkCeilNote: "сдвиг в офлайн, потолок +14%",
   });
   // ТЕНДЕНЦИЯ последних 3 месяцев — в вердикт и в данные (капасити взята по текущему темпу, не по медиане всей истории).
   const growing = Object.entries(trends).filter(([, t]) => t.trend === "up").map(([n]) => n);
