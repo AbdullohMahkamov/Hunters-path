@@ -455,16 +455,17 @@ const MONTHS_RU_FULL = ["январь", "февраль", "март", "апре�
 function monthLabel(mIdx) { const m = ((mIdx % 12) + 12) % 12; return MONTHS_RU_FULL[m]; }
 function monthLabelY(y, mIdx) { const yy = y + Math.floor(mIdx / 12); return `${monthLabel(mIdx)} ${yy}`; }
 
-export async function nextMonthPrompt(org = ORG) {
+export async function nextMonthPrompt(org = ORG, force = false) {
   const now = tkNow(); // Ташкент (как везде в файле: читаем UTC-поля со сдвинутой даты)
   const day = now.getUTCDate(), y = now.getUTCFullYear(), m = now.getUTCMonth();
   const lastDay = new Date(Date.UTC(y, m + 1, 0)).getUTCDate(); // ВЫЧИСЛЯЕМ: 28/29/30/31 по месяцу
-  if (day !== lastDay) return { ok: true, skipped: "not_last_day", day, lastDay }; // крон ходит ежедневно (28-31), шлём только в последний день
+  if (day !== lastDay && !force) return { ok: true, skipped: "not_last_day", day, lastDay }; // крон ходит ежедневно (28-31), шлём только в последний день
 
 
   const monthKey = `${y}-${String(m + 1).padStart(2, "0")}`;
   const guardKey = `planner:monthprompt:${org}:${monthKey}`;
-  if (await rgetJSON(guardKey, null)) return { ok: true, skipped: "already_sent", monthKey }; // одно напоминание за месяц
+  // ГАРД теперь ставится ТОЛЬКО при успешной доставке (см. ниже). force — ручной повтор, минуя гард.
+  if (!force && await rgetJSON(guardKey, null)) return { ok: true, skipped: "already_sent", monthKey }; // одно напоминание за месяц
 
   const nextLabel = monthLabelY(y, m + 1);
   // если цель на следующий месяц уже задана — не дёргаем впустую
@@ -492,10 +493,12 @@ export async function nextMonthPrompt(org = ORG) {
   const kb = { reply_markup: { inline_keyboard: [[{ text: "📝 Открыть и задать цель", web_app: { url: "https://test.hunterai.uz/tg" } }]] } };
 
   const ppl = await getPeople();
-  let sent = false;
-  if (ppl.owner && ppl.owner.chatId) { const r = await sendTg("owner", ppl.owner.chatId, msg, kb); sent = !!(r && r.ok); }
-  await rsetJSON(guardKey, { sentAt: Date.now(), monthKey, nextLabel, sent });
-  return { ok: true, sent, monthKey, nextLabel };
+  let sent = false, bound = !!(ppl.owner && ppl.owner.chatId);
+  if (bound) { const r = await sendTg("owner", ppl.owner.chatId, msg, kb); sent = !!(r && r.ok); }
+  // ГАРД ставим ТОЛЬКО при успешной доставке — иначе следующий крон/повтор ДОЛЖЕН попробовать снова
+  // (раньше гард ставился всегда: один провалившийся 10:00-пуш блокировал повтор, и владелец не получал вовсе).
+  if (sent) await rsetJSON(guardKey, { sentAt: Date.now(), monthKey, nextLabel, sent: true });
+  return { ok: true, sent, bound, monthKey, nextLabel, deliveryFailed: !sent };
 }
 
 // ── ЧАСТЬ D: ЗАКРЫТИЕ МЕСЯЦА ──
@@ -590,7 +593,7 @@ export default async function handler(req, res) {
     if (action === "build") { res.status(200).json(await buildPlan(ORG)); return; }               // предпросмотр плана (диагностика)
     if (action === "propose") { res.status(200).json(await proposePlan(ORG, req.query && req.query.force === "1")); return; } // крон: предложить владельцу
     if (action === "daily-report") { res.status(200).json(await sendDailyReport(ORG)); return; }   // крон: утренний отчёт
-    if (action === "month-prompt") { res.status(200).json(await nextMonthPrompt(ORG)); return; }   // крон: конец месяца → спросить цель на следующий
+    if (action === "month-prompt") { res.status(200).json(await nextMonthPrompt(ORG, (req.query && req.query.force === "1"))); return; }   // крон: конец месяца → спросить цель на следующий (force=1 — ручной повтор)
     if (action === "month-close") { res.status(200).json(await sendMonthClose(ORG)); return; }     // крон 1-го: зафиксировать итог месяца + отчёт
     if (action === "period-results") { res.status(200).json({ ok: true, results: await getPeriodResults(ORG) }); return; } // диагностика/предпросмотр истории
     if (action === "report-preview") { res.status(200).json(await buildDailyReport(ORG)); return; } // предпросмотр отчёта без отправки
