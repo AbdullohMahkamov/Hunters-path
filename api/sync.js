@@ -244,6 +244,7 @@ export default async function handler(req, res) {
     const wrongNumByMopDay = {}; // "mop|day" -> count (для «массово неверный номер»)
     const capMonths = {};        // mop -> { "YYYY-MM": сколько лидов зашло } — история ЗАГРУЗКИ для проверки капасити цели
     const soldCohort = {};       // mop -> { "YYYY-MM": сколько из лидов ЭТОГО месяца уже продано } — когортная конверсия лид→продажа
+    const soldPeriodMonths = {}; // "YYYY-MM"(по ДАТЕ ПРОДАЖИ) -> сколько продано в этом месяце — для period-конверсии (как считает дашборд)
     const DAY = 24 * 3600;
 
     for (const L of all) {
@@ -268,6 +269,11 @@ export default async function handler(req, res) {
         const mk = new Date((L.created_at + 5 * 3600) * 1000).toISOString().slice(0, 7); // YYYY-MM по Ташкенту
         (capMonths[mop] || (capMonths[mop] = {}))[mk] = (capMonths[mop][mk] || 0) + 1;
         if (isSold) (soldCohort[mop] || (soldCohort[mop] = {}))[mk] = (soldCohort[mop][mk] || 0) + 1;
+      }
+      // PERIOD-конверсия: продажа относится к месяцу ПО ДАТЕ ПРОДАЖИ (как её видит дашборд/владелец помесячно)
+      if (mop && isSold && saleTs) {
+        const smk = new Date((saleTs + 5 * 3600) * 1000).toISOString().slice(0, 7);
+        soldPeriodMonths[smk] = (soldPeriodMonths[smk] || 0) + 1;
       }
 
       // === СЕГОДНЯ: лиды обработанные (созданные сегодня), продажи и касса за сегодня ===
@@ -591,7 +597,13 @@ export default async function handler(req, res) {
     const _mfNowIdx = _mfNow.getUTCFullYear() * 12 + _mfNow.getUTCMonth();
     const monthlyFunnel = Object.entries(mf).sort((a, b) => (a[0] < b[0] ? -1 : 1)).map(([mk, v]) => {
       const [yy, mm] = mk.split("-").map(Number);
-      return { month: mk, leads: v.leads, sold: v.sold, convPct: v.leads ? +(v.sold / v.leads * 100).toFixed(2) : null, monthsAgo: _mfNowIdx - (yy * 12 + (mm - 1)) };
+      const soldPeriod = soldPeriodMonths[mk] || 0;
+      return {
+        month: mk, leads: v.leads,
+        soldCohort: v.sold, convCohortPct: v.leads ? +(v.sold / v.leads * 100).toFixed(2) : null,     // из лидов месяца — сколько уже продано
+        soldPeriod, convPeriodPct: v.leads ? +(soldPeriod / v.leads * 100).toFixed(2) : null,          // продаж в месяце (по дате продажи) / лидов месяца
+        monthsAgo: _mfNowIdx - (yy * 12 + (mm - 1)),
+      };
     });
 
     // Топ-5 проблем ЗА МЕСЯЦ
