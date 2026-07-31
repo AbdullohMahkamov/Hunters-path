@@ -351,8 +351,12 @@ export async function assessRealism(org = ORG, opts = {}) {
           out.decomp = { ...dec, coveragePct: rma.coveragePct, provisional: rma.coveragePct < 75, worstDozvonMop: worstDozvon };
           const prov = rma.coveragePct < 75 ? ` ⚠️ замер дозвона ещё дозаполняется (coverage ${rma.coveragePct}%) — цифры предварительные` : "";
           const stepWord = dec.reserveStep === "closing" ? "ЗАКРЫТИИ (разговор→продажа)" : "ДОЗВОНЕ (лид→разговор)";
+          // потолок рычага-резерва в деньгах: если довести отстающий шаг до ЛУЧШЕГО в команде
+          const convCeil = dec.reserveStep === "closing" ? dec.convViaClosing : dec.convViaDozvon;
+          const revCeil = (f.leads > 0 && avgCheck > 0) ? Math.floor((f.leads || 0) * convCeil) * avgCheck : null;
           out.human += `\n🔬 Разложение конверсии ${(f.conv * 100).toFixed(1)}% = дозвон ${dec.dozvonPct}% × закрытие ${dec.closingPct}%.`
             + ` Лучшие в команде: дозвон ${dec.bestDozvonPct}%, закрытие ${dec.bestClosingPct}%. Резерв — в основном в ${stepWord}.`
+            + (revCeil ? ` Если подтянуть его к лучшему в команде — конверсия ~${(convCeil * 100).toFixed(1)}% → ~${fmt(revCeil)} сум на текущем трафике БЕЗ найма (это потолок: лучший держит темп не на всех лидах, но показывает, куда бить).` : ``)
             + (worstDozvon && worstDozvon.pct < dec.bestDozvonPct - 10 ? ` По дозвону отстаёт ${worstDozvon.name} (${worstDozvon.pct}%) — точечная задача РОПу.` : ``)
             + prov;
         }
