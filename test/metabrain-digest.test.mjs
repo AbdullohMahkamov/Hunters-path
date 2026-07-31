@@ -89,8 +89,8 @@ test("meta-brain НЕ шлёт сводку владельцу; предложе
   setAnthropic(() => ({ content: [{ type: "text", text: "[]" }], stop_reason: "end_turn" })); // новых наблюдений нет
   kvSetJSON("taskagent:people", { owner: { chatId: 333, lang: "ru" } });
   kvSetJSON("metabrain:proposals", [
-    P({ id: "a", topicKey: "leads_no_call", title: "27 лидов без звонка", at: now - 5 * DAY }),
-    P({ id: "b", topicKey: "false_status", title: "103 лида с ложным статусом", at: now - 4 * DAY }),
+    P({ id: "a", topicKey: "leads_no_call", title: "27 лидов без звонка", at: now, lastSeenAt: now }),
+    P({ id: "b", topicKey: "false_status", title: "103 лида с ложным статусом", at: now, lastSeenAt: now }),
   ]);
   const r = await M.runDailyBrain("hunter", true);
   assert.equal(r.ok, true);
@@ -104,7 +104,7 @@ test("meta-brain НЕ шлёт сводку владельцу; предложе
 test("meta-brain: без привязанного owner не падает и всё равно ничего не шлёт", async () => {
   setAnthropic(() => ({ content: [{ type: "text", text: "[]" }], stop_reason: "end_turn" }));
   kvSetJSON("taskagent:people", {}); // owner НЕ привязан
-  kvSetJSON("metabrain:proposals", [P({ id: "a", topicKey: "leads_no_call", title: "27 лидов без звонка", at: now - 5 * DAY })]);
+  kvSetJSON("metabrain:proposals", [P({ id: "a", topicKey: "leads_no_call", title: "27 лидов без звонка", at: now, lastSeenAt: now })]);
   const r = await M.runDailyBrain("hunter", true);
   assert.equal(r.ok, true);
   assert.equal(r.delivered, false);
@@ -123,8 +123,8 @@ test("runDailyBrain само-отзывает ложную находку: за�
   setAnthropic(() => ({ content: [{ type: "text", text: "[]" }], stop_reason: "end_turn" }));
   kvSetJSON("taskagent:people", { owner: { chatId: 333 } });
   kvSetJSON("metabrain:proposals", [
-    P({ id: "false1", topicKey: "adset_spend_data_mismatch", title: "Расхождение расходов по аудиториям", at: now - 3 * DAY }),
-    P({ id: "real1", topicKey: "leads_no_call", title: "27 лидов без звонка", at: now - 5 * DAY }),
+    P({ id: "false1", topicKey: "adset_spend_data_mismatch", title: "Расхождение расходов по аудиториям", at: now, lastSeenAt: now }),
+    P({ id: "real1", topicKey: "leads_no_call", title: "27 лидов без звонка", at: now, lastSeenAt: now }), // свежая (переподтверждена) → доедет до РОПа
   ]);
   kvSetJSON("marketingtasks", [
     { id: "mt1", title: "Проверить выгрузку расходов по аудиториям — не сходятся", status: "open" },

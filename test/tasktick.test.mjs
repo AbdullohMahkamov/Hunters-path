@@ -28,6 +28,21 @@ test("runTick: продажная задача → РОП-бот, маркети
   assert.equal(ropSends[0].body.chat_id, 111);
 });
 
+test("runTick: КАП metabrain — из 6 подтверждённых наблюдений РОПу за день пингуется только 3", async () => {
+  const T = await import("../api/task-agent.js");
+  kvSetJSON("taskagent:people", { rop: { chatId: 111, lang: "ru" }, owner: { chatId: 333, lang: "ru" } });
+  kvSetJSON("appdata:hunter", { customPlan: { sales: [] }, done: {} }); // без плановых задач — считаем только metabrain
+  kvSetJSON("marketingtasks", []);
+  kvSetJSON("taskagent:config", { enabled: true, pingFromHour: 0, escalationHour: 23, remindBeforeDays: 99, escalationGraceMin: 90, metaPingsPerDay: 3 });
+  const props = [];
+  for (let i = 0; i < 6; i++) props.push({ id: "m" + i, status: "confirmed", auto: true, confidence: "high",
+    title: "Лиды без звонка " + i, proposedTask: { title: "Обзвонить " + i, recipient: "rop", why: "факт" } });
+  kvSetJSON("metabrain:proposals", props);
+  await T.runTick(true);
+  const ropSends = tgCalls.filter((c) => c.url.includes("/botROPTOK/sendMessage"));
+  assert.equal(ropSends.length, 3, "кап metaPingsPerDay=3: не заваливаем РОПа десятком задач разом");
+});
+
 test("runTick: маркетолог НЕ привязан → маркетинг-задача НЕ уходит (нет получателя)", async () => {
   const T = await import("../api/task-agent.js");
   kvSetJSON("taskagent:people", { rop: { chatId: 111, lang: "ru" }, owner: { chatId: 333, lang: "ru" } }); // marketing НЕ привязан

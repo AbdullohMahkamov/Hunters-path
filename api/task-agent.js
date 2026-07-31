@@ -18,7 +18,7 @@ import { sendTg, getPeople, pushChat, getChat, sleep } from "./tg-bot.js";
 // MOP Agent не строит свой канал — его находки вливаются в ЭТОТ же список задач РОПа
 // и дальше едут по уже работающей машине: пинг → диалог → порог 13:00 → эскалация владельцу.
 import { getOpenMopFindings, getFreshAutoClosed, closeMopFinding, getMopLastRun, runMopAgent } from "./mop-agent.js";
-import { getConfirmedMetaTasks, closeMetaProposal, impactTier } from "./meta-brain.js"; // ОБЩИЙ МОЗГ: 3-й источник задач + классификатор влияния (для порога эскалации)
+import { getConfirmedMetaTasks, closeMetaProposal, impactTier, getFreshInvalidatedMeta } from "./meta-brain.js"; // ОБЩИЙ МОЗГ: 3-й источник задач + классификатор влияния (порог эскалации) + свежеснятые (факт не подтверждается)
 import { runNightly } from "./dev-agent.js"; // для РЕАЛЬНОГО перезапуска анализа по вердикту владельца в споре
 
 const REDIS_URL = process.env.UPSTASH_REDIS_REST_URL;
@@ -772,12 +772,41 @@ export async function runTick(force) {
     }
   } catch (e) { /* не блокируем тик */ }
 
+  // ── УВЕДОМЛЕНИЕ О СНЯТИИ metabrain-задачи, чей ФАКТ БОЛЬШЕ НЕ ПОДТВЕРЖДАЕТСЯ данными (гейт свежести) ──
+  // Тот же принцип, что у MOP: не пишем про задачу, которую РОП НИКОГДА не видел (нет pingDay) — иначе шум.
+  try {
+    if (people.rop && people.rop.chatId) {
+      for (const f of await getFreshInvalidatedMeta()) {
+        if (!(st[f.id] && st[f.id].pingDay)) continue; // РОП её не видел — молчим
+        const uz = ((people.rop && people.rop.lang) || "ru") === "uz";
+        const txt = uz
+          ? `✅ <b>Vazifa yopildi</b>\n\n«${f.title}»\n\nTekshiruvda muammo endi ma'lumotlarda ko'rinmayapti — vazifa dolzarbligini yo'qotdi. Sizdan hech narsa talab qilinmaydi.`
+          : `✅ <b>Задача снята</b>\n\n«${f.title}»\n\nПри проверке проблема больше не видна в данных — задача потеряла актуальность. От вас ничего не требуется.`;
+        const r = await sendTg("rop", people.rop.chatId, txt);
+        if (r.ok) { await pushChat({ role: "agent", text: txt, taskId: f.id }); autoClosedNotified.push(f.title); await sleep(400); }
+      }
+    }
+  } catch (e) { /* не блокируем тик */ }
+
+  // КАП metabrain-пингов РОПу в день: не заваливаем десятком наблюдений разом — бережём доверие РОПа так же,
+  // как доверие владельца (топ-3 у сводки). Берём самые важные (impactTier, потом просрочка); остальные ждут
+  // следующего дня / освобождения слота по мере закрытия. Марш-задачи и MOP-находки под кап НЕ попадают.
+  const metaCap = cfg.metaPingsPerDay || 3;
+  const metaRank = (t) => impactTier({ title: t.title, statement: t.why }) * 1000 + (t.hoursOverdue > 0 ? Math.min(t.hoursOverdue, 240) : 0);
+  const metaAllowed = new Set(
+    open.filter((t) => t.source === "metabrain" && (t.recipient || "rop") === "rop")
+      .sort((a, b) => metaRank(b) - metaRank(a))
+      .slice(0, metaCap).map((t) => t.id)
+  );
+
   for (const t of open) {
     const s = st[t.id] || {};
     // Находка MOP Agent — это уже готовая задача с фактом, её отдаём РОПу сразу при обнаружении,
     // а не за remindBeforeDays до срока (у точечных срок вообще «до конца дня»).
     const near = t.source === "mop-agent" || t.source === "metabrain" || (t.daysLeft != null && t.daysLeft <= cfg.remindBeforeDays);
     if (!near && !force) continue;
+    // сверх капа metabrain-задачи сегодня молчат (не пингуем и, следовательно, не эскалируем — гейт ниже по pingDay)
+    if (t.source === "metabrain" && (t.recipient || "rop") === "rop" && !metaAllowed.has(t.id)) continue;
 
     // получатель задачи: продажи → РОП (по умолчанию), маркетинг → Маркетолог
     const rcpt = t.recipient || "rop";

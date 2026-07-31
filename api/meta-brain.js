@@ -402,7 +402,7 @@ export async function runDailyBrain(org = ORG, force = false) {
   let observations = [], diag = {};
   try {
     const userMsg = "Данные системы за сутки:\n" + JSON.stringify(bundle)
-      + (existingTopics.length ? "\n\nУЖЕ ОТКРЫТЫЕ ТЕМЫ (эти проблемы уже показаны владельцу и/или приняты РОПом). Если твоё наблюдение про ТУ ЖЕ проблему — используй ЕЁ topicKey и НЕ включай её повторно в ответ:\n" + JSON.stringify(existingTopics) : "");
+      + (existingTopics.length ? "\n\nУЖЕ ОТКРЫТЫЕ ТЕМЫ (эти проблемы уже в работе). Правило по КАЖДОЙ: если проблема ВСЁ ЕЩЁ видна в сегодняшних данных — ОБЯЗАТЕЛЬНО верни её в ответе с ТЕМ ЖЕ topicKey (повторную задачу мы не создадим — по этому мы лишь понимаем, что проблема ещё жива). Если в данных её больше НЕТ — просто НЕ возвращай её: это сигнал, что она ушла, и задачу снимут:\n" + JSON.stringify(existingTopics) : "");
     const raw = await callModel(BRAIN_SYSTEM, userMsg, 16000);
     diag.rawLen = raw.length;
     const m = raw.replace(/```json|```/g, "").match(/\[[\s\S]*\]/);
@@ -419,16 +419,23 @@ export async function runDailyBrain(org = ORG, force = false) {
   const seen = await rgetJSON(K.seen, {});
   const nowDay = tkDay();
   const blockedFps = new Set();
-  for (const p of proposals) {
+  const activeIdxByFp = new Map(); // fp → индекс активного предложения (для штампа «ещё видно в данных»)
+  for (let i = 0; i < proposals.length; i++) {
+    const p = proposals[i];
     if (!p || !p.fingerprint) continue;
     const active = ["pending", "awaiting_edit", "edited", "confirmed", "delivered"].includes(p.status);
     const recentClosed = p.status === "closed" && p.closedAt && (nowMs - p.closedAt) < coolMs;
     if (active || recentClosed) blockedFps.add(p.fingerprint);
+    if (active && !activeIdxByFp.has(p.fingerprint)) activeIdxByFp.set(p.fingerprint, i);
   }
   const fresh = [];
   for (const o of observations) {
     if (!o || !o.title || !o.proposedTask) continue;
     const fp = fingerprint(o);
+    // ПЕРЕПОДТВЕРЖДЕНИЕ СВЕЖЕСТИ: модель вернула тему, значит проблема ещё видна в данных → штампуем активное
+    // предложение «ещё актуально». Дедуп ниже не даст создать дубль, но факт «жив» мы теперь фиксируем.
+    const ai = activeIdxByFp.get(fp);
+    if (ai != null) proposals[ai] = { ...proposals[ai], lastSeenAt: nowMs, lastSeenDay: nowDay };
     if (blockedFps.has(fp)) continue; // активное или недавно закрытое — не повторяем
     const s = seen[fp];
     if (s && s.until && nowMs < s.until) continue; // в кулдауне
@@ -440,7 +447,7 @@ export async function runDailyBrain(org = ORG, force = false) {
   const created = [];
   for (const o of send) {
     const id = propId(o.fingerprint);
-    const rec = { id, at: nowMs, day: nowDay, ...o, status: "pending" };
+    const rec = { id, at: nowMs, day: nowDay, lastSeenAt: nowMs, lastSeenDay: nowDay, ...o, status: "pending" };
     proposals.push(rec); created.push(rec);
     // СРОЧНОЕ (юр. риск) — отдельным сообщением сразу; всё остальное уходит в дневную сводку.
     if (cfg.digest !== false && impactTier(rec) === 3) { await sendProposalToOwner(rec); await sleep(400); }
@@ -472,6 +479,23 @@ export async function runDailyBrain(org = ORG, force = false) {
     if (changed) await rsetJSON("marketingtasks", mtasks);
   } catch (e) {}
 
+  // ГЕЙТ СВЕЖЕСТИ: операционную задачу нельзя ставить/держать РОПу, если её факт не подтверждается данными
+  // staleAfterDays дней подряд (то же правило, что снятие неактуального у MOP). Инвалидируем ДО раздачи —
+  // тогда устаревшее вообще не станет задачей; уже поставленное снимется с честным уведомлением РОПу (не «решено»,
+  // а «в данных больше не видно»). Ставить задачу по решённой проблеме — хуже, чем не ставить.
+  const staleMs = (cfg.staleAfterDays || 3) * 86400000;
+  for (let k = 0; k < proposals.length; k++) {
+    const p = proposals[k];
+    if (!p) continue;
+    const activeMeta = ["pending", "confirmed", "delivered"].includes(p.status);
+    const ropTask = (p.proposedTask && p.proposedTask.recipient) !== "marketing"; // гейт — для операционки РОПа
+    if (!activeMeta || !ropTask) continue;
+    const lastSeen = p.lastSeenAt || p.at || nowMs;
+    if (nowMs - lastSeen >= staleMs) {
+      proposals[k] = { ...p, status: "closed", invalidated: true, ropNotified: false, closedAt: nowMs, closeReason: "not_reproduced" };
+      try { await setSeen(p.fingerprint, 3); } catch (e) {} // короткий кулдаун: вернётся заново, если факт снова появится в данных
+    }
+  }
   // СВОДКА над ВСЕМИ открытыми (включая старые pending — они НЕ теряются) + протухание неважного.
   const dg = buildDigest(proposals, nowMs, cfg);
   for (const e of dg.expired) { const j = proposals.findIndex((x) => x.id === e.id); if (j >= 0) proposals[j] = { ...proposals[j], status: "expired", expiredAt: nowMs }; }
@@ -618,6 +642,33 @@ export async function autoDispatchProposals(org = ORG, opts = {}) {
 export async function getAutoDispatchedToday(org = ORG) { return (await rgetJSON(`metabrain:autodispatch:${org}:${tkDay()}`, [])) || []; }
 export async function getComplianceNotifiedToday(org = ORG) { return (await rgetJSON(`metabrain:notify:${org}:${tkDay()}`, [])) || []; }
 
+// Свежеинвалидированные (факт больше не подтверждается данными) metabrain-задачи для уведомления РОПа — аналог
+// getFreshAutoClosed у MOP. task-agent сам НЕ пишет про задачи, которые РОП НИКОГДА не видел (гейт по pingDay),
+// поэтому pending-инвалидации (в задачу так и не превратившиеся) до РОПа не дойдут — это правильно.
+export async function getFreshInvalidatedMeta() {
+  const proposals = await rgetJSON(K.proposals, []);
+  const fresh = proposals.filter((p) => p && p.invalidated && p.status === "closed" && !p.ropNotified);
+  if (fresh.length) {
+    const ids = new Set(fresh.map((p) => p.id));
+    await rsetJSON(K.proposals, proposals.map((p) => ids.has(p.id) ? { ...p, ropNotified: true } : p));
+  }
+  return fresh.map((p) => ({ id: `mb_${p.id}`, title: (p.finalTask && p.finalTask.title) || (p.proposedTask && p.proposedTask.title) || p.title || "", closeReason: p.closeReason || "not_reproduced" }));
+}
+
+// РАЗОВАЯ ПЕРЕГЕЙТИРОВКА: сбросить уже авто-розданные РОПу операционные предложения обратно в pending, чтобы
+// ближайший дневной прогон пропустил их через ГЕЙТ СВЕЖЕСТИ (переподтверждение в данных) и заново раздал ТОЛЬКО
+// те, чей факт ещё жив. Раздачи по расписанию нет — вызывается вручную. Идемпотентно: нет confirmed+auto → 0.
+export async function regateConfirmedMeta(org = ORG) {
+  const proposals = await rgetJSON(K.proposals, []);
+  let n = 0;
+  for (let i = 0; i < proposals.length; i++) {
+    const p = proposals[i];
+    if (p && p.status === "confirmed" && p.auto) { proposals[i] = { ...p, status: "pending", auto: false, regatedAt: Date.now() }; n++; }
+  }
+  if (n) await rsetJSON(K.proposals, proposals);
+  return { ok: true, regated: n };
+}
+
 // Закрытие подтверждённой задачи (аналог closeMopFinding) — вызывается task-agent при dispute/выполнении.
 export async function closeMetaProposal(taskId, reason) {
   const id = String(taskId || "").replace(/^mb_/, "");
@@ -709,7 +760,7 @@ export async function applyMetaEdit(id, text, host) {
 // ─────────────────────────────────────────────────────────────────────────────
 // HTTP-хендлер (крон + админ)
 // ─────────────────────────────────────────────────────────────────────────────
-const CRON_OK = new Set(["daily", "classify-preview", "auto-dispatch"]); // classify-preview READ-ONLY; auto-dispatch — раздача операционки РОПу (идёт и в runDailyBrain)
+const CRON_OK = new Set(["daily", "classify-preview", "auto-dispatch", "regate-meta"]); // classify-preview READ-ONLY; auto-dispatch — раздача операционки РОПу (идёт и в runDailyBrain); regate-meta — разовый сброс в pending под гейт свежести
 async function isAuthed(req) {
   const auth = req.headers && (req.headers.authorization || req.headers.Authorization);
   if (auth && CRON_SECRET && auth === `Bearer ${CRON_SECRET}`) return true;
@@ -729,6 +780,7 @@ export default async function handler(req, res) {
     if (action === "state") { res.status(200).json({ proposals: await rgetJSON(K.proposals, []), lastrun: await rgetJSON(K.lastrun, null), config: await getConfig() }); return; }
     if (action === "classify-preview") { res.status(200).json(await autoDispatchProposals(ORG, { dryRun: true })); return; } // READ-ONLY разбивка РОП/владелец
     if (action === "auto-dispatch") { res.status(200).json(await autoDispatchProposals(ORG)); return; } // ЖИВОЙ: раздать операционку РОПу (admin или cron)
+    if (action === "regate-meta") { res.status(200).json(await regateConfirmedMeta(ORG)); return; } // РАЗОВО: сброс confirmed+auto → pending под гейт свежести
     if (action === "synth") { // диагностика СИНТЕЗА: сырой ответ + stop_reason/usage + статус парсинга (без отправки)
       const bundle = await gatherForBrain(ORG);
       const rr = await fetch("https://api.anthropic.com/v1/messages", {
