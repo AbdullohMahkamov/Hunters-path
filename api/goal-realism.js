@@ -307,6 +307,48 @@ export function deriveLeverTasks(v) {
   return tasks;
 }
 
+// ── ПОСТРОИТЕЛЬ ПЛАНА ПОД ЦЕЛЬ: декомпозиция на ВСЕ рычаги, находки агентов → подзадачи по смыслу ──
+// Правило: план покрывает КАЖДЫЙ рычаг (лиды/конверсия(дозвон×закрытие)/чек/найм); где резерва нет или
+// это решение владельца — пишем ЯВНО, не опускаем. Находки МОП/мозга привязываются к рычагу как подзадачи.
+const FIND_LEVER_RX = [
+  [/дозвон|недозвон|не набрал|без единой|попыт|первого звонка|не звонил/i, "dozvon"],
+  [/закрыт|диагностик|\bцен[ауые]|гаранти|дожим|возражен|оффер|ценност|поспешн|договор|скрипт/i, "closing"],
+  [/статус|ложн|обновлен/i, "closing"],
+  [/\bлид|трафик|реклам|креатив|бюджет|аудитор|кампан/i, "leads"],
+];
+function leverOfFinding(text) { const t = String(text || "").toLowerCase(); for (const [rx, k] of FIND_LEVER_RX) if (rx.test(t)) return k; return null; }
+async function gatherFindings(org = ORG) {
+  const out = [];
+  try { const mf = (await rgetJSON("mopagent:findings", [])) || []; for (const f of mf) if (f && !["closed", "auto_closed", "invalidated"].includes(f.status)) out.push({ title: f.title || "", why: f.fact || "" }); } catch (e) {}
+  try { const mp = (await rgetJSON("metabrain:proposals", [])) || []; for (const p of mp) if (p && (p.status === "confirmed" || (p.status === "pending" && p.auto))) out.push({ title: p.title || "", why: p.statement || "" }); } catch (e) {}
+  return out;
+}
+export async function buildGoalPlan(org = ORG) {
+  const v = await assessRealism(org);
+  const goalUZS = (await getGoal(org) || {}).amountUZS || 0;
+  const findings = await gatherFindings(org);
+  const byLever = { dozvon: [], closing: [], leads: [] }, unmapped = [];
+  for (const f of findings) { const lk = leverOfFinding(`${f.title} ${f.why}`); if (byLever[lk]) byLever[lk].push(f.title); else unmapped.push(f.title); }
+  const d = v.decomp, L = v.levers || {}, levers = [], ownerDecisions = [];
+  if (d && d.worstDozvonMop && d.worstDozvonMop.pct < d.bestDozvonPct - 10) {
+    levers.push({ key: `dozvon:${d.worstDozvonMop.name}`, lever: "Конверсия · Дозвон", recipient: "rop", kind: "task",
+      title: `Подтянуть дозвон: ${d.worstDozvonMop.name} (${d.worstDozvonMop.pct}% → ${d.bestDozvonPct}%)`,
+      subtasks: [...byLever.dozvon.map((t) => ({ text: t, from: "агент" })), { text: `Скорость первого звонка ${d.worstDozvonMop.name} (цель 15 мин), число попыток`, from: "вердикт" }, { text: "Правило: первый звонок в 15 мин, ≥3 попытки; перепроверка по нотам", from: "вердикт" }] });
+  }
+  if (d && d.bestClosingPct > d.closingPct) {
+    levers.push({ key: "closing", lever: "Конверсия · Закрытие", recipient: "rop", kind: "task",
+      title: `Поднять закрытие ${d.closingPct}% → ${d.bestClosingPct}% (уровень лучшего в команде)`,
+      subtasks: [{ text: "Прослушать 5–7 звонков лучшего закрывающего — выписать приёмы", from: "вердикт" }, { text: "Прослушать по 5 звонков слабых — где теряется сделка", from: "вердикт" }, ...byLever.closing.map((t) => ({ text: t, from: "агент" })), { text: "Собрать скрипт закрытия, разбор с командой, перепроверка через неделю", from: "вердикт" }] });
+  }
+  const leadsSub = [{ text: `Держать поток лидов ≥ текущего${L.leadsToPeak > 0 ? ` + добор ~${L.leadsToPeak}/мес до пика ёмкости` : ""}`, from: "вердикт" }, { text: "Следить за качеством лидов по кампаниям — релевантность под закрытие", from: "вердикт" }, { text: `Держать цену лида${L.cpl ? ` ≤ ${fmt(L.cpl)} сум` : " (число появится с августовской статистикой)"}, не давать расти`, from: "вердикт" }, ...byLever.leads.map((t) => ({ text: t, from: "агент" }))];
+  levers.push({ key: "mkt:leads", lever: "Лиды", recipient: "marketing", kind: "task", title: "Держать поток лидов под цель", subtasks: leadsSub });
+  levers.push({ key: "check", lever: "Чек", kind: "note", title: "Резерва почти нет: офлайн уже ~30%, потолок +14% — не приоритет" });
+  if (v.binding === "team" && v.feasibleGoal && goalUZS && v.feasibleGoal < goalUZS) {
+    ownerDecisions.push({ key: "hiring", title: `Разрыв ${fmt(goalUZS - v.feasibleGoal)} сум — сверх возможностей команды`, options: [`+${v.addManagers} ${plMgr(v.addManagers)}`, `снизить цель до ${fmt(v.feasibleGoal)} сум`] });
+  }
+  return { goalUZS, feasibleGoal: v.feasibleGoal || null, levers, ownerDecisions, unmapped };
+}
+
 // ── СВЕРКА ЗАДАЧ С ТЕКУЩИМ ВЕРДИКТОМ (актуальность) ──
 // Задачи-рычаги (leverKey) должны ЗЕРКАЛИТЬ актуальные рычаги цели: чей резерв пропал — снимаем, недостающие —
 // создаём. Идемпотентно (повтор кнопки не плодит дубли). opts.cleanSlate — «чистый старт»: снять ВСЕ задачи плана
@@ -589,7 +631,7 @@ export async function capacityDump(org = ORG) {
   };
 }
 
-const CRON_OK = new Set(["preview", "capacity-dump", "reconcile", "clean-slate"]); // preview/dump READ-ONLY; reconcile — ежедневная сверка; clean-slate — разовый чистый старт (пересоздаёт актуальные рычаги)
+const CRON_OK = new Set(["preview", "capacity-dump", "reconcile", "clean-slate", "plan-preview"]); // preview/dump READ-ONLY; reconcile — ежедневная сверка; clean-slate — разовый чистый старт (пересоздаёт актуальные рычаги)
 export default async function handler(req, res) {
   res.setHeader("Cache-Control", "no-store");
   if (!REDIS_URL || !REDIS_TOKEN) { res.status(500).json({ error: "no redis" }); return; }
@@ -602,7 +644,8 @@ export default async function handler(req, res) {
     if (action === "preview") { res.status(200).json(await previewRealism(b.text || q.text || "", ORG)); return; }
     if (action === "capacity-dump") { res.status(200).json(await capacityDump(ORG)); return; }
     if (action === "reconcile") { res.status(200).json(await reconcileGoalTasks(ORG)); return; }        // ЕЖЕДНЕВНО: сверка задач с вердиктом (снять отпавшие, создать недостающие)
-    if (action === "clean-slate") { res.status(200).json(await reconcileGoalTasks(ORG, { cleanSlate: true, silent: true })); return; } // РАЗОВО: чистый старт месяца (снять всё лишнее)
+    if (action === "clean-slate") { res.status(200).json(await reconcileGoalTasks(ORG, { cleanSlate: true, silent: true })); return; }
+    if (action === "plan-preview") { res.status(200).json(await buildGoalPlan(ORG)); return; } // READ-ONLY: структура плана под цель (до раздачи) // РАЗОВО: чистый старт месяца (снять всё лишнее)
     res.status(400).json({ error: "unknown action" });
   } catch (e) { res.status(500).json({ error: String(e && e.message || e) }); }
 }
