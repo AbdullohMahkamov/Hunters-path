@@ -326,15 +326,17 @@ export async function reconcileGoalTasks(org = ORG, opts = {}) {
   //    обычные задачи плана (source advisor/reconcile/plan) не из desired — новый месяц с чистого листа.
   const desiredByKey = new Map(desired.filter((x) => x.leverKey).map((x) => [x.leverKey, x]));
   const stepsOf = (want) => (Array.isArray(want.steps) ? want.steps.map((s) => String(s).slice(0, 200)).slice(0, 8) : []);
+  const seenKeys = new Set(); // дедуп: один рычаг = одна задача (закрываем дубли с тем же leverKey)
   const keptSales = [];
   for (const t of app.customPlan.sales) {
     const isLever = !!t.leverKey;
     if (isLever) {
       const want = desiredByKey.get(t.leverKey);
-      if (want && want.recipient !== "marketing") { // АКТУАЛЬНА → обновляем содержимое под текущий вердикт (числа/шаги), id сохраняем
+      if (want && want.recipient !== "marketing" && !seenKeys.has(t.leverKey)) { // АКТУАЛЬНА и первая → обновляем содержимое (числа/шаги), id сохраняем
+        seenKeys.add(t.leverKey);
         t.t = String(want.title).slice(0, 200); t.d = String(want.why || "").slice(0, 800); t.steps = stepsOf(want);
         keptSales.push(t);
-      } else { closed.push({ id: t.id, title: t.t, to: "rop", leverKey: t.leverKey }); if (app.done) delete app.done[t.id]; } // резерв пропал → снять
+      } else { closed.push({ id: t.id, title: t.t, to: "rop", leverKey: t.leverKey }); if (app.done) delete app.done[t.id]; } // резерв пропал ИЛИ дубль → снять
     } else if (cleanSlate) { closed.push({ id: t.id, title: t.t, to: "rop", leverKey: null }); if (app.done) delete app.done[t.id]; } // чистый старт снимает ВСЕ не-рычаги (любой source)
     else keptSales.push(t);
   }
@@ -344,7 +346,7 @@ export async function reconcileGoalTasks(org = ORG, opts = {}) {
     const isLever = !!mt.leverKey;
     if (isLever) {
       const want = desiredByKey.get(mt.leverKey);
-      if (want && want.recipient === "marketing") { mt.title = String(want.title).slice(0, 200); mt.why = String(want.why || "").slice(0, 800); mt.action = stepsOf(want).join(" | "); }
+      if (want && want.recipient === "marketing" && !seenKeys.has(mt.leverKey)) { seenKeys.add(mt.leverKey); mt.title = String(want.title).slice(0, 200); mt.why = String(want.why || "").slice(0, 800); mt.action = stepsOf(want).join(" | "); }
       else { mt.status = "done"; mt.doneAt = Date.now(); mt.doneBy = "reconcile:stale"; closed.push({ id: mt.id, title: mt.title, to: "marketing", leverKey: mt.leverKey }); }
     } else if (cleanSlate) { mt.status = "done"; mt.doneAt = Date.now(); mt.doneBy = "reconcile:stale"; closed.push({ id: mt.id, title: mt.title, to: "marketing", leverKey: null }); }
   }
@@ -365,10 +367,9 @@ export async function reconcileGoalTasks(org = ORG, opts = {}) {
       if (ch) await rsetJSON("metabrain:proposals", mp);
     } catch (e) { /* не критично */ }
   }
-  // 2) СОЗДАТЬ недостающие desired (по leverKey — без дублей)
-  const haveKeys = new Set([...app.customPlan.sales.map((x) => x.leverKey), ...mtasks.filter((m) => m.status !== "done").map((m) => m.leverKey)].filter(Boolean));
+  // 2) СОЗДАТЬ недостающие desired (по leverKey — без дублей; seenKeys уже содержит обновлённые в п.1)
   for (const d of desired) {
-    if (!d.leverKey || haveKeys.has(d.leverKey)) continue;
+    if (!d.leverKey || seenKeys.has(d.leverKey)) continue;
     const steps = Array.isArray(d.steps) ? d.steps.map((s) => String(s).slice(0, 200)).slice(0, 8) : [];
     if (d.recipient === "marketing") {
       mtasks.push({ id: genId("mk_"), title: String(d.title).slice(0, 200), why: String(d.why || "").slice(0, 800), action: steps.join(" | "), status: "open", source: "reconcile", recipient: "marketing", leverKey: d.leverKey, createdAt: Date.now() });
@@ -377,7 +378,7 @@ export async function reconcileGoalTasks(org = ORG, opts = {}) {
       app.customPlan.sales.push({ id: genId("adv_"), t: String(d.title).slice(0, 200), d: String(d.why || "").slice(0, 800), deadline: "", steps, source: "reconcile", leverKey: d.leverKey, createdAt: Date.now() });
       created.push({ title: d.title, to: "rop" });
     }
-    haveKeys.add(d.leverKey);
+    seenKeys.add(d.leverKey);
   }
   await rsetJSON(`appdata:${org}`, app);
   await rsetJSON("marketingtasks", mtasks);
