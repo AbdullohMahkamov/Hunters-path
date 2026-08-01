@@ -8,7 +8,7 @@ import { initChat, renderChat, scrollChatBottom, sendMsg } from '../lib/chat.js'
 import { initAdminModals } from '../lib/adminModals.js'
 import { initTelegram, loadTelegramChats } from '../lib/telegram.js'
 import { initFinanceTrends } from '../lib/financeTrends.js'
-import { initQuests, renderStages, renderDopQuests } from '../lib/quests.js'
+import { initQuests, renderStages, renderDopQuests, loadLiveTasks } from '../lib/quests.js'
 import { applyI18n } from '../lib/i18nApply.js'
 import { ti } from '../lib/shellI18n.js'
 import { initAuditWizard, maybeShowWelcome } from '../lib/auditWizard.js'
@@ -132,7 +132,7 @@ export default function AppShell({ onLogout }) {
     if (t === 'dash') { const dt = state.dashTab || 'overview'; window.dashTab && window.dashTab(dt); loadDashboard() }
     if (t === 'chat') { setTimeout(() => { renderChat(); scrollChatBottom() }, 0) }
     if (t === 'tg') { setTimeout(() => loadTelegramChats(), 0) }
-    if (t === 'map') { setTimeout(() => { renderStages(); renderDopQuests() }, 0) }
+    if (t === 'map') { setTimeout(() => { loadLiveTasks(); renderDopQuests() }, 0) }
   }
 
   // роль РОПа: скрыть чувствительные блоки внутри дашборда (applyRole, 1:1 по IDs)
@@ -209,6 +209,7 @@ export default function AppShell({ onLogout }) {
     applyI18n()
     if (window._dashData && typeof window.__applyLiveDash === 'function') window.__applyLiveDash(window._dashData)
     renderStages(); renderDopQuests(); renderChat()
+    if (window.__activeTab === 'map' || document.getElementById('stages')) loadLiveTasks() // раздел Задачи → реальные задачи ALTRONE
     force((n) => n + 1)
   }
 

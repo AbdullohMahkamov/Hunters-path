@@ -231,6 +231,38 @@ function renderCustomPlan() {
   renderTaskHistory()
 }
 
+// ЖИВЫЕ ЗАДАЧИ: раздел «Задачи» показывает РЕАЛЬНЫЕ актуальные задачи ALTRONE под текущую цель
+// (рычаги закрытие/дозвон/трафик + план догона + находки МОП-агента + маркетинг), а НЕ устаревший
+// геймифицированный локальный customPlan. Источник — /api/task-agent?action=state. Только НЕзакрытые.
+// Группировка та же (Продажи/Маркетинг = РОП/Маркетолог), вид геймификации сохранён.
+export async function loadLiveTasks() {
+  const wrap = $('stages'); if (!wrap) return
+  const uz = state.lang === 'uz'
+  wrap.innerHTML = `<div style="padding:26px;text-align:center;color:var(--txt3);font-size:13px;">${uz ? 'Vazifalar yuklanmoqda…' : 'Загрузка задач…'}</div>`
+  let st = null, gl = null
+  try {
+    const res = await Promise.all([
+      fetch('/api/task-agent?action=state&session=' + encodeURIComponent(getSession())).then((r) => r.json()).catch(() => null),
+      fetch('/api/goal?action=get').then((r) => r.json()).catch(() => null),
+    ])
+    st = res[0]; gl = res[1]
+  } catch (e) { /* ниже покажем ошибку */ }
+  if (!st || !st.ok || !Array.isArray(st.tasks)) {
+    wrap.innerHTML = `<div style="padding:26px;text-align:center;color:var(--txt3);font-size:13px;">${uz ? 'Vazifalarni yuklab boʻlmadi.' : 'Не удалось загрузить задачи.'}</div>`
+    return
+  }
+  const goalUZS = (gl && gl.goal && gl.goal.amountUZS) || getGoal() || 0
+  const active = st.tasks.filter((t) => t && !t.done) // только АКТУАЛЬНЫЕ (незакрытые)
+  const toItem = (t) => ({ id: t.id, t: t.title || '', d: t.why || '', steps: [], deadline: t.deadline || '', live: true })
+  state.customPlan = {
+    goal: goalUZS,
+    marketing: active.filter((t) => t.recipient === 'marketing').map(toItem),
+    sales: active.filter((t) => t.recipient !== 'marketing').map(toItem),
+    live: true,
+  }
+  renderStages()
+}
+
 // История выполненных задач (с отчётами) — переживает пересборку плана. РОП видит только продажи.
 function renderTaskHistory() {
   const wrap = $('stages'); if (!wrap) return
@@ -441,6 +473,7 @@ export function initQuests() {
   _inited = true
   Object.assign(window, {
     renderStages, // нужен chat.js: после генерации плана В РАЗДЕЛЕ «ЗАДАЧИ» перерисовываем список
+    replanFromTasks: loadLiveTasks, // «Пересобрать план» в живом режиме = перечитать актуальные задачи с сервера
     toggleStage, toggleQuest, toggleCpCard, toggleCpStep, toggleCustomTask, helpCustomStep, helpCustomTask, openTaskReport, toggleHist, setTaskDeadline,
     wizRegenerate, wizReaudit, fightBoss, resetHunt, toggleDop, removeDop,
     openGenerator, closeGenerator, acceptGen, skipGen, askNext, helpQuest,
