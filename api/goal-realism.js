@@ -459,13 +459,18 @@ export async function assessRealism(org = ORG, opts = {}) {
   // Данные из накопительного замера дозвона (reachMonthAccum в ключе speed). Если coverage низкий — честно
   // помечаем «предварительно» и НЕ выдаём число за факт (правило полноты данных).
   try {
-    if (out.computable && out.human && f.conv > 0) {
+    if (out.computable && out.human && conv > 0) { // conv — базовая (при пустом текущем месяце берётся из закрытого)
       const speed = await rgetJSON("speed", null);
       const rma = speed && speed.reachMonthAccum;
       if (rma && rma.reachedLeads > 0 && rma.leads > 0) {
         const dozvonNow = rma.reachedLeads / rma.leads;
+        // ПРОДАЖИ по МОПам — за ТОТ ЖЕ месяц, что и дозвон (rma.month): когорта из teamCapacity.byMop[].soldMonths.
+        // На стыке месяцев (август пустой, дозвон ещё июльский) это даёт закрытие по июлю, а не по нулевому августу.
+        const dm = rma.month;
+        const byMopCap = (dash && dash.teamCapacity && dash.teamCapacity.byMop) || {};
         const salesByMop = {};
-        for (const m of ((dash && dash.mopsByConv) || [])) if (m && m.name) salesByMop[m.name] = m.sold || 0;
+        for (const [name, c] of Object.entries(byMopCap)) salesByMop[name] = (c.soldMonths && c.soldMonths[dm]) || 0;
+        if (!Object.values(salesByMop).some((x) => x > 0)) for (const m of ((dash && dash.mopsByConv) || [])) if (m && m.name) salesByMop[m.name] = m.sold || 0; // фолбэк на текущие, если когорты нет
         // лучший в команде на каждом шаге (порог значимости, чтобы не брать шум малого объёма)
         let bestDozvon = dozvonNow, bestClosing = 0, worstDozvon = null;
         for (const b of (rma.byMop || [])) {
@@ -476,15 +481,16 @@ export async function assessRealism(org = ORG, opts = {}) {
           const sold = salesByMop[b.name] || 0;
           if (b.reached >= 25 && sold > 0) { const cl = sold / b.reached; if (cl > bestClosing) bestClosing = cl; }
         }
-        const dec = funnelReserve(f.conv, dozvonNow, bestDozvon, bestClosing);
+        const dec = funnelReserve(conv, dozvonNow, bestDozvon, bestClosing);
         if (dec) {
           out.decomp = { ...dec, coveragePct: rma.coveragePct, provisional: rma.coveragePct < 75, worstDozvonMop: worstDozvon };
           const prov = rma.coveragePct < 75 ? ` ⚠️ замер дозвона ещё дозаполняется (coverage ${rma.coveragePct}%) — цифры предварительные` : "";
           const stepWord = dec.reserveStep === "closing" ? "ЗАКРЫТИИ (разговор→продажа)" : "ДОЗВОНЕ (лид→разговор)";
           // потолок рычага-резерва в деньгах: если довести отстающий шаг до ЛУЧШЕГО в команде
           const convCeil = dec.reserveStep === "closing" ? dec.convViaClosing : dec.convViaDozvon;
-          const revCeil = (f.leads > 0 && avgCheck > 0) ? Math.floor((f.leads || 0) * convCeil) * avgCheck : null;
-          out.human += `\n🔬 Разложение конверсии ${(f.conv * 100).toFixed(1)}% = дозвон ${dec.dozvonPct}% × закрытие ${dec.closingPct}%.`
+          const leadsRef = (f.leads > 0 ? f.leads : ((out.levers && out.levers.leadsForGoal) || 0)) // на стыке месяцев берём эталон лидов, не нулевой август
+          const revCeil = (leadsRef > 0 && avgCheck > 0) ? Math.floor(leadsRef * convCeil) * avgCheck : null;
+          out.human += `\n🔬 Разложение конверсии ${(conv * 100).toFixed(1)}% = дозвон ${dec.dozvonPct}% × закрытие ${dec.closingPct}%.`
             + ` Лучшие в команде: дозвон ${dec.bestDozvonPct}%, закрытие ${dec.bestClosingPct}%. Резерв — в основном в ${stepWord}.`
             + (revCeil ? ` Если подтянуть его к лучшему в команде — конверсия ~${(convCeil * 100).toFixed(1)}% → ~${fmt(revCeil)} сум на текущем трафике БЕЗ найма (это потолок: лучший держит темп не на всех лидах, но показывает, куда бить).` : ``)
             + (worstDozvon && worstDozvon.pct < dec.bestDozvonPct - 10 ? ` По дозвону отстаёт ${worstDozvon.name} (${worstDozvon.pct}%) — точечная задача РОПу.` : ``)
