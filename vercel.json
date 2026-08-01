@@ -113,6 +113,10 @@
       "schedule": "0 5 * * *"
     },
     {
+      "path": "/api/goal-realism?action=reconcile&cron=1",
+      "schedule": "20 5 * * *"
+    },
+    {
       "path": "/api/marketing-agent?action=daily&cron=1",
       "schedule": "45 4 * * *"
     },

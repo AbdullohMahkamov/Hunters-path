@@ -129,7 +129,11 @@ test("бизнес-отчёт: числа за вчера + цена лида + 
     totals: { leads: 200, sold: 20, revenue: 60000000, avgCheck: 5000000, avgCheckMedian: 5000000, newSalesRevenue: 60000000, soldToday: 0, revenueToday: 0, leadsToday: 0 },
     mopsByConv: [{ name: "A" }], velocity: { stages: [] },
   });
-  kvSetJSON("goal:hunter", { amountUZS: 100000000, currency: "UZS", period: { label: "июль 2026", start: "2026-07-01", end: "2026-07-31" } });
+  // цель на ТЕКУЩИЙ месяц (динамически — иначе тест ломается на стыке месяцев, когда «июль» перестаёт быть текущим)
+  { const _n = new Date(Date.now() + 5 * 3600000); const _RU = ["январь", "февраль", "март", "апрель", "май", "июнь", "июль", "август", "сентябрь", "октябрь", "ноябрь", "декабрь"];
+    const _s = new Date(Date.UTC(_n.getUTCFullYear(), _n.getUTCMonth(), 1)).toISOString().slice(0, 10);
+    const _e = new Date(Date.UTC(_n.getUTCFullYear(), _n.getUTCMonth() + 1, 0)).toISOString().slice(0, 10);
+    kvSetJSON("goal:hunter", { amountUZS: 100000000, currency: "UZS", period: { label: `${_RU[_n.getUTCMonth()]} ${_n.getUTCFullYear()}`, start: _s, end: _e } }); }
   kvSetJSON(`bizday:${tkDate(1)}`, { sold: 3, revenue: 15000000, leads: 12 });
   kvSetJSON("marketingagent:snapshot", { currency: { aligned: true, spendUZS: 2000000 } });
 

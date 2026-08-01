@@ -15,7 +15,7 @@ import { runMopAgent } from "./mop-agent.js";
 import { handlePlanButton, handleOwnerDecision } from "./planner.js"; // pt2: подтверждение плана + решение по недостижимой части цели ИЗ ЧАТА
 import { handlePlanButton as handleDeepSalesButton } from "./deepsales.js"; // DeepSales: подтверждение траты на разбор ИЗ ЧАТА/Mini App
 import { handleMetaButton } from "./meta-brain.js";     // pt2: подтверждение/отклонение предложений мозга ИЗ ЧАТА
-import { assessRealism, deriveLeverTasks } from "./goal-realism.js"; // одна кнопка «поставить задачи по рычагам»
+import { reconcileGoalTasks } from "./goal-realism.js"; // одна кнопка «поставить задачи по рычагам» + сверка актуальности
 
 const REDIS_URL = process.env.UPSTASH_REDIS_REST_URL;
 const REDIS_TOKEN = process.env.UPSTASH_REDIS_REST_TOKEN;
@@ -129,17 +129,12 @@ export default async function handler(req, res) {
     if (type === "set_levers") {
       // ОДНА КНОПКА → операционные задачи РОПу по рычагам из вердикта (закрытие, дозвон отстающего).
       // Пересчитываем вердикт по СОХРАНЁННОЙ цели (не доверяем присланному), деньги/наём НЕ раздаём — это решения владельца.
-      const v = await assessRealism("hunter");
-      const lts = deriveLeverTasks(v);
-      const created = [];
-      for (const lt of lts) {
-        if (lt.recipient === "marketing") { const r = await addMarketingTask({ title: lt.title, why: lt.why, source: "advisor" }); created.push({ id: r.id, title: lt.title, to: "marketing" }); }
-        else { const r = await createRopTask({ title: lt.title, why: lt.why }); created.push({ id: r.id, title: lt.title, to: "rop" }); }
-      }
-      if (created.length) { try { await runTick(true); } catch (e) {} } // сразу пингуем РОПа/маркетолога
-      const nRop = created.filter((c) => c.to === "rop").length, nMkt = created.filter((c) => c.to === "marketing").length;
-      res.status(200).json({ ok: true, type, created, count: created.length,
-        note: created.length ? `Поставлено задач: РОПу ${nRop}${nMkt ? `, маркетологу ${nMkt}` : ""} — Task Agent начнёт вести (пинг/эскалация). Деньги/наём остаются решением владельца в очереди «Решения».` : "операционных рычагов для задач сейчас нет (замер дозвона/закрытия неполон или резерв не выделен)" });
+      // Идемпотентно через сверку: создаёт недостающие рычаги, снимает отпавшие, без дублей.
+      const r = await reconcileGoalTasks("hunter");
+      if (r.created.length || r.closed.length) { try { await runTick(true); } catch (e) {} } // сразу пингуем РОПа/маркетолога
+      const nRop = r.created.filter((c) => c.to === "rop").length, nMkt = r.created.filter((c) => c.to === "marketing").length;
+      res.status(200).json({ ok: true, type, created: r.created, count: r.created.length, closed: r.closed.length,
+        note: r.created.length ? `Поставлено задач: РОПу ${nRop}${nMkt ? `, маркетологу ${nMkt}` : ""}${r.closed.length ? `; снято неактуальных ${r.closed.length}` : ""} — Task Agent начнёт вести (пинг/эскалация). Деньги/наём остаются решением владельца в очереди «Решения».` : (r.closed.length ? `Снято неактуальных: ${r.closed.length}. Новых рычагов сейчас нет.` : "операционных рычагов для задач сейчас нет (замер дозвона/закрытия неполон или резерв не выделен)") });
       return;
     }
     if (type === "marketing_task") {

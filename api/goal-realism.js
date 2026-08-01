@@ -19,6 +19,7 @@
 import { getGoal, parseGoalText } from "./goal.js";
 import { getVerifiedFunnel } from "./dev-agent.js";
 import { funnelFacts, workingDays, getPeriodResults } from "./planner.js";
+import { sendTg, getPeople } from "./tg-bot.js"; // уведомить исполнителя при снятии неактуальной задачи (сверка)
 
 const CRON_SECRET = process.env.CRON_SECRET;
 
@@ -30,6 +31,7 @@ const ORG = "hunter";
 
 async function rget(key) { try { const r = await fetch(`${REDIS_URL}/get/${encodeURIComponent(key)}`, { headers: { Authorization: `Bearer ${REDIS_TOKEN}` } }); const d = await r.json(); return d && d.result != null ? d.result : null; } catch (e) { return null; } }
 async function rgetJSON(key, dflt) { const raw = await rget(key); if (raw == null) return dflt; try { return JSON.parse(raw); } catch (e) { return dflt; } }
+async function rsetJSON(key, v) { try { await fetch(`${REDIS_URL}/set/${encodeURIComponent(key)}`, { method: "POST", headers: { Authorization: `Bearer ${REDIS_TOKEN}` }, body: JSON.stringify(v) }); return true; } catch (e) { return false; } }
 
 const fmt = (n) => (n == null ? "н/д" : Number(Math.round(n)).toLocaleString("ru-RU"));
 
@@ -256,6 +258,7 @@ export function deriveLeverTasks(v) {
   const tasks = [], d = v.decomp;
   if (d && d.reserveStep === "closing" && d.bestClosingPct > d.closingPct) {
     tasks.push({
+      leverKey: "closing",
       title: `Поднять закрытие сделок к лучшему в команде (~${d.bestClosingPct}%)`,
       why: `Команда закрывает ${d.closingPct}% разговоров, лучший — ${d.bestClosingPct}%. Разобрать разговоры слабых менеджеров против лучшего, подтянуть скрипт закрытия. Главный рычаг: без найма и без новых лидов.`,
       recipient: "rop", scope: "department",
@@ -263,6 +266,7 @@ export function deriveLeverTasks(v) {
   }
   if (d && d.worstDozvonMop && d.worstDozvonMop.pct < d.bestDozvonPct - 10) {
     tasks.push({
+      leverKey: `dozvon:${d.worstDozvonMop.name}`, // ключ включает МОПа → сменился отстающий → старая задача снимется
       title: `Подтянуть дозвон: ${d.worstDozvonMop.name} (${d.worstDozvonMop.pct}% против ${d.bestDozvonPct}%)`,
       why: `Дозвон ${d.worstDozvonMop.name} — ${d.worstDozvonMop.pct}% против ${d.bestDozvonPct}% у лучших. Разобрать причины (скорость первого звонка, число попыток), скорректировать.`,
       recipient: "rop", scope: "pointwise", mop: d.worstDozvonMop.name,
@@ -273,6 +277,7 @@ export function deriveLeverTasks(v) {
   const L = v.levers;
   if (L && L.leadsToPeak > 0 && L.budgetToPeak != null) {
     tasks.push({
+      leverKey: "mkt:leads",
       title: `Привлечь +${L.leadsToPeak} лидов/мес (до пика ёмкости команды), бюджет ≤ ${fmt(L.budgetToPeak)} сум`,
       why: `Конкретно: добрать до +${L.leadsToPeak} лидов/мес при текущей цене лида ${fmt(L.cpl)} сум → бюджет ~${fmt(L.budgetToPeak)} сум/мес. Это ПОТОЛОК по лидам: больше команда не обработает, и полную цель лидами не закрыть. Каналы — текущие (не разгонять новые под низкое закрытие). ВАЖНО: это ВТОРИЧНО — приоритет закрытие сделок; увеличение бюджета сверх — решение владельца.`,
       recipient: "marketing", scope: "marketing",
@@ -280,6 +285,67 @@ export function deriveLeverTasks(v) {
     });
   }
   return tasks;
+}
+
+// ── СВЕРКА ЗАДАЧ С ТЕКУЩИМ ВЕРДИКТОМ (актуальность) ──
+// Задачи-рычаги (leverKey) должны ЗЕРКАЛИТЬ актуальные рычаги цели: чей резерв пропал — снимаем, недостающие —
+// создаём. Идемпотентно (повтор кнопки не плодит дубли). opts.cleanSlate — «чистый старт»: снять ВСЕ задачи плана
+// (advisor/reconcile/plan), не входящие в текущие рычаги (для нового месяца). opts.silent — без пингов исполнителям.
+export async function reconcileGoalTasks(org = ORG, opts = {}) {
+  const cleanSlate = !!opts.cleanSlate, silent = !!opts.silent;
+  const v = await assessRealism(org);
+  const desired = deriveLeverTasks(v);
+  const desiredKeys = new Set(desired.map((d) => d.leverKey).filter(Boolean));
+  const app = (await rgetJSON(`appdata:${org}`, {})) || {};
+  app.customPlan = app.customPlan || {};
+  if (!Array.isArray(app.customPlan.sales)) app.customPlan.sales = [];
+  const mtasks = (await rgetJSON("marketingtasks", [])) || [];
+  const closed = [], created = [];
+  const genId = (p) => p + Date.now().toString(36) + Math.random().toString(36).slice(2, 6);
+  // 1) СНЯТЬ неактуальное. lever-задача устарела, если её leverKey больше не в desired. При cleanSlate снимаем И
+  //    обычные задачи плана (source advisor/reconcile/plan) не из desired — новый месяц с чистого листа.
+  const keptSales = [];
+  for (const t of app.customPlan.sales) {
+    const isLever = !!t.leverKey;
+    const planKind = ["advisor", "reconcile", "plan"].includes(t.source);
+    const stale = isLever ? !desiredKeys.has(t.leverKey) : (cleanSlate && planKind);
+    if (stale) { closed.push({ id: t.id, title: t.t, to: "rop", leverKey: t.leverKey || null }); if (app.done) delete app.done[t.id]; }
+    else keptSales.push(t);
+  }
+  app.customPlan.sales = keptSales;
+  for (const mt of mtasks) {
+    if (!mt || mt.status === "done") continue;
+    const isLever = !!mt.leverKey;
+    const stale = isLever ? !desiredKeys.has(mt.leverKey) : (cleanSlate && (mt.source === "advisor" || mt.source === "reconcile"));
+    if (stale) { mt.status = "done"; mt.doneAt = Date.now(); mt.doneBy = "reconcile:stale"; closed.push({ id: mt.id, title: mt.title, to: "marketing", leverKey: mt.leverKey || null }); }
+  }
+  // 2) СОЗДАТЬ недостающие desired (по leverKey — без дублей)
+  const haveKeys = new Set([...app.customPlan.sales.map((x) => x.leverKey), ...mtasks.filter((m) => m.status !== "done").map((m) => m.leverKey)].filter(Boolean));
+  for (const d of desired) {
+    if (!d.leverKey || haveKeys.has(d.leverKey)) continue;
+    if (d.recipient === "marketing") {
+      mtasks.push({ id: genId("mk_"), title: String(d.title).slice(0, 200), why: String(d.why || "").slice(0, 800), status: "open", source: "reconcile", recipient: "marketing", leverKey: d.leverKey, createdAt: Date.now() });
+      created.push({ title: d.title, to: "marketing" });
+    } else {
+      app.customPlan.sales.push({ id: genId("adv_"), t: String(d.title).slice(0, 200), d: String(d.why || "").slice(0, 800), deadline: "", steps: [], source: "reconcile", leverKey: d.leverKey, createdAt: Date.now() });
+      created.push({ title: d.title, to: "rop" });
+    }
+    haveKeys.add(d.leverKey);
+  }
+  await rsetJSON(`appdata:${org}`, app);
+  await rsetJSON("marketingtasks", mtasks);
+  // Уведомление исполнителям о СНЯТИИ (нейтрально). При cleanSlate — без пингов (массовая чистка).
+  if (!silent && !cleanSlate && closed.length) {
+    try {
+      const ppl = await getPeople();
+      for (const c of closed) {
+        const role = c.to === "marketing" ? "marketing" : "rop";
+        const p = ppl[role];
+        if (p && p.chatId) { await sendTg(role, p.chatId, `📌 Задача «${c.title}» снята — по свежим данным она больше не актуальна для цели. Делать ничего не нужно.`); }
+      }
+    } catch (e) { /* уведомления не критичны */ }
+  }
+  return { ok: true, cleanSlate, closed, created, desiredCount: desired.length };
 }
 
 // ── АСИНХРОННАЯ ОБЁРТКА: собирает входы (цель, воронка, капасити, CPL) и зовёт ядро ──
@@ -453,7 +519,7 @@ export async function capacityDump(org = ORG) {
   };
 }
 
-const CRON_OK = new Set(["preview", "capacity-dump"]); // оба READ-ONLY, ничего не мутируют
+const CRON_OK = new Set(["preview", "capacity-dump", "reconcile", "clean-slate"]); // preview/dump READ-ONLY; reconcile — ежедневная сверка; clean-slate — разовый чистый старт (пересоздаёт актуальные рычаги)
 export default async function handler(req, res) {
   res.setHeader("Cache-Control", "no-store");
   if (!REDIS_URL || !REDIS_TOKEN) { res.status(500).json({ error: "no redis" }); return; }
@@ -465,6 +531,8 @@ export default async function handler(req, res) {
   try {
     if (action === "preview") { res.status(200).json(await previewRealism(b.text || q.text || "", ORG)); return; }
     if (action === "capacity-dump") { res.status(200).json(await capacityDump(ORG)); return; }
+    if (action === "reconcile") { res.status(200).json(await reconcileGoalTasks(ORG)); return; }        // ЕЖЕДНЕВНО: сверка задач с вердиктом (снять отпавшие, создать недостающие)
+    if (action === "clean-slate") { res.status(200).json(await reconcileGoalTasks(ORG, { cleanSlate: true, silent: true })); return; } // РАЗОВО: чистый старт месяца (снять всё лишнее)
     res.status(400).json({ error: "unknown action" });
   } catch (e) { res.status(500).json({ error: String(e && e.message || e) }); }
 }
