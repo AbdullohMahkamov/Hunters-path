@@ -648,7 +648,7 @@ export default async function handler(req, res) {
   try {
     if (action === "preview") { res.status(200).json(await previewRealism(b.text || q.text || "", ORG)); return; }
     if (action === "capacity-dump") { res.status(200).json(await capacityDump(ORG)); return; }
-    if (action === "reconcile") { res.status(200).json(await reconcileGoalTasks(ORG)); return; }        // ЕЖЕДНЕВНО: сверка задач с вердиктом (снять отпавшие, создать недостающие)
+    if (action === "reconcile") { const r = await reconcileGoalTasks(ORG); if (r.created && r.created.length) { try { const ta = await import("./task-agent.js"); await ta.runTick(true); } catch (e) {} } res.status(200).json(r); return; } // новые задачи → СРАЗУ пингуем исполнителю        // ЕЖЕДНЕВНО: сверка задач с вердиктом (снять отпавшие, создать недостающие)
     if (action === "clean-slate") { res.status(200).json(await reconcileGoalTasks(ORG, { cleanSlate: true, silent: true })); return; }
     if (action === "plan-preview") { res.status(200).json(await buildGoalPlan(ORG)); return; } // READ-ONLY: структура плана под цель (до раздачи) // РАЗОВО: чистый старт месяца (снять всё лишнее)
     res.status(400).json({ error: "unknown action" });
