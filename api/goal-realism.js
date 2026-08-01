@@ -307,8 +307,7 @@ export async function reconcileGoalTasks(org = ORG, opts = {}) {
   const keptSales = [];
   for (const t of app.customPlan.sales) {
     const isLever = !!t.leverKey;
-    const planKind = ["advisor", "reconcile", "plan"].includes(t.source);
-    const stale = isLever ? !desiredKeys.has(t.leverKey) : (cleanSlate && planKind);
+    const stale = isLever ? !desiredKeys.has(t.leverKey) : cleanSlate; // cleanSlate снимает ВСЕ не-рычаги (любой source: старый план догона без source, ручные)
     if (stale) { closed.push({ id: t.id, title: t.t, to: "rop", leverKey: t.leverKey || null }); if (app.done) delete app.done[t.id]; }
     else keptSales.push(t);
   }
@@ -316,8 +315,25 @@ export async function reconcileGoalTasks(org = ORG, opts = {}) {
   for (const mt of mtasks) {
     if (!mt || mt.status === "done") continue;
     const isLever = !!mt.leverKey;
-    const stale = isLever ? !desiredKeys.has(mt.leverKey) : (cleanSlate && (mt.source === "advisor" || mt.source === "reconcile"));
+    const stale = isLever ? !desiredKeys.has(mt.leverKey) : cleanSlate;
     if (stale) { mt.status = "done"; mt.doneAt = Date.now(); mt.doneBy = "reconcile:stale"; closed.push({ id: mt.id, title: mt.title, to: "marketing", leverKey: mt.leverKey || null }); }
+  }
+  // ЧИСТЫЙ СТАРТ: закрыть накопившиеся находки МОП-агента и подтверждённые предложения мозга (просрочка/дубли с
+  // прошлого месяца). Валидные вернутся СВЕЖИМИ на ближайших прогонах агентов (с новыми сроками), стухшие — нет.
+  let mopClosed = 0, metaClosed = 0;
+  if (cleanSlate) {
+    try {
+      const mf = (await rgetJSON("mopagent:findings", [])) || [];
+      let ch = false;
+      for (const f of mf) { if (f && !["closed", "auto_closed", "invalidated"].includes(f.status)) { f.status = "closed"; f.closedAt = Date.now(); f.closeReason = "чистый старт месяца"; mopClosed++; ch = true; } }
+      if (ch) await rsetJSON("mopagent:findings", mf);
+    } catch (e) { /* не критично */ }
+    try {
+      const mp = (await rgetJSON("metabrain:proposals", [])) || [];
+      let ch = false;
+      for (const p of mp) { if (p && (p.status === "confirmed" || (p.status === "pending" && p.auto))) { p.status = "closed"; p.closedAt = Date.now(); p.closeReason = "чистый старт месяца"; metaClosed++; ch = true; } }
+      if (ch) await rsetJSON("metabrain:proposals", mp);
+    } catch (e) { /* не критично */ }
   }
   // 2) СОЗДАТЬ недостающие desired (по leverKey — без дублей)
   const haveKeys = new Set([...app.customPlan.sales.map((x) => x.leverKey), ...mtasks.filter((m) => m.status !== "done").map((m) => m.leverKey)].filter(Boolean));
@@ -345,7 +361,7 @@ export async function reconcileGoalTasks(org = ORG, opts = {}) {
       }
     } catch (e) { /* уведомления не критичны */ }
   }
-  return { ok: true, cleanSlate, closed, created, desiredCount: desired.length };
+  return { ok: true, cleanSlate, closed, created, desiredCount: desired.length, mopClosed, metaClosed };
 }
 
 // ── АСИНХРОННАЯ ОБЁРТКА: собирает входы (цель, воронка, капасити, CPL) и зовёт ядро ──
