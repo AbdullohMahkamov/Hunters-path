@@ -119,7 +119,7 @@ export async function loadSalesTasks() {
       const isDone = steps.length ? steps.every((_, si) => !!done[q.id + "_s" + si]) : !!done[q.id];
       const report = hist.find((h) => h.taskId === q.id || h.id === q.id) || (q.report ? { result: q.report } : null);
       out.push({ id: q.id, title: q.t, why: q.d || "", deadline: q.deadline || "", steps, done: isDone, report: report || null,
-        source: "plan", scope: "plan",
+        source: "plan", scope: "plan", leverKey: q.leverKey || null,
         daysLeft: daysLeft(q.deadline), hoursOverdue: hoursOverdue(q.deadline) });
     }
   }
@@ -807,7 +807,7 @@ export async function runTick(force) {
     const s = st[t.id] || {};
     // Находка MOP Agent — это уже готовая задача с фактом, её отдаём РОПу сразу при обнаружении,
     // а не за remindBeforeDays до срока (у точечных срок вообще «до конца дня»).
-    const near = t.source === "mop-agent" || t.source === "metabrain" || (t.daysLeft != null && t.daysLeft <= cfg.remindBeforeDays);
+    const near = t.source === "mop-agent" || t.source === "metabrain" || !!t.leverKey || (t.daysLeft != null && t.daysLeft <= cfg.remindBeforeDays);
     if (!near && !force) continue;
     // сверх капа metabrain-задачи сегодня молчат (не пингуем и, следовательно, не эскалируем — гейт ниже по pingDay)
     if (t.source === "metabrain" && (t.recipient || "rop") === "rop" && !metaAllowed.has(t.id)) continue;
