@@ -330,25 +330,25 @@ export async function reconcileGoalTasks(org = ORG, opts = {}) {
   const keptSales = [];
   for (const t of app.customPlan.sales) {
     const isLever = !!t.leverKey;
-    if (isLever) {
+    if (isLever && !cleanSlate) {
       const want = desiredByKey.get(t.leverKey);
       if (want && want.recipient !== "marketing" && !seenKeys.has(t.leverKey)) { // АКТУАЛЬНА и первая → обновляем содержимое (числа/шаги), id сохраняем
         seenKeys.add(t.leverKey);
         t.t = String(want.title).slice(0, 200); t.d = String(want.why || "").slice(0, 800); t.steps = stepsOf(want);
         keptSales.push(t);
       } else { closed.push({ id: t.id, title: t.t, to: "rop", leverKey: t.leverKey }); if (app.done) delete app.done[t.id]; } // резерв пропал ИЛИ дубль → снять
-    } else if (cleanSlate) { closed.push({ id: t.id, title: t.t, to: "rop", leverKey: null }); if (app.done) delete app.done[t.id]; } // чистый старт снимает ВСЕ не-рычаги (любой source)
+    } else if (cleanSlate) { closed.push({ id: t.id, title: t.t, to: "rop", leverKey: t.leverKey || null }); if (app.done) delete app.done[t.id]; } // ЧИСТЫЙ СТАРТ = полный сброс: сносим ВСЁ (и рычаги тоже), ниже пересоздадим актуальные
     else keptSales.push(t);
   }
   app.customPlan.sales = keptSales;
   for (const mt of mtasks) {
     if (!mt || mt.status === "done") continue;
     const isLever = !!mt.leverKey;
-    if (isLever) {
+    if (isLever && !cleanSlate) {
       const want = desiredByKey.get(mt.leverKey);
       if (want && want.recipient === "marketing" && !seenKeys.has(mt.leverKey)) { seenKeys.add(mt.leverKey); mt.title = String(want.title).slice(0, 200); mt.why = String(want.why || "").slice(0, 800); mt.action = stepsOf(want).join(" | "); }
       else { mt.status = "done"; mt.doneAt = Date.now(); mt.doneBy = "reconcile:stale"; closed.push({ id: mt.id, title: mt.title, to: "marketing", leverKey: mt.leverKey }); }
-    } else if (cleanSlate) { mt.status = "done"; mt.doneAt = Date.now(); mt.doneBy = "reconcile:stale"; closed.push({ id: mt.id, title: mt.title, to: "marketing", leverKey: null }); }
+    } else if (cleanSlate) { mt.status = "done"; mt.doneAt = Date.now(); mt.doneBy = "reconcile:stale"; closed.push({ id: mt.id, title: mt.title, to: "marketing", leverKey: mt.leverKey || null }); }
   }
   // ЧИСТЫЙ СТАРТ: закрыть накопившиеся находки МОП-агента и подтверждённые предложения мозга (просрочка/дубли с
   // прошлого месяца). Валидные вернутся СВЕЖИМИ на ближайших прогонах агентов (с новыми сроками), стухшие — нет.
@@ -393,7 +393,8 @@ export async function reconcileGoalTasks(org = ORG, opts = {}) {
       }
     } catch (e) { /* уведомления не критичны */ }
   }
-  return { ok: true, cleanSlate, closed, created, desiredCount: desired.length, mopClosed, metaClosed };
+  const salesNow = app.customPlan.sales.map((t) => ({ t: String(t.t || "").slice(0, 32), leverKey: t.leverKey || null, steps: (t.steps || []).length }));
+  return { ok: true, cleanSlate, closed, created, desiredCount: desired.length, mopClosed, metaClosed, salesNow };
 }
 
 // ── АСИНХРОННАЯ ОБЁРТКА: собирает входы (цель, воронка, капасити, CPL) и зовёт ядро ──
