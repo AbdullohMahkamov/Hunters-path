@@ -316,8 +316,11 @@ export function classifyProposal(p) {
   if (p.contradiction) return { to: "none", reason: "наблюдение «не действовать» — не решение, из очереди убрано" };
   if (HARD_LEGAL_RX.test(t)) return { to: "owner", reason: "реальный юр.риск / претензии — решение владельца" };
   if (CONFIG_RX.test(t)) return { to: "owner", reason: "настройка CRM / измерений — меняет условия, решение владельца" };
-  if (recipient !== "rop") { // МАРКЕТИНГ: трата денег/новый канал → владельцу; разбор/проверка/мониторинг → сразу маркетологу
-    if (MKT_MONEY_RX.test(t)) return { to: "owner", reason: "маркетинг — трата денег/новый канал, решение владельца" };
+  if (recipient !== "rop") { // МАРКЕТИНГ: смотрим на РЕКОМЕНДУЕМОЕ ДЕЙСТВИЕ (proposedTask), а не на всё наблюдение —
+    // «проверить крео» = разбор маркетолога, даже если само наблюдение про рост/масштаб аудитории.
+    const pt = p.proposedTask || {};
+    const actionText = (pt.title || pt.why) ? `${pt.title || ""} ${pt.why || ""}` : t; // есть действие — судим по нему; иначе по всему тексту
+    if (MKT_MONEY_RX.test(actionText)) return { to: "owner", reason: "маркетинг — трата денег/новый канал, решение владельца" };
     return { to: "marketing", reason: "маркетинг-операционка (проверить/разобрать/следить/креатив/качество) — сразу маркетологу" };
   }
   if (COMPLIANCE_RX.test(t)) return { to: "rop_notify", reason: "разбор менеджера + информировать владельца (запрещённое обещание)" };
