@@ -262,6 +262,13 @@ export function deriveLeverTasks(v) {
       title: `Поднять закрытие сделок к лучшему в команде (~${d.bestClosingPct}%)`,
       why: `Команда закрывает ${d.closingPct}% разговоров, лучший — ${d.bestClosingPct}%. Разобрать разговоры слабых менеджеров против лучшего, подтянуть скрипт закрытия. Главный рычаг: без найма и без новых лидов.`,
       recipient: "rop", scope: "department",
+      steps: [
+        "Прослушать 5–7 звонков лучшего закрывающего — выписать, как он доводит до оплаты",
+        "Прослушать по 5 звонков слабых менеджеров — отметить, на каком шаге теряется сделка",
+        "Собрать/обновить скрипт закрытия по лучшему (работа с возражениями, дожим, следующий шаг)",
+        "Провести разбор с командой и закрепить скрипт в ежедневной работе",
+        "Через неделю перепроверить закрытие по свежим разговорам",
+      ],
     });
   }
   if (d && d.worstDozvonMop && d.worstDozvonMop.pct < d.bestDozvonPct - 10) {
@@ -270,6 +277,13 @@ export function deriveLeverTasks(v) {
       title: `Подтянуть дозвон: ${d.worstDozvonMop.name} (${d.worstDozvonMop.pct}% против ${d.bestDozvonPct}%)`,
       why: `Дозвон ${d.worstDozvonMop.name} — ${d.worstDozvonMop.pct}% против ${d.bestDozvonPct}% у лучших. Разобрать причины (скорость первого звонка, число попыток), скорректировать.`,
       recipient: "rop", scope: "pointwise", mop: d.worstDozvonMop.name,
+      steps: [
+        `Проверить скорость первого звонка у ${d.worstDozvonMop.name} — насколько медленнее нормы (цель — 15 минут)`,
+        "Посмотреть число попыток дозвона на лид — хватает ли попыток в первый день",
+        "Разобрать 5 недозвонов: причина (время суток, каналы, отказ)",
+        `Ввести правило: первый звонок в 15 минут, минимум 3 попытки; проговорить с ${d.worstDozvonMop.name}`,
+        "Через неделю перепроверить дозвон по нотам amoCRM",
+      ],
     });
   }
   // МАРКЕТИНГ: КОНКРЕТНАЯ задача с числами (лиды + бюджет), НЕ вопрос «посчитай сам». Только достижимый инкремент —
@@ -282,6 +296,12 @@ export function deriveLeverTasks(v) {
       why: `Конкретно: добрать до +${L.leadsToPeak} лидов/мес при текущей цене лида ${fmt(L.cpl)} сум → бюджет ~${fmt(L.budgetToPeak)} сум/мес. Это ПОТОЛОК по лидам: больше команда не обработает, и полную цель лидами не закрыть. Каналы — текущие (не разгонять новые под низкое закрытие). ВАЖНО: это ВТОРИЧНО — приоритет закрытие сделок; увеличение бюджета сверх — решение владельца.`,
       recipient: "marketing", scope: "marketing",
       leads: L.leadsToPeak, budgetUZS: L.budgetToPeak, cplUZS: L.cpl,
+      steps: [
+        `Добрать +${L.leadsToPeak} лидов/мес по ТЕКУЩИМ каналам (не разгонять новые под низкое закрытие)`,
+        `Держать цену лида ≤ ${fmt(L.cpl)} сум, бюджет ≤ ${fmt(L.budgetToPeak)} сум/мес`,
+        "Согласовать увеличение бюджета с владельцем (реклама — его решение)",
+        "Следить за качеством лидов — не гнать объём в ущерб релевантности",
+      ],
     });
   }
   return tasks;
@@ -304,19 +324,29 @@ export async function reconcileGoalTasks(org = ORG, opts = {}) {
   const genId = (p) => p + Date.now().toString(36) + Math.random().toString(36).slice(2, 6);
   // 1) СНЯТЬ неактуальное. lever-задача устарела, если её leverKey больше не в desired. При cleanSlate снимаем И
   //    обычные задачи плана (source advisor/reconcile/plan) не из desired — новый месяц с чистого листа.
+  const desiredByKey = new Map(desired.filter((x) => x.leverKey).map((x) => [x.leverKey, x]));
+  const stepsOf = (want) => (Array.isArray(want.steps) ? want.steps.map((s) => String(s).slice(0, 200)).slice(0, 8) : []);
   const keptSales = [];
   for (const t of app.customPlan.sales) {
     const isLever = !!t.leverKey;
-    const stale = isLever ? !desiredKeys.has(t.leverKey) : cleanSlate; // cleanSlate снимает ВСЕ не-рычаги (любой source: старый план догона без source, ручные)
-    if (stale) { closed.push({ id: t.id, title: t.t, to: "rop", leverKey: t.leverKey || null }); if (app.done) delete app.done[t.id]; }
+    if (isLever) {
+      const want = desiredByKey.get(t.leverKey);
+      if (want && want.recipient !== "marketing") { // АКТУАЛЬНА → обновляем содержимое под текущий вердикт (числа/шаги), id сохраняем
+        t.t = String(want.title).slice(0, 200); t.d = String(want.why || "").slice(0, 800); t.steps = stepsOf(want);
+        keptSales.push(t);
+      } else { closed.push({ id: t.id, title: t.t, to: "rop", leverKey: t.leverKey }); if (app.done) delete app.done[t.id]; } // резерв пропал → снять
+    } else if (cleanSlate) { closed.push({ id: t.id, title: t.t, to: "rop", leverKey: null }); if (app.done) delete app.done[t.id]; } // чистый старт снимает ВСЕ не-рычаги (любой source)
     else keptSales.push(t);
   }
   app.customPlan.sales = keptSales;
   for (const mt of mtasks) {
     if (!mt || mt.status === "done") continue;
     const isLever = !!mt.leverKey;
-    const stale = isLever ? !desiredKeys.has(mt.leverKey) : cleanSlate;
-    if (stale) { mt.status = "done"; mt.doneAt = Date.now(); mt.doneBy = "reconcile:stale"; closed.push({ id: mt.id, title: mt.title, to: "marketing", leverKey: mt.leverKey || null }); }
+    if (isLever) {
+      const want = desiredByKey.get(mt.leverKey);
+      if (want && want.recipient === "marketing") { mt.title = String(want.title).slice(0, 200); mt.why = String(want.why || "").slice(0, 800); mt.action = stepsOf(want).join(" | "); }
+      else { mt.status = "done"; mt.doneAt = Date.now(); mt.doneBy = "reconcile:stale"; closed.push({ id: mt.id, title: mt.title, to: "marketing", leverKey: mt.leverKey }); }
+    } else if (cleanSlate) { mt.status = "done"; mt.doneAt = Date.now(); mt.doneBy = "reconcile:stale"; closed.push({ id: mt.id, title: mt.title, to: "marketing", leverKey: null }); }
   }
   // ЧИСТЫЙ СТАРТ: закрыть накопившиеся находки МОП-агента и подтверждённые предложения мозга (просрочка/дубли с
   // прошлого месяца). Валидные вернутся СВЕЖИМИ на ближайших прогонах агентов (с новыми сроками), стухшие — нет.
@@ -339,11 +369,12 @@ export async function reconcileGoalTasks(org = ORG, opts = {}) {
   const haveKeys = new Set([...app.customPlan.sales.map((x) => x.leverKey), ...mtasks.filter((m) => m.status !== "done").map((m) => m.leverKey)].filter(Boolean));
   for (const d of desired) {
     if (!d.leverKey || haveKeys.has(d.leverKey)) continue;
+    const steps = Array.isArray(d.steps) ? d.steps.map((s) => String(s).slice(0, 200)).slice(0, 8) : [];
     if (d.recipient === "marketing") {
-      mtasks.push({ id: genId("mk_"), title: String(d.title).slice(0, 200), why: String(d.why || "").slice(0, 800), status: "open", source: "reconcile", recipient: "marketing", leverKey: d.leverKey, createdAt: Date.now() });
+      mtasks.push({ id: genId("mk_"), title: String(d.title).slice(0, 200), why: String(d.why || "").slice(0, 800), action: steps.join(" | "), status: "open", source: "reconcile", recipient: "marketing", leverKey: d.leverKey, createdAt: Date.now() });
       created.push({ title: d.title, to: "marketing" });
     } else {
-      app.customPlan.sales.push({ id: genId("adv_"), t: String(d.title).slice(0, 200), d: String(d.why || "").slice(0, 800), deadline: "", steps: [], source: "reconcile", leverKey: d.leverKey, createdAt: Date.now() });
+      app.customPlan.sales.push({ id: genId("adv_"), t: String(d.title).slice(0, 200), d: String(d.why || "").slice(0, 800), deadline: "", steps, source: "reconcile", leverKey: d.leverKey, createdAt: Date.now() });
       created.push({ title: d.title, to: "rop" });
     }
     haveKeys.add(d.leverKey);
