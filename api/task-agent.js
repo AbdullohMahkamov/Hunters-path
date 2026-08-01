@@ -106,6 +106,8 @@ const hoursOverdue = (deadline) => { const dl = daysLeft(deadline); return dl !=
 // Оба идут РОПу ОДНИМ потоком через один бот и один тред, различаясь пометкой 🏢 / 👤.
 export async function loadSalesTasks() {
   const out = [];
+  // Находки, СВЁРНУТЫЕ в подзадачи рычагов плана (goal-realism reconcile) — не показываем их отдельными задачами (без дублей).
+  const folded = (await rgetJSON(`plan:folded:${ORG}`, {})) || {};
   // ── источник 1: план ──
   const app = await rgetJSON(`appdata:${ORG}`, null);
   const cp = app && app.customPlan;
@@ -126,6 +128,7 @@ export async function loadSalesTasks() {
     const mopFindings = await getOpenMopFindings();
     if (mopFindings.length) await logFlow("mop-agent", "task-agent"); // РЕАЛЬНАЯ передача: находки MOP влились в задачи РОПа
     for (const f of mopFindings) {
+      if (folded[f.id]) continue; // уже подзадача рычага плана
       const hrsLeft = f.deadlineAt ? Math.round((f.deadlineAt - Date.now()) / 3600000) : null;
       out.push({
         id: f.id, title: f.title, why: f.fact || "", deadline: f.deadline || "",
@@ -146,6 +149,7 @@ export async function loadSalesTasks() {
     const metaTasks = await getConfirmedMetaTasks();
     if (metaTasks.length) await logFlow("meta-brain", "task-agent");
     for (const f of metaTasks) {
+      if (folded[f.id]) continue; // уже подзадача рычага плана
       out.push({
         id: f.id, title: f.title, why: f.fact || "", deadline: f.deadline || "",
         steps: f.action ? [f.action] : [], done: false, report: null,

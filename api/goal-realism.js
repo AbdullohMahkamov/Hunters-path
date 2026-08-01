@@ -319,34 +319,37 @@ const FIND_LEVER_RX = [
 function leverOfFinding(text) { const t = String(text || "").toLowerCase(); for (const [rx, k] of FIND_LEVER_RX) if (rx.test(t)) return k; return null; }
 async function gatherFindings(org = ORG) {
   const out = [];
-  try { const mf = (await rgetJSON("mopagent:findings", [])) || []; for (const f of mf) if (f && !["closed", "auto_closed", "invalidated"].includes(f.status)) out.push({ title: f.title || "", why: f.fact || "" }); } catch (e) {}
-  try { const mp = (await rgetJSON("metabrain:proposals", [])) || []; for (const p of mp) if (p && (p.status === "confirmed" || (p.status === "pending" && p.auto))) out.push({ title: p.title || "", why: p.statement || "" }); } catch (e) {}
+  try { const mf = (await rgetJSON("mopagent:findings", [])) || []; for (const f of mf) if (f && f.id && !["closed", "auto_closed", "invalidated"].includes(f.status)) out.push({ id: f.id, title: f.title || "", why: f.fact || "" }); } catch (e) {}
+  try { const mp = (await rgetJSON("metabrain:proposals", [])) || []; for (const p of mp) if (p && p.id && (p.status === "confirmed" || (p.status === "pending" && p.auto))) out.push({ id: `mb_${p.id}`, title: p.title || "", why: p.statement || "" }); } catch (e) {}
   return out;
 }
 export async function buildGoalPlan(org = ORG) {
   const v = await assessRealism(org);
   const goalUZS = (await getGoal(org) || {}).amountUZS || 0;
   const findings = await gatherFindings(org);
-  const byLever = { dozvon: [], closing: [], leads: [] }, unmapped = [];
-  for (const f of findings) { const lk = leverOfFinding(`${f.title} ${f.why}`); if (byLever[lk]) byLever[lk].push(f.title); else unmapped.push(f.title); }
+  const byLever = { dozvon: [], closing: [], leads: [] }, unmapped = [], folded = {}; // folded: findingId → leverKey (для дедупа в loadSalesTasks)
   const d = v.decomp, L = v.levers || {}, levers = [], ownerDecisions = [];
+  const dozvonKey = d && d.worstDozvonMop ? `dozvon:${d.worstDozvonMop.name}` : "dozvon";
+  for (const f of findings) { const lk = leverOfFinding(`${f.title} ${f.why}`); if (byLever[lk]) { byLever[lk].push(f); folded[f.id] = lk === "dozvon" ? dozvonKey : (lk === "leads" ? "mkt:leads" : "closing"); } else unmapped.push(f.title); }
   if (d && d.worstDozvonMop && d.worstDozvonMop.pct < d.bestDozvonPct - 10) {
-    levers.push({ key: `dozvon:${d.worstDozvonMop.name}`, lever: "Конверсия · Дозвон", recipient: "rop", kind: "task",
+    levers.push({ key: dozvonKey, lever: "Конверсия · Дозвон", recipient: "rop", kind: "task",
       title: `Подтянуть дозвон: ${d.worstDozvonMop.name} (${d.worstDozvonMop.pct}% → ${d.bestDozvonPct}%)`,
-      subtasks: [...byLever.dozvon.map((t) => ({ text: t, from: "агент" })), { text: `Скорость первого звонка ${d.worstDozvonMop.name} (цель 15 мин), число попыток`, from: "вердикт" }, { text: "Правило: первый звонок в 15 мин, ≥3 попытки; перепроверка по нотам", from: "вердикт" }] });
+      why: `Дозвон ${d.worstDozvonMop.name} — ${d.worstDozvonMop.pct}% против ${d.bestDozvonPct}% у лучших. Резерв конверсии на шаге лид→разговор.`,
+      subtasks: [...byLever.dozvon.map((f) => ({ text: f.title, from: "агент" })), { text: `Скорость первого звонка ${d.worstDozvonMop.name} (цель 15 мин), число попыток`, from: "вердикт" }, { text: "Правило: первый звонок в 15 мин, ≥3 попытки; перепроверка по нотам", from: "вердикт" }] });
   }
   if (d && d.bestClosingPct > d.closingPct) {
     levers.push({ key: "closing", lever: "Конверсия · Закрытие", recipient: "rop", kind: "task",
       title: `Поднять закрытие ${d.closingPct}% → ${d.bestClosingPct}% (уровень лучшего в команде)`,
-      subtasks: [{ text: "Прослушать 5–7 звонков лучшего закрывающего — выписать приёмы", from: "вердикт" }, { text: "Прослушать по 5 звонков слабых — где теряется сделка", from: "вердикт" }, ...byLever.closing.map((t) => ({ text: t, from: "агент" })), { text: "Собрать скрипт закрытия, разбор с командой, перепроверка через неделю", from: "вердикт" }] });
+      why: `Команда закрывает ${d.closingPct}% разговоров, лучший — ${d.bestClosingPct}%. Главный рычаг: без найма и без новых лидов.`,
+      subtasks: [{ text: "Прослушать 5–7 звонков лучшего закрывающего — выписать приёмы", from: "вердикт" }, { text: "Прослушать по 5 звонков слабых — где теряется сделка", from: "вердикт" }, ...byLever.closing.map((f) => ({ text: f.title, from: "агент" })), { text: "Собрать скрипт закрытия, разбор с командой, перепроверка через неделю", from: "вердикт" }] });
   }
-  const leadsSub = [{ text: `Держать поток лидов ≥ текущего${L.leadsToPeak > 0 ? ` + добор ~${L.leadsToPeak}/мес до пика ёмкости` : ""}`, from: "вердикт" }, { text: "Следить за качеством лидов по кампаниям — релевантность под закрытие", from: "вердикт" }, { text: `Держать цену лида${L.cpl ? ` ≤ ${fmt(L.cpl)} сум` : " (число появится с августовской статистикой)"}, не давать расти`, from: "вердикт" }, ...byLever.leads.map((t) => ({ text: t, from: "агент" }))];
-  levers.push({ key: "mkt:leads", lever: "Лиды", recipient: "marketing", kind: "task", title: "Держать поток лидов под цель", subtasks: leadsSub });
+  const leadsSub = [{ text: `Держать поток лидов ≥ текущего${L.leadsToPeak > 0 ? ` + добор ~${L.leadsToPeak}/мес до пика ёмкости` : ""}`, from: "вердикт" }, { text: "Следить за качеством лидов по кампаниям — релевантность под закрытие", from: "вердикт" }, { text: `Держать цену лида${L.cpl ? ` ≤ ${fmt(L.cpl)} сум` : " (число появится с августовской статистикой)"}, не давать расти`, from: "вердикт" }, ...byLever.leads.map((f) => ({ text: f.title, from: "агент" }))];
+  levers.push({ key: "mkt:leads", lever: "Лиды", recipient: "marketing", kind: "task", title: "Держать поток лидов под цель", why: "Цель всегда требует поток лидов: объём, качество по кампаниям, цена лида под контролем.", subtasks: leadsSub });
   levers.push({ key: "check", lever: "Чек", kind: "note", title: "Резерва почти нет: офлайн уже ~30%, потолок +14% — не приоритет" });
   if (v.binding === "team" && v.feasibleGoal && goalUZS && v.feasibleGoal < goalUZS) {
     ownerDecisions.push({ key: "hiring", title: `Разрыв ${fmt(goalUZS - v.feasibleGoal)} сум — сверх возможностей команды`, options: [`+${v.addManagers} ${plMgr(v.addManagers)}`, `снизить цель до ${fmt(v.feasibleGoal)} сум`] });
   }
-  return { goalUZS, feasibleGoal: v.feasibleGoal || null, levers, ownerDecisions, unmapped };
+  return { goalUZS, feasibleGoal: v.feasibleGoal || null, levers, ownerDecisions, unmapped, folded };
 }
 
 // ── СВЕРКА ЗАДАЧ С ТЕКУЩИМ ВЕРДИКТОМ (актуальность) ──
@@ -355,8 +358,10 @@ export async function buildGoalPlan(org = ORG) {
 // (advisor/reconcile/plan), не входящие в текущие рычаги (для нового месяца). opts.silent — без пингов исполнителям.
 export async function reconcileGoalTasks(org = ORG, opts = {}) {
   const cleanSlate = !!opts.cleanSlate, silent = !!opts.silent;
-  const v = await assessRealism(org);
-  const desired = deriveLeverTasks(v);
+  // ЖЕЛАЕМОЕ = задачи-рычаги из полного плана (buildGoalPlan): дозвон/закрытие/лиды, с ПОДЗАДАЧАМИ (находки+вердикт).
+  const plan = await buildGoalPlan(org);
+  const desired = plan.levers.filter((l) => l.kind === "task").map((l) => ({ leverKey: l.key, title: l.title, why: l.why || "", recipient: l.recipient, steps: (l.subtasks || []).map((s) => s.text) }));
+  await rsetJSON(`plan:folded:${org}`, plan.folded || {}); // находки, ставшие подзадачами → loadSalesTasks их не дублирует
   const desiredKeys = new Set(desired.map((d) => d.leverKey).filter(Boolean));
   const app = (await rgetJSON(`appdata:${org}`, {})) || {};
   app.customPlan = app.customPlan || {};

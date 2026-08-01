@@ -261,6 +261,23 @@ export async function loadLiveTasks() {
     live: true,
   }
   renderStages()
+  // ── БЛОК «РЕШЕНИЯ» (за владельцем) над задачами — тот же источник, что очередь Mini App (getDecisions) ──
+  try {
+    const dec = await fetch('/api/reports?action=decisions&session=' + encodeURIComponent(getSession())).then((r) => r.json()).catch(() => null)
+    const items = (dec && dec.items) || []
+    if (items.length && $('stages')) {
+      let html = `<div class="task-section">⚖️ ${uz ? 'Qarorlar (siz hal qilasiz)' : 'Решения (за вами)'}</div>`
+      for (const it of items) {
+        const btns = (it.actions || []).map((a) => `<button class="boss-btn ready" style="margin:6px 6px 0 0;padding:7px 12px;width:auto;display:inline-block;" onclick="decideAct('${a.type}','${String(it.id || '').replace(/'/g, '')}')">${escapeHtml(a.label || a.type)}</button>`).join('')
+        html += `<div class="stage open" style="border-left:3px solid var(--accent);margin-bottom:10px;"><div class="s-body" style="padding:13px 15px;"><div style="font-weight:600;font-size:14px;margin-bottom:4px;">${escapeHtml(it.title || '')}</div>${it.detail ? `<div style="font-size:12.5px;color:var(--txt2);margin-bottom:6px;">${escapeHtml(it.detail)}</div>` : ''}${btns}</div></div>`
+      }
+      $('stages').insertAdjacentHTML('afterbegin', html)
+    }
+  } catch (e) { /* решения не критичны для доски задач */ }
+}
+async function decideAct(type, id) {
+  try { await fetch('/api/advisor-act', { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ action: 'act', session: getSession(), type, id }) }) } catch (e) {}
+  loadLiveTasks()
 }
 
 // История выполненных задач (с отчётами) — переживает пересборку плана. РОП видит только продажи.
@@ -474,6 +491,7 @@ export function initQuests() {
   Object.assign(window, {
     renderStages, // нужен chat.js: после генерации плана В РАЗДЕЛЕ «ЗАДАЧИ» перерисовываем список
     replanFromTasks: loadLiveTasks, // «Пересобрать план» в живом режиме = перечитать актуальные задачи с сервера
+    decideAct, // кнопки блока «Решения» (найм/снизить цель/…) → advisor-act
     toggleStage, toggleQuest, toggleCpCard, toggleCpStep, toggleCustomTask, helpCustomStep, helpCustomTask, openTaskReport, toggleHist, setTaskDeadline,
     wizRegenerate, wizReaudit, fightBoss, resetHunt, toggleDop, removeDop,
     openGenerator, closeGenerator, acceptGen, skipGen, askNext, helpQuest,
