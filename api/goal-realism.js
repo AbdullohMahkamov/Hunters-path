@@ -461,7 +461,22 @@ export async function assessRealism(org = ORG, opts = {}) {
   try {
     if (out.computable && out.human && conv > 0) { // conv — базовая (при пустом текущем месяце берётся из закрытого)
       const speed = await rgetJSON("speed", null);
-      const rma = speed && speed.reachMonthAccum;
+      let rma = speed && speed.reachMonthAccum;
+      // СТЫК МЕСЯЦЕВ: текущий накопитель дозвона пуст (август только начался) → реконструируем из ПОСЛЕДНЕГО
+      // ЗАКРЫТОГО месяца (speedreach:<YYYY-MM>), чтобы рычаги закрытия/дозвона встали из проверенных данных сразу.
+      if (!rma || !(rma.reachedLeads > 0)) {
+        const lmD = new Date(Date.UTC(nowTk.getUTCFullYear(), nowTk.getUTCMonth() - 1, 1));
+        const lm = `${lmD.getUTCFullYear()}-${String(lmD.getUTCMonth() + 1).padStart(2, "0")}`;
+        const acc = await rgetJSON(`speedreach:${lm}`, null);
+        const byMopCap = (dash && dash.teamCapacity && dash.teamCapacity.byMop) || {};
+        if (acc && acc.reached && Object.keys(acc.reached).length) {
+          const reachedByMop = {};
+          for (const mop of Object.values(acc.reached)) reachedByMop[mop] = (reachedByMop[mop] || 0) + 1;
+          const byMop = Object.entries(byMopCap).map(([name, c]) => { const leads = (c.months && c.months[lm]) || 0; const reached = reachedByMop[name] || 0; return { name, leads, reached, dozvonPct: leads ? Math.round(reached / leads * 100) : null }; });
+          const totalLeads = byMop.reduce((s, m) => s + m.leads, 0);
+          rma = { month: lm, reachedLeads: Object.keys(acc.reached).length, leads: totalLeads, coveragePct: 100, byMop };
+        }
+      }
       if (rma && rma.reachedLeads > 0 && rma.leads > 0) {
         const dozvonNow = rma.reachedLeads / rma.leads;
         // ПРОДАЖИ по МОПам — за ТОТ ЖЕ месяц, что и дозвон (rma.month): когорта из teamCapacity.byMop[].soldMonths.
