@@ -53,3 +53,13 @@ test("настройка CRM/измерений («нельзя отличить
 test("неясно (tier1, не revenue-тема) → по умолчанию владельцу, консервативно", () => {
   assert.equal(classifyProposal(P({ title: "Провести планёрку в офисе" })).to, "owner");
 });
+
+test("маркетинг-РАЗБОР (проверить/крео/качество, без траты) → сразу маркетологу (не владельцу)", () => {
+  assert.equal(classifyProposal(P({ title: "Реклама стала работать хуже: проверить, почему цена клиента выросла", proposedTask: { recipient: "marketing" } })).to, "marketing");
+  assert.equal(classifyProposal(P({ title: "Проверить объявления аудитории Doston на усталость креатива", proposedTask: { recipient: "marketing" } })).to, "marketing");
+});
+
+test("маркетинг-ДЕНЬГИ (поднять бюджет / новый канал) → владельцу", () => {
+  assert.equal(classifyProposal(P({ title: "Поднять бюджет на конверсионную аудиторию", proposedTask: { recipient: "marketing" } })).to, "owner");
+  assert.equal(classifyProposal(P({ title: "Запустить новую кампанию под расширение", proposedTask: { recipient: "marketing" } })).to, "owner");
+});

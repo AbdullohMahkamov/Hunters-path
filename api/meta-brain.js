@@ -306,7 +306,9 @@ export function priorityScore(p, nowMs) {
 //  → ВЛАДЕЛЬЦУ (дорого/меняет условия): юр.риск (tier 3); не-РОП адресат (маркетинг = деньги/канал); ненадёжные
 //    данные (confidence "low" — по TRUST-ГЕЙТу это «единственная опора suspicious/неполное окно»); «пока не
 //    действовать» (contradiction); либо неясно (tier 1) → по умолчанию к владельцу, консервативно.
-// Категории: "rop" (операционка → авто РОПу) | "rop_notify" (РОП разбирает + инфо владельцу) |
+// ТРАТА ДЕНЕГ / НОВЫЙ КАНАЛ в маркетинге → решение владельца. Разбор/проверка/мониторинг креатива/качества — НЕТ.
+const MKT_MONEY_RX = /бюджет|кампани|потрат|масштаб|инвест|вложен|нов[а-яё]*\s+канал|подня[а-яё]*\s+ставк/i;
+// Категории: "rop"/"marketing" (операционка → авто исполнителю) | "rop_notify" (РОП разбирает + инфо владельцу) |
 // "owner" (решение владельца) | "none" (наблюдение «не действовать» — вообще НЕ в очередь, живёт как контекст в чате).
 export function classifyProposal(p) {
   const t = ptext(p);
@@ -314,7 +316,10 @@ export function classifyProposal(p) {
   if (p.contradiction) return { to: "none", reason: "наблюдение «не действовать» — не решение, из очереди убрано" };
   if (HARD_LEGAL_RX.test(t)) return { to: "owner", reason: "реальный юр.риск / претензии — решение владельца" };
   if (CONFIG_RX.test(t)) return { to: "owner", reason: "настройка CRM / измерений — меняет условия, решение владельца" };
-  if (recipient !== "rop") return { to: "owner", reason: "маркетинг — деньги/канал" };
+  if (recipient !== "rop") { // МАРКЕТИНГ: трата денег/новый канал → владельцу; разбор/проверка/мониторинг → сразу маркетологу
+    if (MKT_MONEY_RX.test(t)) return { to: "owner", reason: "маркетинг — трата денег/новый канал, решение владельца" };
+    return { to: "marketing", reason: "маркетинг-операционка (проверить/разобрать/следить/креатив/качество) — сразу маркетологу" };
+  }
   if (COMPLIANCE_RX.test(t)) return { to: "rop_notify", reason: "разбор менеджера + информировать владельца (запрещённое обещание)" };
   if (impactTier(p) < 2) return { to: "owner", reason: "не операционка ОП — по умолчанию к владельцу" };
   // Операционка ОП → РОПу. confidence "low" ≈ ОДИН источник (independentSignals:1), НЕ дырявые данные → слабое
@@ -614,7 +619,7 @@ export async function autoDispatchProposals(org = ORG, opts = {}) {
     if (!p || !isActive(p)) continue;
     const c = classifyProposal(p);
     const row = { id: p.id, title: p.title, tier: impactTier(p), recipient: (p.proposedTask && p.proposedTask.recipient) || "rop", confidence: p.confidence || null, reason: c.reason, to: c.to };
-    if (c.to === "rop" || c.to === "rop_notify") { rop.push(row); if (c.to === "rop_notify") notify.push({ id: p.id, title: p.title }); }
+    if (c.to === "rop" || c.to === "rop_notify" || c.to === "marketing") { rop.push(row); if (c.to === "rop_notify") notify.push({ id: p.id, title: p.title }); } // rop[] = «авто-раздано исполнителю» (РОП ИЛИ маркетолог)
     else if (c.to === "owner") owner.push(row);
     else none.push(row);
   }
