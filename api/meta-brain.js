@@ -319,7 +319,7 @@ export function classifyProposal(p) {
   if (recipient !== "rop") { // МАРКЕТИНГ: смотрим на РЕКОМЕНДУЕМОЕ ДЕЙСТВИЕ (proposedTask), а не на всё наблюдение —
     // «проверить крео» = разбор маркетолога, даже если само наблюдение про рост/масштаб аудитории.
     const pt = p.proposedTask || {};
-    const actionText = (pt.title || pt.why) ? `${pt.title || ""} ${pt.why || ""}` : t; // есть действие — судим по нему; иначе по всему тексту
+    const actionText = `${pt.title || ""} ${pt.why || ""}`.trim() || p.title || ""; // судим по РЕКОМЕНДУЕМОМУ действию (не по наблюдению с «рост/масштаб»)
     if (MKT_MONEY_RX.test(actionText)) return { to: "owner", reason: "маркетинг — трата денег/новый канал, решение владельца" };
     return { to: "marketing", reason: "маркетинг-операционка (проверить/разобрать/следить/креатив/качество) — сразу маркетологу" };
   }

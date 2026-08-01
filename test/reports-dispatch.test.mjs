@@ -66,7 +66,7 @@ test("отчёт команды: в очередь решений идут ТО�
   kvSetJSON("metabrain:proposals", [
     { id: "p1", status: "pending", title: "В воронке нельзя отличить «выиграли» от «оплату получили»", confidence: "high", at: now - 10 * 86400000 }, // config → owner (tier2)
     { id: "p2", status: "pending", title: "Поднять бюджет на конверсионную аудиторию", confidence: "high", at: now - 8 * 86400000, proposedTask: { recipient: "marketing" } }, // маркетинг → owner
-    { id: "p3", status: "pending", title: "Перераспределить бюджет между кампаниями", confidence: "med", at: now - 6 * 86400000, proposedTask: { recipient: "marketing" } }, // маркетинг → owner (tier1)
+    { id: "p3", status: "pending", title: "Увеличить бюджет на кампании", confidence: "med", at: now - 6 * 86400000, proposedTask: { recipient: "marketing" } }, // маркетинг-ДЕНЬГИ → owner
     { id: "p4", status: "pending", title: "Оформить доску объявлений в офисе", confidence: "low", at: now - 1 * 86400000 }, // tier1 → owner
     { id: "p_rop", status: "pending", title: "27 лидов без единой попытки звонка", confidence: "high", at: now - 12 * 86400000 }, // операционка ОП → РОПу, НЕ в очередь
   ]);
