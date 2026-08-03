@@ -238,12 +238,16 @@ export default async function handler(req, res) {
     // 1) Найдём pipeline_id воронки HunterAcademy
     let pipelineId = null;
     const statusNameById = {}; // id этапа → имя (нужно MOP Agent'у: ловим «разговор был, а статус „не дозвонились"»)
+    const statusMetaById = {}; // id этапа → {name, sort, type} (type: 1=успех, 2=провал) — для ВОРОНКИ ПО СТАДИЯМ
+    const pipelineStatuses = {}; // pipelineId → [{id,name,sort,type}] по порядку — порядок стадий воронки
     const pr = await fetch(`${base}/leads/pipelines`, { headers: H });
     if (pr.ok) {
       const pd = await pr.json();
       for (const p of ((pd._embedded && pd._embedded.pipelines) || [])) {
         if (p.name === PIPELINE_ID_NAME) pipelineId = p.id;
-        for (const st of ((p._embedded && p._embedded.statuses) || [])) statusNameById[st.id] = st.name;
+        const sts = ((p._embedded && p._embedded.statuses) || []);
+        pipelineStatuses[p.id] = sts.map((s) => ({ id: s.id, name: s.name, sort: s.sort || 0, type: s.type })).sort((a, b) => a.sort - b.sort);
+        for (const st of sts) { statusNameById[st.id] = st.name; statusMetaById[st.id] = { name: st.name, sort: st.sort || 0, type: st.type }; }
       }
     }
     // ЗАЩИТА: без pipelineId фильтр по воронке не применится → метрики соберутся по чужим воронкам.
@@ -1037,6 +1041,36 @@ export default async function handler(req, res) {
       thresholdSec: REACHED_SEC,
       note: "дозвон/закрытие копятся между прогонами (ноты не дочитываются за один проход); растут к полноте за несколько крон-запусков — coveragePct показывает готовность",
     };
+    // ═══ ВОРОНКА ПО СТАДИЯМ (когорта текущего месяца, АБСОЛЮТНЫЕ числа) ═══
+    // лид → дозвон (разговор ≥ REACHED_SEC) → [стадии основной воронки amoCRM по порядку] → оплата.
+    // «Дошли до стадии» = лид СЕЙЧАС на этой стадии или ДАЛЬШЕ (по sort) ИЛИ уже продан. Проигранные — отдельной строкой:
+    // их путь до проигрыша тут не раскладываем (для этого нужна ИСТОРИЯ смены статусов, а не текущее положение).
+    const funnelStagesDef = (pipelineStatuses[pipelineId] || []).filter((s) => s.type !== 2); // без стадии-провала (проигрыш)
+    const cohort = [];
+    for (const id in leadInfo) {
+      const L = leadInfo[id];
+      if (!ACTIVE_MOPS[L.resp] || L._gone || L._poolOnly) continue;
+      if (L.status === SOLD_STATUS && L.price <= OWN_THRESHOLD) continue; // «свои» дешёвые
+      if (isFakeNum(L)) continue;                                          // брак номера (неверный/дубль)
+      cohort.push(L);
+    }
+    const cohortN = cohort.length;
+    const funnelStages = funnelStagesDef.map((st) => {
+      const cnt = cohort.filter((L) => { const m = statusMetaById[L.status]; return m && m.type !== 2 && m.sort >= st.sort; }).length;
+      return { name: st.name, reached: cnt, isSold: st.type === 1 };
+    });
+    const funnelLost = cohort.filter((L) => { const m = statusMetaById[L.status]; return m && m.type === 2; }).length;
+    const funnel = {
+      month: monthKey2,
+      leads: cohortN,                       // все реальные лиды месяца
+      reached: accReachedTotal,             // дозвон: лидов с разговором ≥ REACHED_SEC (накопитель)
+      reachedSec: REACHED_SEC,
+      reachCoveragePct: leadIdsToCheck.length ? Math.min(100, Math.round(accReadTotal / leadIdsToCheck.length * 100)) : 100,
+      stages: funnelStages,                 // стадии воронки amoCRM в порядке: сколько лидов ДОШЛИ (сейчас на стадии или дальше)
+      lost: funnelLost,                     // проигранные (учтены отдельно — не раскладываем их путь)
+      callsBypassSuspected: telPct >= TEL_BYPASS_PCT, telephonyPct: telPct, // если звонки идут мимо CRM — дозвон/разговор занижены
+      note: "«Дошли до стадии» = лид сейчас на этой стадии или дальше (+ проданные). Проигранные — отдельной строкой. Разбивку промежуточных стадий для ПРОШЛЫХ месяцев система не хранит.",
+    };
     // ═══ ДНИ НА ЭТАПЕ (карта #3) — best-effort, В КОНЦЕ: критичные данные (звонки/ноты) уже собраны ═══
     // Отвечает на «сколько дней лид висит на этапе» — то, что советник раньше НЕ мог (только счёт по этапам).
     let stageTruncated = false, openPoolTruncated = false;
@@ -1090,6 +1124,7 @@ export default async function handler(req, res) {
       reachMonthAccum, // накопительный месячный дозвон по лидам/МОПам (растёт к полноте между прогонами)
       suspicious2: suspicious2.slice(0, 300), telephony, stageAge,
       reach, // ← дозвон по лидам за МЕСЯЦ (по всем попыткам)
+      funnel, // ← ВОРОНКА ПО СТАДИЯМ (когорта месяца, абсолютные числа): лид→дозвон→стадии amoCRM→оплата
       dozvon, // ← % дозвона ПО ЭТАПУ ВОРОНКИ (настраивается в панели: dozvonStages)
       mopIssues: mopIssues.slice(0, 400), // сырые факты по МОПам для MOP Agent (без суждений)
       // ПАСПОРТ ПОЛНОТЫ ДАННЫХ — едет вместе с фактами, а не в диагностике сбоку.
