@@ -747,7 +747,10 @@ export default async function handler(req, res) {
 
     const anthropicReq = {
       model, max_tokens: maxTok,
-      system: systemText,
+      // КЭШИРОВАНИЕ КОНТЕКСТА: system (промпт + весь срез бизнеса ~15k токенов) стабилен в пределах часа
+      // (снимок дашборда обновляется раз в час). cache_control → повторные вопросы в сессии читают кэш
+      // (~10% цены вместо полной), а не пересчитывают весь контекст каждый раз. Главный рычаг стоимости токенов.
+      system: [{ type: "text", text: systemText, cache_control: { type: "ephemeral" } }],
       messages: messages,
       stream: true,
     };

@@ -161,6 +161,82 @@ export default async function handler(req, res) {
     return;
   }
 
+  // === ДЕТАЛЬНАЯ ВОРОНКА ЗА МЕСЯЦ (реконструкция из истории смены статусов): ?action=funnel-month&month=YYYY-MM ===
+  // Разовая ТЯЖЁЛАЯ выгрузка: когорта месяца + все lead_status_changed → МАКСИМАЛЬНАЯ достигнутая стадия каждого лида
+  // (за прошлые месяцы текущего положения мало: почти все закрыты, поэтому нужна история). Дозвон — из накопителя месяца.
+  if (((req.query && req.query.action) || "") === "funnel-month") {
+    const month = ((req.query && req.query.month) || new Date(Date.now() + 5 * 3600000).toISOString().slice(0, 7)).slice(0, 7);
+    const rget = async (key) => { try { const r = await fetch(`${redisUrl}/get/${encodeURIComponent(key)}`, { headers: { Authorization: `Bearer ${redisToken}` } }); const d = await r.json(); return d && d.result != null ? JSON.parse(d.result) : null; } catch (e) { return null; } };
+    const t0 = Date.now(); const BUDGET = 250000; const overtime = () => Date.now() - t0 > BUDGET;
+    // 1) стадии основной воронки (sort/type) + pipelineId
+    const pr = await fetch(`${base}/leads/pipelines`, { headers: H });
+    if (!pr.ok) { res.status(200).json({ ok: false, error: `pipelines ${pr.status}` }); return; }
+    const pdj = await pr.json();
+    let pipeId = null; const stMeta = {}; let stages = [];
+    for (const p of ((pdj._embedded && pdj._embedded.pipelines) || [])) {
+      const sts = ((p._embedded && p._embedded.statuses) || []);
+      if (p.name === PIPELINE_ID_NAME) { pipeId = p.id; stages = sts.map((s) => ({ id: s.id, name: s.name, sort: s.sort || 0, type: s.type })).sort((a, b) => a.sort - b.sort); }
+      for (const s of sts) stMeta[s.id] = { sort: s.sort || 0, type: s.type, name: s.name };
+    }
+    if (!pipeId) { res.status(200).json({ ok: false, error: "воронка не найдена" }); return; }
+    const entrySort = Math.min(...stages.filter((s) => s.type !== 2).map((s) => s.sort)); // стадия входа (все лиды её прошли)
+    // 2) когорта: лиды, созданные в месяце (Ташкент)
+    const y = +month.slice(0, 4), mo = +month.slice(5, 7);
+    const from = Math.floor(Date.UTC(y, mo - 1, 1) / 1000) - 5 * 3600;
+    const to = Math.floor(Date.UTC(y, mo, 1) / 1000) - 5 * 3600 - 1;
+    const cohort = {}; let page = 1, guard = 0, leadsTrunc = false;
+    while (guard < 40) { guard++;
+      if (overtime()) { leadsTrunc = true; break; }
+      const r = await fetch(`${base}/leads?limit=250&page=${page}&filter[created_at][from]=${from}&filter[created_at][to]=${to}`, { headers: H });
+      if (r.status === 204) break;
+      if (!r.ok) { leadsTrunc = true; break; }
+      const d = await r.json();
+      const leads = (d._embedded && d._embedded.leads) || [];
+      for (const L of leads) {
+        if (pipeId && L.pipeline_id !== pipeId) continue;
+        if (L.status_id === SOLD_STATUS && (L.price || 0) <= OWN_THRESHOLD) continue; // «свои»
+        const cur = stMeta[L.status_id];
+        cohort[L.id] = { status: L.status_id, curType: cur ? cur.type : 0, maxSort: (cur && cur.type !== 2) ? cur.sort : entrySort };
+      }
+      if (leads.length < 250) break; page++;
+      await new Promise((rs) => setTimeout(rs, 100));
+    }
+    // 3) все смены статусов с начала месяца → максимальная НЕ-провальная достигнутая стадия
+    let evTrunc = false; page = 1; guard = 0;
+    while (guard < 120) { guard++;
+      if (overtime()) { evTrunc = true; break; }
+      const r = await fetch(`${base}/events?filter[type]=lead_status_changed&filter[created_at][from]=${from}&limit=250&page=${page}&order[created_at]=asc`, { headers: H });
+      if (r.status === 204) break;
+      if (!r.ok) { evTrunc = true; break; }
+      const d = await r.json();
+      const events = (d._embedded && d._embedded.events) || [];
+      for (const e of events) {
+        if (e.entity_type !== "lead") continue;
+        const c = cohort[e.entity_id]; if (!c) continue;
+        const va = Array.isArray(e.value_after) ? e.value_after : [];
+        for (const v of va) { const sid = v && (v.lead_status ? v.lead_status.id : v.id); const m = sid != null ? stMeta[sid] : null; if (m && m.type !== 2 && m.sort > c.maxSort) c.maxSort = m.sort; }
+      }
+      if (events.length < 250) break; page++;
+      await new Promise((rs) => setTimeout(rs, 80));
+    }
+    // 4) дозвон за месяц из накопителя (TTL 40д — свежие месяцы есть)
+    const acc = await rget(K(`speedreach:${month}`));
+    const reached = acc && acc.reached ? Object.keys(acc.reached).length : null;
+    // 5) воронка: сколько лидов ДОСТИГЛИ каждой стадии (макс. стадия ≥ стадии)
+    const cohortArr = Object.values(cohort);
+    const stagesOut = stages.filter((s) => s.type !== 2).map((st) => ({ name: st.name, reached: cohortArr.filter((c) => c.maxSort >= st.sort).length, isSold: st.type === 1 }));
+    res.status(200).json({
+      ok: true, month, leads: cohortArr.length,
+      reached, reachedFromAccum: reached != null,
+      sold: cohortArr.filter((c) => c.status === SOLD_STATUS).length,
+      lost: cohortArr.filter((c) => c.curType === 2).length,
+      stages: stagesOut,
+      complete: !leadsTrunc && !evTrunc,
+      note: "макс. достигнутая стадия по истории смены статусов amoCRM; проигрыш не считается достижением. Дозвон — из накопителя (может отсутствовать, если месяц старше ~40 дней).",
+    });
+    return;
+  }
+
   // TZ и начало сегодняшнего дня (Ташкент, UTC+5) — нужно и для звонков, и для дневной статистики.
   // Считаем РАНО: в debug-режиме сужаем выборку событий до сегодняшних, иначе запрос не укладывается в лимит.
   const TZ_OFFSET2 = 5 * 3600;
