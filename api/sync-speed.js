@@ -872,6 +872,7 @@ export default async function handler(req, res) {
         name,
         leads: S.leads,
         reached: S.reached,          // сколько лидов реально дозвонились (>40 сек)
+        reachedPct: S.leads ? Math.min(100, Math.round(S.reached / S.leads * 100)) : 0, // ЧЕСТНЫЙ дозвон за месяц (разговор ≥40с) — та же линейка, что и «сегодня». Раньше фронт брал прокси-статус из sync.js (завышал до ~100%)
         fastFirstCalls: S.firstCallTimes.filter(mn => mn < 15).length, // 1-й звонок < 15 мин (для геймификации)
         medianFirstCallMin: medMin !== null ? Math.round(medMin) : null,
         medianFirstCallAssignMin: medAssign !== null ? Math.round(medAssign) : null, // 1-й звонок после назначения
@@ -881,7 +882,7 @@ export default async function handler(req, res) {
         earlyClosePct: S.noReachClosed ? Math.round(S.closedEarly / S.noReachClosed * 100) : 0,
         noReachClosed: S.noReachClosed,
         closedEarly: S.closedEarly,
-        // % дозвона в дисциплине берётся на фронте из sync.js (mopsByConv.reachPct) — рабочий источник
+        // % дозвона в дисциплине = reachedPct выше (честный, разговор ≥40с). Прокси-статус из sync.js (mopsByConv.reachPct) БОЛЬШЕ НЕ используется — он завышал до ~100%
         // задачи: всего и реально выполнено (нажат «выполнено»)
         tasksTotal: S.tasksTotal,
         tasksDone: S.tasksDone,
