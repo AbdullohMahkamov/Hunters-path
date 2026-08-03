@@ -81,6 +81,21 @@ function liveBlock(d, fin, realGoal, workdays, tg) {
   s += `• Потеряно без контакта: ${t.noContactPct}% лидов (не дозвонились/не ответили)\n`;
   s += `• Сегодня: ${t.leadsToday} новых лидов, ${t.soldToday} продаж, ${num(t.revenueToday)} сум\n`;
 
+  // --- ИСТОРИЯ ПО МЕСЯЦАМ (чтобы советник НЕ говорил «нет данных за прошлый месяц» — они хранятся здесь) ---
+  if (Array.isArray(d.monthlyFunnel) && d.monthlyFunnel.length) {
+    const hist = d.monthlyFunnel.filter(m => m && m.monthsAgo >= 0 && m.monthsAgo <= 5).sort((a, b) => b.monthsAgo - a.monthsAgo);
+    if (hist.length > 1) {
+      s += `\nИСТОРИЯ ПО МЕСЯЦАМ (РЕАЛЬНЫЕ данные лид→продажа за последние месяцы — бери цифры ОТСЮДА, НЕ говори «нет данных за прошлый месяц»):\n`;
+      for (const m of hist) {
+        const tag = m.monthsAgo === 0 ? " (текущий, неполный)" : "";
+        s += `• ${m.month}${tag}: ${m.leads} лидов → ${m.soldPeriod} продаж, конверсия ${m.convPeriodPct != null ? m.convPeriodPct + "%" : "—"}`;
+        if (m.offlineSharePct != null) s += `, офлайн ${m.offlineSharePct}%`;
+        s += `\n`;
+      }
+      s += `ВАЖНО: лид→продажа и конверсия по прошлым месяцам ЕСТЬ (выше). А промежуточные шаги (дозвон/разговор/консультация/счёт) хранятся ТОЛЬКО за текущий месяц. Полную воронку по прошлому месяцу с нуля не строй и не выдумывай — если она нужна, честно предложи разовый разбор из amoCRM (задача аналитику).\n`;
+    }
+  }
+
   // --- ПРОГНОЗ / ОТСТАВАНИЕ (по РАБОЧИМ дням, без выходных) ---
   if (GOAL > 0) {
     const earned = t.revenue || 0;

@@ -337,11 +337,10 @@ function renderSignals(d) {
   const topProb = (d.problems || [])[0]
   if (topProb && topProb.count > 1000) sig.push({ lvl: 'orange', txt: uz ? `«${topProb.name}» — ${topProb.count} lid yo‘qoldi, alohida ishlash kerak` : `«${topProb.name}» — ${topProb.count} потерянных лидов, нужна отдельная работа` })
   const sp = (d.speed && d.speed.mops) || []
-  const dashM = d.mopsByConv || []
-  const reachOf = (name) => { const dm = dashM.find((x) => x.name === name); return (dm && dm.reachPct != null) ? dm.reachPct : null }
+  // Дозвон для сигналов = честный замер (разговор ≥40с) из накопителя, НЕ прокси-статус (тот держался ~100% и сигнал не срабатывал).
   const lowReach = [], lateCall = [], fewTask = [], badDone = []
   sp.forEach((m) => {
-    const r = reachOf(m.name)
+    const r = (m.reachedPct != null) ? m.reachedPct : null
     if (r != null && r < 40) lowReach.push(`${m.name} (${r}%)`)
     if (m.medianFirstCallMin != null && m.medianFirstCallMin > 180) lateCall.push(`${m.name} (${fmtMin(m.medianFirstCallMin)})`)
     if (m.taskRate != null && m.reached > 0 && m.taskRate < 50) fewTask.push(`${m.name} (${m.taskRate}%)`)
@@ -390,17 +389,16 @@ function renderDiscipline(sp) {
   const wdSet = (orgSettings.workdays && orgSettings.workdays.length ? orgSettings.workdays : [1, 2, 3, 4, 5, 6])
   const dayOff = isToday && !wdSet.includes(new Date().getDay())
   const banner = dayOff ? `<div style="font-size:11.5px;color:var(--txt2);background:var(--card2);border-radius:8px;padding:8px 10px;margin-bottom:9px;">${uz ? '📅 Bugun dam olish kuni (grafik boʻyicha) — «1-chi qoʻngʻiroq» vaqti hisoblanmaydi (dam kunida ish daqiqalari yoʻq). Aloqa/vazifalar — haqiqiy.' : '📅 Сегодня выходной по графику — время «1-го звонка» не считается (в выходной рабочие минуты не идут). Дозвон и задачи ниже — фактические.'}</div>` : ''
-  chart.innerHTML = banner + mops.map((m) => {
+  // КАВЕАТ ТЕЛЕФОНИИ: если ~половина лидов без звонка в amoCRM — часть звонков идёт мимо CRM, дозвон в реальности может быть ВЫШЕ показанного.
+  const mm = sp.mopMeta || {}
+  const bypassBanner = mm.callsBypassSuspected ? `<div style="font-size:11.5px;color:var(--txt2);background:var(--gold-bg);border:1px solid var(--gold);border-radius:8px;padding:8px 10px;margin-bottom:9px;">${uz ? `📵 Dozvon haqiqiy suhbat (≥40s, amoCRM qoʻngʻiroqlari) boʻyicha. Ammo lidlarning ~${mm.telephonyPct || ''}% da amoCRM’da qoʻngʻiroq yoʻq — bir qism qoʻngʻiroqlar CRM’dan tashqarida (shaxsiy telefon) boʻlishi mumkin, shunda haqiqiy dozvon koʻrsatilgandan YUQORI. Aniq raqam — telefoniya ulanmaguncha.` : `📵 Дозвон считается по реальному разговору (≥40 сек, звонки из amoCRM). Но у ~${mm.telephonyPct || ''}% лидов звонка в amoCRM нет — часть звонков, похоже, идёт мимо CRM (личные телефоны), тогда реальный дозвон ВЫШЕ показанного. Точная цифра — после настройки телефонии.`}</div>` : ''
+  chart.innerHTML = banner + bypassBanner + mops.map((m) => {
     const speedOk = m.medianFirstCallMin != null && m.medianFirstCallMin <= 30
     const speedBad = m.medianFirstCallMin != null && m.medianFirstCallMin > 180
     const taskOk = m.taskRate >= 60
-    let reach
-    if (isToday) { reach = m.reachedPct } else {
-      reach = m.reachedPct
-      const dashMops = (window._dashData && window._dashData.mopsByConv) || []
-      const dm = dashMops.find((x) => x.name === m.name)
-      if (dm && dm.reachPct != null) reach = dm.reachPct
-    }
+    // Дозвон ЧЕСТНЫЙ (реальный разговор ≥40с) и за месяц, и за сегодня — одна линейка (sp.mops/mopsDay.reachedPct).
+    // Раньше месяц перекрывался прокси-статусом из sync.js (mopsByConv.reachPct) — тот завышал до ~100% («не помечен недозвон» = дозвонился).
+    const reach = m.reachedPct
     const reachOk = (reach || 0) >= 60
     const reachBad = (reach || 0) < 30
     const doneOk = (m.tasksDonePct || 0) >= 70
@@ -415,12 +413,8 @@ function renderDiscipline(sp) {
       const fnD = m.fakeNums || 0 // нереальные номера сегодня (неверный номер + дубль), исключены из дневного знаменателя дозвона
       if (fnD) fakeNote = ` <span style="font-size:10px;color:var(--txt3);">· ${fnD} ${uz ? 'notoʻgʻri raqam' : 'нереальных номеров'}</span>`
     } else if (!isToday) {
-      const dashMops = (window._dashData && window._dashData.mopsByConv) || []
-      const dm = dashMops.find((x) => x.name === m.name)
-      const denom = (dm && dm.reachDenom != null) ? dm.reachDenom : (dm ? dm.leads : m.leads) // знаменатель дозвона = реальные лиды (без брака)
-      if (dm && dm.reached != null && denom) { reachAbs = ` <span style="font-size:10px;color:var(--txt3);">(${dm.reached} из ${denom})</span>` } else if (m.reached != null && m.leads) { reachAbs = ` <span style="font-size:10px;color:var(--txt3);">(${m.reached} из ${m.leads})</span>` }
-      const fn = (dm && dm.fakeNums) || 0 // нереальные номера (Xato raqam + Dubl), исключены из знаменателя — показываем отдельно, не прячем
-      if (fn) fakeNote = ` <span style="font-size:10px;color:var(--txt3);">· ${fn} ${uz ? 'notoʻgʻri raqam' : 'нереальных номеров'}</span>`
+      // Абсолют дозвона из ТОГО ЖЕ источника, что и заголовок (sp.mops) → «лидов» и «(X из Y)» совпадают (раньше расходились: 9 lid / 10 из 10).
+      if (m.reached != null && m.leads) reachAbs = ` <span style="font-size:10px;color:var(--txt3);">(${m.reached} из ${m.leads})</span>`
     }
     const reachCell = isToday
       ? `<div>📞 % дозвона${hintIcon('reach')}: <b style="color:${reach != null ? c(reachOk, reachBad) : 'var(--txt3)'}">${reach != null ? reach + '%' : '—'}</b>${reachAbs}${m.calledLeads != null ? ` <span style="font-size:10px;color:var(--txt3);">· звонили ${m.calledLeads}</span>` : ''}${fakeNote}</div>`
