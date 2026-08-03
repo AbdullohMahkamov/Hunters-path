@@ -714,6 +714,23 @@ export default async function handler(req, res) {
 
     await redisSet(redisUrl, redisToken, K("dashboard"), JSON.stringify(result));
 
+    // СОСТАВ КОМАНДЫ ИЗМЕНИЛСЯ (добавили/убрали МОПа) → пересобрать план по МОПам СРАЗУ (не ждать суточной сверки).
+    // Дёшево: reconcile дёргаем только на РЕАЛЬНОЙ смене состава. Пока фича считает по общему дашборду — только hunter.
+    if (org === "hunter") {
+      try {
+        const rosterNow = Object.keys(teamCapacity.byMop || {}).sort().join("|");
+        const prevRoster = await redisGetCfg(redisUrl, redisToken, K("mopplan:roster"));
+        if (rosterNow && rosterNow !== prevRoster) {
+          await redisSet(redisUrl, redisToken, K("mopplan:roster"), JSON.stringify(rosterNow));
+          if (prevRoster != null) { // не на первом заполнении маркера, а именно на смене
+            const gr = await import("./goal-realism.js");
+            const r = await gr.reconcileGoalTasks(org).catch(() => null);
+            if (r && r.created && r.created.length) { const ta = await import("./task-agent.js"); await ta.runTick(true).catch(() => {}); }
+          }
+        }
+      } catch (e) { /* смена состава — не критично для основного sync */ }
+    }
+
     // === СНИМОК ДНЯ ДЛЯ ДИНАМИКИ ===
     // Ключ по дате (YYYY-MM-DD). Перезапись за тот же день — норм (последнее значение дня).
     try {

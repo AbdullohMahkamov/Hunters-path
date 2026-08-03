@@ -351,9 +351,11 @@ export async function buildGoalPlan(org = ORG) {
   // (roster в leverKey) и при НОВОЙ ЦЕЛИ/МЕСЯЦЕ (period в leverKey): любой из них меняется → reconcile закрывает старую и ставит новую.
   const dashP = await rgetJSON("dashboard", null);
   const roster = Object.keys((dashP && dashP.teamCapacity && dashP.teamCapacity.byMop) || {}).sort();
+  let mopplan = null;
   if (goalUZS && roster.length) {
     const even = Math.round(goalUZS / roster.length);
     const per = (goal.period && goal.period.label) || "месяц";
+    mopplan = { period: per, roster, even };
     levers.push({ key: `mopplan:${per}:${roster.join("|")}`, lever: "План по МОПам", recipient: "rop", kind: "task",
       title: `Распределить план по МОПам на ${per} (цель ${fmt(goalUZS)} сум)`,
       why: `Раздели цель между ${roster.length} менеджерами: либо ПОРОВНУ (~${fmt(even)} сум каждому), либо задай по каждому индивидуально. Задача приходит заново при смене состава команды и при новой цели на месяц.`,
@@ -366,7 +368,7 @@ export async function buildGoalPlan(org = ORG) {
   if (v.binding === "team" && v.feasibleGoal && goalUZS && v.feasibleGoal < goalUZS) {
     ownerDecisions.push({ key: "hiring", title: `Разрыв ${fmt(goalUZS - v.feasibleGoal)} сум — сверх возможностей команды`, options: [`+${v.addManagers} ${plMgr(v.addManagers)}`, `снизить цель до ${fmt(v.feasibleGoal)} сум`] });
   }
-  return { goalUZS, feasibleGoal: v.feasibleGoal || null, levers, ownerDecisions, unmapped, folded };
+  return { goalUZS, feasibleGoal: v.feasibleGoal || null, levers, ownerDecisions, unmapped, folded, mopplan };
 }
 
 // ── СВЕРКА ЗАДАЧ С ТЕКУЩИМ ВЕРДИКТОМ (актуальность) ──
@@ -379,6 +381,19 @@ export async function reconcileGoalTasks(org = ORG, opts = {}) {
   const plan = await buildGoalPlan(org);
   const desired = plan.levers.filter((l) => l.kind === "task").map((l) => ({ leverKey: l.key, title: l.title, why: l.why || "", recipient: l.recipient, steps: (l.subtasks || []).map((s) => s.text) }));
   await rsetJSON(`plan:folded:${org}`, plan.folded || {}); // находки, ставшие подзадачами → loadSalesTasks их не дублирует
+  // ИНДИВИДУАЛЬНЫЕ ПЛАНЫ МОПов: при СМЕНЕ ЦЕЛИ/СОСТАВА раскладываем дефолт «поровну» (mops:plans:<org> → дашборд/отчёты).
+  // Внутри того же месяца+состава раскладку НЕ трогаем — ручные суммы РОПа (из админки) сохраняются. Смена контекста = пересев.
+  let mopplanSeeded = null;
+  if (plan.mopplan && plan.mopplan.roster.length) {
+    const mm = plan.mopplan, ctx = `${mm.period}|${mm.roster.join("|")}`;
+    const meta = (await rgetJSON(`mops:plans:meta:${org}`, {})) || {};
+    if (meta.ctx !== ctx) {
+      const plans = {}; for (const n of mm.roster) plans[n] = mm.even;
+      await rsetJSON(`mops:plans:${org}`, plans);
+      await rsetJSON(`mops:plans:meta:${org}`, { ctx, mode: "even", at: Date.now() });
+      mopplanSeeded = { roster: mm.roster.length, each: mm.even };
+    }
+  }
   const desiredKeys = new Set(desired.map((d) => d.leverKey).filter(Boolean));
   const app = (await rgetJSON(`appdata:${org}`, {})) || {};
   app.customPlan = app.customPlan || {};
@@ -458,7 +473,7 @@ export async function reconcileGoalTasks(org = ORG, opts = {}) {
     } catch (e) { /* уведомления не критичны */ }
   }
   const salesNow = app.customPlan.sales.map((t) => ({ t: String(t.t || "").slice(0, 32), leverKey: t.leverKey || null, steps: (t.steps || []).length }));
-  return { ok: true, cleanSlate, closed, created, desiredCount: desired.length, mopClosed, metaClosed, salesNow };
+  return { ok: true, cleanSlate, closed, created, desiredCount: desired.length, mopClosed, metaClosed, salesNow, mopplanSeeded };
 }
 
 // ── АСИНХРОННАЯ ОБЁРТКА: собирает входы (цель, воронка, капасити, CPL) и зовёт ядро ──
