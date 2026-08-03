@@ -325,7 +325,8 @@ async function gatherFindings(org = ORG) {
 }
 export async function buildGoalPlan(org = ORG) {
   const v = await assessRealism(org);
-  const goalUZS = (await getGoal(org) || {}).amountUZS || 0;
+  const goal = (await getGoal(org)) || {};
+  const goalUZS = goal.amountUZS || 0;
   const findings = await gatherFindings(org);
   const byLever = { dozvon: [], closing: [], leads: [] }, unmapped = [], folded = {}; // folded: findingId → leverKey (для дедупа в loadSalesTasks)
   const d = v.decomp, L = v.levers || {}, levers = [], ownerDecisions = [];
@@ -346,6 +347,22 @@ export async function buildGoalPlan(org = ORG) {
   const leadsSub = [{ text: `Держать поток лидов ≥ текущего${L.leadsToPeak > 0 ? ` + добор ~${L.leadsToPeak}/мес до пика ёмкости` : ""}`, from: "вердикт" }, { text: "Следить за качеством лидов по кампаниям — релевантность под закрытие", from: "вердикт" }, { text: `Держать цену лида${L.cpl ? ` ≤ ${fmt(L.cpl)} сум` : " (число появится с августовской статистикой)"}, не давать расти`, from: "вердикт" }, ...byLever.leads.map((f) => ({ text: f.title, from: "агент" }))];
   levers.push({ key: "mkt:leads", lever: "Лиды", recipient: "marketing", kind: "task", title: "Держать поток лидов под цель", why: "Цель всегда требует поток лидов: объём, качество по кампаниям, цена лида под контролем.", subtasks: leadsSub });
   levers.push({ key: "check", lever: "Чек", kind: "note", title: "Резерва почти нет: офлайн уже ~30%, потолок +14% — не приоритет" });
+  // РАСПРЕДЕЛЕНИЕ ПЛАНА ПО МОПам — задача РОПу с 2 опциями (поровну / индивидуально). Пересобирается при СМЕНЕ СОСТАВА
+  // (roster в leverKey) и при НОВОЙ ЦЕЛИ/МЕСЯЦЕ (period в leverKey): любой из них меняется → reconcile закрывает старую и ставит новую.
+  const dashP = await rgetJSON("dashboard", null);
+  const roster = Object.keys((dashP && dashP.teamCapacity && dashP.teamCapacity.byMop) || {}).sort();
+  if (goalUZS && roster.length) {
+    const even = Math.round(goalUZS / roster.length);
+    const per = (goal.period && goal.period.label) || "месяц";
+    levers.push({ key: `mopplan:${per}:${roster.join("|")}`, lever: "План по МОПам", recipient: "rop", kind: "task",
+      title: `Распределить план по МОПам на ${per} (цель ${fmt(goalUZS)} сум)`,
+      why: `Раздели цель между ${roster.length} менеджерами: либо ПОРОВНУ (~${fmt(even)} сум каждому), либо задай по каждому индивидуально. Задача приходит заново при смене состава команды и при новой цели на месяц.`,
+      subtasks: [
+        { text: `Вариант 1 — ПОРОВНУ: каждому ~${fmt(even)} сум за месяц`, from: "вердикт" },
+        ...roster.map((n) => ({ text: `${n} — ${fmt(even)} сум (поправь, если план индивидуальный)`, from: "вердикт" })),
+        { text: "Вариант 2 — задать по каждому МОПу отдельно (впиши свои суммы, если нагрузка разная)", from: "вердикт" },
+      ] });
+  }
   if (v.binding === "team" && v.feasibleGoal && goalUZS && v.feasibleGoal < goalUZS) {
     ownerDecisions.push({ key: "hiring", title: `Разрыв ${fmt(goalUZS - v.feasibleGoal)} сум — сверх возможностей команды`, options: [`+${v.addManagers} ${plMgr(v.addManagers)}`, `снизить цель до ${fmt(v.feasibleGoal)} сум`] });
   }
