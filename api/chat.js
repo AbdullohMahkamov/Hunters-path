@@ -201,42 +201,46 @@ function liveBlock(d, fin, realGoal, workdays, tg) {
     }
   }
 
-  // --- TELEGRAM (переписка с клиентами) ---
-  if (tg && (tg.digest || tg.seg || tg.hist)) {
-    s += `\nTELEGRAM (переписка с клиентами):\n`;
-    // ВСЯ БАЗА ПЕРЕПИСКИ (анализ истории) — большой срез, а не только вчера
-    const h = tg.hist;
-    if (h && h.total != null) {
-      const pc = (n) => h.total ? Math.round((n || 0) / h.total * 100) : 0;
-      s += `• Всего диалогов в истории: ${h.total}`;
-      if (h.noReply != null) s += ` · без ответа: ${h.noReply} (${pc(h.noReply)}%)`;
-      if (h.priceQ != null) s += ` · спрашивали цену: ${h.priceQ} (${pc(h.priceQ)}%)`;
-      if (h.leftAfterPrice != null) s += ` · спросили цену и ушли: ${h.leftAfterPrice}`;
-      if (h.objQ != null) s += ` · возражения: ${h.objQ} (${pc(h.objQ)}%)`;
-      if (h.installQ != null) s += ` · про рассрочку: ${h.installQ}`;
-      s += `\n`;
-    }
-    const g = tg.digest;
-    if (g) {
-      if (g.totalChats != null) {
-        s += `• Диалогов (вчера): ${g.totalChats}`;
-        if (g.priceCount != null) s += ` · спрашивали цену: ${g.priceCount}`;
-        if (g.objectionCount != null) s += ` · возражений: ${g.objectionCount}`;
-        if (g.installmentCount != null) s += ` · про рассрочку: ${g.installmentCount}`;
-        if (g.noReplyChats != null) s += ` · остались без ответа: ${g.noReplyChats}`;
-        s += `\n`;
-      }
-      if (g.summary) s += `Сводка по переписке: ${g.summary}\n`;
-      if (Array.isArray(g.tips) && g.tips.length) s += `Что улучшить в переписке: ${g.tips.join("; ")}\n`;
-    }
-    const stats = tg.seg && tg.seg.stats;
-    if (stats && stats.segments && Object.keys(stats.segments).length) {
-      const parts = Object.entries(stats.segments).map(([k, v]) => `${k}: ${v}`);
-      s += `Сегменты клиентов в Telegram: ${parts.join(", ")}${stats.total ? ` (всего ${stats.total})` : ""}\n`;
-    }
-  }
+  // --- TELEGRAM (переписка с клиентами) вынесена в tgBlock() — грузится ТОЛЬКО на клиентские вопросы (экономия токенов) ---
 
   s += `\n(Данные на ${new Date(d.updatedAt).toLocaleDateString("ru")}, кэш обновляется по кнопке/раз в час.)`;
+  return s;
+}
+
+// TELEGRAM (переписка с клиентами) — тяжёлый блок (вся база переписки). Отдельно от liveBlock: подмешиваем в контекст
+// ТОЛЬКО когда вопрос про клиентов/переписку (intent.clients), а не в каждый вопрос — иначе несколько тысяч лишних токенов всегда.
+function tgBlock(tg) {
+  if (!tg || !(tg.digest || tg.seg || tg.hist)) return "";
+  let s = `\n\nTELEGRAM (переписка с клиентами):\n`;
+  const h = tg.hist;
+  if (h && h.total != null) {
+    const pc = (n) => h.total ? Math.round((n || 0) / h.total * 100) : 0;
+    s += `• Всего диалогов в истории: ${h.total}`;
+    if (h.noReply != null) s += ` · без ответа: ${h.noReply} (${pc(h.noReply)}%)`;
+    if (h.priceQ != null) s += ` · спрашивали цену: ${h.priceQ} (${pc(h.priceQ)}%)`;
+    if (h.leftAfterPrice != null) s += ` · спросили цену и ушли: ${h.leftAfterPrice}`;
+    if (h.objQ != null) s += ` · возражения: ${h.objQ} (${pc(h.objQ)}%)`;
+    if (h.installQ != null) s += ` · про рассрочку: ${h.installQ}`;
+    s += `\n`;
+  }
+  const g = tg.digest;
+  if (g) {
+    if (g.totalChats != null) {
+      s += `• Диалогов (вчера): ${g.totalChats}`;
+      if (g.priceCount != null) s += ` · спрашивали цену: ${g.priceCount}`;
+      if (g.objectionCount != null) s += ` · возражений: ${g.objectionCount}`;
+      if (g.installmentCount != null) s += ` · про рассрочку: ${g.installmentCount}`;
+      if (g.noReplyChats != null) s += ` · остались без ответа: ${g.noReplyChats}`;
+      s += `\n`;
+    }
+    if (g.summary) s += `Сводка по переписке: ${g.summary}\n`;
+    if (Array.isArray(g.tips) && g.tips.length) s += `Что улучшить в переписке: ${g.tips.join("; ")}\n`;
+  }
+  const stats = tg.seg && tg.seg.stats;
+  if (stats && stats.segments && Object.keys(stats.segments).length) {
+    const parts = Object.entries(stats.segments).map(([k, v]) => `${k}: ${v}`);
+    s += `Сегменты клиентов в Telegram: ${parts.join(", ")}${stats.total ? ` (всего ${stats.total})` : ""}\n`;
+  }
   return s;
 }
 
@@ -419,12 +423,13 @@ function forceDiagnostic(msg) {
 }
 async function classifyIntent(apiKey, lastMsg) {
   const forced = forceDiagnostic(lastMsg);
-  const dflt = { live: true, agents: true, calls: true, act: false, diagnostic: forced, goalIntent: false }; // сбой → полный контекст (кроме действий/цели)
+  const dflt = { live: true, agents: true, calls: true, act: false, diagnostic: forced, goalIntent: false, clients: true }; // сбой → полный контекст (кроме действий/цели)
   const msg = String(lastMsg || "").slice(0, 800);
-  if (!msg.trim()) return { live: false, agents: false, calls: false, act: false, diagnostic: false, goalIntent: false };
+  if (!msg.trim()) return { live: false, agents: false, calls: false, act: false, diagnostic: false, goalIntent: false, clients: false };
   const sys = `Ты — маршрутизатор запросов к бизнес-советнику. Реши, какие блоки данных нужны для ответа на вопрос владельца. Ответь ТОЛЬКО JSON одной строкой, без markdown:
-{"live":bool,"agents":bool,"calls":bool,"act":bool,"diagnostic":bool,"goalIntent":bool}
-live=true — вопрос про метрики/продажи/выручку/менеджеров/дозвон/воронку/рекламу/финансы/переписку с клиентами/план/цель/прогноз, ИЛИ общий («как дела», «что по бизнесу»).
+{"live":bool,"agents":bool,"calls":bool,"act":bool,"diagnostic":bool,"goalIntent":bool,"clients":bool}
+live=true — вопрос про метрики/продажи/выручку/менеджеров/дозвон/воронку/рекламу/финансы/план/цель/прогноз, ИЛИ общий («как дела», «что по бизнесу»).
+clients=true — вопрос конкретно про ПЕРЕПИСКУ С КЛИЕНТАМИ / Telegram / что пишут клиенты / сегменты клиентов / почему не отвечают / общение в чате. Тяжёлый блок — ставь true ТОЛЬКО когда вопрос реально про это (а не про метрики/продажи/звонки).
 agents=true — вопрос про находки/гипотезы/задачи агентов (аналитик/рост/тренер/супервайзер), «что нашли агенты», «что ждёт моего решения», «какие задачи у РОПа».
 calls=true — вопрос про звонки/разговоры/качество продаж на звонках/скрипт/что менеджеры говорят клиентам по телефону.
 act=true — владелец просит ЧТО-ТО СДЕЛАТЬ: поставить задачу РОПу, написать РОПу, поручить аналитику проверить, прогнать агента заново, закрыть гипотезу.
@@ -474,7 +479,8 @@ export default async function handler(req, res) {
     const tgHist = await readCache(`tghist:${org}`, null); // анализ истории (вся база переписки)
     const metaSpend = await readCache("meta_spend", null);
     const igCache = await readCache("marketingagent:instagram", null);
-    const live = liveBlock(cache, fin, GOAL, workdays, { digest: tgDigest, seg: tgSeg, hist: tgHist });
+    const live = liveBlock(cache, fin, GOAL, workdays);
+    const tgData = { digest: tgDigest, seg: tgSeg, hist: tgHist }; // подмешивается в контекст только на клиентские вопросы (intent.clients)
     // маркетинг-срез небольшой и нужен на маркетинговые/контентные вопросы, которые классификатор часто НЕ метит live → даём ВСЕГДА (нетривиальный вопрос)
     const mktBlock = marketingBlock(cache, metaSpend, igCache);
 
@@ -714,6 +720,7 @@ export default async function handler(req, res) {
       // должен быть КНОПКОЙ, а не текстовым советом «поручите сами». Иначе действие остаётся на словах.
       sys += ACTIONS_BLOCK; // кнопки-действия — на ЛЮБОЙ содержательный ответ (в т.ч. «Поставить задачу маркетологу» на контент/рекламу)
       if (intent.live) sys += LIVE_INTRO + live + trustBlock(speed);
+      if (intent.clients) sys += tgBlock(tgData); // тяжёлый блок переписки — только на клиентские вопросы (экономия ~несколько тысяч токенов)
       sys += mktBlock; // маркетинг-срез ВСЕГДА — чтобы советник не отвечал «нет данных» на контент/бренд/Instagram
       sys += await pendingBlock(org); // pt2: ожидающие решения (план/предложения) + активные задачи для отзыва
       if (intent.agents) sys += agBlk;
@@ -758,9 +765,13 @@ export default async function handler(req, res) {
     // даёт 400), глубина — через output_config.effort; display:"summarized" даёт читаемую сводку рассуждения
     // (иначе thinking-блоки приходят пустыми). Тривиальным (приветствия, Haiku) не нужно.
     if (!trivial) {
+      // ГЛУБИНА РАССУЖДЕНИЯ по сложности вопроса: medium — только там, где нужен синтез (диагностика «почему»,
+      // действие, постановка цели). Простой вопрос-факт («сколько лидов», «какая выручка») — low: короче рассуждение,
+      // меньше выходных токенов. adaptive сам ужимает, но effort задаёт потолок глубины.
+      const deep = !!(intent && (intent.diagnostic || intent.act || intent.goalIntent));
       anthropicReq.thinking = { type: "adaptive", display: "summarized" };
-      anthropicReq.output_config = { effort: "medium" };
-      anthropicReq.max_tokens = 4000; // total = рассуждение + ответ
+      anthropicReq.output_config = { effort: deep ? "medium" : "low" };
+      anthropicReq.max_tokens = deep ? 4000 : 2500; // total = рассуждение + ответ; простым хватает меньше
     }
 
     const r = await fetch("https://api.anthropic.com/v1/messages", {
