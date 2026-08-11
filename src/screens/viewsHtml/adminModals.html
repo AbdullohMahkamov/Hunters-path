@@ -9,6 +9,21 @@
   </div>
 </div>
 
+<div id="mopsRosterOverlay" style="display:none;position:fixed;inset:0;background:rgba(0,0,0,.55);z-index:100;padding:20px;overflow-y:auto;" onmousedown="window._ovDown=(event.target===this)" onclick="if(event.target===this&&window._ovDown)closeMopsRosterModal()">
+  <div style="max-width:640px;margin:30px auto;background:var(--bg2);border-radius:16px;padding:22px;">
+    <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:8px;">
+      <div style="font-size:18px;font-weight:700;">Активный состав МОПов</div>
+      <button onclick="closeMopsRosterModal()" style="background:none;border:none;color:var(--txt2);font-size:22px;cursor:pointer;">×</button>
+    </div>
+    <div style="font-size:12.5px;color:var(--txt3);margin-bottom:16px;">Отметьте, кто сейчас работает. Снятые перестанут учитываться в ALTRONE (дашборд, воронка, планы, агенты), новые — начнут. Имя справа — как показывать в системе. Список — все пользователи вашей amoCRM.</div>
+    <div id="mopsRosterList"><div style="color:var(--txt3);font-size:13px;">Загрузка...</div></div>
+    <div style="display:flex;justify-content:space-between;align-items:center;margin-top:16px;gap:12px;">
+      <div style="font-size:12.5px;color:var(--txt3);">Активных: <b id="mopsRosterCount" style="color:var(--txt);">0</b></div>
+      <button id="mopsRosterSave" onclick="saveMopsRoster()" style="padding:11px 20px;border-radius:10px;background:var(--accent);color:#fff;border:none;font-weight:600;cursor:pointer;font-size:14px;">Сохранить состав</button>
+    </div>
+  </div>
+</div>
+
 <div id="gamiOverlay" style="display:none;position:fixed;inset:0;background:rgba(0,0,0,.55);z-index:100;padding:20px;overflow-y:auto;" onmousedown="window._ovDown=(event.target===this)" onclick="if(event.target===this&&window._ovDown)closeGamiModal()">
   <div style="max-width:900px;margin:30px auto;background:var(--bg2);border-radius:16px;padding:22px;">
     <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:16px;">

@@ -687,12 +687,70 @@ async function gamiDeliver(mopId, itemId) {
   loadGamiInventory(); refreshGamiPending()
 }
 
+// ===== АКТИВНЫЙ СОСТАВ МОПов (кто сейчас работает) — выбор из пользователей amoCRM =====
+function openMopsRosterModal() {
+  const ov = $('mopsRosterOverlay'); if (ov) ov.style.display = 'block'
+  loadMopsRoster()
+}
+function closeMopsRosterModal() { const ov = $('mopsRosterOverlay'); if (ov) ov.style.display = 'none' }
+async function loadMopsRoster() {
+  const box = $('mopsRosterList'); if (!box) return
+  box.innerHTML = '<div style="color:var(--txt3);font-size:13px;">Загрузка пользователей amoCRM…</div>'
+  try {
+    const r = await fetch('/api/sync-speed?action=mops-list&session=' + encodeURIComponent(getSession()))
+    const d = await r.json()
+    if (!d.ok) { box.innerHTML = '<div style="color:var(--red);">' + escapeHtml(d.error || 'Ошибка') + '</div>'; return }
+    const users = d.users || []
+    box.innerHTML = users.map((u) => `
+      <div id="mr_row_${u.id}" style="display:flex;gap:10px;align-items:center;padding:9px 10px;border:1px solid var(--line2);border-radius:10px;margin-bottom:7px;background:${u.active ? 'var(--green-bg)' : 'var(--card)'};">
+        <input type="checkbox" id="mr_ck_${u.id}" ${u.active ? 'checked' : ''} onchange="mopsRosterToggle('${jsAttr(String(u.id))}')" style="width:17px;height:17px;flex:0 0 auto;cursor:pointer;">
+        <div style="flex:1;min-width:0;">
+          <div style="font-size:13.5px;font-weight:600;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">${escapeHtml(u.amoName)}</div>
+          <div style="font-size:11px;color:var(--txt3);">amoCRM id ${u.id}${u.email ? ' · ' + escapeHtml(u.email) : ''}</div>
+        </div>
+        <input id="mr_nm_${u.id}" value="${escapeHtml(u.name)}" placeholder="Имя в ALTRONE" ${u.active ? '' : 'disabled'} style="width:150px;padding:8px;border-radius:8px;border:1px solid var(--line2);background:var(--bg2);color:var(--txt);font-size:13px;">
+      </div>`).join('')
+    mopsRosterCount()
+  } catch (e) { box.innerHTML = '<div style="color:var(--red);">Нет связи с сервером</div>' }
+}
+function mopsRosterToggle(id) {
+  const ck = $('mr_ck_' + id), nm = $('mr_nm_' + id), row = $('mr_row_' + id)
+  if (nm) nm.disabled = !(ck && ck.checked)
+  if (row) row.style.background = (ck && ck.checked) ? 'var(--green-bg)' : 'var(--card)'
+  mopsRosterCount()
+}
+function mopsRosterCount() {
+  const box = $('mopsRosterList'), cnt = $('mopsRosterCount')
+  if (box && cnt) cnt.textContent = String(box.querySelectorAll('input[type=checkbox]:checked').length)
+}
+async function saveMopsRoster() {
+  const box = $('mopsRosterList'); if (!box) return
+  const mops = {}
+  box.querySelectorAll('input[type=checkbox]').forEach((ck) => {
+    if (!ck.checked) return
+    const id = ck.id.replace('mr_ck_', '')
+    const name = (($('mr_nm_' + id) || {}).value || '').trim()
+    if (name) mops[id] = name
+  })
+  if (!Object.keys(mops).length) { alert('Отметьте хотя бы одного менеджера и впишите имя'); return }
+  const btn = $('mopsRosterSave'); if (btn) { btn.disabled = true; btn.textContent = 'Сохранение…' }
+  try {
+    const r = await fetch('/api/sync-speed?action=mops-set', { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ session: getSession(), mops }) })
+    const d = await r.json()
+    if (d && d.ok) {
+      closeMopsRosterModal()
+      alert(`Состав сохранён ✓ (${d.count} менеджеров).\n\nТеперь нажмите «Обновить из amoCRM» в дашборде — ALTRONE пересчитает всё по новому составу.`)
+    } else { if (btn) { btn.disabled = false; btn.textContent = 'Сохранить состав' } alert((d && d.error) || 'Ошибка сохранения') }
+  } catch (e) { if (btn) { btn.disabled = false; btn.textContent = 'Сохранить состав' } alert('Нет связи с сервером') }
+}
+
 let _inited = false
 export function initAdminModals() {
   if (_inited) return
   _inited = true
   Object.assign(window, {
     openMopsModal, closeMopsModal, loadMopsList, createMopAccount, deleteMopAccount, setMopRole, saveRaffle, setMopPlan, toggleEditMop, saveMopAccount, saveNiche,
+    openMopsRosterModal, closeMopsRosterModal, loadMopsRoster, mopsRosterToggle, saveMopsRoster,
     openClientsModal, closeClientsModal, loadClientsList, deleteClient, openClientForm, cInput, probeClient, onPipeChange, saveClient,
     openMetricsModal, closeMetricsModal, saveMetrics,
     openGamiModal, closeGamiModal, gamiSwitchTab, saveGami, addCaseItem, removeCaseItem, gamiCaseSum, gamiDeliver, resetGami, resetEconomy, loadGamiBalances, grantPoints, zeroPoints, resetDay, clearInventory,

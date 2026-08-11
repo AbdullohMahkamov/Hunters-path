@@ -161,6 +161,46 @@ export default async function handler(req, res) {
     return;
   }
 
+  // === СПИСОК ПОЛЬЗОВАТЕЛЕЙ amoCRM для выбора активных МОПов: ?action=mops-list&session= (админ) ===
+  if (((req.query && req.query.action) || "") === "mops-list") {
+    const role = await sessionRole(redisUrl, redisToken, (req.query && req.query.session) || "");
+    if (role !== "admin") { res.status(403).json({ error: "admin only" }); return; }
+    const active = cfg.mops || {};
+    const users = [];
+    try {
+      let page = 1;
+      while (page < 8) {
+        const r = await fetch(`${base}/users?limit=250&page=${page}`, { headers: H });
+        if (!r.ok) break;
+        const d = await r.json();
+        const arr = (d._embedded && d._embedded.users) || [];
+        for (const u of arr) users.push({ id: u.id, amoName: u.name || String(u.id), email: u.email || "", active: !!active[u.id], name: active[u.id] || u.name || String(u.id) });
+        if (arr.length < 250) break; page++;
+      }
+    } catch (e) { res.status(200).json({ ok: false, error: "amoCRM foydalanuvchilarini olishda xato" }); return; }
+    users.sort((a, b) => (Number(b.active) - Number(a.active)) || String(a.amoName).localeCompare(String(b.amoName)));
+    res.status(200).json({ ok: true, users, activeCount: Object.keys(active).length });
+    return;
+  }
+
+  // === СОХРАНИТЬ активных МОПов: ?action=mops-set (админ), body {mops:{id:name}} ===
+  // Пишем в metricscfg:hunter (там же остальные оверрайды). sync.js и sync-speed.js читают его → роль подхватывается везде.
+  if (((req.query && req.query.action) || "") === "mops-set") {
+    const session = (req.body && req.body.session) || (req.query && req.query.session) || "";
+    const role = await sessionRole(redisUrl, redisToken, session);
+    if (role !== "admin") { res.status(403).json({ error: "admin only" }); return; }
+    const incoming = (req.body && req.body.mops) || {};
+    const mops = {};
+    for (const k of Object.keys(incoming)) { const nm = String(incoming[k] || "").trim(); if (nm && /^\d+$/.test(String(k))) mops[k] = nm.slice(0, 40); }
+    if (!Object.keys(mops).length) { res.status(400).json({ ok: false, error: "kamida bitta menejerni tanlang" }); return; }
+    const key = org === "hunter" ? "metricscfg:hunter" : `clientcfg:${org}`;
+    const cur = (await redisGetCfg(redisUrl, redisToken, key)) || {};
+    cur.mops = mops;
+    await redisSet(redisUrl, redisToken, key, JSON.stringify(cur));
+    res.status(200).json({ ok: true, mops, count: Object.keys(mops).length });
+    return;
+  }
+
   // === ДЕТАЛЬНАЯ ВОРОНКА ЗА МЕСЯЦ (реконструкция из истории смены статусов): ?action=funnel-month&month=YYYY-MM ===
   // Разовая ТЯЖЁЛАЯ выгрузка: когорта месяца + все lead_status_changed → МАКСИМАЛЬНАЯ достигнутая стадия каждого лида
   // (за прошлые месяцы текущего положения мало: почти все закрыты, поэтому нужна история). Дозвон — из накопителя месяца.

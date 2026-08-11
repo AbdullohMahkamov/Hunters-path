@@ -53,7 +53,11 @@ async function redisGetCfg(url, token, key) {
 async function resolveConfig(org, redisUrl, redisToken) {
   org = org || "hunter";
   if (org === "hunter") {
-    return { org, token: process.env.AMOCRM_TOKEN, ...HUNTER_CFG };
+    const cfg = { org, token: process.env.AMOCRM_TOKEN, ...HUNTER_CFG };
+    // АКТИВНЫЙ СОСТАВ МОПов редактируется в админке (metricscfg:hunter.mops) — иначе увольнения/найм требовали бы коммита.
+    // Берём ТОЛЬКО mops из оверрайда (остальной HUNTER_CFG не трогаем — у sync.js своя схема полей).
+    try { const ov = await redisGetCfg(redisUrl, redisToken, "metricscfg:hunter"); if (ov && ov.mops && Object.keys(ov.mops).length) cfg.mops = ov.mops; } catch (e) {}
+    return cfg;
   }
   const stored = await redisGetCfg(redisUrl, redisToken, `clientcfg:${org}`);
   if (!stored || !stored.subdomain || !stored.token) return null;
