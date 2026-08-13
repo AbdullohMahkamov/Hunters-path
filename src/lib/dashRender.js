@@ -815,6 +815,8 @@ function renderAdsets(d) {
     // CPL (цена за лида): факт по Meta vs ориентир рынка. Дефолта нет — ориентир задаётся в чате.
     const totalLeads = arr.reduce((s, a) => s + (a.leads || 0), 0)
     const cpl = (adSpend > 0 && totalLeads > 0) ? Math.round(adSpend / totalLeads) : null
+    const soldTotal = arr.reduce((s, a) => s + (a.sold || 0), 0)
+    const cac = (adSpend > 0 && soldTotal > 0) ? Math.round(adSpend / soldTotal) : null // цена клиента = расход ÷ число продаж
     const cplNorm = getCplNorm()
     const cplColor = (cpl == null || cplNorm == null) ? 'var(--txt3)' : (cpl <= cplNorm ? 'var(--green)' : 'var(--red)')
     const cplNormTxt = cplNorm != null ? `~${fmtSum(cplNorm)}` : (uz ? 'chatda ayting' : 'уточните в чате')
@@ -844,6 +846,11 @@ function renderAdsets(d) {
           <div style="font-size:10.5px;color:var(--txt2);">${uz ? 'Lid narxi (CPL)' : 'Цена за лида (CPL)'}</div>
           <div style="font-size:19px;font-weight:800;color:${cplColor};">${cpl != null ? fmtSum(cpl) : '—'}</div>
           <div style="font-size:9.5px;color:var(--txt3);">${uz ? 'norma' : 'норма'} ${cplNormTxt} · ${cplVerdict}</div>
+        </div>
+        <div style="background:var(--bg2);border-radius:9px;padding:9px 11px;">
+          <div style="font-size:10.5px;color:var(--txt2);">${uz ? 'Mijoz narxi (CAC)' : 'Цена клиента (CAC)'}</div>
+          <div style="font-size:19px;font-weight:800;color:var(--txt);">${cac != null ? fmtSum(cac) : '—'}</div>
+          <div style="font-size:9.5px;color:var(--txt3);">${uz ? 'xarajat ÷ sotuvlar' : 'расход ÷ продажи'}${soldTotal ? ` · ${soldTotal} ${uz ? 'sotuv' : 'прод.'}` : ''}</div>
         </div>
         ${isMarketer ? '' : `<div style="background:var(--bg2);border-radius:9px;padding:9px 11px;">
           <div style="font-size:10.5px;color:var(--txt2);">ROI${marginLblTxt}</div>
