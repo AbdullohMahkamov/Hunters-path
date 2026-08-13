@@ -91,14 +91,8 @@ export default function App() {
       </Suspense>
     )
   }
-  // Роль «маркетолог» видит ТОЛЬКО свой кабинет: маркетинг-метрики + его задачи. Без продаж/целей/админки.
-  if (sess.role === 'marketing') {
-    return (
-      <Suspense fallback={null}>
-        <MarketerCabinet onLogout={handleLogout} />
-      </Suspense>
-    )
-  }
+  // Роль «маркетолог» ведём через ту же оболочку AppShell, что у РОПа/админа, но со скоупом на маркетинг
+  // (AppShell прячет продажи/финансы/админку; /api/dashboard и /api/chat режут данные по роли — см. бэкенд).
   // Маршрут /support доступен также админу (для управления саппортами/шаблонами).
   if (isSupportRoute()) {
     if (sess.role === 'admin') {

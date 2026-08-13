@@ -31,6 +31,7 @@ export default function AppShell({ onLogout }) {
   const org = sess.org
   const isRop = role === 'rop'
   const isAdmin = role === 'admin'
+  const isMarketer = role === 'marketing'
 
   const [tab, setTab] = useState('chat')
   const [secOpen, setSecOpen] = useState(false) // выпадашка «Меню»
@@ -93,7 +94,7 @@ export default function AppShell({ onLogout }) {
       if (cancelled) return
       ensureChats()
       let start
-      if (role === 'rop') start = 'dash'
+      if (role === 'rop' || isMarketer) start = 'dash'
       else if (state.tab && ['chat', 'dash', 'map', 'tg'].includes(state.tab)) start = state.tab
       else start = 'chat'
       bootedRef.current = true
@@ -129,7 +130,7 @@ export default function AppShell({ onLogout }) {
     setTab(t)
     document.body.classList.toggle('sec-open', t !== 'chat')
     document.body.classList.toggle('chat-open', t === 'chat')
-    if (t === 'dash') { const dt = state.dashTab || 'overview'; window.dashTab && window.dashTab(dt); loadDashboard() }
+    if (t === 'dash') { const dt = isMarketer ? 'marketing' : (state.dashTab || 'overview'); window.dashTab && window.dashTab(dt); loadDashboard() }
     if (t === 'chat') { setTimeout(() => { renderChat(); scrollChatBottom() }, 0) }
     if (t === 'tg') { setTimeout(() => loadTelegramChats(), 0) }
     if (t === 'map') { setTimeout(() => { loadLiveTasks(); renderDopQuests() }, 0) }
@@ -172,6 +173,16 @@ export default function AppShell({ onLogout }) {
     return () => clearInterval(iv)
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [isAdmin])
+  // МАРКЕТОЛОГ: скрываем под-вкладки дашборда Обзор/Продажи/Финансы — остаётся только Маркетинг.
+  useEffect(() => {
+    if (!isMarketer) return
+    const hide = () => {
+      ;['dtab-overview', 'dtab-sales', 'dtab-finance'].forEach((id) => { const el = document.getElementById(id); if (el) el.style.display = 'none' })
+      const mk = document.getElementById('dtab-marketing'); if (mk && !mk.classList.contains('on')) { document.querySelectorAll('.dtab.on').forEach((e) => e.classList.remove('on')); mk.classList.add('on') }
+    }
+    const t1 = setTimeout(hide, 60), t2 = setTimeout(hide, 500)
+    return () => { clearTimeout(t1); clearTimeout(t2) }
+  }, [isMarketer, tab])
   useEffect(() => {
     if (!notifOpen) return
     const onDown = (e) => { if (notifWrapRef.current && !notifWrapRef.current.contains(e.target)) setNotifOpen(false) }
@@ -214,7 +225,7 @@ export default function AppShell({ onLogout }) {
   }
 
   const uz = state.lang === 'uz'
-  const roleLabel = isRop ? (uz ? 'ROP' : 'РОП') : (role === 'demo' ? 'Demo' : (uz ? 'Egasi' : 'Владелец'))
+  const roleLabel = isRop ? (uz ? 'ROP' : 'РОП') : (isMarketer ? (uz ? 'Marketolog' : 'Маркетолог') : (role === 'demo' ? 'Demo' : (uz ? 'Egasi' : 'Владелец')))
   const chats = Array.isArray(state.chats) ? state.chats : []
 
   return (
@@ -237,10 +248,10 @@ export default function AppShell({ onLogout }) {
       </header>
 
       <div className="tabs">
-        <button className={'tab' + (tab === 'chat' ? ' active' : '')} onClick={() => applyTab('chat')} style={{ display: isRop ? 'none' : '' }}>
+        <button className={'tab' + (tab === 'chat' ? ' active' : '')} onClick={() => applyTab('chat')} style={{ display: (isRop || isMarketer) ? 'none' : '' }}>
           <span className="ic-btn"><svg className="ic" width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" strokeLinejoin="round"><path d="M8 10h8M8 14h5" /><path d="M21 12a9 9 0 0 1-9 9 8.7 8.7 0 0 1-4-1l-4 1 1-4a8.7 8.7 0 0 1-1-4 9 9 0 0 1 18 0z" /></svg> <span>{ti('tab_chat')}</span></span>
         </button>
-        <button className={'tab' + (tab === 'map' ? ' active' : '')} onClick={() => applyTab('map')}>
+        <button className={'tab' + (tab === 'map' ? ' active' : '')} onClick={() => applyTab('map')} style={{ display: isMarketer ? 'none' : '' }}>
           <span className="ic-btn"><svg className="ic" width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" strokeLinejoin="round"><path d="M9 6h11M9 12h11M9 18h11" /><path d="M4 6l1 1 2-2M4 12l1 1 2-2M4 18l1 1 2-2" /></svg> <span>{ti('tab_map')}</span></span>
         </button>
         <button className={'tab' + (tab === 'dash' ? ' active' : '')} onClick={() => applyTab('dash')}>
@@ -275,7 +286,7 @@ export default function AppShell({ onLogout }) {
                   </button>
                   <div className={'sec-dropdown' + (secOpen ? ' open' : '')} id="secDropdown">
                     <button className={'menu-item' + (tab === 'dash' ? ' active' : '')} onClick={() => goSection('dash')}><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round"><path d="M3 3v18h18" /><rect x="7" y="10" width="3" height="8" /><rect x="12" y="6" width="3" height="12" /><rect x="17" y="13" width="3" height="5" /></svg>{uz ? 'Dashboard' : 'Дашборд'}</button>
-                    <button className={'menu-item' + (tab === 'tg' ? ' active' : '')} onClick={() => goSection('tg')}><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round"><path d="M21 3L3 10l6 2 2 6 3-4 5 4z" /></svg>Telegram</button>
+                    {!isMarketer && <button className={'menu-item' + (tab === 'tg' ? ' active' : '')} onClick={() => goSection('tg')}><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round"><path d="M21 3L3 10l6 2 2 6 3-4 5 4z" /></svg>Telegram</button>}
                     {isAdmin && <button className="menu-item" onClick={() => { setSecOpen(false); window.openClientsModal && window.openClientsModal() }}><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round"><path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2" /><circle cx="9" cy="7" r="4" /><path d="M23 21v-2a4 4 0 0 0-3-3.87M16 3.13a4 4 0 0 1 0 7.75" /></svg>{uz ? 'Mijozlar' : 'Клиенты'}</button>}
                     {isAdmin && <button className="menu-item" onClick={() => { setSecOpen(false); window.openMopsRosterModal && window.openMopsRosterModal() }}><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round"><path d="M9 11l3 3L22 4" /><path d="M21 12v7a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11" /></svg>{uz ? 'MOP tarkibi' : 'Состав МОПов'}</button>}
                     {isAdmin && <button className="menu-item" onClick={() => { setSecOpen(false); window.openMopsModal && window.openMopsModal() }}><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round"><circle cx="12" cy="8" r="4" /><path d="M4 20a8 8 0 0 1 16 0" /></svg>{uz ? 'MOPlar (kabinetlar)' : 'МОПы (кабинеты)'}</button>}
@@ -314,6 +325,7 @@ export default function AppShell({ onLogout }) {
                 )}
               </div>
 
+              {!isMarketer && (<>
               <button className={'side-chat-home' + (tab === 'chat' ? ' active' : '')} onClick={() => goSection('chat')}>
                 <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M8 10h8M8 14h5" /><path d="M21 12a9 9 0 0 1-9 9 8.7 8.7 0 0 1-4-1l-4 1 1-4a8.7 8.7 0 0 1-1-4 9 9 0 0 1 18 0z" /></svg>
                 <span>{ti('tab_chat')}</span>
@@ -339,6 +351,7 @@ export default function AppShell({ onLogout }) {
                   )
                 })}
               </div>
+              </>)}
 
               <div className="side-user">
                 <button className="user-btn" onClick={() => setSettingsOpen(true)}>
