@@ -744,6 +744,32 @@ async function saveMopsRoster() {
   } catch (e) { if (btn) { btn.disabled = false; btn.textContent = 'Сохранить состав' } alert('Нет связи с сервером') }
 }
 
+// ===== АККАУНТ МАРКЕТОЛОГА (логин/пароль для кабинета маркетинга) =====
+function openMarketingModal() { const ov = $('marketingOverlay'); if (ov) ov.style.display = 'block'; loadMarketingAccounts() }
+function closeMarketingModal() { const ov = $('marketingOverlay'); if (ov) ov.style.display = 'none' }
+async function loadMarketingAccounts() {
+  const box = $('marketingList'); if (!box) return
+  try {
+    const r = await fetch('/api/marketing', { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ action: 'accounts-list', session: getSession() }) })
+    const d = await r.json()
+    if (!d.ok) { box.innerHTML = '<div style="color:var(--red);">' + escapeHtml(d.error || 'Ошибка') + '</div>'; return }
+    const accs = d.accounts || []
+    box.innerHTML = accs.length ? accs.map((a) => `<div style="display:flex;justify-content:space-between;align-items:center;padding:9px 10px;border:1px solid var(--line2);border-radius:9px;margin-bottom:7px;"><div><b style="font-size:13.5px;">${escapeHtml(a.name)}</b> <span style="font-size:11px;color:var(--txt3);">· ${escapeHtml(a.login)}</span></div><button onclick="delMarketingAccount('${jsAttr(a.login)}')" style="padding:6px 11px;border-radius:7px;background:var(--red-bg);color:var(--red);border:1px solid var(--red);font-size:12px;cursor:pointer;">Удалить</button></div>`).join('') : '<div style="font-size:12px;color:var(--txt3);">Аккаунтов пока нет. Создайте один — маркетолог войдёт на /marketing.</div>'
+  } catch (e) { box.innerHTML = '<div style="color:var(--red);">Нет связи с сервером</div>' }
+}
+async function addMarketingAccount() {
+  const name = ($('mktNewName') || {}).value || '', login = ($('mktNewLogin') || {}).value || '', pass = ($('mktNewPass') || {}).value || ''
+  if (!login.trim() || !pass.trim()) { alert('Введите логин и пароль'); return }
+  const r = await fetch('/api/marketing', { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ action: 'account-add', session: getSession(), name: name.trim(), login: login.trim(), password: pass }) })
+  const d = await r.json()
+  if (d.ok) { if ($('mktNewName')) $('mktNewName').value = ''; if ($('mktNewLogin')) $('mktNewLogin').value = ''; if ($('mktNewPass')) $('mktNewPass').value = ''; loadMarketingAccounts() } else alert(d.error || 'Ошибка')
+}
+async function delMarketingAccount(login) {
+  if (!confirm('Удалить аккаунт ' + login + '?')) return
+  await fetch('/api/marketing', { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ action: 'account-del', session: getSession(), login }) })
+  loadMarketingAccounts()
+}
+
 let _inited = false
 export function initAdminModals() {
   if (_inited) return
@@ -751,6 +777,7 @@ export function initAdminModals() {
   Object.assign(window, {
     openMopsModal, closeMopsModal, loadMopsList, createMopAccount, deleteMopAccount, setMopRole, saveRaffle, setMopPlan, toggleEditMop, saveMopAccount, saveNiche,
     openMopsRosterModal, closeMopsRosterModal, loadMopsRoster, mopsRosterToggle, saveMopsRoster,
+    openMarketingModal, closeMarketingModal, loadMarketingAccounts, addMarketingAccount, delMarketingAccount,
     openClientsModal, closeClientsModal, loadClientsList, deleteClient, openClientForm, cInput, probeClient, onPipeChange, saveClient,
     openMetricsModal, closeMetricsModal, saveMetrics,
     openGamiModal, closeGamiModal, gamiSwitchTab, saveGami, addCaseItem, removeCaseItem, gamiCaseSum, gamiDeliver, resetGami, resetEconomy, loadGamiBalances, grantPoints, zeroPoints, resetDay, clearInventory,

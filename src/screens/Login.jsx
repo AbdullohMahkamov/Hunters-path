@@ -22,6 +22,8 @@ export default function Login({ onLoggedIn }) {
   const passRef = useRef(null)
   const supLoginRef = useRef(null)
   const supPassRef = useRef(null)
+  const mktLoginRef = useRef(null)
+  const mktPassRef = useRef(null)
 
   const isMopDirect = (() => {
     try { return new URLSearchParams(location.search).get('mop') === '1' } catch (e) { return false }
@@ -32,11 +34,17 @@ export default function Login({ onLoggedIn }) {
     try { return window.location.pathname.replace(/\/+$/, '') === '/support' } catch (e) { return false }
   })()
 
-  // ?mop=1 — сразу форма входа МОПа; /support — сразу форма входа саппорта (без выбора роли)
+  // Маршрут /marketing — вход маркетолога по прямой ссылке (без выбора роли на экране ролей).
+  const isMarketingDirect = (() => {
+    try { return window.location.pathname.replace(/\/+$/, '') === '/marketing' } catch (e) { return false }
+  })()
+
+  // ?mop=1 — сразу форма входа МОПа; /support — саппорт; /marketing — маркетолог (без выбора роли)
   useEffect(() => {
     if (isMopDirect) setStep('mop')
     else if (isSupportDirect) setStep('support')
-  }, [isMopDirect, isSupportDirect])
+    else if (isMarketingDirect) setStep('marketing')
+  }, [isMopDirect, isSupportDirect, isMarketingDirect])
 
   // фокус на активном инпуте (как setTimeout(...,100) в оригинале)
   useEffect(() => {
@@ -128,6 +136,23 @@ export default function Login({ onLoggedIn }) {
         setSupErr((d && d.error) || 'Kirishda xatolik')
       }
     } catch (e) { setSupErr('Server bilan aloqa yo\'q') }
+  }
+
+  async function mktLoginGo() {
+    const login = (mktLoginRef.current?.value || '').trim()
+    const password = mktPassRef.current?.value || ''
+    if (!login || !password) { setSupErr('Введите логин и пароль'); return }
+    setSupErr('')
+    try {
+      const d = await auth.marketing(login, password)
+      if (d && d.ok) {
+        setSession(d.session, { role: 'marketing', org: d.org || 'hunter' })
+        try { window.history.replaceState(null, '', '/marketing') } catch (e) {}
+        onLoggedIn({ role: 'marketing', org: d.org || 'hunter' })
+      } else {
+        setSupErr((d && d.error) || 'Ошибка входа')
+      }
+    } catch (e) { setSupErr('Нет связи с сервером') }
   }
 
   async function doLogin(e) {
@@ -235,6 +260,17 @@ export default function Login({ onLoggedIn }) {
               onKeyDown={(e) => { if (e.key === 'Enter') supLoginGo() }}
               style={{ ...inputStyle, marginBottom: 12 }} />
             <button onClick={supLoginGo} style={{ width: '100%', padding: 14, borderRadius: 11, background: 'var(--accent)', border: 'none', color: '#fff', fontSize: 15, fontWeight: 600, cursor: 'pointer' }}>Kirish</button>
+            {supErr && <div style={{ color: 'var(--red)', fontSize: 12.5, marginTop: 10, textAlign: 'center' }}>{supErr}</div>}
+          </div>
+        )}
+
+        {step === 'marketing' && (
+          <div id="marketingLogin">
+            <input ref={mktLoginRef} type="text" placeholder="Логин маркетолога" autoComplete="username" style={{ ...inputStyle, marginBottom: 10 }} />
+            <input ref={mktPassRef} type="password" placeholder="Пароль" autoComplete="current-password"
+              onKeyDown={(e) => { if (e.key === 'Enter') mktLoginGo() }}
+              style={{ ...inputStyle, marginBottom: 12 }} />
+            <button onClick={mktLoginGo} style={{ width: '100%', padding: 14, borderRadius: 11, background: 'var(--accent)', border: 'none', color: '#fff', fontSize: 15, fontWeight: 600, cursor: 'pointer' }}>Войти</button>
             {supErr && <div style={{ color: 'var(--red)', fontSize: 12.5, marginTop: 10, textAlign: 'center' }}>{supErr}</div>}
           </div>
         )}

@@ -6,6 +6,7 @@ import Login from './screens/Login.jsx'
 // Ленивые экраны по ролям: за сессию виден ровно один путь — грузим только нужный чанк.
 // МОП не тянет админку/дашборд (~215KB), админ/РОП не тянет кабинет МОПа (~85KB).
 const MopCabinet = lazy(() => import('./screens/MopCabinet.jsx'))
+const MarketerCabinet = lazy(() => import('./screens/MarketerCabinet.jsx'))
 const AppShell = lazy(() => import('./screens/AppShell.jsx'))
 const DevAgent = lazy(() => import('./screens/DevAgent.jsx'))
 const Support = lazy(() => import('./screens/Support.jsx'))
@@ -87,6 +88,14 @@ export default function App() {
     return (
       <Suspense fallback={null}>
         <Support onLogout={handleLogout} />
+      </Suspense>
+    )
+  }
+  // Роль «маркетолог» видит ТОЛЬКО свой кабинет: маркетинг-метрики + его задачи. Без продаж/целей/админки.
+  if (sess.role === 'marketing') {
+    return (
+      <Suspense fallback={null}>
+        <MarketerCabinet onLogout={handleLogout} />
       </Suspense>
     )
   }

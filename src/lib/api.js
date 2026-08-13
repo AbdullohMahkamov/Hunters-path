@@ -33,6 +33,8 @@ export const auth = {
   client: (login, password) => postJSON('/api/auth', { action: 'client', login, password }).then((r) => r.json()),
   // Саппорт: логин+пароль (доступ только к /support)
   support: (login, password) => postJSON('/api/auth', { action: 'support', login, password }).then((r) => r.json()),
+  // Маркетолог: логин+пароль (доступ только к своему кабинету)
+  marketing: (login, password) => postJSON('/api/auth', { action: 'marketing', login, password }).then((r) => r.json()),
   // Telegram Mini App: вход по initData (сервер валидирует подпись + allow-list по owner chatId)
   tg: (initData) => postJSON('/api/auth', { action: 'tg', initData }).then((r) => r.json()),
   // Проверка существующей сессии
@@ -186,6 +188,15 @@ export const support = {
   // бот учеников (только админ): статус/настройка вебхука
   botStatus: () => getJSON('/api/support-bot?action=status&session=' + encodeURIComponent(getSession())),
   botSetup: () => getJSON('/api/support-bot?action=setup&session=' + encodeURIComponent(getSession())),
+}
+
+// Кабинет маркетолога: метрики + задачи (роль marketing); управление аккаунтами — админ.
+export const marketing = {
+  cabinet: () => postJSON('/api/marketing', { action: 'cabinet', session: getSession() }).then((r) => r.json()),
+  taskDone: (id, report) => postJSON('/api/marketing', { action: 'task-done', session: getSession(), id, report }).then((r) => r.json()),
+  accountsList: () => postJSON('/api/marketing', { action: 'accounts-list', session: getSession() }).then((r) => r.json()),
+  accountAdd: ({ login, password, name }) => postJSON('/api/marketing', { action: 'account-add', session: getSession(), login, password, name }).then((r) => r.json()),
+  accountDel: (login) => postJSON('/api/marketing', { action: 'account-del', session: getSession(), login }).then((r) => r.json()),
 }
 
 export { postJSON, getJSON }
