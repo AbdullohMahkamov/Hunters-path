@@ -15,6 +15,7 @@ async function buildMetrics(org) {
   const dash = await rgetJSON(org === "hunter" ? "dashboard" : `dashboard:${org}`, null);
   const meta = await rgetJSON("meta_spend", null);
   const ig = await rgetJSON("marketingagent:instagram", null);
+  const speed = await rgetJSON(org === "hunter" ? "speed" : `speed:${org}`, null);
   const mcfg = await rgetJSON(org === "hunter" ? "metricscfg:hunter" : `clientcfg:${org}`, {}) || {};
   const t = (dash && dash.totals) || {};
   const cur = (meta && meta.currency || "").toUpperCase();
@@ -37,6 +38,8 @@ async function buildMetrics(org) {
     roas: (revenue && spendUZS) ? +(revenue / spendUZS).toFixed(1) : null,
     cac: (sold && spendUZS) ? Math.round(spendUZS / sold) : null,
     conv: (leads && sold) ? +(sold / leads * 100).toFixed(2) : (t.conv != null ? t.conv : null), // качество трафика: лид→продажа
+    // ОБЩАЯ ВОРОНКА (лид→дозвон→стадии→продажа) — маркетинг-безопасно (штуки, без сумм/выручки/имён МОПов)
+    funnel: (speed && speed.funnel) ? { leads: speed.funnel.leads, reached: speed.funnel.reached, reachedSec: speed.funnel.reachedSec, stages: (speed.funnel.stages || []).map((s) => ({ name: s.name, reached: s.reached, isSold: s.isSold })), lost: speed.funnel.lost } : null,
     audiences,
     instagram: (ig && ig.ok && ig.followers_count != null) ? { followers: ig.followers_count, reach: ig.reach != null ? ig.reach : null, posts } : null,
     updatedAt: (dash && dash.updatedAt) || null,
