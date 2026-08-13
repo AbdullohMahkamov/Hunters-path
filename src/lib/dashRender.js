@@ -131,6 +131,7 @@ export function applyLiveDash(d) {
 function renderForecast(d) {
   _lastDashData = d
   const box = document.getElementById('forecastChart'); if (!box) return
+  if (getRole() === 'marketing') { box.style.display = 'none'; return } // маркетологу «Месячный прогноз» не показываем (владелец)
   const uz = state.lang === 'uz'
   const t = (d && d.totals) || {}
   const earned = t.revenue || 0
@@ -766,7 +767,8 @@ function renderAdsets(d) {
   const box = document.getElementById('adsetsChart'); if (!box) return
   const uz = state.lang === 'uz'
   const isAdmin = getRole() === 'admin'
-  if (isAdmin && !_autoMarginTried) autoLoadMargin() // тянем авто-маржу всегда (нужна рядом с override — вариант «б»)
+  const isMarketer = getRole() === 'marketing' // маркетолог видит карту окупаемости, но БЕЗ ROI (владелец)
+  if ((isAdmin || isMarketer) && !_autoMarginTried) autoLoadMargin() // тянем авто-маржу всегда (нужна рядом с override — вариант «б»)
   const per = window._dashPeriod || 'month'
   const isAll = per === 'all'
   const arrRaw = (d && d.adsets) || []
@@ -787,7 +789,7 @@ function renderAdsets(d) {
     return
   }
   let summaryHtml = ''
-  if (isAdmin) {
+  if (isAdmin || isMarketer) {
     const adRevenue = arr.reduce((s, a) => s + (a.revenue || 0), 0)
     // расход БОЛЬШЕ не вводится вручную — берём реальные цифры Meta (все adset), приведённые к сумам
     const adSpend = (_metaSpend && _metaSpend.adsets) ? _metaSpend.adsets.reduce((s, x) => s + (metaSpendToUZS(x.spend) || 0), 0) : 0
@@ -820,7 +822,7 @@ function renderAdsets(d) {
     summaryHtml = `<div style="background:var(--card);border:1px solid var(--line2);border-radius:11px;padding:13px;margin-bottom:14px;">
       <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:10px;">
         <div style="font-size:12.5px;font-weight:700;">${uz ? 'Reklama qoplanishi' : 'Окупаемость рекламы'} · ${perLabel}</div>
-        <span style="font-size:10px;color:var(--gold);border:1px solid var(--gold);border-radius:6px;padding:1px 6px;">${uz ? 'faqat admin' : 'только админ'}</span>
+        ${isAdmin ? `<span style="font-size:10px;color:var(--gold);border:1px solid var(--gold);border-radius:6px;padding:1px 6px;">${uz ? 'faqat admin' : 'только админ'}</span>` : ''}
       </div>
       <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(128px,1fr));gap:10px;">
         <div style="background:var(--bg2);border-radius:9px;padding:9px 11px;">
@@ -843,11 +845,11 @@ function renderAdsets(d) {
           <div style="font-size:19px;font-weight:800;color:${cplColor};">${cpl != null ? fmtSum(cpl) : '—'}</div>
           <div style="font-size:9.5px;color:var(--txt3);">${uz ? 'norma' : 'норма'} ${cplNormTxt} · ${cplVerdict}</div>
         </div>
-        <div style="background:var(--bg2);border-radius:9px;padding:9px 11px;">
+        ${isMarketer ? '' : `<div style="background:var(--bg2);border-radius:9px;padding:9px 11px;">
           <div style="font-size:10.5px;color:var(--txt2);">ROI${marginLblTxt}</div>
           <div style="font-size:19px;font-weight:800;color:${roi == null ? 'var(--txt3)' : (roi >= 0 ? 'var(--green)' : 'var(--red)')};">${roi != null ? (roi > 0 ? '+' : '') + Math.round(roi) + '%' : '—'}</div>
           <div style="font-size:9.5px;color:var(--txt3);">${marginSub}</div>
-        </div>
+        </div>`}
       </div>
     </div>`
   }

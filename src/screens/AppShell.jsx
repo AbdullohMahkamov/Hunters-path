@@ -173,13 +173,10 @@ export default function AppShell({ onLogout }) {
     return () => clearInterval(iv)
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [isAdmin])
-  // МАРКЕТОЛОГ: скрываем под-вкладки дашборда Обзор/Продажи/Финансы — остаётся только Маркетинг.
+  // МАРКЕТОЛОГ: разделы Общее/Маркетинг/Продажи доступны, скрываем ТОЛЬКО Финансы (владелец: все разделы кроме Финансов).
   useEffect(() => {
     if (!isMarketer) return
-    const hide = () => {
-      ;['dtab-overview', 'dtab-sales', 'dtab-finance'].forEach((id) => { const el = document.getElementById(id); if (el) el.style.display = 'none' })
-      const mk = document.getElementById('dtab-marketing'); if (mk && !mk.classList.contains('on')) { document.querySelectorAll('.dtab.on').forEach((e) => e.classList.remove('on')); mk.classList.add('on') }
-    }
+    const hide = () => { const el = document.getElementById('dtab-finance'); if (el) el.style.display = 'none' }
     const t1 = setTimeout(hide, 60), t2 = setTimeout(hide, 500)
     return () => { clearTimeout(t1); clearTimeout(t2) }
   }, [isMarketer, tab])
