@@ -207,7 +207,10 @@ export default function Login({ onLoggedIn }) {
             <button onClick={() => setStep('mop')} style={{ width: '100%', padding: 16, borderRadius: 12, background: 'var(--card)', border: '1px solid var(--line2)', color: 'var(--txt)', fontSize: 15, fontWeight: 600, cursor: 'pointer', marginTop: 12 }} className="ic-btn">
               <svg className="ic" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" strokeLinejoin="round"><circle cx="12" cy="8" r="4" /><path d="M4 20a8 8 0 0 1 16 0" /></svg>Я менеджер (МОП)
             </button>
-            <div style={{ fontSize: 11.5, color: 'var(--txt3)', marginTop: 14, textAlign: 'center', lineHeight: 1.5 }}>Админ — полный доступ. РОП — дашборд и задачи.<br />МОП — свой кабинет (свои данные + рейтинг).</div>
+            <button onClick={() => { setStep('marketing'); setSupErr('') }} style={{ width: '100%', padding: 16, borderRadius: 12, background: 'var(--card)', border: '1px solid var(--line2)', color: 'var(--txt)', fontSize: 15, fontWeight: 600, cursor: 'pointer', marginTop: 12 }} className="ic-btn">
+              <svg className="ic" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" strokeLinejoin="round"><path d="M4 20L20 4M7 4H4v3M17 20h3v-3M12 12l4-1-1 4z" /></svg>Я маркетолог
+            </button>
+            <div style={{ fontSize: 11.5, color: 'var(--txt3)', marginTop: 14, textAlign: 'center', lineHeight: 1.5 }}>Админ — полный доступ. РОП — дашборд и задачи.<br />МОП и маркетолог — свой кабинет.</div>
             <div style={{ textAlign: 'center', marginTop: 18 }}>
               <button onClick={() => { setStep('demo'); setLoginError('') }} style={{ background: 'none', border: 'none', color: 'var(--accent)', fontSize: 13, cursor: 'pointer', textDecoration: 'underline' }}>Войти в демо по коду</button>
             </div>
@@ -272,6 +275,7 @@ export default function Login({ onLoggedIn }) {
               style={{ ...inputStyle, marginBottom: 12 }} />
             <button onClick={mktLoginGo} style={{ width: '100%', padding: 14, borderRadius: 11, background: 'var(--accent)', border: 'none', color: '#fff', fontSize: 15, fontWeight: 600, cursor: 'pointer' }}>Войти</button>
             {supErr && <div style={{ color: 'var(--red)', fontSize: 12.5, marginTop: 10, textAlign: 'center' }}>{supErr}</div>}
+            <button onClick={() => { setStep('roles'); setSupErr('') }} style={{ width: '100%', padding: 11, borderRadius: 11, background: 'none', border: 'none', color: 'var(--txt2)', fontSize: 13, cursor: 'pointer', marginTop: 8 }}>← Назад</button>
           </div>
         )}
 
