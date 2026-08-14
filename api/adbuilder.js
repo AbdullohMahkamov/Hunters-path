@@ -73,6 +73,34 @@ export default async function handler(req, res) {
   // КРЕАТИВЫ — посты из тестового Instagram (ALTRONE берёт их, отдельная загрузка не нужна).
   const posts = (ig && Array.isArray(ig.posts)) ? ig.posts.map((p) => ({ caption: p.caption || "", engagement: p.engagement || 0, id: p.id || null, permalink: p.permalink || null })) : [];
 
+  // ДИСКАВЕРИ АССЕТОВ по бизнесу: страницы + их Instagram + лид-формы (чтобы найти Hunteracademy_uz и формы).
+  if (action === "assets") {
+    if (!META_TOKEN) { res.status(200).json({ ok: false, error: "META_TOKEN не задан" }); return; }
+    const biz = String((req.query && req.query.business) || (req.body && req.body.business) || process.env.META_BUSINESS_ID || "");
+    if (!biz) { res.status(200).json({ ok: false, error: "нужен business id (?business=...)" }); return; }
+    const out = { business: biz, pages: [], igAccounts: [], forms: [], errors: [] };
+    for (const edge of ["owned_pages", "client_pages"]) {
+      try {
+        const pr = await fetch(`https://graph.facebook.com/${GRAPH}/${biz}/${edge}?fields=id,name,instagram_business_account{id,username}&limit=100&access_token=${encodeURIComponent(META_TOKEN)}`);
+        const pd = await pr.json();
+        if (pd.error) { out.errors.push(`${edge}: ${pd.error.message}`); continue; }
+        for (const p of ((pd && pd.data) || [])) {
+          if (out.pages.find((x) => x.id === p.id)) continue;
+          const iga = p.instagram_business_account;
+          out.pages.push({ id: p.id, name: p.name, igUsername: iga ? iga.username : null, igId: iga ? iga.id : null });
+          if (iga) out.igAccounts.push({ id: iga.id, username: iga.username, page: p.name });
+          try {
+            const fr = await fetch(`https://graph.facebook.com/${GRAPH}/${p.id}/leadgen_forms?fields=id,name,status&limit=50&access_token=${encodeURIComponent(META_TOKEN)}`);
+            const fd = await fr.json();
+            for (const f of ((fd && fd.data) || [])) out.forms.push({ id: f.id, name: f.name, status: f.status, page: p.name });
+          } catch (e) {}
+        }
+      } catch (e) { out.errors.push(`${edge}: ${String(e).slice(0, 100)}`); }
+    }
+    res.status(200).json({ ok: true, ...out });
+    return;
+  }
+
   if (action === "inputs") {
     const lf = await fetchLeadForms();
     res.status(200).json({ ok: true, audiences: auds, creatives: posts, currency: "UZS", objectives: OBJECTIVES, forms: lf.forms, formsError: lf.error, hasPixel: false });
