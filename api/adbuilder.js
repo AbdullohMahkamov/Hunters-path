@@ -16,11 +16,18 @@ const AD_IG_ID = process.env.META_AD_IG_ID || "17841480222162829"; // @hunteraca
 // КРЕАТИВЫ — посты (видео/reels) из тестового Instagram напрямую через Graph API.
 async function fetchIgMedia(igId) {
   if (!META_TOKEN || !igId) return [];
+  const out = [];
   try {
-    const r = await fetch(`https://graph.facebook.com/${GRAPH}/${igId}/media?fields=id,caption,media_type,permalink,like_count,comments_count,thumbnail_url,media_url&limit=25&access_token=${encodeURIComponent(META_TOKEN)}`);
-    const d = await r.json();
-    return ((d && d.data) || []).map((m) => ({ id: m.id, caption: (m.caption || "").replace(/\s+/g, " ").trim().slice(0, 80), type: m.media_type, permalink: m.permalink || null, engagement: (m.like_count || 0) + (m.comments_count || 0), thumb: m.thumbnail_url || m.media_url || null }));
-  } catch (e) { return []; }
+    let url = `https://graph.facebook.com/${GRAPH}/${igId}/media?fields=id,caption,media_type,permalink,like_count,comments_count,thumbnail_url,media_url&limit=50&access_token=${encodeURIComponent(META_TOKEN)}`;
+    let guard = 0;
+    while (url && guard < 5) { // до ~250 постов (5 страниц)
+      guard++;
+      const d = await (await fetch(url)).json();
+      for (const m of ((d && d.data) || [])) out.push({ id: m.id, caption: (m.caption || "").replace(/\s+/g, " ").trim().slice(0, 80), type: m.media_type, permalink: m.permalink || null, engagement: (m.like_count || 0) + (m.comments_count || 0), thumb: m.thumbnail_url || m.media_url || null });
+      url = (d && d.paging && d.paging.next) || null;
+    }
+  } catch (e) {}
+  return out;
 }
 const fmt = (n) => (n == null || isNaN(n)) ? "—" : Math.round(n).toLocaleString("ru-RU");
 
@@ -121,8 +128,10 @@ export default async function handler(req, res) {
 
   if (action === "plan") {
     const q = req.query || {}, bd = req.body || {};
-    const budget = Math.max(0, Math.round(Number(q.budget || bd.budget || 0)));
-    if (!budget) { res.status(400).json({ ok: false, error: "укажите общий бюджет (budget, в сумах)" }); return; }
+    const currency = (String(q.currency || bd.currency || "UZS").toUpperCase() === "USD") ? "USD" : "UZS";
+    const rateUZS = currency === "USD" ? 12100 : 1; // в сумы (прогноз лидов считается в сумах, CPL — в сумах)
+    const budget = Math.max(0, Number(q.budget || bd.budget || 0)); // в выбранной валюте
+    if (!budget) { res.status(400).json({ ok: false, error: "укажите бюджет" }); return; }
     // ЦЕЛЬ, ДАТА ЗАПУСКА, ФОРМА
     const objId = String(q.objective || bd.objective || "leads");
     const objective = OBJECTIVES.find((o) => o.id === objId) || OBJECTIVES[0];
@@ -149,16 +158,17 @@ export default async function handler(req, res) {
     const winners = scored.filter((a) => a.roas != null && a.roas >= 1 && a.sold > 0);
     const pool = winners.length ? winners : scored.slice(0, 3); // нет победителей → топ-3 по данным (тестовый режим)
     // РЕЗЕРВ на новую аудиторию (Lookalike из покупателей amoCRM) — тестируем малым.
-    const testShare = 0.2, testBudget = Math.round(budget * testShare), coreBudget = budget - testBudget;
-    const perAdsetCap = Math.round(budget * 0.5); // потолок на один адсет — не лить всё в одну аудиторию
+    const rnd = (x) => currency === "USD" ? Math.round(x * 100) / 100 : Math.round(x); // $ — 2 знака, сум — целые
+    const testShare = 0.2, testBudget = rnd(budget * testShare), coreBudget = budget - testBudget;
+    const perAdsetCap = budget * 0.5; // потолок на один адсет — не лить всё в одну аудиторию
     const sumScore = pool.reduce((s, a) => s + Math.max(0.1, a.score), 0) || 1;
     const split = pool.map((a) => {
-      let b = Math.round(coreBudget * Math.max(0.1, a.score) / sumScore);
-      b = Math.min(b, perAdsetCap);
-      return { audience: a.name, budgetUZS: b, roas: a.roas, cac: a.cac, cpl: a.cpl, conv: a.conv, proven: a.roas >= 1 && a.sold > 0, creative: null };
+      let b = coreBudget * Math.max(0.1, a.score) / sumScore;
+      b = rnd(Math.min(b, perAdsetCap));
+      return { audience: a.name, budget: b, roas: a.roas, cac: a.cac, cpl: a.cpl, conv: a.conv, proven: a.roas >= 1 && a.sold > 0, creative: null };
     });
-    if (split.length) split[0].budgetUZS += (coreBudget - split.reduce((s, a) => s + a.budgetUZS, 0)); // добор округления
-    split.push({ audience: "Lookalike (покупатели amoCRM)", budgetUZS: testBudget, roas: null, cac: null, cpl: null, conv: null, isTest: true, creative: null, note: "новая аудитория из твоих покупателей — тест малым, масштаб при результате" });
+    if (split.length) split[0].budget = rnd(split[0].budget + (coreBudget - split.reduce((s, a) => s + a.budget, 0))); // добор округления
+    split.push({ audience: "Lookalike (покупатели amoCRM)", budget: testBudget, roas: null, cac: null, cpl: null, conv: null, isTest: true, creative: null, note: "новая аудитория из твоих покупателей — тест малым, масштаб при результате" });
     // КРЕАТИВЫ: берём ТОЛЬКО выбранные владельцем видео (bd.creatives = массив id). Если не выбрано — топ по вовлечённости.
     let selIds = bd.creatives || q.creatives || null;
     if (typeof selIds === "string") selIds = selIds.split(",").map((x) => x.trim()).filter(Boolean);
@@ -166,11 +176,11 @@ export default async function handler(req, res) {
     const creaPool = selected.length ? selected : [...posts].sort((a, b) => b.engagement - a.engagement);
     const topCre = creaPool.slice(0, Math.max(split.length, 1));
     split.forEach((a, i) => { a.creative = topCre.length ? (topCre[i % topCre.length].caption || `IG-пост #${i + 1}`) : "— (нет постов в IG)"; });
-    // прогноз лидов — по средней цене лида известных аудиторий
+    // прогноз лидов — переводим бюджет адсета в сумы (CPL в сумах), делим на CPL
     const knownCpl = auds.filter((a) => a.cpl); const avgCpl = knownCpl.length ? Math.round(knownCpl.reduce((s, a) => s + a.cpl, 0) / knownCpl.length) : null;
-    const expectedLeads = avgCpl ? split.reduce((s, a) => s + Math.round(a.budgetUZS / (a.cpl || avgCpl)), 0) : null;
+    const expectedLeads = avgCpl ? split.reduce((s, a) => s + Math.round((a.budget * rateUZS) / (a.cpl || avgCpl)), 0) : null; // дневной бюджет → лидов/день; общий → всего
     res.status(200).json({
-      ok: true, budgetUZS: budget, campaign, split, expectedLeads, avgCpl, creativesAvailable: posts.length,
+      ok: true, budget, currency, campaign, split, expectedLeads, avgCpl, creativesAvailable: posts.length,
       rationale: { basis: "реальный ROAS по аудиториям из amoCRM (не прокси Meta)", winners: winners.length, testShare, perAdsetCapPct: 50 },
       note: "ПЛАН (Стадия 1): в Meta НИЧЕГО не создано. Это предпросмотр того, что ALTRONE соберёт и запустит ПОСЛЕ твоего подтверждения (Стадия 2). Общий бюджет — жёсткий потолок.",
     });

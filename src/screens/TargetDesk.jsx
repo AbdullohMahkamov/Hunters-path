@@ -41,7 +41,7 @@ export default function TargetDesk({ onLogout }) {
     setBuilding(true); setPlan(null)
     try {
       const creativeIds = Object.keys(sel).filter(k => sel[k])
-      const d = await adb.plan({ budget: b, budgetType, objective, startDate, endDate, form: form || undefined, creatives: creativeIds })
+      const d = await adb.plan({ budget: b, currency: 'USD', budgetType, objective, startDate, endDate, form: form || undefined, creatives: creativeIds })
       if (d && d.ok) { setPlan(d); setBuilding(false); return true }
       setErr((d && d.error) || 'Не удалось собрать план')
     } catch (e) { setErr('Нет связи с сервером') }
@@ -127,9 +127,12 @@ export default function TargetDesk({ onLogout }) {
                 ))}
               </div>
               <div style={{ marginBottom: 14 }}>
-                <div style={{ fontSize: 12, color: 'var(--txt3)', marginBottom: 6 }}>{budgetType === 'daily' ? 'Бюджет в день (сум)' : 'Общий бюджет на период (сум)'}</div>
-                <input value={budget} onChange={(e) => setBudget(e.target.value.replace(/[^\d]/g, ''))} inputMode="numeric" placeholder="напр. 5 000 000" style={{ ...inputStyle, ...TN, fontWeight: 700, fontSize: 18 }} />
-                {budgetType === 'daily' && budget ? <div style={{ fontSize: 11.5, color: 'var(--txt3)', marginTop: 5, ...TN }}>≈ {num(Number(budget) * 30)} сум/месяц при ежедневном откруте</div> : null}
+                <div style={{ fontSize: 12, color: 'var(--txt3)', marginBottom: 6 }}>{budgetType === 'daily' ? 'Бюджет в день ($)' : 'Общий бюджет на период ($)'}</div>
+                <div style={{ position: 'relative' }}>
+                  <span style={{ position: 'absolute', left: 13, top: '50%', transform: 'translateY(-50%)', fontSize: 18, fontWeight: 700, color: 'var(--txt3)' }}>$</span>
+                  <input value={budget} onChange={(e) => setBudget(e.target.value.replace(/[^\d]/g, ''))} inputMode="numeric" placeholder="напр. 20" style={{ ...inputStyle, ...TN, fontWeight: 700, fontSize: 18, paddingLeft: 28 }} />
+                </div>
+                {budgetType === 'daily' && budget ? <div style={{ fontSize: 11.5, color: 'var(--txt3)', marginTop: 5, ...TN }}>≈ ${num(Number(budget) * 30)}/месяц при ежедневном откруте</div> : null}
               </div>
               <div style={{ display: 'flex', gap: 12, flexWrap: 'wrap' }}>
                 <div style={{ flex: '1 1 180px' }}>
@@ -163,12 +166,12 @@ export default function TargetDesk({ onLogout }) {
             {step === 'result' && plan && (<>
               <div style={{ fontSize: 16, fontWeight: 700, marginBottom: 10 }}>Итог — план кампании</div>
               <div style={{ display: 'flex', flexWrap: 'wrap', gap: '6px 20px', fontSize: 13, marginBottom: 12 }}>
-                <span>Цель: <b>{plan.campaign.objectiveLabel}</b></span><span>Старт: <b>{plan.campaign.startDate}</b></span>{plan.campaign.endDate ? <span>До: <b>{plan.campaign.endDate}</b></span> : null}<span>Бюджет: <b style={TN}>{num(plan.budgetUZS)} сум {plan.campaign.budgetLabel}</b></span>{plan.expectedLeads != null ? <span>Прогноз: <b style={TN}>~{num(plan.expectedLeads)} лид</b></span> : null}
+                <span>Цель: <b>{plan.campaign.objectiveLabel}</b></span><span>Старт: <b>{plan.campaign.startDate}</b></span>{plan.campaign.endDate ? <span>До: <b>{plan.campaign.endDate}</b></span> : null}<span>Бюджет: <b style={TN}>{plan.currency === 'USD' ? '$' + num(plan.budget) : num(plan.budget) + ' сум'} {plan.campaign.budgetLabel}</b></span>{plan.expectedLeads != null ? <span>Прогноз: <b style={TN}>~{num(plan.expectedLeads)} лид{plan.campaign.perDay ? '/день' : ''}</b></span> : null}
               </div>
               {(plan.campaign.warnings || []).map((w, i) => <div key={i} style={{ background: 'var(--gold-bg)', border: '1px solid var(--gold)', borderRadius: 10, padding: '9px 12px', marginBottom: 9, color: 'var(--txt2)', fontSize: 12.5 }}>⚠️ {w}</div>)}
               {plan.split.map((a, i) => (
                 <div key={i} style={{ background: 'var(--bg2)', borderRadius: 10, padding: '11px 13px', marginBottom: 7, borderLeft: `3px solid ${a.isTest ? 'var(--gold)' : 'var(--accent)'}` }}>
-                  <div style={{ display: 'flex', justifyContent: 'space-between', gap: 10 }}><div style={{ fontSize: 13.5, fontWeight: 600 }}>{a.audience}{a.isTest ? ' 🧪' : a.proven ? ' ✅' : ''}</div><div style={{ fontSize: 14.5, fontWeight: 700, ...TN }}>{num(a.budgetUZS)}{plan.campaign.perDay ? '/дн' : ''}</div></div>
+                  <div style={{ display: 'flex', justifyContent: 'space-between', gap: 10 }}><div style={{ fontSize: 13.5, fontWeight: 600 }}>{a.audience}{a.isTest ? ' 🧪' : a.proven ? ' ✅' : ''}</div><div style={{ fontSize: 14.5, fontWeight: 700, ...TN }}>{plan.currency === 'USD' ? '$' + num(a.budget) : num(a.budget)}{plan.campaign.perDay ? '/дн' : ''}</div></div>
                   <div style={{ fontSize: 11.5, color: 'var(--txt3)', marginTop: 3, ...TN }}>{a.roas != null ? `ROAS ${a.roas}x · ` : ''}{a.cpl ? `CPL ${num(a.cpl)} · ` : ''}видео: {a.creative}</div>
                 </div>
               ))}
