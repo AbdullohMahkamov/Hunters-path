@@ -11,6 +11,17 @@ async function getSession(s) { if (!s) return null; try { const raw = await rget
 const MKT_RATE = 12100; // $→сум, как в marketing.js
 const GRAPH = "v21.0";
 const META_TOKEN = process.env.META_TOKEN;
+const AD_IG_ID = process.env.META_AD_IG_ID || "17841480222162829"; // @hunteracademy_uz — тестовый IG, откуда берём видео-креативы
+
+// КРЕАТИВЫ — посты (видео/reels) из тестового Instagram напрямую через Graph API.
+async function fetchIgMedia(igId) {
+  if (!META_TOKEN || !igId) return [];
+  try {
+    const r = await fetch(`https://graph.facebook.com/${GRAPH}/${igId}/media?fields=id,caption,media_type,permalink,like_count,comments_count,thumbnail_url,media_url&limit=25&access_token=${encodeURIComponent(META_TOKEN)}`);
+    const d = await r.json();
+    return ((d && d.data) || []).map((m) => ({ id: m.id, caption: (m.caption || "").replace(/\s+/g, " ").trim().slice(0, 80), type: m.media_type, permalink: m.permalink || null, engagement: (m.like_count || 0) + (m.comments_count || 0), thumb: m.thumbnail_url || m.media_url || null }));
+  } catch (e) { return []; }
+}
 const fmt = (n) => (n == null || isNaN(n)) ? "—" : Math.round(n).toLocaleString("ru-RU");
 
 // ЦЕЛИ ТАРГЕТА (objective) — для лид-бизнеса. sales/конверсии слабее без пикселя (у нас нет) → помечаем.
@@ -70,8 +81,9 @@ export default async function handler(req, res) {
     };
   }).filter((a) => a.leads > 0 || a.spend > 0);
 
-  // КРЕАТИВЫ — посты из тестового Instagram (ALTRONE берёт их, отдельная загрузка не нужна).
-  const posts = (ig && Array.isArray(ig.posts)) ? ig.posts.map((p) => ({ caption: p.caption || "", engagement: p.engagement || 0, id: p.id || null, permalink: p.permalink || null })) : [];
+  // КРЕАТИВЫ — посты из тестового Instagram напрямую (не из общего IG-кэша, тот на другой аккаунт).
+  let posts = await fetchIgMedia(AD_IG_ID);
+  if (!posts.length && ig && Array.isArray(ig.posts)) posts = ig.posts.map((p) => ({ caption: p.caption || "", engagement: p.engagement || 0, id: p.id || null, permalink: p.permalink || null })); // фолбэк на кэш
 
   // ДИСКАВЕРИ АССЕТОВ по бизнесу: страницы + их Instagram + лид-формы (чтобы найти Hunteracademy_uz и формы).
   if (action === "assets") {
