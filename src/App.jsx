@@ -9,6 +9,7 @@ const MopCabinet = lazy(() => import('./screens/MopCabinet.jsx'))
 const MarketerCabinet = lazy(() => import('./screens/MarketerCabinet.jsx'))
 const AppShell = lazy(() => import('./screens/AppShell.jsx'))
 const DevAgent = lazy(() => import('./screens/DevAgent.jsx'))
+const TargetDesk = lazy(() => import('./screens/TargetDesk.jsx'))
 const Support = lazy(() => import('./screens/Support.jsx'))
 const TgApp = lazy(() => import('./screens/TgApp.jsx'))
 
@@ -20,6 +21,10 @@ function isTgRoute() {
 // Отдельный внутренний маршрут /dev-agent (только админ). nginx на VPS отдаёт index.html (SPA-fallback).
 function isDevAgentRoute() {
   try { return window.location.pathname.replace(/\/+$/, '') === '/dev-agent' } catch (e) { return false }
+}
+// Рабочий стол «Таргет» — /target (админ или маркетолог).
+function isTargetRoute() {
+  try { return window.location.pathname.replace(/\/+$/, '') === '/target' } catch (e) { return false }
 }
 // Изолированный маршрут /support — панель саппорта (роль support или админ).
 function isSupportRoute() {
@@ -110,6 +115,17 @@ export default function App() {
       return (
         <Suspense fallback={null}>
           <DevAgent onLogout={handleLogout} />
+        </Suspense>
+      )
+    }
+    try { window.history.replaceState(null, '', '/') } catch (e) { /* ignore */ }
+  }
+  // Рабочий стол «Таргет» — /target, доступен админу и маркетологу.
+  if (isTargetRoute()) {
+    if (sess.role === 'admin' || sess.role === 'marketing') {
+      return (
+        <Suspense fallback={null}>
+          <TargetDesk onLogout={handleLogout} />
         </Suspense>
       )
     }

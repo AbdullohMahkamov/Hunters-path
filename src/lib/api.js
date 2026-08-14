@@ -199,4 +199,10 @@ export const marketing = {
   accountDel: (login) => postJSON('/api/marketing', { action: 'account-del', session: getSession(), login }).then((r) => r.json()),
 }
 
+// Рабочий стол «Таргет» (adbuilder) — Стадия 1: план кампании без трат.
+export const adb = {
+  inputs: () => getJSON('/api/adbuilder?action=inputs&session=' + encodeURIComponent(getSession())),
+  plan: (payload) => postJSON('/api/adbuilder?action=plan', { session: getSession(), ...payload }).then((r) => r.json()),
+}
+
 export { postJSON, getJSON }

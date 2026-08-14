@@ -152,8 +152,12 @@ export default async function handler(req, res) {
     });
     if (split.length) split[0].budgetUZS += (coreBudget - split.reduce((s, a) => s + a.budgetUZS, 0)); // добор округления
     split.push({ audience: "Lookalike (покупатели amoCRM)", budgetUZS: testBudget, roas: null, cac: null, cpl: null, conv: null, isTest: true, creative: null, note: "новая аудитория из твоих покупателей — тест малым, масштаб при результате" });
-    // КРЕАТИВЫ: топ IG-посты по вовлечённости, ротацией по адсетам.
-    const topCre = [...posts].sort((a, b) => b.engagement - a.engagement).slice(0, Math.max(3, split.length));
+    // КРЕАТИВЫ: берём ТОЛЬКО выбранные владельцем видео (bd.creatives = массив id). Если не выбрано — топ по вовлечённости.
+    let selIds = bd.creatives || q.creatives || null;
+    if (typeof selIds === "string") selIds = selIds.split(",").map((x) => x.trim()).filter(Boolean);
+    const selected = (Array.isArray(selIds) && selIds.length) ? posts.filter((p) => selIds.includes(p.id)) : [];
+    const creaPool = selected.length ? selected : [...posts].sort((a, b) => b.engagement - a.engagement);
+    const topCre = creaPool.slice(0, Math.max(split.length, 1));
     split.forEach((a, i) => { a.creative = topCre.length ? (topCre[i % topCre.length].caption || `IG-пост #${i + 1}`) : "— (нет постов в IG)"; });
     // прогноз лидов — по средней цене лида известных аудиторий
     const knownCpl = auds.filter((a) => a.cpl); const avgCpl = knownCpl.length ? Math.round(knownCpl.reduce((s, a) => s + a.cpl, 0) / knownCpl.length) : null;
