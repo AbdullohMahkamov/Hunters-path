@@ -9,7 +9,37 @@ async function rgetJSON(key, dflt) { const raw = await rget(key); if (raw == nul
 async function getSession(s) { if (!s) return null; try { const raw = await rget(`session:${s}`); return raw ? JSON.parse(raw) : null; } catch (e) { return null; } }
 
 const MKT_RATE = 12100; // $→сум, как в marketing.js
+const GRAPH = "v21.0";
+const META_TOKEN = process.env.META_TOKEN;
 const fmt = (n) => (n == null || isNaN(n)) ? "—" : Math.round(n).toLocaleString("ru-RU");
+
+// ЦЕЛИ ТАРГЕТА (objective) — для лид-бизнеса. sales/конверсии слабее без пикселя (у нас нет) → помечаем.
+const OBJECTIVES = [
+  { id: "leads", meta: "OUTCOME_LEADS", label: "Лиды (заявки / форма)", note: "заявки прямо в форму — синк в amoCRM", needsPixel: false, needsForm: true },
+  { id: "messages", meta: "OUTCOME_ENGAGEMENT", label: "Сообщения (Direct / WhatsApp)", note: "пишут в переписку", needsPixel: false, needsForm: false },
+  { id: "traffic", meta: "OUTCOME_TRAFFIC", label: "Трафик (на сайт / бота)", note: "переходы по ссылке", needsPixel: false, needsForm: false },
+  { id: "engagement", meta: "OUTCOME_ENGAGEMENT", label: "Вовлечённость (просмотры / охват)", note: "узнаваемость, дешёвый охват", needsPixel: false, needsForm: false },
+  { id: "sales", meta: "OUTCOME_SALES", label: "Продажи (конверсии)", note: "СЛАБО без пикселя — включим после Conversions API из amoCRM", needsPixel: true, needsForm: false },
+];
+
+// Лид-ФОРМЫ (Instant Forms) — лежат на СТРАНИЦАХ; тянем best-effort через страницы System User.
+async function fetchLeadForms() {
+  if (!META_TOKEN) return { forms: [], error: "META_TOKEN не задан" };
+  try {
+    const pr = await fetch(`https://graph.facebook.com/${GRAPH}/me/accounts?fields=id,name&limit=50&access_token=${encodeURIComponent(META_TOKEN)}`);
+    const pd = await pr.json();
+    const pages = (pd && pd.data) || [];
+    const forms = [];
+    for (const p of pages.slice(0, 10)) {
+      try {
+        const fr = await fetch(`https://graph.facebook.com/${GRAPH}/${p.id}/leadgen_forms?fields=id,name,status&limit=50&access_token=${encodeURIComponent(META_TOKEN)}`);
+        const fd = await fr.json();
+        for (const f of ((fd && fd.data) || [])) forms.push({ id: f.id, name: f.name || f.id, status: f.status || "", page: p.name || p.id });
+      } catch (e) {}
+    }
+    return { forms, error: pd && pd.error ? (pd.error.message || "ошибка страниц") : null };
+  } catch (e) { return { forms: [], error: String(e).slice(0, 150) }; }
+}
 
 export default async function handler(req, res) {
   const session = (req.query && req.query.session) || (req.body && req.body.session);
@@ -43,11 +73,30 @@ export default async function handler(req, res) {
   // КРЕАТИВЫ — посты из тестового Instagram (ALTRONE берёт их, отдельная загрузка не нужна).
   const posts = (ig && Array.isArray(ig.posts)) ? ig.posts.map((p) => ({ caption: p.caption || "", engagement: p.engagement || 0, id: p.id || null, permalink: p.permalink || null })) : [];
 
-  if (action === "inputs") { res.status(200).json({ ok: true, audiences: auds, creatives: posts, currency: "UZS" }); return; }
+  if (action === "inputs") {
+    const lf = await fetchLeadForms();
+    res.status(200).json({ ok: true, audiences: auds, creatives: posts, currency: "UZS", objectives: OBJECTIVES, forms: lf.forms, formsError: lf.error, hasPixel: false });
+    return;
+  }
 
   if (action === "plan") {
-    const budget = Math.max(0, Math.round(Number((req.query && req.query.budget) || (req.body && req.body.budget) || 0)));
+    const q = req.query || {}, bd = req.body || {};
+    const budget = Math.max(0, Math.round(Number(q.budget || bd.budget || 0)));
     if (!budget) { res.status(400).json({ ok: false, error: "укажите общий бюджет (budget, в сумах)" }); return; }
+    // ЦЕЛЬ, ДАТА ЗАПУСКА, ФОРМА
+    const objId = String(q.objective || bd.objective || "leads");
+    const objective = OBJECTIVES.find((o) => o.id === objId) || OBJECTIVES[0];
+    const startDate = String(q.startDate || bd.startDate || "").slice(0, 10) || null; // YYYY-MM-DD; пусто = сразу
+    const formId = (q.form || bd.form || q.formId || bd.formId || null);
+    const campaign = {
+      objective: objective.id, objectiveLabel: objective.label, objectiveMeta: objective.meta,
+      startDate: startDate || "сразу после запуска",
+      form: objective.needsForm ? (formId || null) : null,
+      warnings: [
+        ...(objective.needsPixel ? ["Цель «Продажи» без пикселя работает слабо — сначала подключим Conversions API из amoCRM."] : []),
+        ...(objective.needsForm && !formId ? ["Для цели «Лиды» нужно выбрать лид-форму — иначе заявки некуда собирать."] : []),
+      ],
+    };
     // РАНЖИРОВАНИЕ по реальному ROAS (из amoCRM). Победители — с продажами и ROAS ≥ 1.
     const scored = auds.map((a) => ({ ...a, score: (a.roas || 0) })).sort((x, y) => y.score - x.score);
     const winners = scored.filter((a) => a.roas != null && a.roas >= 1 && a.sold > 0);
@@ -70,7 +119,7 @@ export default async function handler(req, res) {
     const knownCpl = auds.filter((a) => a.cpl); const avgCpl = knownCpl.length ? Math.round(knownCpl.reduce((s, a) => s + a.cpl, 0) / knownCpl.length) : null;
     const expectedLeads = avgCpl ? split.reduce((s, a) => s + Math.round(a.budgetUZS / (a.cpl || avgCpl)), 0) : null;
     res.status(200).json({
-      ok: true, budgetUZS: budget, split, expectedLeads, avgCpl, creativesAvailable: posts.length,
+      ok: true, budgetUZS: budget, campaign, split, expectedLeads, avgCpl, creativesAvailable: posts.length,
       rationale: { basis: "реальный ROAS по аудиториям из amoCRM (не прокси Meta)", winners: winners.length, testShare, perAdsetCapPct: 50 },
       note: "ПЛАН (Стадия 1): в Meta НИЧЕГО не создано. Это предпросмотр того, что ALTRONE соберёт и запустит ПОСЛЕ твоего подтверждения (Стадия 2). Общий бюджет — жёсткий потолок.",
     });
