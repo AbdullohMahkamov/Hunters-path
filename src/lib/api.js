@@ -203,6 +203,8 @@ export const marketing = {
 export const adb = {
   inputs: () => getJSON('/api/adbuilder?action=inputs&session=' + encodeURIComponent(getSession())),
   plan: (payload) => postJSON('/api/adbuilder?action=plan', { session: getSession(), ...payload }).then((r) => r.json()),
+  // Стадия 2: создание в Meta. dryRun по умолчанию (confirm не передан). confirm:true — реальное создание на паузе.
+  create: (plan, confirm) => postJSON('/api/adbuilder?action=create', { session: getSession(), plan, confirm: !!confirm }).then((r) => r.json()),
 }
 
 export { postJSON, getJSON }

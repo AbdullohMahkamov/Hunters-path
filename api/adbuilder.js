@@ -169,6 +169,57 @@ export default async function handler(req, res) {
     return;
   }
 
+  // ═══ СТАДИЯ 2: СОЗДАНИЕ В META ═══ деньги/запись → ТОЛЬКО сессия admin/marketing (без cron). Всегда PAUSED. Потолок бюджета.
+  // По умолчанию dryRun (показать payload'ы, ничего не создавать). Реальное создание — только confirm:true.
+  if (action === "create") {
+    if (!(sess && ["admin", "marketing"].includes(sess.role))) { res.status(403).json({ ok: false, error: "создание в Meta — только по сессии admin/marketing" }); return; }
+    if (!META_TOKEN) { res.status(200).json({ ok: false, error: "META_TOKEN не задан" }); return; }
+    const plan = (req.body && req.body.plan) || {};
+    const campaign = plan.campaign || {}, splitIn = Array.isArray(plan.split) ? plan.split : [];
+    const currency = plan.currency || "USD";
+    const confirm = (req.body && (req.body.confirm === true || req.body.confirm === 1)) || false;
+    const dryRun = !confirm;
+    // ПОТОЛОК безопасности
+    const CAP_USD = 500;
+    const total = splitIn.reduce((s, t) => s + (Number(t.budget) || 0), 0);
+    if (currency === "USD" && total > CAP_USD) { res.status(400).json({ ok: false, error: `суммарный бюджет $${total}/дн выше потолка $${CAP_USD} — снизь бюджет` }); return; }
+    if (!splitIn.length) { res.status(400).json({ ok: false, error: "пустой план — сначала собери план (Стадия 1)" }); return; }
+    const objMap = { leads: "OUTCOME_LEADS", messages: "OUTCOME_ENGAGEMENT", traffic: "OUTCOME_TRAFFIC", engagement: "OUTCOME_ENGAGEMENT", sales: "OUTCOME_SALES" };
+    const objective = objMap[campaign.objective] || "OUTCOME_LEADS";
+    const PAGE_ID = "981935968332820", IG_ID = AD_IG_ID;
+    const acct = `act_${AD_ACCOUNT}`;
+    const stamp = new Date().toISOString().slice(0, 16).replace("T", " ");
+    const post = async (path, body) => { const r = await fetch(`https://graph.facebook.com/${GRAPH}/${path}`, { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ ...body, access_token: META_TOKEN }) }); return r.json(); };
+    const centsUSD = (v) => Math.max(100, Math.round(Number(v || 0) * 100)); // $ → центы, минимум $1
+    const log = [];
+    // 1) КАМПАНИЯ (PAUSED)
+    const campBody = { name: `ALTRONE тест · ${campaign.objectiveLabel || "Лиды"} · ${stamp}`, objective, status: "PAUSED", special_ad_categories: [] };
+    let campaignId = null;
+    if (dryRun) { log.push({ step: "campaign", willCreate: campBody }); }
+    else { const r = await post(`${acct}/campaigns`, campBody); if (r.id) { campaignId = r.id; log.push({ step: "campaign", ok: true, id: r.id }); } else { res.status(200).json({ ok: false, error: "кампания не создана: " + JSON.stringify(r.error || r), log }); return; } }
+    // 2) АДСЕТЫ + ОБЪЯВЛЕНИЯ (PAUSED). Гео на уровне страны (UZ) — безопасно; города/интересы/lookalike требуют доп. настройки (помечаем).
+    const adsets = [];
+    for (const t of splitIn) {
+      const targeting = { age_min: 18, age_max: 65, geo_locations: { countries: ["UZ"] } }; // база: широкая по стране
+      const notes = [];
+      if (t.type === "interest") notes.push("интересы требуют ID-резолва — создано широким, интересы добавить вручную/Стадия 2.1");
+      if (t.type === "lookalike") notes.push("lookalike-аудитория из amoCRM — отдельный шаг (загрузка контактов), пока широкая");
+      const adsetBody = { name: `ALTRONE · ${t.audience}`.slice(0, 100), campaign_id: campaignId || "<campaign_id>", daily_budget: currency === "USD" ? centsUSD(t.budget) : Math.round(t.budget), billing_event: "IMPRESSIONS", optimization_goal: objective === "OUTCOME_LEADS" ? "LEAD_GENERATION" : "REACH", bid_strategy: "LOWEST_COST_WITHOUT_CAP", targeting, promoted_object: { page_id: PAGE_ID }, status: "PAUSED", ...(campaign.startDate && campaign.startDate !== "сразу после запуска" ? { start_time: campaign.startDate } : {}) };
+      if (dryRun) { log.push({ step: "adset", audience: t.audience, willCreate: adsetBody, notes }); adsets.push({ audience: t.audience, notes }); continue; }
+      const ar = await post(`${acct}/adsets`, adsetBody);
+      if (ar.id) { log.push({ step: "adset", ok: true, id: ar.id, audience: t.audience, notes }); adsets.push({ audience: t.audience, adsetId: ar.id, notes }); }
+      else { log.push({ step: "adset", ok: false, audience: t.audience, error: ar.error || ar }); }
+    }
+    const managerLink = `https://adsmanager.facebook.com/adsmanager/manage/campaigns?act=${AD_ACCOUNT}${campaignId ? `&selected_campaign_ids=${campaignId}` : ""}`;
+    res.status(200).json({
+      ok: true, dryRun, campaignId, adsets, log, managerLink,
+      note: dryRun
+        ? "СУХОЙ ПРОГОН: в Meta НИЧЕГО не создано. Выше — точные объекты, которые ALTRONE создаст (кампания + адсеты, всё на ПАУЗЕ). Города/интересы/lookalike пока упрощены до широкой по стране — это Стадия 2.1. Подтверди (confirm) — создам на паузе."
+        : "СОЗДАНО В META НА ПАУЗЕ. Проверь в Ads Manager, добавь креативы/форму где нужно и нажми Старт в Meta. Ничего не тратится, пока не снимешь паузу.",
+    });
+    return;
+  }
+
   if (action === "plan") {
     const q = req.query || {}, bd = req.body || {};
     const currency = (String(q.currency || bd.currency || "UZS").toUpperCase() === "USD") ? "USD" : "UZS";

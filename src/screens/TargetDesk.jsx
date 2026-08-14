@@ -7,21 +7,35 @@ const num = (n) => (n == null || isNaN(n)) ? '—' : Math.round(n).toLocaleStrin
 const TN = { fontVariantNumeric: 'tabular-nums' }
 
 export default function TargetDesk({ onLogout }) {
+  const SK = 'target_wiz'
+  const saved0 = (() => { try { return JSON.parse(localStorage.getItem(SK) || '{}') } catch (e) { return {} } })()
   const [inp, setInp] = useState(null)
   const [loading, setLoading] = useState(true)
-  const [idx, setIdx] = useState(0)
-  const [objective, setObjective] = useState('leads')
-  const [sel, setSel] = useState({})
-  const [budget, setBudget] = useState('')
-  const [budgetType, setBudgetType] = useState('daily') // daily | lifetime
-  const [startDate, setStartDate] = useState('')
-  const [endDate, setEndDate] = useState('')
-  const [form, setForm] = useState('')
-  const [plan, setPlan] = useState(null)
+  const [idx, setIdx] = useState(saved0.idx || 0)
+  const [objective, setObjective] = useState(saved0.objective || 'leads')
+  const [sel, setSel] = useState(saved0.sel || {})
+  const [budget, setBudget] = useState(saved0.budget || '')
+  const [budgetType, setBudgetType] = useState(saved0.budgetType || 'daily') // daily | lifetime
+  const [startDate, setStartDate] = useState(saved0.startDate || '')
+  const [endDate, setEndDate] = useState(saved0.endDate || '')
+  const [form, setForm] = useState(saved0.form || '')
+  const [plan, setPlan] = useState(saved0.plan || null)
   const [building, setBuilding] = useState(false)
   const [err, setErr] = useState('')
+  const [creating, setCreating] = useState(false)
+  const [created, setCreated] = useState(null)
 
-  useEffect(() => { (async () => { try { const d = await adb.inputs(); if (d && d.ok) { setInp(d); const active = (d.forms || []).find(f => f.status === 'ACTIVE'); if (active) setForm(active.id) } } catch (e) {} setLoading(false) })() }, [])
+  // прогресс мастера НЕ сбрасывается на F5 — храним в localStorage
+  useEffect(() => { try { localStorage.setItem(SK, JSON.stringify({ idx, objective, sel, budget, budgetType, startDate, endDate, form, plan })) } catch (e) {} }, [idx, objective, sel, budget, budgetType, startDate, endDate, form, plan])
+
+  useEffect(() => { (async () => { try { const d = await adb.inputs(); if (d && d.ok) { setInp(d); const active = (d.forms || []).find(f => f.status === 'ACTIVE'); if (active) setForm(f => f || active.id) } } catch (e) {} setLoading(false) })() }, [])
+
+  async function createInMeta(confirm) {
+    if (!plan) return
+    setCreating(true); setErr('')
+    try { const d = await adb.create(plan, confirm); if (d && d.ok) setCreated(d); else setErr((d && d.error) || 'Ошибка создания') } catch (e) { setErr('Нет связи с сервером') }
+    setCreating(false)
+  }
 
   const objs = (inp && inp.objectives) || []
   const curObj = objs.find(o => o.id === objective) || {}
@@ -184,7 +198,22 @@ export default function TargetDesk({ onLogout }) {
                 </div>
               ))}
               <div style={{ marginTop: 12, fontSize: 12, color: 'var(--txt3)' }}>{plan.note}</div>
-              <button disabled style={{ marginTop: 14, padding: '12px 22px', borderRadius: 11, background: 'var(--card)', color: 'var(--txt3)', border: '1px dashed var(--line2)', fontWeight: 600, fontSize: 14, cursor: 'not-allowed' }}>🚀 Создать в Meta (на паузе) — Стадия 2, скоро</button>
+              {!created ? (
+                <div style={{ marginTop: 14 }}>
+                  <button disabled={creating} onClick={() => createInMeta(false)} style={btn(true)}>{creating ? 'Готовлю…' : '🚀 Собрать в Meta (сухой прогон)'}</button>
+                  <div style={{ fontSize: 11.5, color: 'var(--txt3)', marginTop: 6 }}>Сначала покажу точь-в-точь, что создам. Ничего не потратится и не запустится.</div>
+                </div>
+              ) : (
+                <div style={{ marginTop: 14, background: created.dryRun ? 'var(--gold-bg)' : 'var(--green-bg)', border: `1px solid ${created.dryRun ? 'var(--gold)' : 'var(--green)'}`, borderRadius: 11, padding: '13px 15px' }}>
+                  <div style={{ fontSize: 13, fontWeight: 700, marginBottom: 7 }}>{created.dryRun ? '🔎 Сухой прогон — вот что создам в Meta (на паузе):' : '✅ Создано в Meta на паузе'}</div>
+                  <div style={{ fontSize: 12, color: 'var(--txt2)', lineHeight: 1.7 }}>
+                    {(created.log || []).map((l, i) => <div key={i}>{l.step === 'campaign' ? '📁 Кампания' : '📄 Адсет'}{l.audience ? ` · ${l.audience}` : ''}{l.willCreate ? ` — «${l.willCreate.name || ''}»${l.willCreate.daily_budget ? `, ${Math.round(l.willCreate.daily_budget / 100)}$/дн` : ''}` : ''}{l.id ? ` ✓ id ${l.id}` : ''}{l.error ? ` ✗ ${JSON.stringify(l.error).slice(0, 90)}` : ''}{(l.notes && l.notes.length) ? <span style={{ color: 'var(--gold)' }}> · ⚠️ {l.notes.join('; ')}</span> : null}</div>)}
+                  </div>
+                  <div style={{ fontSize: 11.5, color: 'var(--txt3)', marginTop: 9 }}>{created.note}</div>
+                  {created.managerLink ? <div style={{ marginTop: 6 }}><a href={created.managerLink} target="_blank" rel="noreferrer" style={{ fontSize: 12.5, color: 'var(--accent)' }}>Открыть в Ads Manager →</a></div> : null}
+                  {created.dryRun ? <div style={{ marginTop: 11 }}><button disabled={creating} onClick={() => createInMeta(true)} style={btn(true)}>{creating ? 'Создаю…' : '✅ Подтвердить — создать на паузе'}</button></div> : null}
+                </div>
+              )}
             </>)}
             {step === 'result' && building ? <div style={{ color: 'var(--txt3)' }}>Собираю план…</div> : null}
           </div>
@@ -196,7 +225,7 @@ export default function TargetDesk({ onLogout }) {
             <button onClick={back} disabled={idx === 0} style={{ ...btn(false), opacity: idx === 0 ? 0.4 : 1 }}>← Назад</button>
             {err ? <span style={{ color: 'var(--red)', fontSize: 13 }}>{err}</span> : <span />}
             {step === 'result'
-              ? <button onClick={() => { setIdx(0); setPlan(null) }} style={btn(false)}>↻ Заново</button>
+              ? <button onClick={() => { setIdx(0); setPlan(null); setCreated(null); try { localStorage.removeItem(SK) } catch (e) {} }} style={btn(false)}>↻ Заново</button>
               : <button onClick={next} disabled={building} style={btn(true)}>{flow[idx + 1] === 'result' ? (building ? 'Собираю…' : 'Собрать план →') : 'Далее →'}</button>}
           </div>
         )}
