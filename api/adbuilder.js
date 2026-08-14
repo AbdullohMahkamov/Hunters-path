@@ -206,12 +206,23 @@ export default async function handler(req, res) {
     const running = auds.filter((a) => a.spend > 0 || a.leads > 0).map((a) => ({ name: a.name, roas: a.roas, cpl: a.cpl, sold: a.sold })).sort((x, y) => (y.roas || 0) - (x.roas || 0));
     const best = running.find((a) => a.roas != null && a.sold > 0) || running[0] || null;
     const bestCpl = (best && best.cpl) || avgCpl;
-    // НОВЫЕ тест-связки (гипотезы, ещё без ROAS) — на данных, НЕ повтор существующих
-    const tests = [];
-    tests.push({ audience: "Lookalike 1% · покупатели amoCRM", type: "lookalike", isTest: true, hypothesis: "похожие на твоих реальных покупателей из CRM — сильнейший сигнал без пикселя" });
-    if (best) tests.push({ audience: `Lookalike · лиды «${best.name}»`, type: "lookalike", isTest: true, hypothesis: `похожие на лиды лучшей аудитории${best.roas != null ? ` (ROAS ${best.roas}x)` : ""}` });
-    if (best) tests.push({ audience: `«${best.name}» — расширение`, type: "broaden", isTest: true, hypothesis: "шире гео/возраст от победителя — тянется ли результат" });
-    tests.push({ audience: "Широкая · Advantage+ (алгоритм Meta)", type: "broad", isTest: true, hypothesis: "Meta сам ищет аудиторию — контрольная связка теста" });
+    // НОВЫЕ тест-связки на основе АУДИТА ИЗНУТРИ: победители — ШИРОКИЕ (18-65, без интересов, авто-плейсменты) →
+    // работает КРЕО, а не узкий таргет. Тестируем: свежее крео на широкой (рычаг) + новые сигналы (lookalike из amoCRM) + узкий контроль.
+    const geoDefault = "Узбекистан";
+    const tests = [
+      { audience: "Широкая + свежий креатив", type: "broad", isTest: true,
+        hypothesis: "у тебя побеждают ШИРОКИЕ связки — рычаг это крео. Тест НОВОГО видео на выигрышной широкой.",
+        targeting: { "возраст": "18-65", "пол": "все", "гео": geoDefault, "интересы": "нет (широкая)", "плейсменты": "авто (Advantage+)" } },
+      { audience: "Lookalike 1% · покупатели amoCRM", type: "lookalike", isTest: true,
+        hypothesis: "новый сигнал, которого у тебя ещё НЕТ: похожие на реальных покупателей из CRM.",
+        targeting: { "возраст": "18-65", "пол": "все", "гео": geoDefault, "аудитория": "Lookalike 1% (покупатели amoCRM)", "плейсменты": "авто" } },
+      ...(best ? [{ audience: "Lookalike · лиды победителя", type: "lookalike", isTest: true,
+        hypothesis: `похожие на лиды лучшей связки (${best.name}${best.roas != null ? `, ROAS ${best.roas}x` : ""}).`,
+        targeting: { "возраст": "18-65", "пол": "все", "гео": geoDefault, "аудитория": `Lookalike (лиды ${best.name})`, "плейсменты": "авто" } }] : []),
+      { audience: "Узкий · интересы (контроль)", type: "interest", isTest: true,
+        hypothesis: "проверка: бьёт ли узкий таргет по интересам твою широкую? (сейчас таких у тебя нет).",
+        targeting: { "возраст": "18-35", "пол": "все", "гео": "Ташкент", "интересы": "Продажи, Бизнес, Предпринимательство", "плейсменты": "авто" } },
+    ];
     // бюджет РАВНОМЕРНО по тестам (тест малым, масштаб победителя потом)
     const per = rnd(budget / tests.length);
     tests.forEach((t) => { t.budget = per; t.cpl = bestCpl; });

@@ -21,7 +21,7 @@ export default function TargetDesk({ onLogout }) {
   const [building, setBuilding] = useState(false)
   const [err, setErr] = useState('')
 
-  useEffect(() => { (async () => { try { const d = await adb.inputs(); if (d && d.ok) setInp(d) } catch (e) {} setLoading(false) })() }, [])
+  useEffect(() => { (async () => { try { const d = await adb.inputs(); if (d && d.ok) { setInp(d); const active = (d.forms || []).find(f => f.status === 'ACTIVE'); if (active) setForm(active.id) } } catch (e) {} setLoading(false) })() }, [])
 
   const objs = (inp && inp.objectives) || []
   const curObj = objs.find(o => o.id === objective) || {}
@@ -179,7 +179,8 @@ export default function TargetDesk({ onLogout }) {
               {plan.split.map((a, i) => (
                 <div key={i} style={{ background: 'var(--bg2)', borderRadius: 10, padding: '11px 13px', marginBottom: 7, borderLeft: '3px solid var(--gold)' }}>
                   <div style={{ display: 'flex', justifyContent: 'space-between', gap: 10 }}><div style={{ fontSize: 13.5, fontWeight: 600 }}>🧪 {a.audience}</div><div style={{ fontSize: 14.5, fontWeight: 700, ...TN }}>{plan.currency === 'USD' ? '$' + num(a.budget) : num(a.budget)}{plan.campaign.perDay ? '/дн' : ''}</div></div>
-                  <div style={{ fontSize: 11.5, color: 'var(--txt3)', marginTop: 3 }}>{a.hypothesis ? a.hypothesis + ' · ' : ''}видео: {a.creative}</div>
+                  {a.targeting ? <div style={{ fontSize: 11, color: 'var(--txt2)', marginTop: 4, background: 'var(--card)', border: '1px solid var(--line)', borderRadius: 7, padding: '5px 8px' }}>🎯 {Object.entries(a.targeting).map(([k, v]) => k + ': ' + v).join(' · ')}</div> : null}
+                  <div style={{ fontSize: 11.5, color: 'var(--txt3)', marginTop: 4 }}>{a.hypothesis ? a.hypothesis + ' · ' : ''}видео: {a.creative}</div>
                 </div>
               ))}
               <div style={{ marginTop: 12, fontSize: 12, color: 'var(--txt3)' }}>{plan.note}</div>
