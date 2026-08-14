@@ -13,6 +13,33 @@ const GRAPH = "v21.0";
 const META_TOKEN = process.env.META_TOKEN;
 const AD_IG_ID = process.env.META_AD_IG_ID || "17841480222162829"; // @hunteracademy_uz — тестовый IG, откуда берём видео-креативы
 const BUSINESS_ID = process.env.META_BUSINESS_ID || "895505843209419"; // Hunter — бизнес (для страниц/форм)
+const AD_ACCOUNT = (process.env.META_AD_ACCOUNT_ID || "825927740501149").replace(/^act_/, ""); // рекламный кабинет
+
+// ИЗУЧИТЬ ИЗНУТРИ работающие адсеты: реальный таргетинг (возраст/гео/интересы/плейсменты/цель) — чтобы строить тесты на данных, не вслепую.
+async function fetchExistingAdsets() {
+  if (!META_TOKEN) return { adsets: [], error: "META_TOKEN не задан" };
+  try {
+    const fields = "id,name,effective_status,daily_budget,lifetime_budget,optimization_goal,billing_event,bid_strategy,targeting,promoted_object";
+    const d = await (await fetch(`https://graph.facebook.com/${GRAPH}/act_${AD_ACCOUNT}/adsets?fields=${fields}&limit=200&access_token=${encodeURIComponent(META_TOKEN)}`)).json();
+    if (d && d.error) return { adsets: [], error: d.error.message };
+    const adsets = ((d && d.data) || []).map((a) => {
+      const t = a.targeting || {}, geo = t.geo_locations || {};
+      const interests = [];
+      for (const spec of (t.flexible_spec || [])) for (const k of ["interests", "behaviors"]) for (const it of (spec[k] || [])) interests.push(it.name);
+      return {
+        id: a.id, name: a.name, status: a.effective_status,
+        dailyBudgetUSD: a.daily_budget ? Math.round(a.daily_budget) / 100 : null, // minor units → $
+        optimizationGoal: a.optimization_goal || null, billing: a.billing_event || null, bid: a.bid_strategy || null,
+        ageMin: t.age_min || null, ageMax: t.age_max || null, genders: t.genders || null,
+        countries: geo.countries || null, cities: (geo.cities || []).map((c) => c.name || c.key), regions: (geo.regions || []).map((r) => r.name),
+        interests: interests.slice(0, 20),
+        customAudiences: (t.custom_audiences || []).map((c) => c.name || c.id),
+        placements: { publisher: t.publisher_platforms || null, ig: t.instagram_positions || null, fb: t.facebook_positions || null, auto: !t.publisher_platforms },
+      };
+    });
+    return { adsets };
+  } catch (e) { return { adsets: [], error: String(e).slice(0, 150) }; }
+}
 
 // КРЕАТИВЫ — посты (видео/reels) из тестового Instagram напрямую через Graph API.
 async function fetchIgMedia(igId) {
@@ -123,6 +150,16 @@ export default async function handler(req, res) {
       } catch (e) { out.errors.push(`${edge}: ${String(e).slice(0, 100)}`); }
     }
     res.status(200).json({ ok: true, ...out });
+    return;
+  }
+
+  // ИЗУЧИТЬ РАБОТАЮЩИЕ ТАРГЕТЫ ИЗНУТРИ: таргетинг адсетов из Meta + сопоставление с реальным ROAS (amoCRM).
+  if (action === "study") {
+    const ex = await fetchExistingAdsets();
+    const roasByName = {}; for (const a of auds) roasByName[a.name] = { roas: a.roas, cpl: a.cpl, sold: a.sold, leads: a.leads };
+    const studied = (ex.adsets || []).map((a) => ({ ...a, result: roasByName[a.name] || null }))
+      .sort((x, y) => ((y.result && y.result.roas) || -1) - ((x.result && x.result.roas) || -1));
+    res.status(200).json({ ok: true, adsets: studied, error: ex.error || null, account: AD_ACCOUNT });
     return;
   }
 
