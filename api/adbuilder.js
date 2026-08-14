@@ -127,14 +127,21 @@ export default async function handler(req, res) {
     const objId = String(q.objective || bd.objective || "leads");
     const objective = OBJECTIVES.find((o) => o.id === objId) || OBJECTIVES[0];
     const startDate = String(q.startDate || bd.startDate || "").slice(0, 10) || null; // YYYY-MM-DD; пусто = сразу
+    const endDate = String(q.endDate || bd.endDate || "").slice(0, 10) || null;
     const formId = (q.form || bd.form || q.formId || bd.formId || null);
+    const budgetType = (String(q.budgetType || bd.budgetType || "daily") === "lifetime") ? "lifetime" : "daily";
+    const perDay = budgetType === "daily";
     const campaign = {
       objective: objective.id, objectiveLabel: objective.label, objectiveMeta: objective.meta,
       startDate: startDate || "сразу после запуска",
+      endDate: budgetType === "lifetime" ? (endDate || null) : null,
+      budgetType, budgetLabel: perDay ? "в день" : "на весь период",
       form: objective.needsForm ? (formId || null) : null,
+      perDay,
       warnings: [
         ...(objective.needsPixel ? ["Цель «Продажи» без пикселя работает слабо — сначала подключим Conversions API из amoCRM."] : []),
         ...(objective.needsForm && !formId ? ["Для цели «Лиды» нужно выбрать лид-форму — иначе заявки некуда собирать."] : []),
+        ...(budgetType === "lifetime" && !endDate ? ["Для общего бюджета на период укажи дату окончания — иначе Meta не знает, на сколько дней растянуть."] : []),
       ],
     };
     // РАНЖИРОВАНИЕ по реальному ROAS (из amoCRM). Победители — с продажами и ROAS ≥ 1.

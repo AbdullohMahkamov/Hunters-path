@@ -13,7 +13,9 @@ export default function TargetDesk({ onLogout }) {
   const [objective, setObjective] = useState('leads')
   const [sel, setSel] = useState({})
   const [budget, setBudget] = useState('')
+  const [budgetType, setBudgetType] = useState('daily') // daily | lifetime
   const [startDate, setStartDate] = useState('')
+  const [endDate, setEndDate] = useState('')
   const [form, setForm] = useState('')
   const [plan, setPlan] = useState(null)
   const [building, setBuilding] = useState(false)
@@ -39,7 +41,7 @@ export default function TargetDesk({ onLogout }) {
     setBuilding(true); setPlan(null)
     try {
       const creativeIds = Object.keys(sel).filter(k => sel[k])
-      const d = await adb.plan({ budget: b, objective, startDate, form: form || undefined, creatives: creativeIds })
+      const d = await adb.plan({ budget: b, budgetType, objective, startDate, endDate, form: form || undefined, creatives: creativeIds })
       if (d && d.ok) { setPlan(d); setBuilding(false); return true }
       setErr((d && d.error) || 'Не удалось собрать план')
     } catch (e) { setErr('Нет связи с сервером') }
@@ -118,15 +120,30 @@ export default function TargetDesk({ onLogout }) {
             {/* ШАГ 3 — БЮДЖЕТ + ДАТА */}
             {step === 'budget' && (<>
               <div style={{ fontSize: 16, fontWeight: 700, marginBottom: 4 }}>Бюджет и дата</div>
-              <div style={{ fontSize: 12.5, color: 'var(--txt3)', marginBottom: 14 }}>Общий бюджет — твой потолок. ALTRONE распределит внутри, больше не потратит.</div>
-              <div style={{ marginBottom: 14 }}>
-                <div style={{ fontSize: 12, color: 'var(--txt3)', marginBottom: 6 }}>Общий бюджет (сум)</div>
-                <input value={budget} onChange={(e) => setBudget(e.target.value.replace(/[^\d]/g, ''))} inputMode="numeric" placeholder="напр. 5 000 000" style={{ ...inputStyle, ...TN, fontWeight: 700, fontSize: 18 }} />
+              <div style={{ fontSize: 12.5, color: 'var(--txt3)', marginBottom: 14 }}>Бюджет — твой потолок. ALTRONE распределит внутри, больше не потратит.</div>
+              <div style={{ display: 'flex', gap: 8, marginBottom: 14 }}>
+                {[['daily', 'В день'], ['lifetime', 'На весь период']].map(([k, l]) => (
+                  <button key={k} onClick={() => setBudgetType(k)} style={{ flex: 1, padding: '11px', borderRadius: 10, border: `2px solid ${budgetType === k ? 'var(--accent)' : 'var(--line2)'}`, background: budgetType === k ? 'var(--accent-bg)' : 'var(--bg2)', color: budgetType === k ? 'var(--accent)' : 'var(--txt2)', fontWeight: 600, fontSize: 14, cursor: 'pointer' }}>{l}</button>
+                ))}
               </div>
-              <div>
-                <div style={{ fontSize: 12, color: 'var(--txt3)', marginBottom: 6 }}>Дата запуска</div>
-                <input type="date" value={startDate} onChange={(e) => setStartDate(e.target.value)} style={inputStyle} />
-                <div style={{ fontSize: 11, color: 'var(--txt3)', marginTop: 5 }}>пусто = сразу после «Старт»</div>
+              <div style={{ marginBottom: 14 }}>
+                <div style={{ fontSize: 12, color: 'var(--txt3)', marginBottom: 6 }}>{budgetType === 'daily' ? 'Бюджет в день (сум)' : 'Общий бюджет на период (сум)'}</div>
+                <input value={budget} onChange={(e) => setBudget(e.target.value.replace(/[^\d]/g, ''))} inputMode="numeric" placeholder="напр. 5 000 000" style={{ ...inputStyle, ...TN, fontWeight: 700, fontSize: 18 }} />
+                {budgetType === 'daily' && budget ? <div style={{ fontSize: 11.5, color: 'var(--txt3)', marginTop: 5, ...TN }}>≈ {num(Number(budget) * 30)} сум/месяц при ежедневном откруте</div> : null}
+              </div>
+              <div style={{ display: 'flex', gap: 12, flexWrap: 'wrap' }}>
+                <div style={{ flex: '1 1 180px' }}>
+                  <div style={{ fontSize: 12, color: 'var(--txt3)', marginBottom: 6 }}>Дата запуска</div>
+                  <input type="date" value={startDate} onChange={(e) => setStartDate(e.target.value)} style={inputStyle} />
+                  <div style={{ fontSize: 11, color: 'var(--txt3)', marginTop: 5 }}>пусто = сразу</div>
+                </div>
+                {budgetType === 'lifetime' ? (
+                  <div style={{ flex: '1 1 180px' }}>
+                    <div style={{ fontSize: 12, color: 'var(--txt3)', marginBottom: 6 }}>Дата окончания</div>
+                    <input type="date" value={endDate} onChange={(e) => setEndDate(e.target.value)} style={inputStyle} />
+                    <div style={{ fontSize: 11, color: 'var(--txt3)', marginTop: 5 }}>на сколько растянуть общий бюджет</div>
+                  </div>
+                ) : null}
               </div>
             </>)}
 
@@ -146,12 +163,12 @@ export default function TargetDesk({ onLogout }) {
             {step === 'result' && plan && (<>
               <div style={{ fontSize: 16, fontWeight: 700, marginBottom: 10 }}>Итог — план кампании</div>
               <div style={{ display: 'flex', flexWrap: 'wrap', gap: '6px 20px', fontSize: 13, marginBottom: 12 }}>
-                <span>Цель: <b>{plan.campaign.objectiveLabel}</b></span><span>Старт: <b>{plan.campaign.startDate}</b></span><span>Бюджет: <b style={TN}>{num(plan.budgetUZS)} сум</b></span>{plan.expectedLeads != null ? <span>Прогноз: <b style={TN}>~{num(plan.expectedLeads)} лид</b></span> : null}
+                <span>Цель: <b>{plan.campaign.objectiveLabel}</b></span><span>Старт: <b>{plan.campaign.startDate}</b></span>{plan.campaign.endDate ? <span>До: <b>{plan.campaign.endDate}</b></span> : null}<span>Бюджет: <b style={TN}>{num(plan.budgetUZS)} сум {plan.campaign.budgetLabel}</b></span>{plan.expectedLeads != null ? <span>Прогноз: <b style={TN}>~{num(plan.expectedLeads)} лид</b></span> : null}
               </div>
               {(plan.campaign.warnings || []).map((w, i) => <div key={i} style={{ background: 'var(--gold-bg)', border: '1px solid var(--gold)', borderRadius: 10, padding: '9px 12px', marginBottom: 9, color: 'var(--txt2)', fontSize: 12.5 }}>⚠️ {w}</div>)}
               {plan.split.map((a, i) => (
                 <div key={i} style={{ background: 'var(--bg2)', borderRadius: 10, padding: '11px 13px', marginBottom: 7, borderLeft: `3px solid ${a.isTest ? 'var(--gold)' : 'var(--accent)'}` }}>
-                  <div style={{ display: 'flex', justifyContent: 'space-between', gap: 10 }}><div style={{ fontSize: 13.5, fontWeight: 600 }}>{a.audience}{a.isTest ? ' 🧪' : a.proven ? ' ✅' : ''}</div><div style={{ fontSize: 14.5, fontWeight: 700, ...TN }}>{num(a.budgetUZS)}</div></div>
+                  <div style={{ display: 'flex', justifyContent: 'space-between', gap: 10 }}><div style={{ fontSize: 13.5, fontWeight: 600 }}>{a.audience}{a.isTest ? ' 🧪' : a.proven ? ' ✅' : ''}</div><div style={{ fontSize: 14.5, fontWeight: 700, ...TN }}>{num(a.budgetUZS)}{plan.campaign.perDay ? '/дн' : ''}</div></div>
                   <div style={{ fontSize: 11.5, color: 'var(--txt3)', marginTop: 3, ...TN }}>{a.roas != null ? `ROAS ${a.roas}x · ` : ''}{a.cpl ? `CPL ${num(a.cpl)} · ` : ''}видео: {a.creative}</div>
                 </div>
               ))}
