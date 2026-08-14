@@ -12,6 +12,7 @@ const MKT_RATE = 12100; // $→сум, как в marketing.js
 const GRAPH = "v21.0";
 const META_TOKEN = process.env.META_TOKEN;
 const AD_IG_ID = process.env.META_AD_IG_ID || "17841480222162829"; // @hunteracademy_uz — тестовый IG, откуда берём видео-креативы
+const BUSINESS_ID = process.env.META_BUSINESS_ID || "895505843209419"; // Hunter — бизнес (для страниц/форм)
 
 // КРЕАТИВЫ — посты (видео/reels) из тестового Instagram напрямую через Graph API.
 async function fetchIgMedia(igId) {
@@ -40,23 +41,25 @@ const OBJECTIVES = [
   { id: "sales", meta: "OUTCOME_SALES", label: "Продажи (конверсии)", note: "СЛАБО без пикселя — включим после Conversions API из amoCRM", needsPixel: true, needsForm: false },
 ];
 
-// Лид-ФОРМЫ (Instant Forms) — лежат на СТРАНИЦАХ; тянем best-effort через страницы System User.
+// Лид-ФОРМЫ (Instant Forms) — на СТРАНИЦАХ бизнеса. Тянем через owned_pages/client_pages (у System User /me/accounts пуст).
 async function fetchLeadForms() {
   if (!META_TOKEN) return { forms: [], error: "META_TOKEN не задан" };
-  try {
-    const pr = await fetch(`https://graph.facebook.com/${GRAPH}/me/accounts?fields=id,name&limit=50&access_token=${encodeURIComponent(META_TOKEN)}`);
-    const pd = await pr.json();
-    const pages = (pd && pd.data) || [];
-    const forms = [];
-    for (const p of pages.slice(0, 10)) {
-      try {
-        const fr = await fetch(`https://graph.facebook.com/${GRAPH}/${p.id}/leadgen_forms?fields=id,name,status&limit=50&access_token=${encodeURIComponent(META_TOKEN)}`);
-        const fd = await fr.json();
-        for (const f of ((fd && fd.data) || [])) forms.push({ id: f.id, name: f.name || f.id, status: f.status || "", page: p.name || p.id });
-      } catch (e) {}
-    }
-    return { forms, error: pd && pd.error ? (pd.error.message || "ошибка страниц") : null };
-  } catch (e) { return { forms: [], error: String(e).slice(0, 150) }; }
+  const forms = [], errors = [], seenPage = new Set();
+  for (const edge of ["owned_pages", "client_pages"]) {
+    try {
+      const pd = await (await fetch(`https://graph.facebook.com/${GRAPH}/${BUSINESS_ID}/${edge}?fields=id,name&limit=100&access_token=${encodeURIComponent(META_TOKEN)}`)).json();
+      if (pd && pd.error) { errors.push(`${edge}: ${pd.error.message}`); continue; }
+      for (const p of ((pd && pd.data) || [])) {
+        if (seenPage.has(p.id)) continue; seenPage.add(p.id);
+        try {
+          const fd = await (await fetch(`https://graph.facebook.com/${GRAPH}/${p.id}/leadgen_forms?fields=id,name,status&limit=100&access_token=${encodeURIComponent(META_TOKEN)}`)).json();
+          if (fd && fd.error) { errors.push(`forms(${p.name}): ${fd.error.message}`); continue; }
+          for (const f of ((fd && fd.data) || [])) if (!forms.find((x) => x.id === f.id)) forms.push({ id: f.id, name: f.name || f.id, status: f.status || "", page: p.name });
+        } catch (e) {}
+      }
+    } catch (e) { errors.push(`${edge}: ${String(e).slice(0, 80)}`); }
+  }
+  return { forms, error: errors.length ? errors.join(" | ") : null };
 }
 
 export default async function handler(req, res) {
