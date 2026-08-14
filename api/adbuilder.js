@@ -14,8 +14,9 @@ const fmt = (n) => (n == null || isNaN(n)) ? "—" : Math.round(n).toLocaleStrin
 export default async function handler(req, res) {
   const session = (req.query && req.query.session) || (req.body && req.body.session);
   const sess = await getSession(session);
-  if (!sess || !["admin", "marketing"].includes(sess.role)) { res.status(200).json({ ok: false, error: "нет доступа" }); return; }
-  const org = sess.org || "hunter";
+  const cronOk = (req.query && (req.query.cron === "1")); // read-only планировщик/превью (трат нет — Стадия 1 ничего не создаёт в Meta)
+  if (!cronOk && (!sess || !["admin", "marketing"].includes(sess.role))) { res.status(200).json({ ok: false, error: "нет доступа" }); return; }
+  const org = (sess && sess.org) || "hunter";
   const action = (req.query && req.query.action) || "inputs";
 
   const dash = await rgetJSON(org === "hunter" ? "dashboard" : `dashboard:${org}`, null);
