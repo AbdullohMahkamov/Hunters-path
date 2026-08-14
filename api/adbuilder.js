@@ -92,7 +92,7 @@ export default async function handler(req, res) {
       cpl: (leads > 0 && spend > 0) ? Math.round(spend / leads) : null,
       conv: leads > 0 ? +(sold / leads * 100).toFixed(1) : null,
     };
-  }).filter((a) => a.leads > 0 || a.spend > 0);
+  }).filter((a) => (a.leads > 0 || a.spend > 0) && a.name && a.name.length < 70 && !/permission|https?:\/\//i.test(a.name)); // отсеиваем мусорные имена (просочившиеся ошибки Meta)
 
   // КРЕАТИВЫ — посты из тестового Instagram напрямую (не из общего IG-кэша, тот на другой аккаунт).
   let posts = await fetchIgMedia(AD_IG_ID);
