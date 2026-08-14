@@ -159,36 +159,39 @@ export default async function handler(req, res) {
         ...(budgetType === "lifetime" && !endDate ? ["Для общего бюджета на период укажи дату окончания — иначе Meta не знает, на сколько дней растянуть."] : []),
       ],
     };
-    // РАНЖИРОВАНИЕ по реальному ROAS (из amoCRM). Победители — с продажами и ROAS ≥ 1.
-    const scored = auds.map((a) => ({ ...a, score: (a.roas || 0) })).sort((x, y) => y.score - x.score);
-    const winners = scored.filter((a) => a.roas != null && a.roas >= 1 && a.sold > 0);
-    const pool = winners.length ? winners : scored.slice(0, 3); // нет победителей → топ-3 по данным (тестовый режим)
-    // РЕЗЕРВ на новую аудиторию (Lookalike из покупателей amoCRM) — тестируем малым.
-    const rnd = (x) => currency === "USD" ? Math.round(x * 100) / 100 : Math.round(x); // $ — 2 знака, сум — целые
-    const testShare = 0.2, testBudget = rnd(budget * testShare), coreBudget = budget - testBudget;
-    const perAdsetCap = budget * 0.5; // потолок на один адсет — не лить всё в одну аудиторию
-    const sumScore = pool.reduce((s, a) => s + Math.max(0.1, a.score), 0) || 1;
-    const split = pool.map((a) => {
-      let b = coreBudget * Math.max(0.1, a.score) / sumScore;
-      b = rnd(Math.min(b, perAdsetCap));
-      return { audience: a.name, budget: b, roas: a.roas, cac: a.cac, cpl: a.cpl, conv: a.conv, proven: a.roas >= 1 && a.sold > 0, creative: null };
-    });
-    if (split.length) split[0].budget = rnd(split[0].budget + (coreBudget - split.reduce((s, a) => s + a.budget, 0))); // добор округления
-    split.push({ audience: "Lookalike (покупатели amoCRM)", budget: testBudget, roas: null, cac: null, cpl: null, conv: null, isTest: true, creative: null, note: "новая аудитория из твоих покупателей — тест малым, масштаб при результате" });
-    // КРЕАТИВЫ: берём ТОЛЬКО выбранные владельцем видео (bd.creatives = массив id). Если не выбрано — топ по вовлечённости.
+    // ⚠️ СТАРАЯ КАМПАНИЯ УЖЕ РАБОТАЕТ + лиды дорожают (усталость связок: было $0.2 → $0.4 → $0.6).
+    // Задача ALTRONE — ТЕСТИРОВАТЬ НОВОЕ, НЕ дублировать работающие аудитории (иначе конкуренция сам с собой).
+    // Понятия «дорого» нет — сравниваем и ищем СЛЕДУЮЩИЙ дешёвый источник, пока текущие связки выдыхаются.
+    const rnd = (x) => currency === "USD" ? Math.round(x * 100) / 100 : Math.round(x);
+    const knownCpl = auds.filter((a) => a.cpl);
+    const avgCpl = knownCpl.length ? Math.round(knownCpl.reduce((s, a) => s + a.cpl, 0) / knownCpl.length) : null;
+    // «уже крутится» — текущая кампания; её аудитории НЕ дублируем
+    const running = auds.filter((a) => a.spend > 0 || a.leads > 0).map((a) => ({ name: a.name, roas: a.roas, cpl: a.cpl, sold: a.sold })).sort((x, y) => (y.roas || 0) - (x.roas || 0));
+    const best = running.find((a) => a.roas != null && a.sold > 0) || running[0] || null;
+    const bestCpl = (best && best.cpl) || avgCpl;
+    // НОВЫЕ тест-связки (гипотезы, ещё без ROAS) — на данных, НЕ повтор существующих
+    const tests = [];
+    tests.push({ audience: "Lookalike 1% · покупатели amoCRM", type: "lookalike", isTest: true, hypothesis: "похожие на твоих реальных покупателей из CRM — сильнейший сигнал без пикселя" });
+    if (best) tests.push({ audience: `Lookalike · лиды «${best.name}»`, type: "lookalike", isTest: true, hypothesis: `похожие на лиды лучшей аудитории${best.roas != null ? ` (ROAS ${best.roas}x)` : ""}` });
+    if (best) tests.push({ audience: `«${best.name}» — расширение`, type: "broaden", isTest: true, hypothesis: "шире гео/возраст от победителя — тянется ли результат" });
+    tests.push({ audience: "Широкая · Advantage+ (алгоритм Meta)", type: "broad", isTest: true, hypothesis: "Meta сам ищет аудиторию — контрольная связка теста" });
+    // бюджет РАВНОМЕРНО по тестам (тест малым, масштаб победителя потом)
+    const per = rnd(budget / tests.length);
+    tests.forEach((t) => { t.budget = per; t.cpl = bestCpl; });
+    if (tests.length) tests[0].budget = rnd(tests[0].budget + (budget - tests.reduce((s, t) => s + t.budget, 0)));
+    // КРЕАТИВЫ: выбранные владельцем (иначе свежие — против усталости крео), своё видео на каждый тест
     let selIds = bd.creatives || q.creatives || null;
     if (typeof selIds === "string") selIds = selIds.split(",").map((x) => x.trim()).filter(Boolean);
     const selected = (Array.isArray(selIds) && selIds.length) ? posts.filter((p) => selIds.includes(p.id)) : [];
     const creaPool = selected.length ? selected : [...posts].sort((a, b) => b.engagement - a.engagement);
-    const topCre = creaPool.slice(0, Math.max(split.length, 1));
-    split.forEach((a, i) => { a.creative = topCre.length ? (topCre[i % topCre.length].caption || `IG-пост #${i + 1}`) : "— (нет постов в IG)"; });
-    // прогноз лидов — переводим бюджет адсета в сумы (CPL в сумах), делим на CPL
-    const knownCpl = auds.filter((a) => a.cpl); const avgCpl = knownCpl.length ? Math.round(knownCpl.reduce((s, a) => s + a.cpl, 0) / knownCpl.length) : null;
-    const expectedLeads = avgCpl ? split.reduce((s, a) => s + Math.round((a.budget * rateUZS) / (a.cpl || avgCpl)), 0) : null; // дневной бюджет → лидов/день; общий → всего
+    const topCre = creaPool.slice(0, Math.max(tests.length, 1));
+    tests.forEach((t, i) => { t.creative = topCre.length ? (topCre[i % topCre.length].caption || `IG-пост #${i + 1}`) : "— (нет постов)"; });
+    // прогноз — гипотеза по текущей средней цене лида (новые связки могут дать дешевле ИЛИ дороже — на то и тест)
+    const expectedLeads = bestCpl ? tests.reduce((s, t) => s + Math.round((t.budget * rateUZS) / bestCpl), 0) : null;
     res.status(200).json({
-      ok: true, budget, currency, campaign, split, expectedLeads, avgCpl, creativesAvailable: posts.length,
-      rationale: { basis: "реальный ROAS по аудиториям из amoCRM (не прокси Meta)", winners: winners.length, testShare, perAdsetCapPct: 50 },
-      note: "ПЛАН (Стадия 1): в Meta НИЧЕГО не создано. Это предпросмотр того, что ALTRONE соберёт и запустит ПОСЛЕ твоего подтверждения (Стадия 2). Общий бюджет — жёсткий потолок.",
+      ok: true, budget, currency, campaign, split: tests, running, expectedLeads, avgCpl, creativesAvailable: posts.length,
+      rationale: { basis: "ТЕСТ новых связок аудитория×крео на данных amoCRM; работающая кампания не дублируется", running: running.length },
+      note: "ПЛАН ТЕСТА (Стадия 1): в Meta ничего не создано. ALTRONE предлагает НОВЫЕ аудитории (lookalike из покупателей + расширения + широкая) со свежими крео — чтобы найти следующий дешёвый источник, пока текущие связки дорожают. Работающую кампанию не дублирует. Бюджет — потолок; тест малым → масштаб победителя.",
     });
     return;
   }

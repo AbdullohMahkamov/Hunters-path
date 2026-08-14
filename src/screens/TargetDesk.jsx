@@ -169,10 +169,17 @@ export default function TargetDesk({ onLogout }) {
                 <span>Цель: <b>{plan.campaign.objectiveLabel}</b></span><span>Старт: <b>{plan.campaign.startDate}</b></span>{plan.campaign.endDate ? <span>До: <b>{plan.campaign.endDate}</b></span> : null}<span>Бюджет: <b style={TN}>{plan.currency === 'USD' ? '$' + num(plan.budget) : num(plan.budget) + ' сум'} {plan.campaign.budgetLabel}</b></span>{plan.expectedLeads != null ? <span>Прогноз: <b style={TN}>~{num(plan.expectedLeads)} лид{plan.campaign.perDay ? '/день' : ''}</b></span> : null}
               </div>
               {(plan.campaign.warnings || []).map((w, i) => <div key={i} style={{ background: 'var(--gold-bg)', border: '1px solid var(--gold)', borderRadius: 10, padding: '9px 12px', marginBottom: 9, color: 'var(--txt2)', fontSize: 12.5 }}>⚠️ {w}</div>)}
+              {(plan.running || []).length ? (
+                <div style={{ background: 'var(--card2)', border: '1px solid var(--line)', borderRadius: 10, padding: '10px 13px', marginBottom: 10, fontSize: 12, color: 'var(--txt2)' }}>
+                  <div style={{ fontWeight: 600, marginBottom: 4, color: 'var(--txt)' }}>Уже работает (старая кампания) — ALTRONE не дублирует:</div>
+                  {plan.running.map((r, i) => <span key={i} style={{ color: 'var(--txt3)' }}>{r.name}{r.roas != null ? ` (${r.roas}x)` : ''}{i < plan.running.length - 1 ? ' · ' : ''}</span>)}
+                </div>
+              ) : null}
+              <div style={{ fontSize: 12.5, fontWeight: 600, color: 'var(--txt2)', margin: '4px 0 8px' }}>🧪 Новые тесты (ALTRONE ищет следующий дешёвый источник):</div>
               {plan.split.map((a, i) => (
-                <div key={i} style={{ background: 'var(--bg2)', borderRadius: 10, padding: '11px 13px', marginBottom: 7, borderLeft: `3px solid ${a.isTest ? 'var(--gold)' : 'var(--accent)'}` }}>
-                  <div style={{ display: 'flex', justifyContent: 'space-between', gap: 10 }}><div style={{ fontSize: 13.5, fontWeight: 600 }}>{a.audience}{a.isTest ? ' 🧪' : a.proven ? ' ✅' : ''}</div><div style={{ fontSize: 14.5, fontWeight: 700, ...TN }}>{plan.currency === 'USD' ? '$' + num(a.budget) : num(a.budget)}{plan.campaign.perDay ? '/дн' : ''}</div></div>
-                  <div style={{ fontSize: 11.5, color: 'var(--txt3)', marginTop: 3, ...TN }}>{a.roas != null ? `ROAS ${a.roas}x · ` : ''}{a.cpl ? `CPL ${num(a.cpl)} · ` : ''}видео: {a.creative}</div>
+                <div key={i} style={{ background: 'var(--bg2)', borderRadius: 10, padding: '11px 13px', marginBottom: 7, borderLeft: '3px solid var(--gold)' }}>
+                  <div style={{ display: 'flex', justifyContent: 'space-between', gap: 10 }}><div style={{ fontSize: 13.5, fontWeight: 600 }}>🧪 {a.audience}</div><div style={{ fontSize: 14.5, fontWeight: 700, ...TN }}>{plan.currency === 'USD' ? '$' + num(a.budget) : num(a.budget)}{plan.campaign.perDay ? '/дн' : ''}</div></div>
+                  <div style={{ fontSize: 11.5, color: 'var(--txt3)', marginTop: 3 }}>{a.hypothesis ? a.hypothesis + ' · ' : ''}видео: {a.creative}</div>
                 </div>
               ))}
               <div style={{ marginTop: 12, fontSize: 12, color: 'var(--txt3)' }}>{plan.note}</div>
