@@ -31,6 +31,25 @@ export default async function handler(req, res) {
       return;
     }
 
+    // ДИАГНОСТИКА ПРАВ ТОКЕНА (read-only, не секретно — возвращает только список выданных scopes, НЕ сам токен).
+    // Нужно, чтобы честно проверить: есть ли у токена ЗАПИСЬ (ads_management) для автономного управления рекламой.
+    if (action === "perms") {
+      if (!metaToken) { res.status(200).json({ ok: false, error: "META_TOKEN не задан" }); return; }
+      try {
+        const dbg = await (await fetch(`https://graph.facebook.com/${GRAPH_VERSION}/debug_token?input_token=${encodeURIComponent(metaToken)}&access_token=${encodeURIComponent(metaToken)}`)).json();
+        const info = (dbg && dbg.data) || {};
+        let scopes = Array.isArray(info.scopes) ? info.scopes : [];
+        if (!scopes.length) { // фолбэк для user-токенов
+          const pm = await (await fetch(`https://graph.facebook.com/${GRAPH_VERSION}/me/permissions?access_token=${encodeURIComponent(metaToken)}`)).json();
+          scopes = ((pm && pm.data) || []).filter((p) => p.status === "granted").map((p) => p.permission);
+        }
+        const want = ["ads_read", "ads_management", "business_management", "instagram_basic", "instagram_manage_insights", "pages_show_list"];
+        const has = {}; want.forEach((s) => (has[s] = scopes.includes(s)));
+        res.status(200).json({ ok: true, valid: info.is_valid !== false, type: info.type || null, appId: info.app_id || null, expiresAt: info.expires_at || null, scopes, has, canWriteAds: scopes.includes("ads_management"), rawError: dbg && dbg.error ? dbg.error : null });
+      } catch (e) { res.status(200).json({ ok: false, error: String(e).slice(0, 200) }); }
+      return;
+    }
+
     // ЗАЩИТА ДОСТУПА: refresh дёргает ЖИВОЙ Meta API → закрыт cron-секретом (Vercel шлёт крону
     // Authorization: Bearer $CRON_SECRET). Ручной вызов из браузера без секрета → понятный 401.
     // action=get выше остаётся открытым — он читает только Redis-кэш и в Meta не ходит.
