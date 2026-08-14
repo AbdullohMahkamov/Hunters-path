@@ -52,7 +52,10 @@ async function fetchLeadForms() {
       for (const p of ((pd && pd.data) || [])) {
         if (seenPage.has(p.id)) continue; seenPage.add(p.id);
         try {
-          const fd = await (await fetch(`https://graph.facebook.com/${GRAPH}/${p.id}/leadgen_forms?fields=id,name,status&limit=100&access_token=${encodeURIComponent(META_TOKEN)}`)).json();
+          // лид-формы читаются ТОЛЬКО page-токеном (ошибка #190) — сперва берём page access token
+          const ptj = await (await fetch(`https://graph.facebook.com/${GRAPH}/${p.id}?fields=access_token&access_token=${encodeURIComponent(META_TOKEN)}`)).json();
+          const pageToken = (ptj && ptj.access_token) || META_TOKEN;
+          const fd = await (await fetch(`https://graph.facebook.com/${GRAPH}/${p.id}/leadgen_forms?fields=id,name,status&limit=100&access_token=${encodeURIComponent(pageToken)}`)).json();
           if (fd && fd.error) { errors.push(`forms(${p.name}): ${fd.error.message}`); continue; }
           for (const f of ((fd && fd.data) || [])) if (!forms.find((x) => x.id === f.id)) forms.push({ id: f.id, name: f.name || f.id, status: f.status || "", page: p.name });
         } catch (e) {}
