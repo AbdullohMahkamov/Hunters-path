@@ -217,7 +217,13 @@ export default async function handler(req, res) {
       const acct = `act_${AD_ACCOUNT}`;
       const mpost = async (path, body) => (await (await fetch(`https://graph.facebook.com/${GRAPH}/${path}`, { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ ...body, access_token: META_TOKEN }) })).json());
       const ca = await mpost(`${acct}/customaudiences`, { name: "ALTRONE · Покупатели amoCRM", subtype: "CUSTOM", customer_file_source: "USER_PROVIDED_ONLY", description: "покупатели из amoCRM (хеш телефонов)" });
-      if (!ca.id) { res.status(200).json({ ok: false, error: "Custom Audience не создана: " + JSON.stringify(ca.error || ca).slice(0, 160) }); return; }
+      if (!ca.id) {
+        const cerr = ca.error || {};
+        const isTos = cerr.error_subcode === 1870090 || /terms|услови/i.test(String(cerr.error_user_title || cerr.message || ""));
+        const tosUrl = `https://www.facebook.com/ads/manage/customaudiences/tos.php?act=${AD_ACCOUNT}`;
+        res.status(200).json({ ok: false, tosUrl: isTos ? tosUrl : null, error: isTos ? `Нужно ОДИН РАЗ принять «Условия использования Custom Audiences» в Meta. Открой: ${tosUrl} → нажми Accept/Принять, затем снова «Собрать Lookalike». Это разовое требование Meta для загрузки списков клиентов.` : "Custom Audience не создана: " + JSON.stringify(cerr).slice(0, 160) });
+        return;
+      }
       // загрузка партиями по 5000
       let uploaded = 0;
       for (let i = 0; i < phoneArr.length; i += 5000) {
