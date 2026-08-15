@@ -184,16 +184,18 @@ export default async function handler(req, res) {
     if (!AMO) { res.status(200).json({ ok: false, error: "AMOCRM_TOKEN не задан" }); return; }
     const amoBase = `https://${SUB}.amocrm.ru/api/v4`, AH = { Authorization: `Bearer ${AMO}` };
     try {
+      const aj = async (u) => { const r = await fetch(u, { headers: AH }); if (r.status === 204 || !r.ok) return null; try { return await r.json(); } catch (e) { return null; } };
       // 1) статус "Sotildi" (продано) + воронка
-      const pj = await (await fetch(`${amoBase}/leads/pipelines`, { headers: AH })).json();
+      const pj = await aj(`${amoBase}/leads/pipelines`);
+      if (!pj) { res.status(200).json({ ok: false, error: "amoCRM /pipelines не ответил (токен/сеть)" }); return; }
       let pipelineId = null, soldId = null;
       for (const p of ((pj._embedded && pj._embedded.pipelines) || [])) for (const s of ((p._embedded && p._embedded.statuses) || [])) if ((s.name || "").toLowerCase() === "sotildi") { pipelineId = p.id; soldId = s.id; }
       if (!soldId) { res.status(200).json({ ok: false, error: "статус «Sotildi» не найден в amoCRM" }); return; }
       // 2) выигранные сделки → id контактов
       const contactIds = new Set(); let page = 1, guard = 0;
       while (guard < 60) { guard++;
-        const r = await fetch(`${amoBase}/leads?filter[statuses][0][pipeline_id]=${pipelineId}&filter[statuses][0][status_id]=${soldId}&with=contacts&limit=250&page=${page}`, { headers: AH });
-        if (!r.ok) break; const d = await r.json();
+        const d = await aj(`${amoBase}/leads?filter[statuses][0][pipeline_id]=${pipelineId}&filter[statuses][0][status_id]=${soldId}&with=contacts&limit=250&page=${page}`);
+        if (!d) break;
         const leads = (d._embedded && d._embedded.leads) || [];
         for (const l of leads) for (const c of ((l._embedded && l._embedded.contacts) || [])) contactIds.add(c.id);
         if (leads.length < 250) break; page++;
@@ -202,8 +204,8 @@ export default async function handler(req, res) {
       const ids = [...contactIds], phones = new Set();
       for (let i = 0; i < ids.length; i += 250) {
         const q = ids.slice(i, i + 250).map((id) => `filter[id][]=${id}`).join("&");
-        const r = await fetch(`${amoBase}/contacts?${q}&limit=250`, { headers: AH });
-        if (!r.ok) continue; const d = await r.json();
+        const d = await aj(`${amoBase}/contacts?${q}&limit=250`);
+        if (!d) continue;
         for (const c of ((d._embedded && d._embedded.contacts) || [])) for (const f of (c.custom_fields_values || [])) if (f.field_code === "PHONE" || f.field_type === "phone") for (const v of (f.values || [])) { const n = normUzPhone(v.value); if (n) phones.add(n); }
       }
       const phoneArr = [...phones];
