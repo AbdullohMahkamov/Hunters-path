@@ -205,6 +205,7 @@ export const adb = {
   plan: (payload) => postJSON('/api/adbuilder?action=plan', { session: getSession(), ...payload }).then((r) => r.json()),
   // Стадия 2: создание в Meta. dryRun по умолчанию (confirm не передан). confirm:true — реальное создание на паузе.
   create: (plan, confirm, cap) => postJSON('/api/adbuilder?action=create', { session: getSession(), plan, confirm: !!confirm, cap }).then((r) => r.json()),
+  audience: (confirm) => postJSON('/api/adbuilder?action=audience', { session: getSession(), confirm: !!confirm }).then((r) => r.json()),
 }
 
 export { postJSON, getJSON }

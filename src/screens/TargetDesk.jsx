@@ -25,6 +25,9 @@ export default function TargetDesk({ onLogout }) {
   const [err, setErr] = useState('')
   const [creating, setCreating] = useState(false)
   const [created, setCreated] = useState(null)
+  const [audRes, setAudRes] = useState(null)
+  const [audBusy, setAudBusy] = useState(false)
+  async function buildAudience(confirm) { setAudBusy(true); try { const d = await adb.audience(confirm); setAudRes(d) } catch (e) { setAudRes({ ok: false, error: 'Нет связи' }) } setAudBusy(false) }
 
   // прогресс мастера НЕ сбрасывается на F5 — храним в localStorage
   useEffect(() => { try { localStorage.setItem(SK, JSON.stringify({ idx, objective, sel, budget, budgetType, budgetCap, startDate, endDate, form, plan })) } catch (e) {} }, [idx, objective, sel, budget, budgetType, budgetCap, startDate, endDate, form, plan])
@@ -207,6 +210,15 @@ export default function TargetDesk({ onLogout }) {
                 </div>
               ))}
               <div style={{ marginTop: 12, fontSize: 12, color: 'var(--txt3)' }}>{plan.note}</div>
+              <div style={{ ...card, marginTop: 14, marginBottom: 2, padding: '13px 15px', borderLeft: '3px solid var(--accent)' }}>
+                <div style={{ fontSize: 13, fontWeight: 600, marginBottom: 3 }}>🎯 Lookalike из покупателей amoCRM</div>
+                <div style={{ fontSize: 11.5, color: 'var(--txt3)', marginBottom: 9 }}>Собери один раз — тесты «Lookalike» будут таргетиться на похожих на твоих реальных покупателей (заменяет пиксель).</div>
+                {audRes ? <div style={{ fontSize: 12, color: audRes.ok ? 'var(--green)' : 'var(--red)', marginBottom: 9, lineHeight: 1.5 }}>{audRes.ok ? (audRes.dryRun ? `Покупателей: ${audRes.buyers} · телефонов: ${audRes.phones}. ${audRes.note || ''}` : `✓ ${audRes.note || 'готово'}`) : audRes.error}</div> : null}
+                <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
+                  <button disabled={audBusy} onClick={() => buildAudience(false)} style={btn(false)}>{audBusy ? 'Считаю…' : 'Проверить (сухой прогон)'}</button>
+                  {audRes && audRes.ok && audRes.dryRun && audRes.phones >= 100 ? <button disabled={audBusy} onClick={() => buildAudience(true)} style={btn(true)}>{audBusy ? 'Создаю…' : `Собрать Lookalike (${audRes.phones})`}</button> : null}
+                </div>
+              </div>
               {!created ? (
                 <div style={{ marginTop: 14 }}>
                   <button disabled={creating} onClick={() => createInMeta(false)} style={btn(true)}>{creating ? 'Готовлю…' : '🔎 Показать, что создам (сухой прогон)'}</button>

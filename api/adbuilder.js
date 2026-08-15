@@ -2,10 +2,15 @@
 // Из данных (реальный ROAS по аудиториям из amoCRM + IG-посты как креативы) строит ПЛАН кампании:
 // разбивку общего бюджета по адсетам/аудиториям + подбор креативов + тест-адсет Lookalike из покупателей amoCRM.
 // Ничего в Meta НЕ создаёт — только предпросмотр того, что ALTRONE запустит после подтверждения (Стадия 2).
+import crypto from "node:crypto";
 const REDIS_URL = process.env.UPSTASH_REDIS_REST_URL;
 const REDIS_TOKEN = process.env.UPSTASH_REDIS_REST_TOKEN;
 async function rget(key) { try { const r = await fetch(`${REDIS_URL}/get/${encodeURIComponent(key)}`, { headers: { Authorization: `Bearer ${REDIS_TOKEN}` } }); const d = await r.json(); return d && d.result != null ? d.result : null; } catch (e) { return null; } }
 async function rgetJSON(key, dflt) { const raw = await rget(key); if (raw == null) return dflt; try { return JSON.parse(raw); } catch (e) { return dflt; } }
+async function rset(key, v) { try { await fetch(`${REDIS_URL}/set/${encodeURIComponent(key)}`, { method: "POST", headers: { Authorization: `Bearer ${REDIS_TOKEN}` }, body: typeof v === "string" ? v : JSON.stringify(v) }); } catch (e) {} }
+// нормализация UZ-телефона в 12 цифр (998XXXXXXXXX); хеш SHA-256 для Meta Custom Audience (обезличенно)
+function normUzPhone(raw) { let d = String(raw || "").replace(/\D/g, ""); if (d.length === 9) d = "998" + d; if (d.length === 12 && d.startsWith("998")) return d; if (d.startsWith("998")) return d.slice(0, 12); return null; }
+const sha256 = (s) => crypto.createHash("sha256").update(String(s)).digest("hex");
 async function getSession(s) { if (!s) return null; try { const raw = await rget(`session:${s}`); return raw ? JSON.parse(raw) : null; } catch (e) { return null; } }
 
 const MKT_RATE = 12100; // $→сум, как в marketing.js
@@ -169,6 +174,62 @@ export default async function handler(req, res) {
     return;
   }
 
+  // ═══ СТАДИЯ 2.2: LOOKALIKE ИЗ ПОКУПАТЕЛЕЙ amoCRM ═══
+  // dryRun: тянем покупателей (выигранные сделки) → телефоны, считаем. confirm: создаём Custom Audience + Lookalike в Meta.
+  if (action === "audience") {
+    const confirm = (req.body && (req.body.confirm === true || req.body.confirm === 1)) || false;
+    const dryRunA = !confirm;
+    if (!dryRunA && !(sess && ["admin", "marketing"].includes(sess.role))) { res.status(403).json({ ok: false, error: "создание аудитории — только по сессии admin/marketing" }); return; }
+    const AMO = process.env.AMOCRM_TOKEN, SUB = "huntercademy";
+    if (!AMO) { res.status(200).json({ ok: false, error: "AMOCRM_TOKEN не задан" }); return; }
+    const amoBase = `https://${SUB}.amocrm.ru/api/v4`, AH = { Authorization: `Bearer ${AMO}` };
+    try {
+      // 1) статус "Sotildi" (продано) + воронка
+      const pj = await (await fetch(`${amoBase}/leads/pipelines`, { headers: AH })).json();
+      let pipelineId = null, soldId = null;
+      for (const p of ((pj._embedded && pj._embedded.pipelines) || [])) for (const s of ((p._embedded && p._embedded.statuses) || [])) if ((s.name || "").toLowerCase() === "sotildi") { pipelineId = p.id; soldId = s.id; }
+      if (!soldId) { res.status(200).json({ ok: false, error: "статус «Sotildi» не найден в amoCRM" }); return; }
+      // 2) выигранные сделки → id контактов
+      const contactIds = new Set(); let page = 1, guard = 0;
+      while (guard < 60) { guard++;
+        const r = await fetch(`${amoBase}/leads?filter[statuses][0][pipeline_id]=${pipelineId}&filter[statuses][0][status_id]=${soldId}&with=contacts&limit=250&page=${page}`, { headers: AH });
+        if (!r.ok) break; const d = await r.json();
+        const leads = (d._embedded && d._embedded.leads) || [];
+        for (const l of leads) for (const c of ((l._embedded && l._embedded.contacts) || [])) contactIds.add(c.id);
+        if (leads.length < 250) break; page++;
+      }
+      // 3) телефоны контактов
+      const ids = [...contactIds], phones = new Set();
+      for (let i = 0; i < ids.length; i += 250) {
+        const q = ids.slice(i, i + 250).map((id) => `filter[id][]=${id}`).join("&");
+        const r = await fetch(`${amoBase}/contacts?${q}&limit=250`, { headers: AH });
+        if (!r.ok) continue; const d = await r.json();
+        for (const c of ((d._embedded && d._embedded.contacts) || [])) for (const f of (c.custom_fields_values || [])) if (f.field_code === "PHONE" || f.field_type === "phone") for (const v of (f.values || [])) { const n = normUzPhone(v.value); if (n) phones.add(n); }
+      }
+      const phoneArr = [...phones];
+      if (dryRunA) { res.status(200).json({ ok: true, dryRun: true, buyers: contactIds.size, phones: phoneArr.length, sample: phoneArr.slice(0, 3).map((p) => p.slice(0, 5) + "•••" + p.slice(-2)), note: "СУХОЙ ПРОГОН: в Meta ничего не создано. Столько телефонов покупателей соберётся в Lookalike. Подтверди — загружу (хешированно) и построю Lookalike 1% (UZ)." }); return; }
+      if (phoneArr.length < 100) { res.status(200).json({ ok: false, error: `телефонов покупателей ${phoneArr.length} — для Lookalike Meta нужно ≥100. Пока мало.` }); return; }
+      // 4) Meta: Custom Audience → загрузка хешей → Lookalike
+      const acct = `act_${AD_ACCOUNT}`;
+      const mpost = async (path, body) => (await (await fetch(`https://graph.facebook.com/${GRAPH}/${path}`, { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ ...body, access_token: META_TOKEN }) })).json());
+      const ca = await mpost(`${acct}/customaudiences`, { name: "ALTRONE · Покупатели amoCRM", subtype: "CUSTOM", customer_file_source: "USER_PROVIDED_ONLY", description: "покупатели из amoCRM (хеш телефонов)" });
+      if (!ca.id) { res.status(200).json({ ok: false, error: "Custom Audience не создана: " + JSON.stringify(ca.error || ca).slice(0, 160) }); return; }
+      // загрузка партиями по 5000
+      let uploaded = 0;
+      for (let i = 0; i < phoneArr.length; i += 5000) {
+        const data = phoneArr.slice(i, i + 5000).map((p) => [sha256(p)]);
+        const up = await mpost(`${ca.id}/users`, { payload: { schema: ["PHONE"], data } });
+        if (up.error) { res.status(200).json({ ok: false, error: "загрузка контактов не удалась: " + JSON.stringify(up.error).slice(0, 160), customAudienceId: ca.id }); return; }
+        uploaded += data.length;
+      }
+      const la = await mpost(`${acct}/customaudiences`, { name: "ALTRONE · Lookalike 1% покупатели (UZ)", subtype: "LOOKALIKE", origin_audience_id: ca.id, lookalike_spec: JSON.stringify({ type: "similarity", country: "UZ", ratio: 0.01 }) });
+      if (!la.id) { res.status(200).json({ ok: false, error: "Lookalike не создан: " + JSON.stringify(la.error || la).slice(0, 160), customAudienceId: ca.id, uploaded }); return; }
+      await rset("mkt:lookalike:hunter", { customAudienceId: ca.id, lookalikeId: la.id, phones: uploaded, at: Date.now() });
+      res.status(200).json({ ok: true, dryRun: false, customAudienceId: ca.id, lookalikeId: la.id, uploaded, note: `Готово: загружено ${uploaded} покупателей, создан Lookalike 1% (UZ). Теперь тесты «Lookalike из amoCRM» будут таргетироваться на эту аудиторию (Meta её «прогреет» за несколько часов).` });
+    } catch (e) { res.status(200).json({ ok: false, error: String(e).slice(0, 200) }); }
+    return;
+  }
+
   // ═══ СТАДИЯ 2: СОЗДАНИЕ В META ═══ деньги/запись → ТОЛЬКО сессия admin/marketing (без cron). Всегда PAUSED. Потолок бюджета.
   // По умолчанию dryRun (показать payload'ы, ничего не создавать). Реальное создание — только confirm:true.
   if (action === "create") {
@@ -194,6 +255,7 @@ export default async function handler(req, res) {
     const centsUSD = (v) => Math.max(100, Math.round(Number(v || 0) * 100)); // $ → центы, минимум $1
     const log = [];
     const formId = campaign.form || null;
+    const lk = await rgetJSON("mkt:lookalike:hunter", null); const lookalikeId = lk && lk.lookalikeId; // Lookalike из amoCRM (Стадия 2.2), если собран
     // 1) КАМПАНИЯ — создаём на ПАУЗЕ (шлюз: пока кампания на паузе, ничего не откручивается). Включим в конце, если крео легли.
     const campBody = { name: `ALTRONE тест · ${campaign.objectiveLabel || "Лиды"} · ${stamp}`, objective, status: "PAUSED", special_ad_categories: [] };
     let campaignId = null;
@@ -205,7 +267,7 @@ export default async function handler(req, res) {
       const targeting = { age_min: 18, age_max: 65, geo_locations: { countries: ["UZ"] } };
       const notes = [];
       if (t.type === "interest") notes.push("интересы — ID-резолв позже (пока широкая по стране)");
-      if (t.type === "lookalike") notes.push("lookalike из amoCRM — отдельный шаг (пока широкая по стране)");
+      if (t.type === "lookalike") { if (lookalikeId) { targeting.custom_audiences = [{ id: lookalikeId }]; notes.push("Lookalike из покупателей amoCRM ✓"); } else { notes.push("Lookalike из amoCRM ещё не собран — нажми «Собрать Lookalike» (пока широкая по стране)"); } }
       const adsetBody = { name: `ALTRONE · ${t.audience}`.slice(0, 100), campaign_id: campaignId || "<campaign_id>", daily_budget: currency === "USD" ? centsUSD(t.budget) : Math.round(t.budget), billing_event: "IMPRESSIONS", optimization_goal: objective === "OUTCOME_LEADS" ? "LEAD_GENERATION" : "REACH", bid_strategy: "LOWEST_COST_WITHOUT_CAP", targeting, promoted_object: { page_id: PAGE_ID }, status: "ACTIVE", ...(campaign.startDate && campaign.startDate !== "сразу после запуска" ? { start_time: campaign.startDate } : {}) };
       const adPlan = { video: t.creativeVideoUrl || null, caption: t.creativeCaption || "", thumb: t.creativeThumb || null, form: formId };
       if (dryRun) { log.push({ step: "adset+ad", audience: t.audience, willAdset: adsetBody, willAd: { video: adPlan.video ? "IG-видео" : "нет видео", form: formId ? "форма " + formId : "без формы", caption: (adPlan.caption || "").slice(0, 40) }, notes }); adsets.push({ audience: t.audience, notes }); continue; }
