@@ -179,10 +179,11 @@ export default async function handler(req, res) {
     const currency = plan.currency || "USD";
     const confirm = (req.body && (req.body.confirm === true || req.body.confirm === 1)) || false;
     const dryRun = !confirm;
-    // ПОТОЛОК безопасности
-    const CAP_USD = 500;
+    // ПОТОЛОК безопасности — задаёт владелец в мастере (по умолчанию 500 в валюте плана)
+    const CAP = Number(req.body && req.body.cap) > 0 ? Number(req.body.cap) : 500;
     const total = splitIn.reduce((s, t) => s + (Number(t.budget) || 0), 0);
-    if (currency === "USD" && total > CAP_USD) { res.status(400).json({ ok: false, error: `суммарный бюджет $${total}/дн выше потолка $${CAP_USD} — снизь бюджет` }); return; }
+    const cur = currency === "USD" ? "$" : "сум";
+    if (total > CAP) { res.status(400).json({ ok: false, error: `суммарный бюджет ${cur}${total}/дн выше твоего потолка ${cur}${CAP} — снизь бюджет или подними потолок` }); return; }
     if (!splitIn.length) { res.status(400).json({ ok: false, error: "пустой план — сначала собери план (Стадия 1)" }); return; }
     const objMap = { leads: "OUTCOME_LEADS", messages: "OUTCOME_ENGAGEMENT", traffic: "OUTCOME_TRAFFIC", engagement: "OUTCOME_ENGAGEMENT", sales: "OUTCOME_SALES" };
     const objective = objMap[campaign.objective] || "OUTCOME_LEADS";

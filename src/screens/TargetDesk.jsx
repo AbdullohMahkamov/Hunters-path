@@ -16,6 +16,7 @@ export default function TargetDesk({ onLogout }) {
   const [sel, setSel] = useState(saved0.sel || {})
   const [budget, setBudget] = useState(saved0.budget || '')
   const [budgetType, setBudgetType] = useState(saved0.budgetType || 'daily') // daily | lifetime
+  const [budgetCap, setBudgetCap] = useState(saved0.budgetCap || '50') // потолок ($) — защита от слива
   const [startDate, setStartDate] = useState(saved0.startDate || '')
   const [endDate, setEndDate] = useState(saved0.endDate || '')
   const [form, setForm] = useState(saved0.form || '')
@@ -26,14 +27,14 @@ export default function TargetDesk({ onLogout }) {
   const [created, setCreated] = useState(null)
 
   // прогресс мастера НЕ сбрасывается на F5 — храним в localStorage
-  useEffect(() => { try { localStorage.setItem(SK, JSON.stringify({ idx, objective, sel, budget, budgetType, startDate, endDate, form, plan })) } catch (e) {} }, [idx, objective, sel, budget, budgetType, startDate, endDate, form, plan])
+  useEffect(() => { try { localStorage.setItem(SK, JSON.stringify({ idx, objective, sel, budget, budgetType, budgetCap, startDate, endDate, form, plan })) } catch (e) {} }, [idx, objective, sel, budget, budgetType, budgetCap, startDate, endDate, form, plan])
 
   useEffect(() => { (async () => { try { const d = await adb.inputs(); if (d && d.ok) { setInp(d); const active = (d.forms || []).find(f => f.status === 'ACTIVE'); if (active) setForm(f => f || active.id) } } catch (e) {} setLoading(false) })() }, [])
 
   async function createInMeta(confirm) {
     if (!plan) return
     setCreating(true); setErr('')
-    try { const d = await adb.create(plan, confirm); if (d && d.ok) setCreated(d); else setErr((d && d.error) || 'Ошибка создания') } catch (e) { setErr('Нет связи с сервером') }
+    try { const d = await adb.create(plan, confirm, Math.round(Number(String(budgetCap).replace(/\D/g, '')) || 0)); if (d && d.ok) setCreated(d); else setErr((d && d.error) || 'Ошибка создания') } catch (e) { setErr('Нет связи с сервером') }
     setCreating(false)
   }
 
@@ -147,6 +148,14 @@ export default function TargetDesk({ onLogout }) {
                   <input value={budget} onChange={(e) => setBudget(e.target.value.replace(/[^\d]/g, ''))} inputMode="numeric" placeholder="напр. 20" style={{ ...inputStyle, ...TN, fontWeight: 700, fontSize: 18, paddingLeft: 28 }} />
                 </div>
                 {budgetType === 'daily' && budget ? <div style={{ fontSize: 11.5, color: 'var(--txt3)', marginTop: 5, ...TN }}>≈ ${num(Number(budget) * 30)}/месяц при ежедневном откруте</div> : null}
+              </div>
+              <div style={{ marginBottom: 14 }}>
+                <div style={{ fontSize: 12, color: 'var(--txt3)', marginBottom: 6 }}>🛡 Потолок бюджета ($) — защита от слива</div>
+                <div style={{ position: 'relative' }}>
+                  <span style={{ position: 'absolute', left: 13, top: '50%', transform: 'translateY(-50%)', fontSize: 15, fontWeight: 700, color: 'var(--txt3)' }}>$</span>
+                  <input value={budgetCap} onChange={(e) => setBudgetCap(e.target.value.replace(/[^\d]/g, ''))} inputMode="numeric" placeholder="напр. 50" style={{ ...inputStyle, ...TN, paddingLeft: 28 }} />
+                </div>
+                <div style={{ fontSize: 11, color: 'var(--txt3)', marginTop: 5 }}>если суммарный бюджет выше потолка — ALTRONE не создаст и не запустит</div>
               </div>
               <div style={{ display: 'flex', gap: 12, flexWrap: 'wrap' }}>
                 <div style={{ flex: '1 1 180px' }}>
