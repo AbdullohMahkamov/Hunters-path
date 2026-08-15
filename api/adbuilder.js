@@ -188,15 +188,17 @@ export default async function handler(req, res) {
       // 1) статус "Sotildi" (продано) + воронка
       const pj = await aj(`${amoBase}/leads/pipelines`);
       if (!pj) { res.status(200).json({ ok: false, error: "amoCRM /pipelines не ответил (токен/сеть)" }); return; }
-      let pipelineId = null, soldId = null;
-      for (const p of ((pj._embedded && pj._embedded.pipelines) || [])) for (const s of ((p._embedded && p._embedded.statuses) || [])) if ((s.name || "").toLowerCase() === "sotildi") { pipelineId = p.id; soldId = s.id; }
-      if (!soldId) { res.status(200).json({ ok: false, error: "статус «Sotildi» не найден в amoCRM" }); return; }
+      const soldStatuses = [];
+      for (const p of ((pj._embedded && pj._embedded.pipelines) || [])) for (const s of ((p._embedded && p._embedded.statuses) || [])) if ((s.name || "").toLowerCase().includes("sotildi") || s.type === 1) soldStatuses.push({ pid: p.id, sid: s.id, name: s.name });
+      if (!soldStatuses.length) { res.status(200).json({ ok: false, error: "статус «Sotildi»/успех не найден в amoCRM" }); return; }
+      const statusFilter = soldStatuses.map((x, i) => `filter[statuses][${i}][pipeline_id]=${x.pid}&filter[statuses][${i}][status_id]=${x.sid}`).join("&");
       // 2) выигранные сделки → id контактов
-      const contactIds = new Set(); let page = 1, guard = 0;
+      const contactIds = new Set(); let page = 1, guard = 0, leadsFound = 0;
       while (guard < 60) { guard++;
-        const d = await aj(`${amoBase}/leads?filter[statuses][0][pipeline_id]=${pipelineId}&filter[statuses][0][status_id]=${soldId}&with=contacts&limit=250&page=${page}`);
+        const d = await aj(`${amoBase}/leads?${statusFilter}&with=contacts&limit=250&page=${page}`);
         if (!d) break;
         const leads = (d._embedded && d._embedded.leads) || [];
+        leadsFound += leads.length;
         for (const l of leads) for (const c of ((l._embedded && l._embedded.contacts) || [])) contactIds.add(c.id);
         if (leads.length < 250) break; page++;
       }
@@ -209,7 +211,7 @@ export default async function handler(req, res) {
         for (const c of ((d._embedded && d._embedded.contacts) || [])) for (const f of (c.custom_fields_values || [])) if (f.field_code === "PHONE" || f.field_type === "phone") for (const v of (f.values || [])) { const n = normUzPhone(v.value); if (n) phones.add(n); }
       }
       const phoneArr = [...phones];
-      if (dryRunA) { res.status(200).json({ ok: true, dryRun: true, buyers: contactIds.size, phones: phoneArr.length, sample: phoneArr.slice(0, 3).map((p) => p.slice(0, 5) + "•••" + p.slice(-2)), note: "СУХОЙ ПРОГОН: в Meta ничего не создано. Столько телефонов покупателей соберётся в Lookalike. Подтверди — загружу (хешированно) и построю Lookalike 1% (UZ)." }); return; }
+      if (dryRunA) { res.status(200).json({ ok: true, dryRun: true, buyers: contactIds.size, phones: phoneArr.length, leadsFound, soldStatuses: soldStatuses.length, sample: phoneArr.slice(0, 3).map((p) => p.slice(0, 5) + "•••" + p.slice(-2)), note: "СУХОЙ ПРОГОН: в Meta ничего не создано. Столько телефонов покупателей соберётся в Lookalike. Подтверди — загружу (хешированно) и построю Lookalike 1% (UZ)." }); return; }
       if (phoneArr.length < 100) { res.status(200).json({ ok: false, error: `телефонов покупателей ${phoneArr.length} — для Lookalike Meta нужно ≥100. Пока мало.` }); return; }
       // 4) Meta: Custom Audience → загрузка хешей → Lookalike
       const acct = `act_${AD_ACCOUNT}`;
