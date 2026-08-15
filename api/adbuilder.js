@@ -302,8 +302,8 @@ export default async function handler(req, res) {
         const vid = await post(`${acct}/advideos`, { file_url: adPlan.video });
         if (!vid.id) { rec.adError = "видео не загрузилось: " + JSON.stringify(vid.error || vid).slice(0, 120); log.push({ step: "ad", ok: false, audience: t.audience, error: rec.adError }); adsets.push(rec); continue; }
         const cta = (objective === "OUTCOME_LEADS" && adPlan.form) ? { type: "SIGN_UP", value: { lead_gen_form_id: adPlan.form } } : { type: "LEARN_MORE", value: { link: "https://instagram.com/hunteracademy_uz" } };
-        const storySpec = { page_id: PAGE_ID, instagram_actor_id: IG_ID, video_data: { video_id: vid.id, message: (adPlan.caption || "Hunter Academy").slice(0, 500), call_to_action: cta, ...(adPlan.thumb ? { image_url: adPlan.thumb } : {}) } };
-        const cr = await post(`${acct}/adcreatives`, { name: `ALTRONE crea · ${t.audience}`.slice(0, 100), object_story_spec: storySpec });
+        const storySpec = { page_id: PAGE_ID, video_data: { video_id: vid.id, message: (adPlan.caption || "Hunter Academy").slice(0, 500), call_to_action: cta, ...(adPlan.thumb ? { image_url: adPlan.thumb } : {}) } };
+        const cr = await post(`${acct}/adcreatives`, { name: `ALTRONE crea · ${t.audience}`.slice(0, 100), object_story_spec: storySpec, instagram_user_id: IG_ID });
         if (!cr.id) { rec.adError = "креатив не создан: " + JSON.stringify(cr.error || cr).slice(0, 150); log.push({ step: "ad", ok: false, audience: t.audience, error: rec.adError }); adsets.push(rec); continue; }
         const ad = await post(`${acct}/ads`, { name: `ALTRONE ad · ${t.audience}`.slice(0, 100), adset_id: ar.id, creative: { creative_id: cr.id }, status: "ACTIVE" });
         if (ad.id) { rec.adId = ad.id; adsMade++; log.push({ step: "ad", ok: true, audience: t.audience, id: ad.id }); }
@@ -311,6 +311,8 @@ export default async function handler(req, res) {
       } catch (e) { rec.adError = String(e).slice(0, 150); log.push({ step: "ad", ok: false, audience: t.audience, error: rec.adError }); }
       adsets.push(rec);
     }
+    // если ни одно объявление не легло — удаляем пустую кампанию (чтобы не засорять кабинет при итерациях фиксов)
+    if (!dryRun && adsMade === 0 && campaignId) { try { await fetch(`https://graph.facebook.com/${GRAPH}/${campaignId}?access_token=${encodeURIComponent(META_TOKEN)}`, { method: "DELETE" }); } catch (e) {} log.push({ step: "cleanup", note: "объявлений 0 → пустая кампания удалена" }); campaignId = null; }
     // 3) ЗАПУСК: включаем кампанию (ACTIVE) ТОЛЬКО если хотя бы одно объявление реально легло. Иначе оставляем паузу (защита от слива).
     let launched = false;
     if (!dryRun && adsMade > 0 && campaignId) { const up = await post(`${campaignId}`, { status: "ACTIVE" }); launched = !up.error; log.push({ step: "launch", ok: launched, error: up.error || null }); }
