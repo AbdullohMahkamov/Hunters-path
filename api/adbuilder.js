@@ -280,7 +280,7 @@ export default async function handler(req, res) {
     const formId = campaign.form || null;
     const lk = await rgetJSON("mkt:lookalike:hunter", null); const lookalikeId = lk && lk.lookalikeId; // Lookalike из amoCRM (Стадия 2.2), если собран
     // 1) КАМПАНИЯ — создаём на ПАУЗЕ (шлюз: пока кампания на паузе, ничего не откручивается). Включим в конце, если крео легли.
-    const campBody = { name: `ALTRONE тест · ${campaign.objectiveLabel || "Лиды"} · ${stamp}`, objective, status: "PAUSED", special_ad_categories: [] };
+    const campBody = { name: `ALTRONE тест · ${campaign.objectiveLabel || "Лиды"} · ${stamp}`, objective, status: "PAUSED", special_ad_categories: [], is_adset_budget_sharing_enabled: false };
     let campaignId = null;
     if (dryRun) { log.push({ step: "campaign", willCreate: campBody }); }
     else { const r = await post(`${acct}/campaigns`, campBody); if (r.id) { campaignId = r.id; log.push({ step: "campaign", ok: true, id: r.id }); } else { res.status(200).json({ ok: false, error: "кампания не создана: " + JSON.stringify(r.error || r), log }); return; } }
