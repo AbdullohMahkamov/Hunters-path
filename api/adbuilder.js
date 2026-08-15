@@ -51,7 +51,7 @@ async function fetchIgMedia(igId) {
     while (url && guard < 5) { // до ~250 постов (5 страниц)
       guard++;
       const d = await (await fetch(url)).json();
-      for (const m of ((d && d.data) || [])) out.push({ id: m.id, caption: (m.caption || "").replace(/\s+/g, " ").trim().slice(0, 80), type: m.media_type, permalink: m.permalink || null, engagement: (m.like_count || 0) + (m.comments_count || 0), thumb: m.thumbnail_url || m.media_url || null });
+      for (const m of ((d && d.data) || [])) out.push({ id: m.id, caption: (m.caption || "").replace(/\s+/g, " ").trim().slice(0, 80), type: m.media_type, permalink: m.permalink || null, engagement: (m.like_count || 0) + (m.comments_count || 0), thumb: m.thumbnail_url || m.media_url || null, videoUrl: m.media_type === "VIDEO" ? (m.media_url || null) : null });
       url = (d && d.paging && d.paging.next) || null;
     }
   } catch (e) {}
@@ -192,31 +192,50 @@ export default async function handler(req, res) {
     const post = async (path, body) => { const r = await fetch(`https://graph.facebook.com/${GRAPH}/${path}`, { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ ...body, access_token: META_TOKEN }) }); return r.json(); };
     const centsUSD = (v) => Math.max(100, Math.round(Number(v || 0) * 100)); // $ → центы, минимум $1
     const log = [];
-    // 1) КАМПАНИЯ (PAUSED)
-    const campBody = { name: `ALTRONE ЧЕРНОВИК (без крео) · ${campaign.objectiveLabel || "Лиды"} · ${stamp}`, objective, status: "PAUSED", special_ad_categories: [] };
+    const formId = campaign.form || null;
+    // 1) КАМПАНИЯ — создаём на ПАУЗЕ (шлюз: пока кампания на паузе, ничего не откручивается). Включим в конце, если крео легли.
+    const campBody = { name: `ALTRONE тест · ${campaign.objectiveLabel || "Лиды"} · ${stamp}`, objective, status: "PAUSED", special_ad_categories: [] };
     let campaignId = null;
     if (dryRun) { log.push({ step: "campaign", willCreate: campBody }); }
     else { const r = await post(`${acct}/campaigns`, campBody); if (r.id) { campaignId = r.id; log.push({ step: "campaign", ok: true, id: r.id }); } else { res.status(200).json({ ok: false, error: "кампания не создана: " + JSON.stringify(r.error || r), log }); return; } }
-    // 2) АДСЕТЫ + ОБЪЯВЛЕНИЯ (PAUSED). Гео на уровне страны (UZ) — безопасно; города/интересы/lookalike требуют доп. настройки (помечаем).
-    const adsets = [];
+    // 2) для каждого теста: АДСЕТ (ACTIVE) + ОБЪЯВЛЕНИЕ (видео из IG → advideo → креатив с формой → ad). Кампания-шлюз держит паузу.
+    const adsets = []; let adsMade = 0;
     for (const t of splitIn) {
-      const targeting = { age_min: 18, age_max: 65, geo_locations: { countries: ["UZ"] } }; // база: широкая по стране
+      const targeting = { age_min: 18, age_max: 65, geo_locations: { countries: ["UZ"] } };
       const notes = [];
-      if (t.type === "interest") notes.push("интересы требуют ID-резолва — создано широким, интересы добавить вручную/Стадия 2.1");
-      if (t.type === "lookalike") notes.push("lookalike-аудитория из amoCRM — отдельный шаг (загрузка контактов), пока широкая");
-      const adsetBody = { name: `ALTRONE · ${t.audience}`.slice(0, 100), campaign_id: campaignId || "<campaign_id>", daily_budget: currency === "USD" ? centsUSD(t.budget) : Math.round(t.budget), billing_event: "IMPRESSIONS", optimization_goal: objective === "OUTCOME_LEADS" ? "LEAD_GENERATION" : "REACH", bid_strategy: "LOWEST_COST_WITHOUT_CAP", targeting, promoted_object: { page_id: PAGE_ID }, status: "PAUSED", ...(campaign.startDate && campaign.startDate !== "сразу после запуска" ? { start_time: campaign.startDate } : {}) };
-      if (dryRun) { log.push({ step: "adset", audience: t.audience, willCreate: adsetBody, notes }); adsets.push({ audience: t.audience, notes }); continue; }
+      if (t.type === "interest") notes.push("интересы — ID-резолв позже (пока широкая по стране)");
+      if (t.type === "lookalike") notes.push("lookalike из amoCRM — отдельный шаг (пока широкая по стране)");
+      const adsetBody = { name: `ALTRONE · ${t.audience}`.slice(0, 100), campaign_id: campaignId || "<campaign_id>", daily_budget: currency === "USD" ? centsUSD(t.budget) : Math.round(t.budget), billing_event: "IMPRESSIONS", optimization_goal: objective === "OUTCOME_LEADS" ? "LEAD_GENERATION" : "REACH", bid_strategy: "LOWEST_COST_WITHOUT_CAP", targeting, promoted_object: { page_id: PAGE_ID }, status: "ACTIVE", ...(campaign.startDate && campaign.startDate !== "сразу после запуска" ? { start_time: campaign.startDate } : {}) };
+      const adPlan = { video: t.creativeVideoUrl || null, caption: t.creativeCaption || "", thumb: t.creativeThumb || null, form: formId };
+      if (dryRun) { log.push({ step: "adset+ad", audience: t.audience, willAdset: adsetBody, willAd: { video: adPlan.video ? "IG-видео" : "нет видео", form: formId ? "форма " + formId : "без формы", caption: (adPlan.caption || "").slice(0, 40) }, notes }); adsets.push({ audience: t.audience, notes }); continue; }
       const ar = await post(`${acct}/adsets`, adsetBody);
-      if (ar.id) { log.push({ step: "adset", ok: true, id: ar.id, audience: t.audience, notes }); adsets.push({ audience: t.audience, adsetId: ar.id, notes }); }
-      else { log.push({ step: "adset", ok: false, audience: t.audience, error: ar.error || ar }); }
+      if (!ar.id) { log.push({ step: "adset", ok: false, audience: t.audience, error: ar.error || ar }); adsets.push({ audience: t.audience, adError: "адсет не создан" }); continue; }
+      const rec = { audience: t.audience, adsetId: ar.id, notes };
+      if (!adPlan.video) { rec.adError = "у выбранного крео нет видео-URL (IG отдаёт media_url только для VIDEO) — объявление не создано"; log.push({ step: "ad", ok: false, audience: t.audience, error: rec.adError }); adsets.push(rec); continue; }
+      try {
+        const vid = await post(`${acct}/advideos`, { file_url: adPlan.video });
+        if (!vid.id) { rec.adError = "видео не загрузилось: " + JSON.stringify(vid.error || vid).slice(0, 120); log.push({ step: "ad", ok: false, audience: t.audience, error: rec.adError }); adsets.push(rec); continue; }
+        const cta = (objective === "OUTCOME_LEADS" && adPlan.form) ? { type: "SIGN_UP", value: { lead_gen_form_id: adPlan.form } } : { type: "LEARN_MORE", value: { link: "https://instagram.com/hunteracademy_uz" } };
+        const storySpec = { page_id: PAGE_ID, instagram_actor_id: IG_ID, video_data: { video_id: vid.id, message: (adPlan.caption || "Hunter Academy").slice(0, 500), call_to_action: cta, ...(adPlan.thumb ? { image_url: adPlan.thumb } : {}) } };
+        const cr = await post(`${acct}/adcreatives`, { name: `ALTRONE crea · ${t.audience}`.slice(0, 100), object_story_spec: storySpec });
+        if (!cr.id) { rec.adError = "креатив не создан: " + JSON.stringify(cr.error || cr).slice(0, 150); log.push({ step: "ad", ok: false, audience: t.audience, error: rec.adError }); adsets.push(rec); continue; }
+        const ad = await post(`${acct}/ads`, { name: `ALTRONE ad · ${t.audience}`.slice(0, 100), adset_id: ar.id, creative: { creative_id: cr.id }, status: "ACTIVE" });
+        if (ad.id) { rec.adId = ad.id; adsMade++; log.push({ step: "ad", ok: true, audience: t.audience, id: ad.id }); }
+        else { rec.adError = "объявление не создано: " + JSON.stringify(ad.error || ad).slice(0, 150); log.push({ step: "ad", ok: false, audience: t.audience, error: rec.adError }); }
+      } catch (e) { rec.adError = String(e).slice(0, 150); log.push({ step: "ad", ok: false, audience: t.audience, error: rec.adError }); }
+      adsets.push(rec);
     }
+    // 3) ЗАПУСК: включаем кампанию (ACTIVE) ТОЛЬКО если хотя бы одно объявление реально легло. Иначе оставляем паузу (защита от слива).
+    let launched = false;
+    if (!dryRun && adsMade > 0 && campaignId) { const up = await post(`${campaignId}`, { status: "ACTIVE" }); launched = !up.error; log.push({ step: "launch", ok: launched, error: up.error || null }); }
     const managerLink = `https://adsmanager.facebook.com/adsmanager/manage/campaigns?act=${AD_ACCOUNT}${campaignId ? `&selected_campaign_ids=${campaignId}` : ""}`;
     res.status(200).json({
-      ok: true, dryRun, draft: true, campaignId, adsets, log, managerLink,
-      warning: "ЭТО ЧЕРНОВИК КАРКАСА, НЕ готовая кампания. НЕТ: объявлений, видео-креатива, лид-формы, точных аудиторий (города/интересы/lookalike упрощены до широкой по стране UZ). ⛔ НЕ снимай паузу — объявления не открутятся (в адсетах нет ни одного ad). Нужно добавить крео+форму и аудитории — Стадия 2.1 или вручную в Meta.",
+      ok: true, dryRun, campaignId, adsets, adsMade, launched, log, managerLink,
       note: dryRun
-        ? "СУХОЙ ПРОГОН: в Meta НИЧЕГО не создано. Выше — каркас (кампания + адсеты на ПАУЗЕ), БЕЗ объявлений/крео/формы. Подтверди — создам этот ЧЕРНОВИК на паузе (запускать его нельзя, пока не добавлены крео/форма/аудитории)."
-        : "СОЗДАН ЧЕРНОВИК КАРКАСА на паузе (кампания + адсеты, БЕЗ объявлений/крео/формы/точных аудиторий). ⛔ Запускать нельзя — открутки не будет. Дальше: Стадия 2.1 (крео+форма+lookalike) или добавь вручную в Ads Manager, потом снимай паузу.",
+        ? "СУХОЙ ПРОГОН: в Meta ничего не создано. Выше — что создам: кампания + адсеты + объявления (твоё IG-видео + форма). Подтверди — создам и запущу. Первый прогон нового кода — проверь результат и сразу глянь в Ads Manager."
+        : (launched
+          ? `🚀 ЗАПУЩЕНО В META. Объявлений создано: ${adsMade}. Открой Ads Manager и проверь бюджет/крео/аудиторию/форму. Если что-то не так — ставь на паузу прямо там.`
+          : `Создано, но НЕ запущено (объявлений легло: ${adsMade}). Кампания на ПАУЗЕ — в логе выше ошибки Meta, пришли их мне, поправлю. Ничего не тратится.`),
     });
     return;
   }
@@ -285,7 +304,7 @@ export default async function handler(req, res) {
     const selected = (Array.isArray(selIds) && selIds.length) ? posts.filter((p) => selIds.includes(p.id)) : [];
     const creaPool = selected.length ? selected : [...posts].sort((a, b) => b.engagement - a.engagement);
     const topCre = creaPool.slice(0, Math.max(tests.length, 1));
-    tests.forEach((t, i) => { t.creative = topCre.length ? (topCre[i % topCre.length].caption || `IG-пост #${i + 1}`) : "— (нет постов)"; });
+    tests.forEach((t, i) => { const c = topCre.length ? topCre[i % topCre.length] : null; t.creative = c ? (c.caption || `IG-пост #${i + 1}`) : "— (нет постов)"; t.creativeId = c ? c.id : null; t.creativeVideoUrl = c ? c.videoUrl : null; t.creativeThumb = c ? c.thumb : null; t.creativeCaption = c ? (c.caption || "") : ""; t.creativeType = c ? c.type : null; });
     // прогноз — гипотеза по текущей средней цене лида (новые связки могут дать дешевле ИЛИ дороже — на то и тест)
     const expectedLeads = bestCpl ? tests.reduce((s, t) => s + Math.round((t.budget * rateUZS) / bestCpl), 0) : null;
     res.status(200).json({

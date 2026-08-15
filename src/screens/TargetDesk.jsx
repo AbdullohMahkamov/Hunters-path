@@ -200,19 +200,19 @@ export default function TargetDesk({ onLogout }) {
               <div style={{ marginTop: 12, fontSize: 12, color: 'var(--txt3)' }}>{plan.note}</div>
               {!created ? (
                 <div style={{ marginTop: 14 }}>
-                  <button disabled={creating} onClick={() => createInMeta(false)} style={btn(true)}>{creating ? 'Готовлю…' : '🚀 Показать каркас (сухой прогон)'}</button>
-                  <div style={{ fontSize: 11.5, color: 'var(--txt3)', marginTop: 6 }}>Соберёт <b>черновик структуры</b> (кампания + адсеты, <b>без крео и формы</b>). Сначала покажу, что создам — в Meta ничего не пишется.</div>
+                  <button disabled={creating} onClick={() => createInMeta(false)} style={btn(true)}>{creating ? 'Готовлю…' : '🔎 Показать, что создам (сухой прогон)'}</button>
+                  <div style={{ fontSize: 11.5, color: 'var(--txt3)', marginTop: 6 }}>Соберёт кампанию: адсеты + <b>объявления с твоим видео и формой</b>. Сначала покажу — в Meta ничего не пишется. Запуск — на следующем шаге.</div>
                 </div>
               ) : (
                 <div style={{ marginTop: 14, background: created.dryRun ? 'var(--gold-bg)' : 'var(--green-bg)', border: `1px solid ${created.dryRun ? 'var(--gold)' : 'var(--green)'}`, borderRadius: 11, padding: '13px 15px' }}>
-                  <div style={{ fontSize: 13, fontWeight: 700, marginBottom: 7 }}>{created.dryRun ? '🔎 ЧЕРНОВИК каркаса (сухой прогон) — НЕ готовая кампания:' : '✅ Черновик каркаса создан на паузе'}</div>
+                  <div style={{ fontSize: 13, fontWeight: 700, marginBottom: 7 }}>{created.dryRun ? '🔎 Сухой прогон — вот что создам в Meta:' : (created.launched ? '🚀 Запущено в Meta' : '⏸ Создано, но на паузе — смотри ошибки ниже')}</div>
                   {created.warning ? <div style={{ background: 'var(--red-bg)', border: '1px solid var(--red)', borderRadius: 8, padding: '9px 11px', marginBottom: 8, fontSize: 11.5, color: 'var(--txt)', lineHeight: 1.5 }}>⛔ {created.warning}</div> : null}
                   <div style={{ fontSize: 12, color: 'var(--txt2)', lineHeight: 1.7 }}>
                     {(created.log || []).map((l, i) => <div key={i}>{l.step === 'campaign' ? '📁 Кампания' : '📄 Адсет'}{l.audience ? ` · ${l.audience}` : ''}{l.willCreate ? ` — «${l.willCreate.name || ''}»${l.willCreate.daily_budget ? `, ${Math.round(l.willCreate.daily_budget / 100)}$/дн` : ''}` : ''}{l.id ? ` ✓ id ${l.id}` : ''}{l.error ? ` ✗ ${JSON.stringify(l.error).slice(0, 90)}` : ''}{(l.notes && l.notes.length) ? <span style={{ color: 'var(--gold)' }}> · ⚠️ {l.notes.join('; ')}</span> : null}</div>)}
                   </div>
                   <div style={{ fontSize: 11.5, color: 'var(--txt3)', marginTop: 9 }}>{created.note}</div>
                   {created.managerLink ? <div style={{ marginTop: 6 }}><a href={created.managerLink} target="_blank" rel="noreferrer" style={{ fontSize: 12.5, color: 'var(--accent)' }}>Открыть в Ads Manager →</a></div> : null}
-                  {created.dryRun ? <div style={{ marginTop: 11 }}><button disabled={creating} onClick={() => createInMeta(true)} style={btn(true)}>{creating ? 'Создаю…' : '✅ Создать ЧЕРНОВИК-каркас на паузе (без крео)'}</button></div> : null}
+                  {created.dryRun ? <div style={{ marginTop: 11 }}><button disabled={creating} onClick={() => createInMeta(true)} style={btn(true)}>{creating ? 'Создаю и запускаю…' : '🚀 Запустить в Meta'}</button></div> : null}
                 </div>
               )}
             </>)}
