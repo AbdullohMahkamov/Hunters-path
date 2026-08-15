@@ -238,6 +238,7 @@ export default function TargetDesk({ onLogout }) {
                   <div style={{ fontSize: 11.5, color: 'var(--txt3)', marginTop: 9 }}>{created.note}</div>
                   {created.managerLink ? <div style={{ marginTop: 6 }}><a href={created.managerLink} target="_blank" rel="noreferrer" style={{ fontSize: 12.5, color: 'var(--accent)' }}>Открыть в Ads Manager →</a></div> : null}
                   {created.dryRun ? <div style={{ marginTop: 11 }}><button disabled={creating} onClick={() => createInMeta(true)} style={btn(true)}>{creating ? 'Создаю и запускаю…' : '🚀 Запустить в Meta'}</button></div> : null}
+                  {!created.dryRun && !created.launched ? <div style={{ marginTop: 11 }}><button disabled={creating} onClick={() => setCreated(null)} style={btn(true)}>↻ Попробовать снова</button></div> : null}
                 </div>
               )}
             </>)}
