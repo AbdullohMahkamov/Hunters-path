@@ -193,7 +193,7 @@ export default async function handler(req, res) {
     const centsUSD = (v) => Math.max(100, Math.round(Number(v || 0) * 100)); // $ → центы, минимум $1
     const log = [];
     // 1) КАМПАНИЯ (PAUSED)
-    const campBody = { name: `ALTRONE тест · ${campaign.objectiveLabel || "Лиды"} · ${stamp}`, objective, status: "PAUSED", special_ad_categories: [] };
+    const campBody = { name: `ALTRONE ЧЕРНОВИК (без крео) · ${campaign.objectiveLabel || "Лиды"} · ${stamp}`, objective, status: "PAUSED", special_ad_categories: [] };
     let campaignId = null;
     if (dryRun) { log.push({ step: "campaign", willCreate: campBody }); }
     else { const r = await post(`${acct}/campaigns`, campBody); if (r.id) { campaignId = r.id; log.push({ step: "campaign", ok: true, id: r.id }); } else { res.status(200).json({ ok: false, error: "кампания не создана: " + JSON.stringify(r.error || r), log }); return; } }
@@ -212,10 +212,11 @@ export default async function handler(req, res) {
     }
     const managerLink = `https://adsmanager.facebook.com/adsmanager/manage/campaigns?act=${AD_ACCOUNT}${campaignId ? `&selected_campaign_ids=${campaignId}` : ""}`;
     res.status(200).json({
-      ok: true, dryRun, campaignId, adsets, log, managerLink,
+      ok: true, dryRun, draft: true, campaignId, adsets, log, managerLink,
+      warning: "ЭТО ЧЕРНОВИК КАРКАСА, НЕ готовая кампания. НЕТ: объявлений, видео-креатива, лид-формы, точных аудиторий (города/интересы/lookalike упрощены до широкой по стране UZ). ⛔ НЕ снимай паузу — объявления не открутятся (в адсетах нет ни одного ad). Нужно добавить крео+форму и аудитории — Стадия 2.1 или вручную в Meta.",
       note: dryRun
-        ? "СУХОЙ ПРОГОН: в Meta НИЧЕГО не создано. Выше — точные объекты, которые ALTRONE создаст (кампания + адсеты, всё на ПАУЗЕ). Города/интересы/lookalike пока упрощены до широкой по стране — это Стадия 2.1. Подтверди (confirm) — создам на паузе."
-        : "СОЗДАНО В META НА ПАУЗЕ. Проверь в Ads Manager, добавь креативы/форму где нужно и нажми Старт в Meta. Ничего не тратится, пока не снимешь паузу.",
+        ? "СУХОЙ ПРОГОН: в Meta НИЧЕГО не создано. Выше — каркас (кампания + адсеты на ПАУЗЕ), БЕЗ объявлений/крео/формы. Подтверди — создам этот ЧЕРНОВИК на паузе (запускать его нельзя, пока не добавлены крео/форма/аудитории)."
+        : "СОЗДАН ЧЕРНОВИК КАРКАСА на паузе (кампания + адсеты, БЕЗ объявлений/крео/формы/точных аудиторий). ⛔ Запускать нельзя — открутки не будет. Дальше: Стадия 2.1 (крео+форма+lookalike) или добавь вручную в Ads Manager, потом снимай паузу.",
     });
     return;
   }
