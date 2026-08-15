@@ -56,7 +56,7 @@ async function fetchExistingAdsets() {
       };
     });
     return { adsets };
-  } catch (e) { return { adsets: [], error: String(e).slice(0, 150) }; }
+  } catch (e) { return { adsets: [], error: String(e).slice(0, 400) }; }
 }
 
 // КРЕАТИВЫ — посты (видео/reels) из тестового Instagram напрямую через Graph API.
@@ -304,11 +304,11 @@ export default async function handler(req, res) {
         const cta = (objective === "OUTCOME_LEADS" && adPlan.form) ? { type: "SIGN_UP", value: { lead_gen_form_id: adPlan.form } } : { type: "LEARN_MORE", value: { link: "https://instagram.com/hunteracademy_uz" } };
         const storySpec = { page_id: PAGE_ID, video_data: { video_id: vid.id, message: (adPlan.caption || "Hunter Academy").slice(0, 500), call_to_action: cta, ...(adPlan.thumb ? { image_url: adPlan.thumb } : {}) } };
         const cr = await post(`${acct}/adcreatives`, { name: `ALTRONE crea · ${t.audience}`.slice(0, 100), object_story_spec: storySpec, instagram_user_id: IG_ID });
-        if (!cr.id) { rec.adError = "креатив не создан: " + JSON.stringify(cr.error || cr).slice(0, 150); log.push({ step: "ad", ok: false, audience: t.audience, error: rec.adError }); adsets.push(rec); continue; }
+        if (!cr.id) { rec.adError = "креатив не создан: " + JSON.stringify(cr.error || cr).slice(0, 400); log.push({ step: "ad", ok: false, audience: t.audience, error: rec.adError }); adsets.push(rec); continue; }
         const ad = await post(`${acct}/ads`, { name: `ALTRONE ad · ${t.audience}`.slice(0, 100), adset_id: ar.id, creative: { creative_id: cr.id }, status: "ACTIVE" });
         if (ad.id) { rec.adId = ad.id; adsMade++; log.push({ step: "ad", ok: true, audience: t.audience, id: ad.id }); }
-        else { rec.adError = "объявление не создано: " + JSON.stringify(ad.error || ad).slice(0, 150); log.push({ step: "ad", ok: false, audience: t.audience, error: rec.adError }); }
-      } catch (e) { rec.adError = String(e).slice(0, 150); log.push({ step: "ad", ok: false, audience: t.audience, error: rec.adError }); }
+        else { rec.adError = "объявление не создано: " + JSON.stringify(ad.error || ad).slice(0, 400); log.push({ step: "ad", ok: false, audience: t.audience, error: rec.adError }); }
+      } catch (e) { rec.adError = String(e).slice(0, 400); log.push({ step: "ad", ok: false, audience: t.audience, error: rec.adError }); }
       adsets.push(rec);
     }
     // если ни одно объявление не легло — удаляем пустую кампанию (чтобы не засорять кабинет при итерациях фиксов)
