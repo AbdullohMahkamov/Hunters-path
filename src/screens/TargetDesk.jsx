@@ -28,6 +28,7 @@ export default function TargetDesk({ onLogout }) {
   const [audRes, setAudRes] = useState(null)
   const [audBusy, setAudBusy] = useState(false)
   async function buildAudience(confirm) { setAudBusy(true); try { const d = await adb.audience(confirm); setAudRes(d) } catch (e) { setAudRes({ ok: false, error: 'Нет связи' }) } setAudBusy(false) }
+  function resetWizard() { try { localStorage.removeItem(SK) } catch (e) {}; setIdx(0); setObjective('leads'); setSel({}); setBudget(''); setBudgetType('daily'); setBudgetCap('50'); setStartDate(''); setEndDate(''); setForm(''); setPlan(null); setCreated(null); setAudRes(null); setErr('') }
 
   // прогресс мастера НЕ сбрасывается на F5 — храним в localStorage
   useEffect(() => { try { localStorage.setItem(SK, JSON.stringify({ idx, objective, sel, budget, budgetType, budgetCap, startDate, endDate, form, plan })) } catch (e) {} }, [idx, objective, sel, budget, budgetType, budgetCap, startDate, endDate, form, plan])
@@ -88,7 +89,10 @@ export default function TargetDesk({ onLogout }) {
             </div>
             <div style={{ fontSize: 19, fontWeight: 700 }}>Таргет</div>
           </div>
-          <a href="/" style={{ padding: '8px 14px', borderRadius: 9, border: '1px solid var(--line2)', background: 'var(--card)', color: 'var(--txt2)', fontSize: 13, textDecoration: 'none' }}>← Выход</a>
+          <div style={{ display: 'flex', gap: 8 }}>
+            <button onClick={resetWizard} style={{ padding: '8px 14px', borderRadius: 9, border: '1px solid var(--line2)', background: 'var(--card)', color: 'var(--txt2)', fontSize: 13, cursor: 'pointer' }}>↻ Сбросить</button>
+            <a href="/" style={{ padding: '8px 14px', borderRadius: 9, border: '1px solid var(--line2)', background: 'var(--card)', color: 'var(--txt2)', fontSize: 13, textDecoration: 'none' }}>← Выход</a>
+          </div>
         </div>
 
         {/* индикатор шагов */}
