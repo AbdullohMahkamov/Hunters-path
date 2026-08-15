@@ -11,6 +11,19 @@ async function rset(key, v) { try { await fetch(`${REDIS_URL}/set/${encodeURICom
 // нормализация UZ-телефона в 12 цифр (998XXXXXXXXX); хеш SHA-256 для Meta Custom Audience (обезличенно)
 function normUzPhone(raw) { let d = String(raw || "").replace(/\D/g, ""); if (d.length === 9) d = "998" + d; if (d.length === 12 && d.startsWith("998")) return d; if (d.startsWith("998")) return d.slice(0, 12); return null; }
 const sha256 = (s) => crypto.createHash("sha256").update(String(s)).digest("hex");
+// резолв названий интересов в ID Meta (Targeting Search) — для узкого теста
+async function resolveInterests(names) {
+  if (!META_TOKEN) return [];
+  const out = [];
+  for (const q of names) {
+    try {
+      const d = await (await fetch(`https://graph.facebook.com/${GRAPH}/search?type=adinterest&q=${encodeURIComponent(q)}&limit=1&locale=en_US&access_token=${encodeURIComponent(META_TOKEN)}`)).json();
+      const it = d && d.data && d.data[0];
+      if (it && it.id) out.push({ id: it.id, name: it.name });
+    } catch (e) {}
+  }
+  return out;
+}
 async function getSession(s) { if (!s) return null; try { const raw = await rget(`session:${s}`); return raw ? JSON.parse(raw) : null; } catch (e) { return null; } }
 
 const MKT_RATE = 12100; // $→сум, как в marketing.js
@@ -276,8 +289,8 @@ export default async function handler(req, res) {
     for (const t of splitIn) {
       const targeting = { age_min: 18, age_max: 65, geo_locations: { countries: ["UZ"] } };
       const notes = [];
-      if (t.type === "interest") notes.push("интересы — ID-резолв позже (пока широкая по стране)");
-      if (t.type === "lookalike") { if (lookalikeId) { targeting.custom_audiences = [{ id: lookalikeId }]; notes.push("Lookalike из покупателей amoCRM ✓"); } else { notes.push("Lookalike из amoCRM ещё не собран — нажми «Собрать Lookalike» (пока широкая по стране)"); } }
+      if (t.type === "interest") { const ints = await resolveInterests(t.interestQueries || ["Sales", "Business", "Entrepreneurship"]); if (ints.length) { targeting.flexible_spec = [{ interests: ints }]; notes.push(`✓ интересы: ${ints.map((x) => x.name).join(", ")}`); } else notes.push("⚠️ интересы не нашлись в Meta — пока широкая по стране"); }
+      if (t.type === "lookalike") { if (lookalikeId) { targeting.custom_audiences = [{ id: lookalikeId }]; notes.push("✓ Lookalike из покупателей amoCRM"); } else { notes.push("⚠️ Lookalike из amoCRM ещё не собран — нажми «Собрать Lookalike» (пока широкая)"); } }
       const adsetBody = { name: `ALTRONE · ${t.audience}`.slice(0, 100), campaign_id: campaignId || "<campaign_id>", daily_budget: currency === "USD" ? centsUSD(t.budget) : Math.round(t.budget), billing_event: "IMPRESSIONS", optimization_goal: objective === "OUTCOME_LEADS" ? "LEAD_GENERATION" : "REACH", bid_strategy: "LOWEST_COST_WITHOUT_CAP", targeting, promoted_object: { page_id: PAGE_ID }, status: "ACTIVE", ...(campaign.startDate && campaign.startDate !== "сразу после запуска" ? { start_time: campaign.startDate } : {}) };
       const adPlan = { video: t.creativeVideoUrl || null, caption: t.creativeCaption || "", thumb: t.creativeThumb || null, form: formId };
       if (dryRun) { log.push({ step: "adset+ad", audience: t.audience, willAdset: adsetBody, willAd: { video: adPlan.video ? "IG-видео" : "нет видео", form: formId ? "форма " + formId : "без формы", caption: (adPlan.caption || "").slice(0, 40) }, notes }); adsets.push({ audience: t.audience, notes }); continue; }
@@ -363,7 +376,7 @@ export default async function handler(req, res) {
       ...(best ? [{ audience: "Lookalike · лиды победителя", type: "lookalike", isTest: true,
         hypothesis: `похожие на лиды лучшей связки (${best.name}${best.roas != null ? `, ROAS ${best.roas}x` : ""}).`,
         targeting: { "возраст": "18-65", "пол": "все", "гео": geoDefault, "аудитория": `Lookalike (лиды ${best.name})`, "плейсменты": "авто" } }] : []),
-      { audience: "Узкий · интересы (контроль)", type: "interest", isTest: true,
+      { audience: "Узкий · интересы (контроль)", type: "interest", isTest: true, interestQueries: ["Sales", "Business", "Entrepreneurship"],
         hypothesis: "проверка: бьёт ли узкий таргет по интересам твою широкую? (сейчас таких у тебя нет).",
         targeting: { "возраст": "18-35", "пол": "все", "гео": "Ташкент", "интересы": "Продажи, Бизнес, Предпринимательство", "плейсменты": "авто" } },
     ];
